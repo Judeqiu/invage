@@ -3,6 +3,7 @@ import type { AgentTool, AgentToolResult } from '@earendil-works/pi-agent-core';
 import {
   loadState,
   saveState,
+  resolveUserByTelegramUser,
   type UserState,
 } from '../state/index.js';
 import type { Holding } from '../market/index.js';
@@ -29,12 +30,19 @@ function setPortfolio(state: UserState, portfolio: Record<string, Holding>): voi
   (state as unknown as PortfolioState).portfolio = portfolio;
 }
 
+function resolveUser(telegramUserId: number): UserState {
+  const state = resolveUserByTelegramUser(telegramUserId);
+  if (!state) {
+    throw new Error(`No user linked to Telegram ID ${telegramUserId}. User must register first via invite code.`);
+  }
+  return state;
+}
+
 function formatPortfolio(portfolio: Record<string, Holding>): string {
   const tickers = Object.keys(portfolio);
   if (tickers.length === 0) return 'Portfolio is empty. Use add_holding to add positions.';
 
   let totalCost = 0;
-  let totalValue = 0;
   const lines = [`Portfolio — ${tickers.length} position${tickers.length === 1 ? '' : 's'}:`, ''];
 
   for (const ticker of tickers) {
@@ -53,22 +61,22 @@ export function createPortfolioTools(): AgentTool[] {
   const addHolding: AgentTool = {
     name: 'add_holding',
     label: 'Add Holding',
-    description: 'Add or update a stock position in the user\'s portfolio. If the ticker already exists, updates the average price and units. Saves to user state file.',
+    description: 'Add or update a stock position in the user\'s portfolio. If the ticker already exists, updates the average price and units. The telegram_user_id is always from the message context — never ask the user for it.',
     parameters: Type.Object({
-      slug: Type.String({ description: 'User slug (matches data/users/<slug>.yaml).' }),
+      telegram_user_id: Type.Number({ description: 'Telegram user ID from the message context. Used to resolve the user automatically.' }),
       ticker: Type.String({ description: 'Stock ticker symbol (e.g. "AAPL", "MSFT"). Case-insensitive, stored uppercase.' }),
       avg_price: Type.Number({ description: 'Average cost per share in USD.' }),
       units: Type.Number({ description: 'Number of shares owned.' }),
       category: Type.Optional(Type.String({ description: 'Fund category (e.g. "SL Technology S1", "SL Healthcare S1").' })),
     }),
     async execute(_id, raw) {
-      const p = raw as { slug: string; ticker: string; avg_price: number; units: number; category?: string };
+      const p = raw as { telegram_user_id: number; ticker: string; avg_price: number; units: number; category?: string };
       try {
         if (p.avg_price <= 0) return fail('avg_price must be positive.');
         if (p.units <= 0) return fail('units must be positive.');
 
+        const state = resolveUser(p.telegram_user_id);
         const ticker = p.ticker.toUpperCase();
-        const state = loadState(p.slug);
         const portfolio = getPortfolio(state);
         const isUpdate = ticker in portfolio;
 
@@ -103,16 +111,16 @@ export function createPortfolioTools(): AgentTool[] {
   const removeHolding: AgentTool = {
     name: 'remove_holding',
     label: 'Remove Holding',
-    description: 'Remove a stock position from the user\'s portfolio.',
+    description: 'Remove a stock position from the user\'s portfolio. The telegram_user_id is always from the message context.',
     parameters: Type.Object({
-      slug: Type.String({ description: 'User slug.' }),
+      telegram_user_id: Type.Number({ description: 'Telegram user ID from the message context.' }),
       ticker: Type.String({ description: 'Stock ticker symbol to remove.' }),
     }),
     async execute(_id, raw) {
-      const p = raw as { slug: string; ticker: string };
+      const p = raw as { telegram_user_id: number; ticker: string };
       try {
+        const state = resolveUser(p.telegram_user_id);
         const ticker = p.ticker.toUpperCase();
-        const state = loadState(p.slug);
         const portfolio = getPortfolio(state);
 
         if (!(ticker in portfolio)) {
@@ -142,14 +150,14 @@ export function createPortfolioTools(): AgentTool[] {
   const getPortfolioTool: AgentTool = {
     name: 'get_portfolio',
     label: 'Get Portfolio',
-    description: 'Retrieve the user\'s saved portfolio. Shows all positions with cost basis. Use this before running portfolio analysis.',
+    description: 'Retrieve the user\'s saved portfolio. Shows all positions with cost basis. The telegram_user_id is always from the message context.',
     parameters: Type.Object({
-      slug: Type.String({ description: 'User slug.' }),
+      telegram_user_id: Type.Number({ description: 'Telegram user ID from the message context.' }),
     }),
     async execute(_id, raw) {
-      const p = raw as { slug: string };
+      const p = raw as { telegram_user_id: number };
       try {
-        const state = loadState(p.slug);
+        const state = resolveUser(p.telegram_user_id);
         const portfolio = getPortfolio(state);
         const text = formatPortfolio(portfolio);
         return ok(text, { portfolio, count: Object.keys(portfolio).length });
@@ -160,19 +168,19 @@ export function createPortfolioTools(): AgentTool[] {
   const updateHolding: AgentTool = {
     name: 'update_holding',
     label: 'Update Holding',
-    description: 'Update specific fields of an existing holding (avg_price, units, or category) without replacing the entire position. Use when the user wants to adjust a position without re-entering all fields.',
+    description: 'Update specific fields of an existing holding (avg_price, units, or category) without replacing the entire position. The telegram_user_id is always from the message context.',
     parameters: Type.Object({
-      slug: Type.String({ description: 'User slug.' }),
+      telegram_user_id: Type.Number({ description: 'Telegram user ID from the message context.' }),
       ticker: Type.String({ description: 'Stock ticker symbol.' }),
       avg_price: Type.Optional(Type.Number({ description: 'New average cost per share.' })),
       units: Type.Optional(Type.Number({ description: 'New number of shares.' })),
       category: Type.Optional(Type.String({ description: 'New fund category.' })),
     }),
     async execute(_id, raw) {
-      const p = raw as { slug: string; ticker: string; avg_price?: number; units?: number; category?: string };
+      const p = raw as { telegram_user_id: number; ticker: string; avg_price?: number; units?: number; category?: string };
       try {
+        const state = resolveUser(p.telegram_user_id);
         const ticker = p.ticker.toUpperCase();
-        const state = loadState(p.slug);
         const portfolio = getPortfolio(state);
 
         if (!(ticker in portfolio)) {
@@ -210,17 +218,17 @@ export function createPortfolioTools(): AgentTool[] {
   const clearPortfolio: AgentTool = {
     name: 'clear_portfolio',
     label: 'Clear Portfolio',
-    description: 'Remove all holdings from the user\'s portfolio. Requires confirmation — the agent should ask the user to confirm before calling this.',
+    description: 'Remove all holdings from the user\'s portfolio. Requires confirmation — the agent should ask the user to confirm before calling this. The telegram_user_id is always from the message context.',
     parameters: Type.Object({
-      slug: Type.String({ description: 'User slug.' }),
+      telegram_user_id: Type.Number({ description: 'Telegram user ID from the message context.' }),
       confirm: Type.Boolean({ description: 'Must be true to proceed. The agent should confirm with the user first.' }),
     }),
     async execute(_id, raw) {
-      const p = raw as { slug: string; confirm: boolean };
+      const p = raw as { telegram_user_id: number; confirm: boolean };
       try {
         if (!p.confirm) return fail('Set confirm=true to clear the portfolio. Confirm with the user first.');
 
-        const state = loadState(p.slug);
+        const state = resolveUser(p.telegram_user_id);
         const portfolio = getPortfolio(state);
         const count = Object.keys(portfolio).length;
 

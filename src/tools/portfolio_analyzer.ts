@@ -8,7 +8,7 @@ import {
   COMPANIES,
 } from '../market/index.js';
 import type { Holding } from '../market/index.js';
-import { loadState } from '../state/index.js';
+import { resolveUserByTelegramUser } from '../state/index.js';
 
 function ok<T>(text: string, details: T): AgentToolResult<T> {
   return { content: [{ type: 'text' as const, text }], details };
@@ -34,37 +34,34 @@ function formatAnalysisSection(title: string, icon: string, positions: Awaited<R
   return lines.join('\n');
 }
 
-function getSavedPortfolio(slug: string): Record<string, Holding> | null {
-  try {
-    const state = loadState(slug);
-    return (state as unknown as { portfolio?: Record<string, Holding> }).portfolio ?? null;
-  } catch {
-    return null;
-  }
+function getSavedPortfolio(telegramUserId: number): Record<string, Holding> | null {
+  const state = resolveUserByTelegramUser(telegramUserId);
+  if (!state) return null;
+  return (state as unknown as { portfolio?: Record<string, Holding> }).portfolio ?? null;
 }
 
 export function createPortfolioAnalyzerTool(): AgentTool {
   return {
     name: 'portfolio_analyzer',
     label: 'PortfolioAnalyzer',
-    description: `Analyze investment portfolio positions using the 3-axis framework. Three modes: (1) Pass slug to analyze the user's saved portfolio, (2) Pass tickers + holdings JSON for ad-hoc analysis, (3) Pass only tickers for market data summary. Classifies positions as Laggards, Overpriced, or Buy Opportunities with recommendations.`,
+    description: `Analyze investment portfolio positions using the 3-axis framework. Three modes: (1) Pass telegram_user_id to analyze the user's saved portfolio, (2) Pass tickers + holdings JSON for ad-hoc analysis, (3) Pass only tickers for market data summary. The telegram_user_id is always from the message context — never ask the user for it.`,
     parameters: Type.Object({
-      slug: Type.Optional(Type.String({ description: 'User slug. Loads saved portfolio from user state and analyzes all positions. Use this when the user wants to analyze their saved portfolio.' })),
-      tickers: Type.Optional(Type.String({ description: 'Comma-separated ticker symbols. Required if slug is not provided.' })),
-      holdings: Type.Optional(Type.String({ description: 'JSON string mapping tickers to cost info. Only used when slug is not provided.' })),
+      telegram_user_id: Type.Optional(Type.Number({ description: 'Telegram user ID from the message context. Loads saved portfolio and analyzes all positions. Use when the user wants to analyze their saved portfolio.' })),
+      tickers: Type.Optional(Type.String({ description: 'Comma-separated ticker symbols. Required if telegram_user_id is not provided.' })),
+      holdings: Type.Optional(Type.String({ description: 'JSON string mapping tickers to cost info. Only used when telegram_user_id is not provided.' })),
     }),
     async execute(_id, raw) {
-      const params = raw as { slug?: string; tickers?: string; holdings?: string };
+      const params = raw as { telegram_user_id?: number; tickers?: string; holdings?: string };
 
       try {
         let holdings: Record<string, Holding> | null = null;
         let tickerList: string[] = [];
 
         // Mode 1: Load from saved portfolio
-        if (params.slug) {
-          holdings = getSavedPortfolio(params.slug);
+        if (params.telegram_user_id) {
+          holdings = getSavedPortfolio(params.telegram_user_id);
           if (!holdings || Object.keys(holdings).length === 0) {
-            return fail(`No portfolio saved for user "${params.slug}". Use add_holding to build a portfolio first.`);
+            return fail(`No portfolio saved for Telegram user ${params.telegram_user_id}. Use add_holding to build a portfolio first.`);
           }
           tickerList = Object.keys(holdings);
         }
@@ -77,7 +74,7 @@ export function createPortfolioAnalyzerTool(): AgentTool {
         else if (params.tickers) {
           tickerList = params.tickers.split(',').map(t => t.trim().toUpperCase());
         } else {
-          return fail('Provide either slug (saved portfolio), tickers (market data), or holdings (ad-hoc analysis).');
+          return fail('Provide either telegram_user_id (saved portfolio), tickers (market data), or holdings (ad-hoc analysis).');
         }
 
         // Fetch all market data in parallel
