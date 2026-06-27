@@ -38,6 +38,10 @@ async function main(): Promise<void> {
   const model = getDeepSeekModel();
   console.log(`DeepSeek model: ${model.id}`);
 
+  // Start InvesterDrive webapp
+  const { startWebapp } = await import('./webapp/server.js');
+  startWebapp();
+
   if (!config.telegram.botToken) {
     console.log('TELEGRAM_BOT_TOKEN not set — running in CLI-only mode.');
   } else {
