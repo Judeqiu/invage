@@ -3,7 +3,7 @@ layout: default
 title: Invester — AI Investment Portfolio Analyzer
 ---
 
-**[Home](/invage/)** | **[Data Model](/invage/data-model)**
+**[Home](/invage/)** | **[Data Model](/invage/data-model.html)**
 
 # Invester
 

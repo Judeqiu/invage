@@ -3,7 +3,7 @@ layout: default
 title: Data Model — Invester
 ---
 
-**[Home](/invage/)** | **[Data Model](/invage/data-model)**
+**[Home](/invage/)** | **[Data Model](/invage/data-model.html)**
 
 # Data Model
 
