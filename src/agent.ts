@@ -6,6 +6,9 @@ import { createInviteTools } from './tools/invite.js';
 import { createPortfolioAnalyzerTool } from './tools/portfolio_analyzer.js';
 import { createPortfolioTools } from './tools/portfolio.js';
 import { createSendReportTool } from './tools/send_report.js';
+import { createBinDriveTools } from './tools/bindrive.js';
+import { createSaveReportTool } from './tools/save_report.js';
+import { createSnapshotTool } from './tools/snapshot.js';
 import { SKILLS } from './skills/index.js';
 import { config } from './config.js';
 
@@ -121,7 +124,12 @@ function frameworkTools(): AgentTool[] {
   const skillTool = createSkillTool();
   const userTools = createUserStateTools();
   const inviteTools = createInviteTools();
-  return [skillTool, ...userTools, ...inviteTools, createPortfolioAnalyzerTool(), ...createPortfolioTools(), createSendReportTool()];
+  return [
+    skillTool, ...userTools, ...inviteTools,
+    createPortfolioAnalyzerTool(), ...createPortfolioTools(),
+    createSendReportTool(), ...createBinDriveTools(),
+    createSaveReportTool(), ...createSnapshotTool(),
+  ];
 }
 
 export function getOrCreateAgent(userKey: string): Agent {

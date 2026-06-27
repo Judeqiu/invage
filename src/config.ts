@@ -27,6 +27,19 @@ export const config = {
     name: process.env.UTARUS_AGENT_NAME,
     purpose: process.env.UTARUS_AGENT_PURPOSE,
   },
+  webapp: {
+    port: parseInt(process.env.WEBAPP_PORT || '3001', 10),
+    adminCredentials: (() => {
+      const multi = process.env.ADMIN_CREDENTIALS;
+      if (multi) {
+        try { return JSON.parse(multi) as Record<string, string>; }
+        catch { console.error('ADMIN_CREDENTIALS is not valid JSON. Falling back to ADMIN_USERNAME/ADMIN_PASSWORD.'); }
+      }
+      const single = process.env.ADMIN_USERNAME || 'admin';
+      const pass = process.env.ADMIN_PASSWORD || '';
+      return { [single]: pass };
+    })(),
+  },
 } as const;
 
 export function resolveDataRoot(): string {

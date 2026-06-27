@@ -122,6 +122,7 @@ export function blankState(params: {
     profile: {
       display_name: params.displayName,
       contact_email: params.contactEmail,
+      drive_token: randomUUID(),
     },
     log: [{ ts: today, action: 'created' }],
   };
