@@ -35,6 +35,93 @@ Once the agent starts, type `/help` to see available commands.
 
 ---
 
+## Portfolio Management
+
+Invester maintains your portfolio in a persistent user state file. Once holdings are saved, you can analyze your portfolio at any time without re-entering positions.
+
+### Available Tools
+
+| Tool | Description |
+|------|-------------|
+| `add_holding` | Add or update a stock position (ticker, avg price, shares, category) |
+| `remove_holding` | Remove a position from portfolio |
+| `get_portfolio` | View all saved positions with cost basis |
+| `update_holding` | Update specific fields (price, shares, or category) |
+| `clear_portfolio` | Remove all positions (requires confirmation) |
+| `portfolio_analyzer` | Run 3-axis analysis on saved portfolio or ad-hoc positions |
+
+### Building Your Portfolio
+
+Chat with the agent to add positions:
+
+> **You:** Add AAPL to my portfolio — 50 shares at $200 average cost, under Technology fund
+> 
+> **Agent:** Added AAPL: 50 shares @ $200.00 (cost: $10,000.00) [SL Technology S1]
+
+> **You:** Also add MSFT — 30 shares at $300
+>
+> **Agent:** Added MSFT: 30 shares @ $300.00 (cost: $9,000.00)
+
+### Viewing Your Portfolio
+
+> **You:** Show my portfolio
+>
+> **Agent:**
+> ```
+> Portfolio — 2 positions:
+>
+>   AAPL     | 50 shares @ $200.00 | Cost: $10000.00 | SL Technology S1
+>   MSFT     | 30 shares @ $300.00 | Cost: $9000.00 | SL Technology S1
+>
+> Total cost basis: $19,000.00
+> ```
+
+### Updating Positions
+
+> **You:** I bought 10 more AAPL shares, update my average to $210
+>
+> **Agent:** Updated AAPL: 60 shares @ $210.00 (cost: $12,600.00) [SL Technology S1]
+
+### Analyzing Your Portfolio
+
+> **You:** Analyze my portfolio
+>
+> **Agent:** *(loads saved holdings, fetches real-time data, runs 3-axis analysis)*
+> ```
+> Portfolio Analysis — 2 positions
+>
+> 🟢 BUY OPPORTUNITIES — >15% Upside to Median (1)
+>
+>   MSFT   | Microsoft Corp               | P/L: +24.3% | Cost: $300.00 | Price: $372.97
+>          ↳ Median Target: $555.00 | Upside: +48.8%
+>          ↳ STRONG BUY — High conviction, >30% upside
+>
+> ── FULL PORTFOLIO (by P/L) ──
+>   AAPL   Apple Inc                    +41.9% ($283.78)
+>   MSFT   Microsoft Corp               +24.3% ($372.97)
+> ```
+
+### Ad-Hoc Analysis (No Saved Portfolio)
+
+You can also analyze positions without saving them:
+
+> **You:** Check AAPL and GOOGL prices
+>
+> **Agent:** *(fetches market data without portfolio context)*
+> ```
+> Market Data for AAPL, GOOGL
+>
+> AAPL (Apple Inc)
+>   Price: $283.78 | Median Target: $315.00 (upside: 11.0%)
+>   P/E: 34.4 | PEG: 2.37 | ROE: 141.5%
+>
+> GOOGL (Alphabet Inc)
+>   Price: $337.39 | Median Target: $430.00 (upside: 27.4%)
+>   P/E: 25.7 | PEG: 1.36 | ROE: 38.9%
+> ```
+
+---
+
 ## How It Works
 
 ### 3-Axis Analysis Framework
@@ -101,34 +188,47 @@ Positions where current price is well below the median analyst target.
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────┐
-│           Utarus Agent (TypeScript)          │
-│                                              │
-│  ┌──────────────┐    ┌───────────────────┐  │
-│  │  DeepSeek LLM │    │  Telegram Bot     │  │
-│  └──────┬───────┘    └────────┬──────────┘  │
-│         │                     │              │
-│         ▼                     ▼              │
-│  ┌──────────────────────────────────────┐   │
-│  │         portfolio_analyzer tool       │   │
-│  └──────────────────┬───────────────────┘   │
-│                     │                        │
-│         ┌───────────┼───────────┐            │
-│         ▼           ▼           ▼            │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐    │
-│  │  Prices  │ │  Targets │ │  Metrics │    │
-│  └──────────┘ └──────────┘ └──────────┘    │
-│         │           │           │            │
-│         └───────────┼───────────┘            │
-│                     ▼                        │
-│           ┌──────────────┐                   │
-│           │   Analyzer   │                   │
-│           │  (3-Axis)    │                   │
-│           └──────────────┘                   │
-│                     │                        │
-│                     ▼                        │
-│              Yahoo Finance API                │
-└─────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────┐
+│                Utarus Agent (TypeScript)               │
+│                                                       │
+│  ┌──────────────┐    ┌───────────────────┐           │
+│  │  DeepSeek LLM │    │  Telegram Bot     │           │
+│  └──────┬───────┘    └────────┬──────────┘           │
+│         │                     │                       │
+│         ▼                     ▼                       │
+│  ┌─────────────────────────────────────────────────┐ │
+│  │                   Tools Layer                    │ │
+│  │                                                  │ │
+│  │  ┌───────────────────┐  ┌────────────────────┐  │ │
+│  │  │  portfolio_tools   │  │ portfolio_analyzer  │  │ │
+│  │  │  (CRUD holdings)   │  │ (3-axis analysis)   │  │ │
+│  │  └─────────┬─────────┘  └──────────┬─────────┘  │ │
+│  │            │                       │             │ │
+│  │            ▼                       ▼             │ │
+│  │  ┌──────────────────────────────────────────┐   │ │
+│  │  │  User State (data/users/<slug>.yaml)      │   │ │
+│  │  │  └── portfolio: { AAPL: {...}, MSFT: {...}}│  │ │
+│  │  └──────────────────────────────────────────┘   │ │
+│  └─────────────────────────────────────────────────┘ │
+│                         │                             │
+│                         ▼                             │
+│  ┌─────────────────────────────────────────────────┐ │
+│  │              src/market/ Module                  │ │
+│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐        │ │
+│  │  │  Prices  │ │  Targets │ │  Metrics │        │ │
+│  │  └──────────┘ └──────────┘ └──────────┘        │ │
+│  │         │           │           │                │ │
+│  │         └───────────┼───────────┘                │ │
+│  │                     ▼                            │ │
+│  │           ┌──────────────┐                       │ │
+│  │           │   Analyzer   │                       │ │
+│  │           │  (3-Axis)    │                       │ │
+│  │           └──────────────┘                       │ │
+│  └─────────────────────────────────────────────────┘ │
+│                         │                             │
+│                         ▼                             │
+│                  Yahoo Finance API                     │
+└──────────────────────────────────────────────────────┘
 ```
 
 ### Key Components
@@ -140,32 +240,9 @@ Positions where current price is well below the median analyst target.
 | `src/market/fetch-targets.ts` | Analyst price targets (low/median/mean/high) |
 | `src/market/fetch-metrics.ts` | Financial metrics (P/E, PEG, ROE, P/B) |
 | `src/market/analyzer.ts` | 3-axis analysis engine |
-| `src/tools/portfolio_analyzer.ts` | Utarus tool that exposes analysis to the LLM |
+| `src/tools/portfolio.ts` | Portfolio CRUD tools (add/remove/update/get/clear) |
+| `src/tools/portfolio_analyzer.ts` | Analysis tool — reads saved portfolio or ad-hoc |
 | `src/skills/knowledge/investment-analysis.md` | Skill document with investment knowledge |
-
----
-
-## Usage Examples
-
-### Check a Stock
-
-Ask the agent:
-> "What's the current price and analyst target for AAPL?"
-
-The agent will fetch real-time data and show price, targets, and key metrics.
-
-### Analyze a Portfolio
-
-Provide holdings data:
-> "Analyze my portfolio: AAPL at $200 avg cost (50 shares), MSFT at $300 (30 shares), GOOGL at $140 (40 shares)"
-
-The agent runs the 3-axis analysis and classifies each position.
-
-### Get Buy Recommendations
-
-> "Which of my positions have the most upside?"
-
-The agent identifies Buy Opportunities (>15% upside to median target).
 
 ---
 

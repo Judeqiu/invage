@@ -8,6 +8,7 @@ import {
   COMPANIES,
 } from '../market/index.js';
 import type { Holding } from '../market/index.js';
+import { loadState } from '../state/index.js';
 
 function ok<T>(text: string, details: T): AgentToolResult<T> {
   return { content: [{ type: 'text' as const, text }], details };
@@ -33,22 +34,51 @@ function formatAnalysisSection(title: string, icon: string, positions: Awaited<R
   return lines.join('\n');
 }
 
+function getSavedPortfolio(slug: string): Record<string, Holding> | null {
+  try {
+    const state = loadState(slug);
+    return (state as unknown as { portfolio?: Record<string, Holding> }).portfolio ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export function createPortfolioAnalyzerTool(): AgentTool {
   return {
     name: 'portfolio_analyzer',
     label: 'PortfolioAnalyzer',
-    description: `Analyze investment portfolio positions using the 3-axis framework. Accepts ticker symbols, fetches current prices and analyst targets from Yahoo Finance, then classifies positions as: (1) Laggards — cost above highest analyst target, (2) Overpriced — current price above median analyst target, (3) Buy Opportunities — >15% upside to median target. Returns ranked analysis with recommendations. Use when the user asks about portfolio performance, stock analysis, buy/sell decisions, or investment opportunities.`,
+    description: `Analyze investment portfolio positions using the 3-axis framework. Three modes: (1) Pass slug to analyze the user's saved portfolio, (2) Pass tickers + holdings JSON for ad-hoc analysis, (3) Pass only tickers for market data summary. Classifies positions as Laggards, Overpriced, or Buy Opportunities with recommendations.`,
     parameters: Type.Object({
-      tickers: Type.String({ description: 'Comma-separated ticker symbols to analyze (e.g. "AAPL,MSFT,GOOGL")' }),
-      holdings: Type.Optional(Type.String({ description: 'JSON string mapping tickers to cost info: {"AAPL": {"avg_price": 150, "units": 100, "category": "SL Technology S1"}. If omitted, only fetches market data without position analysis.' })),
+      slug: Type.Optional(Type.String({ description: 'User slug. Loads saved portfolio from user state and analyzes all positions. Use this when the user wants to analyze their saved portfolio.' })),
+      tickers: Type.Optional(Type.String({ description: 'Comma-separated ticker symbols. Required if slug is not provided.' })),
+      holdings: Type.Optional(Type.String({ description: 'JSON string mapping tickers to cost info. Only used when slug is not provided.' })),
     }),
     async execute(_id, raw) {
-      const params = raw as Record<string, unknown>;
-      const tickers = params.tickers as string;
-      const holdingsJson = params.holdings as string | undefined;
+      const params = raw as { slug?: string; tickers?: string; holdings?: string };
 
       try {
-        const tickerList = tickers.split(',').map(t => t.trim().toUpperCase());
+        let holdings: Record<string, Holding> | null = null;
+        let tickerList: string[] = [];
+
+        // Mode 1: Load from saved portfolio
+        if (params.slug) {
+          holdings = getSavedPortfolio(params.slug);
+          if (!holdings || Object.keys(holdings).length === 0) {
+            return fail(`No portfolio saved for user "${params.slug}". Use add_holding to build a portfolio first.`);
+          }
+          tickerList = Object.keys(holdings);
+        }
+        // Mode 2: Ad-hoc holdings JSON
+        else if (params.holdings) {
+          holdings = JSON.parse(params.holdings) as Record<string, Holding>;
+          tickerList = Object.keys(holdings);
+        }
+        // Mode 3: Tickers only
+        else if (params.tickers) {
+          tickerList = params.tickers.split(',').map(t => t.trim().toUpperCase());
+        } else {
+          return fail('Provide either slug (saved portfolio), tickers (market data), or holdings (ad-hoc analysis).');
+        }
 
         // Fetch all market data in parallel
         const [prices, targets, metrics] = await Promise.all([
@@ -57,9 +87,8 @@ export function createPortfolioAnalyzerTool(): AgentTool {
           fetchMetrics(tickerList),
         ]);
 
-        // If holdings provided, run full 3-axis analysis
-        if (holdingsJson) {
-          const holdings: Record<string, Holding> = JSON.parse(holdingsJson);
+        // Run 3-axis analysis if holdings available
+        if (holdings) {
           const result = runFullAnalysis(holdings, prices, targets);
 
           let output = `Portfolio Analysis — ${result.fullAnalysis.length} positions\n\n`;
@@ -76,7 +105,7 @@ export function createPortfolioAnalyzerTool(): AgentTool {
           return ok(output, result);
         }
 
-        // No holdings — return market data summary
+        // Market data summary only
         let output = `Market Data for ${tickerList.join(', ')}\n\n`;
         for (const ticker of tickerList) {
           const price = prices[ticker];
