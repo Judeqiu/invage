@@ -29,6 +29,13 @@ export const SKILLS: readonly Skill[] = [
     kind: 'knowledge',
     keywords: ['admin', 'invite', 'onboard', 'code', 'revoke', 'privilege', 'telegram'],
   },
+  {
+    id: 'investment-analysis',
+    name: 'Investment Analysis',
+    description: 'Load when the user asks about portfolio analysis, stock evaluation, investment recommendations, P/E ratios, analyst targets, buy/sell decisions, or portfolio performance. Covers the 3-axis framework (Laggards, Overpriced, Buy Opportunities) and financial metrics interpretation.',
+    kind: 'knowledge',
+    keywords: ['portfolio', 'stocks', 'analysis', 'investment', 'P/E', 'targets', 'buy', 'sell', 'laggards', 'overpriced'],
+  },
 ];
 
 export function getSkill(id: string): Skill | undefined {

@@ -3,6 +3,7 @@ import { getDeepSeekModel } from './llm/index.js';
 import { createSkillTool } from './tools/skill-tool.js';
 import { createUserStateTools } from './tools/user-state.js';
 import { createInviteTools } from './tools/invite.js';
+import { createPortfolioAnalyzerTool } from './tools/portfolio_analyzer.js';
 import { SKILLS } from './skills/index.js';
 import { config } from './config.js';
 
@@ -118,7 +119,7 @@ function frameworkTools(): AgentTool[] {
   const skillTool = createSkillTool();
   const userTools = createUserStateTools();
   const inviteTools = createInviteTools();
-  return [skillTool, ...userTools, ...inviteTools];
+  return [skillTool, ...userTools, ...inviteTools, createPortfolioAnalyzerTool()];
 }
 
 export function getOrCreateAgent(userKey: string): Agent {
