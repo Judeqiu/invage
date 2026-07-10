@@ -1,29 +1,19 @@
-import express from 'express';
-import cookieParser from 'cookie-parser';
-import { config } from '../config.js';
-import router from './routes.js';
+/**
+ * Invage BinDrive web portal — re-exports the Utarus BinDrive server.
+ *
+ * Auth: user.auth_token from data/users/<slug>.yaml (same as Binary/Utarus).
+ * Run separately: npm run webapp  (or systemd unit), same as Binary.
+ */
 
-export function startWebapp(): void {
-  const app = express();
+import { startBinDrive } from 'utarus';
 
-  app.use(express.urlencoded({ extended: false }));
-  app.use(express.json({ limit: '10mb' }));
-  app.use(cookieParser());
+export { startBinDrive, createBinDriveApp } from 'utarus';
 
-  app.use(router);
+const isMain =
+  process.argv[1] &&
+  (process.argv[1].endsWith('src/webapp/server.ts') ||
+    process.argv[1].endsWith('dist/webapp/server.js'));
 
-  app.get('/health', (_req, res) => {
-    res.json({ status: 'ok', service: 'invester-drive', timestamp: new Date().toISOString() });
-  });
-
-  const port = config.webapp.port;
-  app.listen(port, () => {
-    console.log(`InvesterDrive running on http://localhost:${port}`);
-  });
-}
-
-// When run directly via `npm run webapp`
-const isMain = process.argv[1]?.endsWith('server.ts') || process.argv[1]?.endsWith('server.js');
 if (isMain) {
-  startWebapp();
+  startBinDrive();
 }

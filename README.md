@@ -1,308 +1,142 @@
-# Utarus — A Generic Agent Framework
+# Invage (Invester) — Portfolio Analyst Agent
 
-Utarus is a small TypeScript framework for building LLM agents that have **per-user state**, **admin-controlled onboarding**, and **tool-enforced rules**. It is the generic distillation of a production agent codebase — everything domain-specific has been stripped, leaving a clean skeleton you can fork into any vertical.
+Invage is a **domain agent** for investment portfolio analysis. It is built the same way as [Binary](https://github.com/Judeqiu/binary):
 
-Built on [`@earendil-works/pi-agent-core`](https://www.npmjs.com/package/@earendil-works/pi-agent-core). Same skeleton as [Marie](https://judeqiu.github.io/marie/) and [Binary](https://github.com/Judeqiu/binary) — different domain.
+| Layer | Source |
+|-------|--------|
+| Framework (Telegram + Slack + CLI, invite/admin, user YAML, skills, firecrawl) | [`utarus`](https://github.com/Judeqiu/utarus) |
+| BinDrive file portal | **Utarus** (`startBinDrive` / `bindrive_*` tools) |
+| Domain (portfolio, Yahoo Finance, 3-axis analysis, reports) | **this repo** |
 
-> **Documentation site:** see `docs/index.html` or the published GitHub Pages link in the repo description.
+Channels (same agent process, shared user/portfolio YAML):
 
----
+| Channel | Pattern | Env |
+|---------|---------|-----|
+| **Telegram** | like Binary | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ADMIN_IDS` |
+| **Slack** | like Marie (Socket Mode via Utarus) | `SLACK_BOT_TOKEN`, `SLACK_APP_TOKEN`, `SLACK_SIGNING_SECRET`, `SLACK_ADMIN_IDS` |
 
-## What you get out of the box
+```
+invage (domain)  ──depends on──►  utarus (framework + BinDrive)
+     │
+     ├── createFramework({ extension: invageExtension })
+     ├── startTelegram() + startSlack()   # either or both
+     ├── src/tools/*          portfolio / analyzer / report / snapshot
+     ├── src/market/*         Yahoo Finance + 3-axis engine
+     └── src/webapp/server.ts re-exports startBinDrive from utarus
+```
 
-- **CLI + Telegram interfaces** that share a per-user agent pool (24h TTL eviction, 100-agent cap).
-- **Per-user YAML state** at `data/users/<slug>.yaml`. The state file is the source of truth.
-- **Invite-code onboarding** (`INV-XXXXXXXX`) — admins issue codes, recipients redeem via a short Q&A.
-- **Admin onboard codes** (`ADM-XXXXXXXX`) — admins can grant admin rights to other Telegram users at runtime.
-- **Skill framework** — markdown knowledge docs the agent loads on demand via `use_skill`.
-- **TypeBox-schematized tools** — every tool parameter is validated by the runtime before your code runs.
-- **Dynamic admin list** — file-backed, no restart needed when new admins are granted.
+Pinned like Binary:
 
-## What you have to add
-
-- **Your domain tools.** The framework ships user-management primitives (init, get, list, link telegram, update profile) and invite/admin tools. Anything past that — phase machines, metrics, scrapers, integrations — goes in `src/tools/`.
-- **Your skills.** Drop a markdown file in `src/skills/knowledge/` and register it in `src/skills/registry.ts`.
-- **Your system-prompt purpose.** Set `UTARUS_AGENT_NAME` and `UTARUS_AGENT_PURPOSE` in `.env`.
+```json
+"utarus": "github:Judeqiu/utarus#bdd9962"
+```
 
 ---
 
 ## Prerequisites
 
-- **Node.js 20+** and npm
-- A **DeepSeek API key** (the LLM). Get one at https://platform.deepseek.com → API Keys
-- A **Telegram bot token** — optional, only if you want the Telegram interface. Talk to [@BotFather](https://t.me/BotFather), run `/newbot`, copy the token.
+- Node.js 20+
+- DeepSeek API key
+- Optional: Telegram bot token, `gws` CLI for email reports
 
 ## Install
 
 ```bash
-git clone <your-fork-url>/utarus.git
-cd utarus
+git clone https://github.com/Judeqiu/invage.git
+cd invage
 npm install
 cp .env.example .env
 ```
 
-Edit `.env` and fill in the values:
+Edit `.env`:
 
 ```env
-# Required — the agent will not start without these
 DEEPSEEK_API_KEY=sk-...
-UTARUS_AGENT_NAME=Acme Support Bot
-UTARUS_AGENT_PURPOSE=You are the support bot for Acme Corp. Help users file tickets, check order status, and answer FAQ. Decline anything off-scope.
+UTARUS_AGENT_NAME=Invester
+UTARUS_LOADED_BY_HOST=1
+# Prefer ABSOLUTE path (relative ./data lands under node_modules/utarus)
+UTARUS_DATA_ROOT=/absolute/path/to/invage/data
 
-# Required for Telegram
+# Telegram (optional)
 TELEGRAM_BOT_TOKEN=
-TELEGRAM_ADMIN_IDS=123456789
+TELEGRAM_ADMIN_IDS=
 
-# Optional — defaults to ./data
-UTARUS_DATA_ROOT=./data
+# Slack Socket Mode (optional — same as Marie credentials shape)
+SLACK_BOT_TOKEN=
+SLACK_APP_TOKEN=
+SLACK_SIGNING_SECRET=
+SLACK_ADMIN_IDS=
+
+WEBAPP_PORT=3001
+WEBAPP_ADMIN_CREDENTIALS={"admin":"change-me"}
+UTARUS_REPORTS_URL=http://localhost:3001
 ```
-
-The `.env` file is gitignored. **Never commit it.**
 
 ## Run
 
 ```bash
-npm run dev          # tsx watch — hot reload on save
+# Agent: CLI + any configured chat interfaces
+npm run dev
+
+# Production: both bots, no CLI
+BOT_ONLY=true npm run dev
+
+# Telegram only / Slack only
+TELEGRAM_ONLY=true npm run dev
+SLACK_ONLY=true npm run dev
+
+# BinDrive portal — separate process (same as Binary systemd bindrive unit)
+npm run webapp
 ```
-
-On startup you'll see:
-
-```
-Acme Support Bot starting...
-Initializing DeepSeek model...
-DeepSeek model: deepseek-v4-pro
-TELEGRAM_BOT_TOKEN not set — running in CLI-only mode.
-Acme Support Bot running. Type /help for commands.
-
-acme-support-bot>
-```
-
-If `TELEGRAM_BOT_TOKEN` is set, the bot starts in parallel with the CLI. You can use either interface; they share the same per-user agent pool.
 
 ---
 
-## CLI command reference
+## Architecture (parity with Binary)
 
-| Command | What it does |
-|---|---|
-| `/help` | Show command list |
-| `/list` | List all users |
-| `/get <slug>` | Print session announcement for one user |
-| `/clear` | Clear the current agent's conversation context |
-| `/exit` | Quit |
+```
+src/
+  index.ts              # dotenv → createFramework → Telegram + Slack + CLI
+  extension.ts          # DomainExtension (purpose, tools, skills, enrichMessage)
+  skills.ts             # registerDomainSkill for investment-analysis + bindrive
+  admin-bootstrap.ts    # TELEGRAM_ADMIN_IDS + SLACK_ADMIN_IDS → user YAML
+  webapp/server.ts      # re-export startBinDrive from utarus
+  state/portfolio-state.ts   # portfolio map on user YAML (tg + slack resolve)
+  market/               # Yahoo Finance + analyzer
+  tools/                # domain tools (telegram_user_id OR slack_user_id)
+  report/               # HTML report template
+```
 
-Slash commands bypass the LLM for speed. Anything else is sent to the agent as a prompt.
-
-## Telegram commands
-
-| Command | What it does |
-|---|---|
-| `/start` `/help` | Show help |
-| `/list` | List all users (admin only) |
-| `/get <slug>` | Show user record (admin only) |
-| `/clear` | Clear your conversation context |
-| `/invite [comment]` | Issue invite code (admin only) |
-| `/invites [all\|unused\|used]` | List invite codes (admin only) |
-| `/admincode [comment]` | Issue admin onboard code (admin only) |
-| `/admincodes [all\|unused\|used]` | List admin onboard codes (admin only) |
-| `/revoke <code>` | Revoke unused admin code (admin only) |
-
-Each Telegram user gets an isolated conversation context (keyed by `tg_<userId>`).
+**Not forked here** (live in Utarus): agent pool, config, Telegram/Slack/CLI, invite tools, user-state tools, BinDrive routes/auth, skill-tool, firecrawl, write_report.
 
 ---
 
-## Architecture
+## Domain tools
 
-Five layers, top to bottom:
+| Tool | Role |
+|------|------|
+| `add_holding` / `update_holding` / `remove_holding` / `get_portfolio` / `clear_portfolio` | Portfolio CRUD on `data/users/<slug>.yaml` |
+| `portfolio_analyzer` | 3-axis analysis + market summary |
+| `save_report` | HTML report → BinDrive + signed URL |
+| `save_snapshot` / `list_snapshots` | Dated P/L JSON snapshots |
+| `send_report` | Email via `gws` Gmail CLI |
 
-```
-┌─────────────────────────────────────────────────────────┐
-│ Interface — CLI (readline) + Telegram (telegraf)        │
-│   Per-user agent key: cli_session | tg_<userId>         │
-└─────────────────────────────────────────────────────────┘
-                          │
-┌─────────────────────────────────────────────────────────┐
-│ Agent — src/agent.ts                                    │
-│   One pi-agent-core Agent per user (24h TTL, cap 100)   │
-│   System prompt composed from UTARUS_AGENT_NAME/PURPOSE │
-└─────────────────────────────────────────────────────────┘
-                          │
-┌─────────────────────────────────────────────────────────┐
-│ Skills — src/skills/                                    │
-│   Markdown knowledge docs loaded on demand via use_skill│
-└─────────────────────────────────────────────────────────┘
-                          │
-┌─────────────────────────────────────────────────────────┐
-│ Tools — src/tools/                                      │
-│   TypeBox-schematized. Hard rules live here as code.    │
-│   The LLM cannot bypass what the tool refuses.          │
-└─────────────────────────────────────────────────────────┘
-                          │
-┌─────────────────────────────────────────────────────────┐
-│ Persistence — src/state/                                │
-│   YAML per user at data/users/<slug>.yaml               │
-│   + invites.yaml, admin_codes.yaml, admin_ids.yaml     │
-└─────────────────────────────────────────────────────────┘
-```
-
-The full reference is on the documentation site.
+Framework also provides: `get_user`, invite/admin codes, `bindrive_*`, `use_skill`, etc.
 
 ---
 
-## Extending the framework
+## Data model
 
-### Add a tool
+Users: `data/users/<slug>.yaml` (Utarus shape + optional `portfolio:` map).
 
-1. Create `src/tools/my-tool.ts`:
+BinDrive: `data/drive/<slug>/` (served by Utarus BinDrive; login with `user.auth_token`).
 
-```typescript
-import { Type } from 'typebox';
-import type { AgentTool } from '@earendil-works/pi-agent-core';
-
-export function createMyTool(): AgentTool {
-  return {
-    name: 'my_tool',
-    label: 'My Tool',
-    description: 'What this tool does, in one paragraph.',
-    parameters: Type.Object({
-      foo: Type.String({ description: 'What foo means.' }),
-    }),
-    async execute(_id, raw) {
-      const { foo } = raw as { foo: string };
-      return {
-        content: [{ type: 'text', text: `Did the thing with ${foo}.` }],
-        details: { foo },
-      };
-    },
-  };
-}
-```
-
-2. Register it in `src/agent.ts`:
-
-```typescript
-function frameworkTools(): AgentTool[] {
-  const skillTool = createSkillTool();
-  const userTools = createUserStateTools();
-  const inviteTools = createInviteTools();
-  const myTool = createMyTool();   // <-- add
-  return [skillTool, ...userTools, ...inviteTools, myTool];
-}
-```
-
-That's it. The tool's TypeBox schema is the validation contract — the LLM cannot call it with bad parameters.
-
-### Add a skill
-
-1. Write `src/skills/knowledge/my-skill.md`.
-2. Register it in `src/skills/registry.ts`:
-
-```typescript
-export const SKILLS: readonly Skill[] = [
-  // ...
-  {
-    id: 'my-skill',
-    name: 'My Skill',
-    description: 'Load when ... <be specific — the LLM picks the skill from this description alone>',
-    kind: 'knowledge',
-    keywords: ['my', 'skill', 'keywords'],
-  },
-];
-```
-
-The agent will start offering the skill via `use_skill` automatically.
-
-### Extend the user state
-
-The framework reserves `user.{id,slug,created_at,telegram_user_ids,auth_token}`, `profile.{display_name,contact_email}`, and `log[]`. Add anything else under `profile` or as a new top-level key — the load/save machinery only enforces the load-bearing shape:
-
-```yaml
-user:
-  id: ...
-  slug: acme-trading
-  created_at: 2026-06-27
-  telegram_user_ids: [123456]
-  auth_token: ...
-profile:
-  display_name: Acme Trading
-  contact_email: ops@acme.sg
-  # ↓ your domain fields
-  tier: pro
-  plan_expires: 2026-12-31
-  custom_data:
-    anything: goes
-log:
-  - ts: 2026-06-27
-    action: created
-```
-
-Write a domain-specific `update_my_fields` tool to mutate these — don't shoehorn them into `update_profile`.
+See [docs/data-model.md](docs/data-model.md).
 
 ---
 
-## Where state lives
-
-```
-data/
-├── users/
-│   └── <slug>.yaml       # one YAML per user
-├── invites.yaml          # invite codes
-├── admin_codes.yaml      # admin onboard codes
-└── admin_ids.yaml        # dynamically-granted admin Telegram IDs
-```
-
-The `data/` directory is gitignored. Files are created on first use.
-
----
-
-## Troubleshooting
-
-**`Missing required environment variables: DEEPSEEK_API_KEY, UTARUS_AGENT_NAME, UTARUS_AGENT_PURPOSE`**
-→ `.env` not loaded, or values empty. `cp .env.example .env` and fill in all three.
-
-**`Telegram bot doesn't respond`**
-→ Check `TELEGRAM_BOT_TOKEN` is set and valid. The CLI prints `[Telegram] Failed to start: ...` on launch if the token is rejected. The bot must be started via `/start` in Telegram before it accepts messages.
-
-**`You need an invite code to use this bot`**
-→ Non-admin Telegram users must redeem an `INV-XXXXXXXX` code before they can chat. Admins issue codes via `/invite`.
-
----
-
-## Development
+## Tests
 
 ```bash
-npm run dev          # tsx watch — hot reload on save
-npm run build        # tsc to dist/
-npm start            # run compiled build (still needs .env)
-npm test             # vitest, single run
-npm run test:watch   # vitest watch mode
+npm test
+npm run build
 ```
-
-Tests cover the slug validator, `blankState`, and the fail-fast guards.
-
----
-
-## Software dependencies
-
-Runtime:
-- [`@earendil-works/pi-agent-core`](https://www.npmjs.com/package/@earendil-works/pi-agent-core) — agent runtime, tool loop, event subscribe
-- [`@earendil-works/pi-ai`](https://www.npmjs.com/package/@earendil-works/pi-ai) — DeepSeek model adapter
-- [`telegraf`](https://www.npmjs.com/package/telegraf) — Telegram bot client
-- [`typebox`](https://www.npmjs.com/package/typebox) — JSON-schema-compatible parameter validation
-- [`yaml`](https://www.npmjs.com/package/yaml) — parse and stringify state files
-- [`dotenv`](https://www.npmjs.com/package/dotenv) — `.env` loader
-
-Dev:
-- [`typescript`](https://www.npmjs.com/package/typescript) — strict mode
-- [`tsx`](https://www.npmjs.com/package/tsx) — TS runner for dev
-- [`vitest`](https://www.npmjs.com/package/vitest) — test runner
-
-External services:
-- **DeepSeek API** — required (the LLM)
-- **Telegram Bot API** — optional (omit for CLI-only)
-
----
-
-## License
-
-ISC
