@@ -1,0 +1,125 @@
+# Slack App Manifest for Invester (Invage)
+#
+# Create the app:
+#   1. https://api.slack.com/apps → Create New App → From an app manifest
+#   2. Pick workspace → paste this file (YAML) → Next → Create
+#   3. After create (manual steps Slack cannot put in the manifest):
+#        Settings → Socket Mode → ensure On
+#        Settings → Basic Information → App-Level Tokens
+#          → Generate Token: name=invage-socket, scope=connections:write
+#          → copy xapp-...  → SLACK_APP_TOKEN
+#        OAuth & Permissions → Install to Workspace
+#          → copy xoxb-...  → SLACK_BOT_TOKEN
+#        Basic Information → Signing Secret
+#          → copy           → SLACK_SIGNING_SECRET
+#        Your profile → ⋯ → Copy member ID
+#          → U…             → SLACK_ADMIN_IDS
+#
+# Deployed agent (lextok03): put those four values in /opt/invage/.env then
+#   systemctl enable invage && systemctl restart invage
+#
+# Slash command URLs below are placeholders — Socket Mode delivers commands
+# over the websocket, so the URL is unused at runtime.
+#
+# IMPORTANT: Do not use /invite — that name is reserved by Slack's built-in
+# invite-to-channel command. Use /invitecode instead (matches Utarus).
+
+display_information:
+  name: Invester
+  description: AI portfolio analyst — holdings, 3-axis analysis, BinDrive reports (Utarus).
+  background_color: "#1a1a2e"
+  long_description: |
+    Invester (Invage) is a portfolio analysis agent. Chat in DM or @mention in channels.
+    Track holdings, run Laggards / Overpriced / Buy Opportunity analysis, save reports
+    to BinDrive. Invite-gated onboarding. Same backend also supports Telegram.
+
+features:
+  bot_user:
+    display_name: Invester
+    always_online: true
+
+  app_home:
+    home_tab_enabled: false
+    messages_tab_enabled: true
+    messages_tab_read_only_enabled: false
+
+  # request_url is required by the manifest schema; Socket Mode ignores it at runtime.
+  slash_commands:
+    - command: /help
+      description: Show Invester commands
+      usage_hint: "(no arguments)"
+      url: https://example.com/slack/commands
+      should_escape: false
+    - command: /clear
+      description: Clear your conversation context
+      usage_hint: "(no arguments)"
+      url: https://example.com/slack/commands
+      should_escape: false
+    - command: /list
+      description: List users (admin only)
+      usage_hint: "(no arguments)"
+      url: https://example.com/slack/commands
+      should_escape: false
+    - command: /get
+      description: Show a user record (admin only)
+      usage_hint: "[slug]"
+      url: https://example.com/slack/commands
+      should_escape: false
+    # NOTE: /invite is reserved by Slack (built-in channel invite). Use /invitecode.
+    - command: /invitecode
+      description: Issue an invite code (admin only)
+      usage_hint: "[optional comment]"
+      url: https://example.com/slack/commands
+      should_escape: false
+    - command: /invites
+      description: List invite codes (admin only)
+      usage_hint: "[all|unused|used]"
+      url: https://example.com/slack/commands
+      should_escape: false
+    - command: /admincode
+      description: Issue an admin onboard code (admin only)
+      usage_hint: "[optional comment]"
+      url: https://example.com/slack/commands
+      should_escape: false
+    - command: /admincodes
+      description: List admin onboard codes (admin only)
+      usage_hint: "[all|unused|used]"
+      url: https://example.com/slack/commands
+      should_escape: false
+    - command: /revoke
+      description: Revoke an unused admin code (admin only)
+      usage_hint: "ADM-XXXXXXXX"
+      url: https://example.com/slack/commands
+      should_escape: false
+
+oauth_config:
+  scopes:
+    bot:
+      - app_mentions:read
+      - channels:history
+      - channels:read
+      - chat:write
+      - commands
+      - groups:history
+      - groups:read
+      - im:history
+      - im:read
+      - im:write
+      - mpim:history
+      - mpim:read
+      - mpim:write
+      - users:read
+
+settings:
+  event_subscriptions:
+    bot_events:
+      - app_mention
+      - message.channels
+      - message.groups
+      - message.im
+      - message.mpim
+  interactivity:
+    is_enabled: false
+  org_deploy_enabled: false
+  socket_mode_enabled: true
+  token_rotation_enabled: false

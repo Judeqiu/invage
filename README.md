@@ -91,6 +91,34 @@ npm run webapp
 
 ---
 
+## Slack app from manifest
+
+Ready-made manifests (Socket Mode + slash commands matching Utarus):
+
+| File | Format |
+|------|--------|
+| [`slack-app-manifest.yaml`](slack-app-manifest.yaml) | YAML (recommended in Slack UI) |
+| [`slack-app-manifest.json`](slack-app-manifest.json) | JSON |
+
+**Create the app in ~1 minute:**
+
+1. Open [api.slack.com/apps](https://api.slack.com/apps) → **Create New App** → **From an app manifest**
+2. Choose workspace → paste **`slack-app-manifest.yaml`** → Create
+3. Still required manually (Slack does not put these in the manifest):
+   - **App-Level Token** (`connections:write`) → `SLACK_APP_TOKEN` (`xapp-...`)
+   - **Install to Workspace** → `SLACK_BOT_TOKEN` (`xoxb-...`)
+   - **Signing Secret** → `SLACK_SIGNING_SECRET`
+   - Your **member ID** → `SLACK_ADMIN_IDS`
+4. Put them in `.env` (or `/opt/invage/.env` on lextok03) and start the agent:
+
+```bash
+ssh lextok03 'systemctl enable invage && systemctl restart invage && journalctl -u invage --no-pager -n 20'
+```
+
+Slash command `url` fields in the manifest are placeholders; Socket Mode delivers commands over the websocket.
+
+---
+
 ## Architecture (parity with Binary)
 
 ```
