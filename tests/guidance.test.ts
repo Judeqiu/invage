@@ -24,6 +24,14 @@ describe('renderGuidance', () => {
   it('returns analysis subcommand', () => {
     const text = renderGuidance('analysis');
     expect(text).toMatch(/3-axis|Laggard|Buy opportunities/i);
+    expect(text).toMatch(/investment-analysis/i);
+    expect(text).toMatch(/Stock evaluation|valuation/i);
+  });
+
+  it('lists investment-analysis in skills catalog', () => {
+    const text = renderGuidance('skills');
+    expect(text).toMatch(/investment-analysis/i);
+    expect(text).not.toMatch(/financial-analysis/i);
   });
 
   it('unknown topic falls back with hint', () => {
