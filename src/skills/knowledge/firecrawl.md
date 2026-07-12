@@ -92,10 +92,21 @@ When discussing categories, map to benchmarks and sector news:
 
 ### C. Fundamentals deep dive
 
-1. Market tools for PE/PEG/ROE when available.
+1. Market tools for PE/PEG/ROE/P/B when available.
 2. Scrape Yahoo `/key-statistics` and `/analysis`.
 3. Optional: Finviz quote page for compact multi-metric view.
 4. Compare to sector peers with a second search if user asks.
+
+### C2. Undervalued / value metrics (supports investment-analysis Part C)
+
+When the user wants **undervalued discovery**, EV/EBIT, FCF, ROIC, or peer cheapness beyond analyzer fields:
+
+1. Prefer `portfolio_analyzer` first for PE/forward PE/PEG/P/B/ROE/targets.
+2. `scrape` `https://finance.yahoo.com/quote/{TICKER}/key-statistics` for enterprise value, margins, cash flow fields when present.
+3. `scrape` `https://finviz.com/quote.ashx?t={TICKER}` for compact multi-metric snapshot (valuation, profitability, debt).
+4. Optional peers: search `"{TICKER} peers"` or scrape competitor quotes; compare same-sector multiples only.
+5. For idea lists (not a full market API): search Finviz/Yahoo screen articles carefully, extract **tickers only**, then run `portfolio_analyzer` + investment-analysis trap gate — never paste an unfiltered screener as "undervalued."
+6. Report only numbers that appear in tool output; if EV/EBIT or F-Score absent, say **unavailable** (do not invent).
 
 ### D. Macro / rates impact on portfolio
 
@@ -143,7 +154,8 @@ https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=AAPL&type=10-K&co
 
 | Data type | Preferred tool / source |
 |-----------|-------------------------|
-| Live quote, PE, targets for holdings | `portfolio_analyzer` / market fetch (Yahoo API) |
+| Live quote, PE, P/B, ROE, targets for holdings | `portfolio_analyzer` / market fetch (Yahoo API) |
+| EV, FCF, detailed key stats, Finviz multi-metric | Firecrawl scrape Yahoo key-statistics / Finviz quote |
 | News, narrative, “why moved” | Firecrawl search + scrape |
 | Filings, risk factors | SEC / IR via Firecrawl |
 | Cost basis, units, P/L | `get_portfolio` only |

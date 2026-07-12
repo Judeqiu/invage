@@ -13,15 +13,42 @@ export interface AnalystTarget {
   targetHighPrice: number | null;
 }
 
+/** Live fundamentals from Yahoo; derived yields are computed only when inputs exist (no invented defaults). */
 export interface FinancialMetrics {
   ticker: string;
-  trailingPE: number | null;
-  pegRatio: number | null;
-  forwardPE: number | null;
-  priceToBook: number | null;
-  returnOnEquity: number | null;
   shortName: string;
   sector: string;
+  /** Yahoo quote / key stats */
+  trailingPE: number | null;
+  forwardPE: number | null;
+  pegRatio: number | null;
+  priceToBook: number | null;
+  returnOnEquity: number | null;
+  returnOnAssets: number | null;
+  marketCap: number | null;
+  enterpriseValue: number | null;
+  /** Yahoo enterpriseToEbitda when present */
+  enterpriseToEbitda: number | null;
+  ebitda: number | null;
+  freeCashflow: number | null;
+  operatingCashflow: number | null;
+  totalCash: number | null;
+  totalDebt: number | null;
+  debtToEquity: number | null;
+  currentRatio: number | null;
+  profitMargins: number | null;
+  operatingMargins: number | null;
+  grossMargins: number | null;
+  revenueGrowth: number | null;
+  earningsGrowth: number | null;
+  /** freeCashflow / marketCap when both present (decimal, e.g. 0.05 = 5%) */
+  fcfYield: number | null;
+  /** 1 / trailingPE when PE > 0 */
+  earningsYield: number | null;
+  /** freeCashflow / enterpriseValue when both present */
+  fcfYieldOnEv: number | null;
+  /** Set when the Yahoo fetch for this ticker failed entirely */
+  fetchError?: string;
 }
 
 export interface Holding {
@@ -57,4 +84,19 @@ export interface AnalysisResult {
   overpriced: PositionAnalysis[];
   buyOpportunities: PositionAnalysis[];
   fullAnalysis: PositionAnalysis[];
+}
+
+export type CheapnessVerdict = 'YES' | 'MIXED' | 'NO' | 'UNKNOWN';
+export type QualityVerdict = 'STRONG' | 'OK' | 'WEAK' | 'UNKNOWN';
+export type TrapRisk = 'LOW' | 'ELEVATED' | 'HIGH' | 'UNKNOWN';
+
+export interface ValueAssessment {
+  ticker: string;
+  cheapness: CheapnessVerdict;
+  quality: QualityVerdict;
+  trapRisk: TrapRisk;
+  /** Human-readable evidence lines with numbers */
+  signals: string[];
+  /** One-line agent summary */
+  summary: string;
 }

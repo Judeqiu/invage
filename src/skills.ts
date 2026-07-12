@@ -23,7 +23,7 @@ const CATALOG: RawSkill[] = [
     id: 'investment-analysis',
     name: 'Investment Analysis',
     description:
-      'Core Invester analysis skill. Load for portfolio 3-axis (Laggards, Overpriced, Buy Opportunities), stock evaluation, valuation (DCF/multiples/PEG), PE/ROE metrics, analyst targets, buy/sell/hold, fundamentals, moat/value/growth, or "analyze TICKER" / "what should I do with my stocks".',
+      'Core Invester analysis skill. Load for portfolio 3-axis (Laggards, Overpriced, Buy Opportunities), stock evaluation, undervalued discovery funnel (cheap ∩ quality ∩ trap gate), value traps, composite multiples (PE/PEG/P/B/ROE + EV/FCF via Firecrawl), Magic Formula/Piotroski-style checks, valuation (DCF/multiples), analyst targets, buy/sell/hold, fundamentals, moat/value/growth, "find undervalued stocks", or "analyze TICKER" / "what should I do with my stocks".',
     keywords: [
       'portfolio',
       'stocks',
@@ -32,6 +32,7 @@ const CATALOG: RawSkill[] = [
       'P/E',
       'PEG',
       'ROE',
+      'P/B',
       'targets',
       'buy',
       'sell',
@@ -45,6 +46,16 @@ const CATALOG: RawSkill[] = [
       'ticker',
       'undervalued',
       'overvalued',
+      'value trap',
+      'cheap',
+      'screen',
+      'Magic Formula',
+      'Piotroski',
+      'margin of safety',
+      'FCF',
+      'EV/EBIT',
+      'discover',
+      'find stocks',
     ],
   },
   {

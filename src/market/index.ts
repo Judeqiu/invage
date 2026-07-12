@@ -8,6 +8,12 @@ export {
   analyzeBuyOpportunities,
   runFullAnalysis,
 } from './analyzer.js';
+export {
+  assessValue,
+  rankValueCandidates,
+  deriveYields,
+  emptyMetrics,
+} from './value-assess.js';
 export { COMPANIES, BENCHMARKS, THRESHOLDS } from './config.js';
 export type {
   MarketQuote,
@@ -16,4 +22,8 @@ export type {
   Holding,
   PositionAnalysis,
   AnalysisResult,
+  ValueAssessment,
+  CheapnessVerdict,
+  QualityVerdict,
+  TrapRisk,
 } from './types.js';

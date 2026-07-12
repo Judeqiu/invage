@@ -5,9 +5,11 @@ import {
   fetchTargets,
   fetchMetrics,
   runFullAnalysis,
+  assessValue,
+  rankValueCandidates,
   COMPANIES,
 } from '../market/index.js';
-import type { Holding } from '../market/index.js';
+import type { FinancialMetrics, Holding, ValueAssessment } from '../market/index.js';
 import { getPortfolio } from '../state/portfolio-state.js';
 import {
   channelIdParams,
@@ -21,6 +23,16 @@ function ok<T>(text: string, details: T): AgentToolResult<T> {
 
 function fail(text: string): AgentToolResult<null> {
   return { content: [{ type: 'text' as const, text }], details: null };
+}
+
+function pct(decimal: number | null | undefined, digits = 1): string {
+  if (decimal == null) return 'N/A';
+  return `${(decimal * 100).toFixed(digits)}%`;
+}
+
+function num(n: number | null | undefined, digits = 1): string {
+  if (n == null) return 'N/A';
+  return n.toFixed(digits);
 }
 
 function formatAnalysisSection(
@@ -47,11 +59,45 @@ function formatAnalysisSection(
   return lines.join('\n');
 }
 
+function formatMetricsBlock(m: FinancialMetrics): string {
+  const lines = [
+    `  P/E: ${num(m.trailingPE)} | Fwd P/E: ${num(m.forwardPE)} | PEG: ${num(m.pegRatio, 2)} | P/B: ${num(m.priceToBook, 2)}`,
+    `  ROE: ${pct(m.returnOnEquity)} | ROA: ${pct(m.returnOnAssets)} | Op margin: ${pct(m.operatingMargins)}`,
+    `  FCF yield: ${pct(m.fcfYield)} | Earn yield: ${pct(m.earningsYield)} | EV/EBITDA: ${num(m.enterpriseToEbitda)}`,
+    `  D/E: ${num(m.debtToEquity, 1)} | Rev growth: ${pct(m.revenueGrowth)} | Sector: ${m.sector}`,
+  ];
+  if (m.fetchError) {
+    lines.push(`  ⚠ metrics fetch error: ${m.fetchError}`);
+  }
+  return lines.join('\n');
+}
+
+function formatValueSection(assessments: ValueAssessment[]): string {
+  if (assessments.length === 0) return '';
+  const ranked = rankValueCandidates(assessments);
+  const lines = [
+    '── VALUE SCREEN (cheap ∩ quality ∩ trap) ──',
+    '  Ranked for undervalued candidates. Trap HIGH/ELEVATED → do not buy on cheapness alone.',
+    '',
+  ];
+  for (const a of ranked) {
+    lines.push(
+      `  ${a.ticker.padEnd(6)} cheapness=${a.cheapness.padEnd(7)} quality=${a.quality.padEnd(7)} trap=${a.trapRisk}`,
+    );
+    const top = a.signals.slice(0, 3);
+    for (const s of top) {
+      lines.push(`         · ${s}`);
+    }
+  }
+  lines.push('');
+  return lines.join('\n');
+}
+
 export function createPortfolioAnalyzerTool(): AgentTool {
   return {
     name: 'portfolio_analyzer',
     label: 'PortfolioAnalyzer',
-    description: `Analyze investment portfolio positions using the 3-axis framework. Modes: (1) telegram_user_id or slack_user_id for saved portfolio, (2) tickers + holdings JSON ad-hoc, (3) tickers only for market data. Channel IDs always from message context.`,
+    description: `Analyze investment portfolio positions using the 3-axis framework and value screen (cheapness, quality, trap risk). Modes: (1) telegram_user_id or slack_user_id for saved portfolio, (2) tickers + holdings JSON ad-hoc, (3) tickers only for market data + value assessment. Channel IDs always from message context.`,
     parameters: Type.Object({
       ...channelIdParams,
       tickers: Type.Optional(
@@ -83,7 +129,10 @@ export function createPortfolioAnalyzerTool(): AgentTool {
           holdings = JSON.parse(params.holdings) as Record<string, Holding>;
           tickerList = Object.keys(holdings);
         } else if (params.tickers) {
-          tickerList = params.tickers.split(',').map((t) => t.trim().toUpperCase());
+          tickerList = params.tickers.split(',').map((t) => t.trim().toUpperCase()).filter(Boolean);
+          if (tickerList.length === 0) {
+            return fail('tickers string is empty after parse.');
+          }
         } else {
           return fail(
             'Provide telegram_user_id or slack_user_id (saved portfolio), tickers (market data), or holdings (ad-hoc).',
@@ -96,6 +145,14 @@ export function createPortfolioAnalyzerTool(): AgentTool {
           fetchMetrics(tickerList),
         ]);
 
+        const safeAssessments = tickerList.map((t) => {
+          const m = metrics[t];
+          if (!m) {
+            throw new Error(`portfolio_analyzer: metrics missing for ${t} after fetchMetrics`);
+          }
+          return assessValue(m);
+        });
+
         if (holdings) {
           const result = runFullAnalysis(holdings, prices, targets);
 
@@ -104,21 +161,31 @@ export function createPortfolioAnalyzerTool(): AgentTool {
           output += formatAnalysisSection('OVERPRICED — Price Above Median Target', '🟡', result.overpriced);
           output += formatAnalysisSection('BUY OPPORTUNITIES — >15% Upside to Median', '🟢', result.buyOpportunities);
 
+          output += formatValueSection(safeAssessments);
+
           output += '── FULL PORTFOLIO (by P/L) ──\n';
           const sorted = [...result.fullAnalysis].sort((a, b) => b.plPct - a.plPct);
           for (const s of sorted) {
             output += `  ${s.ticker.padEnd(6)} ${s.company.padEnd(28)} ${s.plPct >= 0 ? '+' : ''}${s.plPct.toFixed(1)}% ($${s.price.toFixed(2)})\n`;
+            const m = metrics[s.ticker];
+            if (m) {
+              output += formatMetricsBlock(m) + '\n';
+            }
           }
 
-          return ok(output, result);
+          return ok(output, { ...result, metrics, valueAssessments: safeAssessments });
         }
 
         let output = `Market Data for ${tickerList.join(', ')}\n\n`;
         for (const ticker of tickerList) {
           const price = prices[ticker];
           const t = targets[ticker] ?? {};
-          const m = metrics[ticker] ?? {};
-          const name = COMPANIES[ticker] ?? ticker;
+          const m = metrics[ticker];
+          if (!m) {
+            throw new Error(`portfolio_analyzer: metrics missing for ${ticker}`);
+          }
+          const a = assessValue(m);
+          const name = COMPANIES[ticker] ?? m.shortName ?? ticker;
           output += `${ticker} (${name})\n`;
           output += `  Price: ${price != null ? '$' + price.toFixed(2) : 'N/A'}`;
           output += ` | Median Target: ${t.targetMedianPrice != null ? '$' + t.targetMedianPrice.toFixed(2) : 'N/A'}`;
@@ -126,10 +193,22 @@ export function createPortfolioAnalyzerTool(): AgentTool {
             const upside = (((t.targetMedianPrice - price) / price) * 100).toFixed(1);
             output += ` (upside: ${upside}%)`;
           }
-          output += `\n  P/E: ${m.trailingPE?.toFixed(1) ?? 'N/A'} | PEG: ${m.pegRatio?.toFixed(2) ?? 'N/A'} | ROE: ${m.returnOnEquity != null ? (m.returnOnEquity * 100).toFixed(1) + '%' : 'N/A'}\n\n`;
+          output += `\n${formatMetricsBlock(m)}\n`;
+          output += `  Value: cheapness=${a.cheapness} | quality=${a.quality} | trapRisk=${a.trapRisk}\n`;
+          for (const s of a.signals.slice(0, 4)) {
+            output += `    · ${s}\n`;
+          }
+          output += '\n';
         }
 
-        return ok(output, { prices, targets, metrics });
+        output += formatValueSection(safeAssessments);
+
+        return ok(output, {
+          prices,
+          targets,
+          metrics,
+          valueAssessments: safeAssessments,
+        });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         return fail(`Portfolio analysis failed: ${message}`);
