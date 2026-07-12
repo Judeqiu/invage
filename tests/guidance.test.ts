@@ -19,9 +19,14 @@ describe('renderGuidance', () => {
 
   it('aliases research keywords to firecrawl guidance', () => {
     const text = renderGuidance('firecrawl');
-    expect(text).toMatch(/Firecrawl|web research/i);
-    expect(text).toMatch(/SEC|Yahoo|search/i);
-    expect(text).toMatch(/market theme|AI|in scope/i);
+    expect(text).toMatch(/Firecrawl|news|research/i);
+    expect(text).toMatch(/SEC|Yahoo|search|primary/i);
+    expect(text).toMatch(/price-path|PEAD|underreact|theme|AI/i);
+  });
+
+  it('aliases news/earnings to research with path analysis', () => {
+    const text = renderGuidance('news');
+    expect(text).toMatch(/price-path|PEAD|underreact|regime/i);
   });
 
   it('returns analysis subcommand with full system layers', () => {

@@ -5,12 +5,13 @@
 1. **Portfolio 3-axis** — cost basis vs live price vs analyst targets (action on holdings)
 2. **Stock evaluation workflow** — fundamentals, valuation, style filters, risks (analyze any ticker)
 3. **Undervalued discovery funnel** — find candidates that are *cheap ∩ quality/health ∩ not a trap* (idea generation)
+4. **News → price-path analysis** — smart trend/hypothesis from news (underreaction vs overreaction, PEAD, surprise vs consensus)
 
-Load for portfolio analysis, stock evaluation, **finding undervalued stocks**, screens, value traps, P/E·PEG·ROE·P/B, analyst targets, buy/sell/hold, DCF/multiples, moat/value/growth, or "what should I do with my stocks".
+Load for portfolio analysis, stock evaluation, **finding undervalued stocks**, **news impact / trend after news**, earnings reaction, screens, value traps, P/E·PEG·ROE·P/B, analyst targets, buy/sell/hold, DCF/multiples, moat/value/growth, or "what should I do with my stocks".
 
 For news/filings/IR/key-statistics/Finviz screens, also load **`firecrawl`**. For saving reports, use **`bindrive`**.
 
-Background research (human reference): `docs/deep-research-find-undervalued-stocks.md`, `docs/deep-research-stock-analysis-methods.md`.
+Background research (human reference): `docs/deep-research-find-undervalued-stocks.md`, `docs/deep-research-news-stock-price-prediction.md`, `docs/deep-research-stock-analysis-methods.md`.
 
 ---
 
@@ -25,6 +26,8 @@ Background research (human reference): `docs/deep-research-find-undervalued-stoc
 - Industry model first — do not force one multiple or DCF on every sector.
 - **Price drop ≠ undervalued.** Cheapness needs a yardstick (earnings, cash flow, assets, peers) and a quality/trap check.
 - Do not call a stock a "buy" on Street upside alone — run the undervalued / trap gates when the user wants undervaluation or accumulation.
+- **Headline ≠ next-tick prediction.** Never claim guaranteed short-term direction from a headline. Use Part D: surprise, horizon, under/overreaction hypothesis, then fundamentals gate.
+- Do not recommend chasing mega-cap first-print spikes (analytics/HFT usually already moved the quote). Prefer post-call / multi-day–multi-week paths when evidence supports underreaction.
 - Web facts need Firecrawl URLs; portfolio math needs portfolio/analyzer tools.
 
 ---
@@ -36,7 +39,7 @@ Background research (human reference): `docs/deep-research-find-undervalued-stoc
 | Holdings, cost, units | `get_portfolio` |
 | Live price, P/L, PE/PEG/ROE/P/B, analyst targets | `portfolio_analyzer` (Yahoo Finance) |
 | EV/EBIT, FCF, enterprise value, detailed stats | Load **`firecrawl`** → Yahoo `/key-statistics`, Finviz quote |
-| News, earnings, filings, IR, "why it moved" | Load **`firecrawl`** → search/scrape |
+| News, earnings, filings, IR, "why it moved", news→trend | Load **`firecrawl`** → search/scrape primary + 1 quality secondary; then Part D |
 | Multi-name screens / idea lists | Firecrawl Finviz/Yahoo screeners or peer scrapes — then `portfolio_analyzer` on short list |
 | Macro (Fed, CPI) | Firecrawl → federalreserve.gov / Reuters / BLS |
 
@@ -67,6 +70,8 @@ Background research (human reference): `docs/deep-research-find-undervalued-stoc
 **Find undervalued / screen:** Part C discovery → short list → `portfolio_analyzer` on each → Part B deep dive on top names → thesis gate.
 
 **Deep dive:** above + Firecrawl (Yahoo key-statistics/analysis, Finviz, `TICKER 10-K site:sec.gov`, company IR).
+
+**News / "will this move the stock?" / earnings reaction:** Load **`firecrawl`** + **`investment-analysis` Part D** → primary source scrape → `portfolio_analyzer` on ticker → path hypothesis + value gate. Never invent the news content.
 
 ---
 
@@ -398,6 +403,126 @@ Value strategies can underperform for years — do not promise calendar outperfo
 
 ---
 
+## Part D — News → price-path analysis (smart trend hypothesis)
+
+**Goal:** Turn news into a *structured path hypothesis* (underreaction / overreaction / already priced / unknown) — not a next-tick prophecy.
+
+**Evidence base (human ref):** `docs/deep-research-news-stock-price-prediction.md`  
+Key research priors:
+
+| Prior | Implication for the agent |
+|-------|---------------------------|
+| Semi-strong EMH ≈ true on liquid names | First-print mega-cap moves are hard to capture; do not sell “I can beat the wire” |
+| PEAD / earnings drift | After clear earnings surprises, multi-week continuation is the main *researched* news edge — monitor, don’t guarantee |
+| Chan: public news vs no-news | Hard public news → watch for **drift**; large move with **no** fundamental news → suspect **reversal** |
+| Bad news often slower | Asymmetry: negative shocks may underreact longer (frictions, disposition) |
+| Daily sentiment weak; weekly aggregates stronger | One headline is weak for multi-month path; use second-order fundamentals for themes |
+| Media pessimism (Tetlock-type) | Extreme narrative/sentiment → short-term pressure + possible **mean reversion**, not permanent DCF change |
+| News analytics / HFT | By the time retail reads a popular summary, price may already have moved |
+
+### D0 — Intent routing
+
+| User ask | Path |
+|----------|------|
+| "What's going on with TICKER?" / "Why did it move?" | D1 capture + classify + reaction; light path hypothesis |
+| "How will this news affect price / trend?" | Full D1–D5 + template **News path** |
+| "Earnings just dropped — what now?" | Earnings playbook D3 + PEAD watch rules |
+| "Should I buy the dip after bad news?" | D path + Part C trap gate + Part A if held |
+| Theme without single ticker | Firecrawl theme playbook (not Part D single-name) |
+
+Always load **`firecrawl`** for news content. Run **`portfolio_analyzer`** on the ticker when known.
+
+### D1 — Capture pipeline (run in order)
+
+```text
+1. Capture    Primary source (PR, 8-K, IR, Reuters) + timestamp; cite URL
+2. Classify   Earnings | Guidance | Corporate action | Product | Macro | Pure narrative | Stale/reprint
+3. Surprise   Vs consensus / prior guidance / prior narrative (only if sourced; else "consensus not in tools")
+4. Hardness   Cash-flow relevant? One-off? Legal binary? Accounting?
+5. Reaction   Live price + today's move if available; vs "typical event day" only if you have evidence
+6. Regime     UNDERREACT | OVERREACT | ALREADY_PRICED | UNKNOWN
+7. Horizon    Intraday (usually skip for retail) | days–weeks | multi-quarter
+8. Gate       Value screen + trap (Part C) before BUY language
+9. Action     Watch | add watchlist | size-up only if gates pass | avoid chase
+10. Kill      What would falsify the path hypothesis?
+```
+
+### D2 — Classify & hardness
+
+| Type | Price mechanism | Agent default |
+|------|-----------------|---------------|
+| Hard earnings / guidance | Surprise + often PEAD | Quantify numbers from scrape; prefer post-call context |
+| M&A / legal / discrete | Binary re-rating | Risk filter; low confidence trend unless deal terms clear |
+| Product / competitive | Slow multi-quarter path | Map to units/margins; easy story-overfit |
+| Macro print | Factor/sector more than single name | Sector betas; optional holding exposure |
+| Pure media/opinion | Sentiment / attention | Mean-reversion risk; weak fundamental signal |
+| Stale reprint | Inattention noise | Label stale; do not treat as new info |
+
+**Hard news** = changes expected cash flows, risk, or capital structure with verifiable facts.  
+**Soft news** = tone, opinion, recycled narrative without new numbers.
+
+### D3 — Regime priors (default hypotheses)
+
+| Situation | Prior regime | Prefer language |
+|-----------|--------------|-----------------|
+| Clear positive earnings surprise + strong initial move (liquid) | UNDERREACT / PEAD-watch | "Continuation *possible* over days–weeks; not guaranteed. Reassess next print." |
+| Clear beat but price flat/down ("sell the news") | MIXED / ALREADY_PRICED | Dig guidance & call; do not force long |
+| Hard public **bad** news, limited initial drop (esp. smaller names) | UNDERREACT risk | Caution; don't average down without trap PASS |
+| Large price move, **no** identifiable fundamental news | OVERREACT candidate | Mean-reversion *hypothesis* only after confirming no buried filing |
+| Extreme bullish media after large run-up | OVERREACT / sentiment | Flag reversal risk; not a short recommendation unless asked |
+| Complex 8-K / buried detail, thin coverage | Slow diffusion | Deep-dive edge; higher research value |
+| Mega-cap first headline, minutes-old | ALREADY_PRICED for retail | Do not chase; re-value on full release |
+
+### D4 — Earnings-specific playbook
+
+1. Scrape **release** (IR/8-K) + search **vs estimates** if available.  
+2. Extract: EPS, revenue, margins, **guidance** change — only from tool output.  
+3. Prefer waiting for / summarizing **earnings call / prepared remarks** when user wants a trade decision (practitioner best practice).  
+4. Classify surprise: beat / miss / mixed (guidance often matters more than EPS).  
+5. Run `portfolio_analyzer` — price, targets, value screen *after* news.  
+6. If surprise is clear and liquidity adequate: set **PEAD watch** (multi-week path hypothesis in surprise direction) + kill criteria (next guidance cut, peer miss, macro shock).  
+7. Combine EAR-style thinking: market reaction *in the event window* embeds more than EPS alone — if reaction and soft fundamentals disagree, say so.
+
+### D5 — Gates before action language
+
+| Want to say | Required |
+|-------------|----------|
+| "Likely short-term up/down tomorrow" | **Avoid** unless user forces speculation — then max confidence **low**, label guess |
+| "Multi-week drift watch (PEAD-style)" | Hard earnings/event surprise sourced + liquid enough + regime UNDERREACT |
+| BUY / accumulate after news | Part C cheapness + trap PASS + D path not ALREADY_PRICED chase + thesis |
+| Average down after bad news | Trap PASS + hard news already reflected or overshot + kill criteria |
+| Ignore / no trade | Soft news, stale, or mega-cap first print with no new analysis |
+
+### D6 — Output: news path verdict (required template)
+
+```text
+{TICKER} news → path
+  Source: … (URL) | Time context: …
+  Class: earnings|guidance|corp action|product|macro|narrative|stale
+  Hardness: hard|soft|mixed
+  Surprise vs expectations: … (or "not in tools")
+  Key facts: … (numbers only from scrape)
+  Live: price $… | value screen: cheapness=… quality=… trap=…
+  Regime: UNDERREACT | OVERREACT | ALREADY_PRICED | UNKNOWN
+  Horizon: days–weeks | multi-quarter | n/a (intraday skip)
+  Path hypothesis: …
+  What would falsify: …
+  Action: watch | PEAD-watch | re-value only | avoid chase | (buy only if gates pass)
+  Confidence: low|med|high
+  Gaps: …
+```
+
+### D7 — What not to do (news)
+
+- Predict next-minute direction from a headline  
+- Treat social buzz as PEAD  
+- Buy gap-ups solely because the article is bullish  
+- Ignore guidance when EPS beats  
+- Invent consensus estimates or "Street expected X" without a source  
+- Confuse media *explanation of yesterday* with a forecast of tomorrow  
+
+---
+
 ## Output templates
 
 ### Portfolio position (3-axis)
@@ -482,6 +607,10 @@ Top deep dives: …
 Rejected as traps / expensive: …
 ```
 
+### News path (Part D)
+
+Use the **News path verdict** block in Part D6. Keep Slack/Telegram scannable: regime + horizon + 3 fact bullets + action + sources.
+
 ---
 
 ## Recommendation language
@@ -494,6 +623,8 @@ Rejected as traps / expensive: …
 | Broken thesis; deep loss; cost > high, no catalyst | Sell; do not average down |
 | Cheapness YES but trap FAIL or WATCH | Do not buy for "value"; explain trap risk |
 | Street upside only, no fundamental cheapness | WATCH — not undervalued claim |
+| Hard earnings surprise, UNDERREACT regime, gates OK | PEAD-watch or measured add — not "guaranteed up" |
+| Soft headline / mega-cap first print | Avoid chase; re-value when full info in |
 | Incomplete data | Watch — no size-up; list gaps |
 
 ---
@@ -507,8 +638,9 @@ Rejected as traps / expensive: …
 - Skip trap gate when recommending buy/average-down on "value"
 - Dump unfiltered screener results as recommendations
 - Claim guaranteed outperformance — analysis is for risk, process, and ranges
+- Predict next-tick price from a single headline
 - Skip stating uncertainty or data gaps
-- Invent EV/EBIT, F-Score, or FCF when not in tool/scrape output
+- Invent EV/EBIT, F-Score, FCF, or consensus estimates when not in tool/scrape output
 
 ---
 
@@ -524,4 +656,5 @@ Rejected as traps / expensive: …
 | Doc | Use |
 |-----|-----|
 | `docs/deep-research-find-undervalued-stocks.md` | Discovery funnel, Magic Formula, Piotroski, traps, value premium |
+| `docs/deep-research-news-stock-price-prediction.md` | News→path, PEAD, under/overreaction, sentiment limits |
 | `docs/deep-research-stock-analysis-methods.md` | Broader valuation / factor / EMH taxonomy |

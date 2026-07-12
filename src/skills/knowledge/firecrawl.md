@@ -89,6 +89,18 @@ When discussing categories, map to benchmarks and sector news:
 1. Search: `"{TICKER} Q{n} {year} earnings"` and `"{Company} earnings release site:sec.gov OR investor"`.
 2. Scrape company IR earnings release or 8-K.
 3. Summarize: revenue, EPS, guidance, surprises — only numbers that appear in tool output.
+4. For **price-path after earnings**, also load **investment-analysis Part D** (PEAD watch, surprise vs consensus, post-call preference).
+
+### B2. News → stock trend / “how will this move the price?” (with investment-analysis Part D)
+
+1. Load **`firecrawl`** + **`investment-analysis`** (Part D).
+2. Search primary: `"{TICKER} {Company} {event keywords} site:reuters.com OR site:sec.gov OR investor"`.
+3. Scrape **primary** source first (PR, 8-K, IR, Reuters) — not opinion blogs.
+4. Optional: one secondary for consensus/context if present in article.
+5. Run `portfolio_analyzer` on ticker (price, targets, value screen).
+6. Produce Part D **news path verdict**: class, hardness, surprise, regime (UNDERREACT / OVERREACT / ALREADY_PRICED / UNKNOWN), horizon, action.
+7. Cite URLs. Never invent consensus or claim next-tick certainty.
+8. Prefer UNDERREACT/PEAD language only after hard earnings/event surprise with sourced facts.
 
 ### C. Fundamentals deep dive
 

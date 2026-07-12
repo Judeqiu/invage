@@ -23,7 +23,7 @@ const CATALOG: RawSkill[] = [
     id: 'investment-analysis',
     name: 'Investment Analysis',
     description:
-      'Core Invester analysis skill. Load for portfolio 3-axis (Laggards, Overpriced, Buy Opportunities), stock evaluation, undervalued discovery funnel (cheap ∩ quality ∩ trap gate), value traps, composite multiples (PE/PEG/P/B/ROE + EV/FCF via Firecrawl), Magic Formula/Piotroski-style checks, valuation (DCF/multiples), analyst targets, buy/sell/hold, fundamentals, moat/value/growth, "find undervalued stocks", or "analyze TICKER" / "what should I do with my stocks".',
+      'Core Invester analysis skill. Load for portfolio 3-axis, stock evaluation, undervalued discovery (cheap ∩ quality ∩ trap), news→price-path / trend after news (PEAD, underreaction vs overreaction, earnings reaction), value traps, multiples, valuation, buy/sell/hold, "why did TICKER move", "analyze TICKER", "find undervalued stocks".',
     keywords: [
       'portfolio',
       'stocks',
@@ -56,6 +56,16 @@ const CATALOG: RawSkill[] = [
       'EV/EBIT',
       'discover',
       'find stocks',
+      'news',
+      'trend',
+      'earnings',
+      'PEAD',
+      'guidance',
+      'why did it move',
+      'price impact',
+      'reaction',
+      'headline',
+      'catalyst',
     ],
   },
   {
@@ -69,7 +79,7 @@ const CATALOG: RawSkill[] = [
     id: 'firecrawl',
     name: 'Firecrawl',
     description:
-      'Load for live web research and market themes: Yahoo Finance, SEC EDGAR, company IR, Reuters/CNBC, Finviz, Fed/macro, and investment themes (e.g. AI impact on markets, sector outlooks). Use firecrawl tool (search/scrape). Prefer portfolio_analyzer for quotes/targets; Firecrawl for news/filings/guidance/theme text.',
+      'Load for live web research, primary news sources, and market themes: Yahoo Finance, SEC EDGAR, IR, Reuters/CNBC, Finviz, Fed/macro, earnings releases, and themes (AI, sectors). Pair with investment-analysis Part D for news→price-path. Prefer portfolio_analyzer for quotes; Firecrawl for news/filings/guidance text.',
     keywords: [
       'web',
       'search',
@@ -83,6 +93,7 @@ const CATALOG: RawSkill[] = [
       'earnings',
       '10-K',
       '10-Q',
+      '8-K',
       'SEC',
       'EDGAR',
       'guidance',
@@ -102,6 +113,10 @@ const CATALOG: RawSkill[] = [
       'geopolitics',
       'rates',
       'inflation',
+      'press release',
+      'headline',
+      'catalyst',
+      'why did it move',
     ],
   },
 ];
