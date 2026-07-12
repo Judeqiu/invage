@@ -24,7 +24,7 @@
   "license": "ISC",
   "dependencies": {
     "tsx": "^4.22.4",
-    "utarus": "github:Judeqiu/utarus#277b996906cfbaa79577b82860f82b0e397a06ce",
+    "utarus": "github:Judeqiu/utarus#505ad270927086069c66aaa4e46fcdb1a2f3f0df",
     "yahoo-finance2": "^3.15.3",
     "yaml": "^2.9.0"
   },
