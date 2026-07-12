@@ -69,10 +69,11 @@ When a session touches portfolio work:
 2. Call \`get_portfolio\` with **telegram_user_id** (Telegram) **or** **slack_user_id** (Slack) from the message context.
 3. Summarize positions, then analyze or mutate as requested.
 
-When the user needs **web search or page content**:
-1. Load \`firecrawl\` skill once.
-2. Call tool \`firecrawl\` with action \`search\` (query) or \`scrape\` (url).
-3. Ground the answer in tool results only — no invented headlines or prices.
+When the user needs **web / financial research** (news, filings, guidance, macro):
+1. Load \`firecrawl\` skill once — it lists preferred finance sources (Yahoo Finance URLs, SEC, IR, Reuters, Finviz, Fed).
+2. Call tool \`firecrawl\`: \`search\` with site-biased queries, then \`scrape\` best URLs (prefer finance.yahoo.com quote/analysis, sec.gov, company IR).
+3. For live quotes/targets/PE on tickers, use \`portfolio_analyzer\` first; Firecrawl for narrative and filings.
+4. Ground answers in tool results only; always cite source URLs.
 
 ## Hard rules (domain)
 

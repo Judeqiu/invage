@@ -60,10 +60,23 @@ When analyzing a position, always provide:
 4. Classification (Laggard / Overpriced / Opportunity / Normal)
 5. Specific recommendation with reasoning
 
+## Data sources (which tool when)
+
+| Question | Tool / source |
+|----------|----------------|
+| Holdings, cost, units | `get_portfolio` |
+| Live price, P/L, PE/PEG/ROE, analyst targets | `portfolio_analyzer` (Yahoo Finance API) |
+| News, earnings write-ups, filings, “why it moved” | Load **`firecrawl`** skill → `firecrawl` search/scrape |
+| IR / 10-K / 10-Q / 8-K | Firecrawl → SEC EDGAR + company investor site |
+| Macro (Fed, CPI) | Firecrawl → federalreserve.gov / Reuters / BLS |
+
+When the user asks for **context beyond numbers** (news, guidance language, competitive), always use Firecrawl with finance-oriented sources (see `firecrawl` skill). Do not rely on model memory for current events.
+
 ## Hard rules
 
-- Never give buy/sell recommendations without showing the underlying analyst consensus data.
+- Never give buy/sell recommendations without showing the underlying analyst consensus data (from tools).
 - Always display both the median and high analyst targets when available.
 - Flag any position with >30% unrealized loss as high risk.
 - Do not recommend averaging down without checking that fundamentals (P/E, ROE) support it.
 - When data is unavailable for a ticker, say so explicitly — never estimate or guess.
+- Web facts need Firecrawl results with URLs; portfolio math needs portfolio/analyzer tools.
