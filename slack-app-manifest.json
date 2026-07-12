@@ -24,6 +24,13 @@
         "should_escape": false
       },
       {
+        "command": "/guidance",
+        "description": "How to use Invester (skills and workflows)",
+        "usage_hint": "[start|portfolio|analysis|research|reports|skills|admin|chat]",
+        "url": "https://example.com/slack/commands",
+        "should_escape": false
+      },
+      {
         "command": "/clear",
         "description": "Clear your conversation context",
         "usage_hint": "(no arguments)",
@@ -89,6 +96,7 @@
         "channels:read",
         "chat:write",
         "commands",
+        "files:write",
         "groups:history",
         "groups:read",
         "im:history",
@@ -97,6 +105,7 @@
         "mpim:history",
         "mpim:read",
         "mpim:write",
+        "reactions:write",
         "users:read"
       ]
     }

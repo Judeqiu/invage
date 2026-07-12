@@ -9,6 +9,7 @@
 import type { DomainExtension, EnrichMessageContext, Skill } from 'utarus';
 import { createInvageTools } from './tools/index.js';
 import { registerInvageSkills } from './skills.js';
+import { createGuidanceCommand } from './guidance.js';
 import {
   getPortfolio,
   resolveInvestorBySlackUser,
@@ -46,6 +47,8 @@ You serve users on **Telegram and Slack** (same agent, same portfolio state). Su
 4. **Record** — \`save_report\` / \`save_snapshot\` to BinDrive; share the signed view URL verbatim; optional \`send_report\` email.
 
 Load the \`investment-analysis\` skill when classifying positions or explaining metrics.
+
+Users can run slash command \`/guidance\` (with subcommands: start, portfolio, analysis, research, reports, skills, admin, chat) for how-to help — that is handled outside the LLM.
 
 ## Scope
 
@@ -135,6 +138,8 @@ function enrichUnlinkedOnboarding(ctx: EnrichMessageContext): string {
   return 'REPLY:⛔ You need an invite code to use this bot. Ask an admin for an invite code (INV-XXXXXXXX).';
 }
 
+const guidanceCmd = createGuidanceCommand();
+
 export const invageExtension: DomainExtension = {
   purpose: INVAGE_PURPOSE,
 
@@ -142,7 +147,24 @@ export const invageExtension: DomainExtension = {
 
   skills: INVAGE_SKILLS,
 
-  telegramCommands: [],
+  telegramCommands: [
+    {
+      name: guidanceCmd.name,
+      description: guidanceCmd.description,
+      adminOnly: guidanceCmd.adminOnly,
+      handler: ({ args }) => guidanceCmd.handle(args),
+    },
+  ],
+
+  slackCommands: [
+    {
+      name: guidanceCmd.name,
+      description: guidanceCmd.description,
+      adminOnly: guidanceCmd.adminOnly,
+      usageHint: guidanceCmd.usageHint,
+      handler: ({ args }) => guidanceCmd.handle(args),
+    },
+  ],
 
   async enrichMessage(ctx: EnrichMessageContext): Promise<string> {
     let investor = null;
