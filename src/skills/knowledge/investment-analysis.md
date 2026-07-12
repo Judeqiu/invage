@@ -17,7 +17,17 @@ Background research (human reference): `docs/deep-research-find-undervalued-stoc
 
 ## Hard rules
 
-- Never invent prices, targets, PE, PEG, ROE, P/B, FCF, EV/EBIT, or F-Scores — tool/scrape data only; **fail fast** if missing (state the gap).
+### Fact grounding (highest priority)
+
+- **Tool-before-claim.** Do not write market/company facts until tools have returned in this turn (or the same conversation with still-valid data).
+- **Every sentence in the final reply** is either: (A) grounded in tool/scrape/analyzer output, (B) process/method, or (C) explicitly labeled hypothesis/opinion. Delete anything else before sending.
+- **Fail fast — never invent:** prices, PE/PEG/ROE/P/B/FCF/EV, F-Scores, targets, **IPO/S-1/listing status**, "reserved ticker", grey market, open/close, volumes, private-vs-public status, filing dates, roadshow claims.
+- If \`portfolio_analyzer\` fails or returns no real quote for a ticker, say **not tradable / not verified** — do **not** invent an IPO story to explain it.
+- On user pushback ("that's wrong"): **re-run tools**, then correct from evidence. Never elaborate an ungrounded story.
+- Prefer: short answer with citations over a long fluent answer with unchecked claims.
+
+### Analysis rules
+
 - Never give buy/sell without showing underlying numbers (targets and/or metrics from tools).
 - Always show **median and high** analyst targets when available.
 - Flag any holding with **>30% unrealized loss** as high risk.
