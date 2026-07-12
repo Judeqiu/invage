@@ -4,6 +4,8 @@
  * Subcommands are free-text after the slash command, e.g.:
  *   /guidance
  *   /guidance portfolio
+ *   /guidance analysis
+ *   /guidance value
  *   /guidance research
  */
 
@@ -11,6 +13,7 @@ export const GUIDANCE_SUBCOMMANDS = [
   'start',
   'portfolio',
   'analysis',
+  'value',
   'research',
   'reports',
   'skills',
@@ -25,7 +28,22 @@ function normalizeSub(args: string): GuidanceSubcommand {
   if (!raw || raw === 'help' || raw === '?' || raw === 'index') return 'overview';
   if (raw === 'onboarding' || raw === 'getting-started' || raw === 'begin') return 'start';
   if (raw === 'holdings' || raw === 'positions' || raw === 'pnl' || raw === 'p/l') return 'portfolio';
-  if (raw === '3-axis' || raw === 'analyzer' || raw === 'targets') return 'analysis';
+  if (raw === '3-axis' || raw === 'analyzer' || raw === 'targets' || raw === 'evaluate') {
+    return 'analysis';
+  }
+  if (
+    raw === 'undervalued' ||
+    raw === 'value-screen' ||
+    raw === 'valuescreen' ||
+    raw === 'trap' ||
+    raw === 'traps' ||
+    raw === 'cheap' ||
+    raw === 'advanced' ||
+    raw === 'screen' ||
+    raw === 'discovery'
+  ) {
+    return 'value';
+  }
   if (
     raw === 'firecrawl' ||
     raw === 'web' ||
@@ -52,23 +70,29 @@ const overview = (): string =>
   [
     '*Invester — how to use this agent*',
     '',
-    'I am your portfolio analyst: track holdings, run 3-axis analysis, research the web, and save reports.',
+    'I am your portfolio analyst: track holdings, run 3-axis analysis, run an *advanced value screen* (cheap ∩ quality ∩ trap risk), research the web, and save reports.',
     '',
     '*Quick start*',
-    '• Plain chat: "add 50 AAPL at $180" · "analyze my portfolio" · "what\'s news on NVDA?"',
+    '• Plain chat: "add 50 AAPL at $180" · "analyze my portfolio" · "which holdings look undervalued?" · "what\'s news on NVDA?"',
     '• Slash: `/guidance <topic>` for a focused how-to',
     '',
     '*Topics* (use as subcommands):',
     '• `start` — first-time setup & invite',
     '• `portfolio` — add/update/remove holdings',
-    '• `analysis` — 3-axis Laggards / Overpriced / Buy opportunities',
+    '• `analysis` — 3-axis + full stock evaluation system',
+    '• `value` — *advanced* undervalued discovery (value screen, traps, thesis)',
     '• `research` — web search (Firecrawl) + finance sources',
     '• `reports` — BinDrive reports, snapshots, email',
     '• `skills` — skill catalog (what I load for each job)',
     '• `chat` — how to talk to me effectively',
     '• `admin` — invite / admin codes (admins)',
     '',
-    'Example: `/guidance portfolio`  ·  `/guidance research`',
+    '*Advanced analysis (high leverage)*',
+    '• Ask: "Which of my holdings look undervalued?" or "Is TICKER a value trap?"',
+    '• I run portfolio analyzer → VALUE SCREEN (cheapness / quality / trapRisk) → fundamentals gate',
+    '• Details: `/guidance value`  ·  overview of all analysis: `/guidance analysis`',
+    '',
+    'Example: `/guidance portfolio`  ·  `/guidance value`  ·  `/guidance research`',
   ].join('\n');
 
 const start = (): string =>
@@ -78,11 +102,12 @@ const start = (): string =>
     '1. *Access* — non-admins need an invite code (`INV-…`). Admins can run `/invitecode` (Slack) to mint one.',
     '2. *Onboarding* — send the code in chat; I collect display name + email, then link your Slack/Telegram ID.',
     '3. *First holdings* — e.g. "Add 100 MSFT at average cost $400 in SL Technology S1"',
-    '4. *First analysis* — "Analyze my portfolio" or "Run 3-axis analysis"',
-    '5. *Optional research* — "Search web for MSFT earnings guidance"',
-    '6. *Save work* — "Save a report to my drive" or "Take a snapshot"',
+    '4. *First analysis* — "Analyze my portfolio" (3-axis + value screen on every holding)',
+    '5. *Undervalued sweep* — "Which of my holdings look undervalued?" (uses advanced value system)',
+    '6. *Optional research* — "Search web for MSFT earnings guidance" or "Scrape Yahoo key-statistics for AAPL"',
+    '7. *Save work* — "Save a report to my drive" or "Take a snapshot"',
     '',
-    'See also: `/guidance portfolio` · `/guidance analysis` · `/guidance research`',
+    'See also: `/guidance portfolio` · `/guidance analysis` · `/guidance value` · `/guidance research`',
   ].join('\n');
 
 const portfolio = (): string =>
@@ -100,44 +125,120 @@ const portfolio = (): string =>
     '• Use portfolio tools bound to *your* Slack/Telegram id (never invent another user\'s id)',
     '• Cost basis = avg_price × units (not live market value until analysis)',
     '',
-    '*Next*',
-    '• `/guidance analysis` — P/L, targets, recommendations',
+    '*Next — analysis stack*',
+    '• `/guidance analysis` — 3-axis P/L vs Street targets',
+    '• `/guidance value` — advanced undervalued / trap screen on those holdings',
     '• `/guidance reports` — save HTML report / snapshot',
   ].join('\n');
 
 const analysis = (): string =>
   [
-    '*Investment analysis (Invester skill)*',
+    '*Investment analysis system*',
     '',
-    'Skill: *investment-analysis* · Tool: portfolio analyzer (Yahoo Finance live data)',
+    'Skill: *investment-analysis* · Tool: *portfolio_analyzer* (Yahoo Finance live data)',
     '',
-    '*Part A — Portfolio 3-axis*',
+    'I use three layers. Use plain English; I load the skill and tools for you.',
+    '',
+    '── *Part A — Portfolio 3-axis* ──',
     '1. *Laggards* — your cost > analyst high target',
     '2. *Overpriced* — price > median target',
-    '3. *Buy opportunities* — upside to median > ~15% (still needs fundamentals / trap check)',
+    '3. *Buy opportunities* — upside to median > ~15%',
+    '   ↳ Buy language still needs fundamentals / trap check (Part C)',
     '',
-    '*Part B — Stock evaluation*',
+    '── *Part B — Stock evaluation* ──',
     '• Business + industry lens → statements → valuation range → value/growth/moat → risks',
-    '• Live PE/PEG/P/B/ROE/targets via analyzer; depth via Firecrawl (10-K, IR, key-statistics)',
+    '• Live metrics: PE, forward PE, PEG, P/B, ROE, ROA, FCF yield, EV/EBITDA, leverage, growth',
+    '• Depth via Firecrawl: 10-K, IR, Yahoo key-statistics, Finviz (see `/guidance research`)',
     '',
-    '*Part C — Undervalued discovery*',
-    '• Funnel: cheapness yardstick ∩ quality/health ∩ value-trap gate ∩ thesis (why cheap / what closes / kill criteria)',
-    '• Price drop alone is *not* undervalued; Street upside alone is not enough to buy',
-    '• Holdings sweep, single-name verdict, or external short list → filter → deep dive',
+    '── *Part C — Undervalued discovery (advanced)* ──',
+    '• Funnel: cheapness ∩ quality/health ∩ value-trap gate ∩ thesis',
+    '• Tool emits a *VALUE SCREEN* block: cheapness / quality / trapRisk + signal lines',
+    '• Full playbook + example prompts: `/guidance value`',
     '',
     '*What to say*',
-    '• "Analyze my portfolio" / "3-axis analysis"',
-    '• "Which of my holdings look undervalued?" / "Find undervalued ideas in my portfolio"',
-    '• "Is AAPL undervalued?" / "Is MSFT a value trap?"',
-    '• "Analyze AAPL" / "Full fundamental on NVDA"',
-    '• "What are my laggards?" / "Show PE and targets for AAPL, MSFT"',
+    '• "Analyze my portfolio" / "3-axis analysis" / "What are my laggards?"',
+    '• "Analyze AAPL" / "Full fundamental on NVDA" / "Show PE and targets for AAPL, MSFT"',
+    '• "Which of my holdings look undervalued?" / "Is MSFT a value trap?"',
     '',
     '*Rules*',
     '• No buy/sell story without tool numbers',
     '• Missing data → I say so (no invented quotes)',
+    '• Price drop alone ≠ undervalued; Street upside alone ≠ buy',
     '• Accumulate / average-down only if trap gate allows',
     '',
-    'News/filings: `/guidance research`',
+    'Related: `/guidance value` · `/guidance research` · `/guidance chat`',
+  ].join('\n');
+
+const value = (): string =>
+  [
+    '*Advanced analysis — undervalued discovery*',
+    '',
+    'This is the high-leverage path: find *mispriced* names, not just stocks that fell.',
+    'Skill: *investment-analysis* Part C · Tool: *portfolio_analyzer* value screen',
+    '',
+    '── *What “undervalued” means here* ──',
+    'A candidate must clear all of:',
+    '1. *Cheap* on a fit-for-purpose yardstick (earnings, cash flow, book for banks, peers — not price drop alone)',
+    '2. *Quality / health* OK or improving (ROE, margins, FCF; not a melting ice cube)',
+    '3. *Trap gate* PASS (not structurally broken)',
+    '4. *Thesis* — why cheap · what closes the gap · kill criteria',
+    '',
+    '── *What the analyzer returns* ──',
+    'On portfolio or multi-ticker runs you get a *VALUE SCREEN* block:',
+    '• `cheapness` = YES | MIXED | NO | UNKNOWN',
+    '• `quality` = STRONG | OK | WEAK | UNKNOWN',
+    '• `trapRisk` = LOW | ELEVATED | HIGH | UNKNOWN',
+    '• Signal lines with live numbers (PE, FCF yield, EV/EBITDA, ROE, D/E, …)',
+    '• Per-name metrics: PE / fwd PE / PEG / P/B / ROE / ROA / FCF yield / EV/EBITDA / growth',
+    '',
+    'Prefer: cheapness YES (or MIXED), trapRisk LOW, quality not WEAK — then deep-dive.',
+    'Reject or watch: trapRisk HIGH/ELEVATED even if “cheap”; quality WEAK + cheap = classic *value trap*.',
+    '',
+    '── *How to leverage it (recipes)* ──',
+    '',
+    '*1. Holdings undervalued sweep*',
+    'Say: "Which of my holdings look undervalued?"',
+    '    "Find undervalued ideas in my portfolio"',
+    '    "Rank my portfolio by value screen"',
+    'I: run analyzer on all holdings → rank VALUE SCREEN → short list → optional deep dive.',
+    '',
+    '*2. Single-name undervalued / trap verdict*',
+    'Say: "Is AAPL undervalued?"',
+    '    "Is MSFT a value trap?"',
+    '    "Value assessment for JPM"',
+    'I: metrics + cheapness/quality/trap + thesis bullets (or WATCH if data incomplete).',
+    '',
+    '*3. Multi-ticker screen*',
+    'Say: "Value screen AAPL, MSFT, JPM, XOM"',
+    '    "Compare undervaluation for these tickers: …"',
+    'I: analyzer on the list → ranked VALUE SCREEN → call out traps vs candidates.',
+    '',
+    '*4. Buy / average-down discipline*',
+    'Say: "Should I average down on BA?"',
+    'I: 3-axis + trap gate — refuse size-up if trap FAIL/WATCH without thesis.',
+    '',
+    '*5. Deep value with filings*',
+    'Say: "Is KO undervalued? Pull key-statistics and 10-K risks"',
+    'I: analyzer first, then Firecrawl (Yahoo stats / Finviz / SEC) for narrative and extra fields.',
+    '',
+    '── *Industry yardsticks (I choose automatically)* ──',
+    '• Banks / financials → P/B + ROE (not EV/EBITDA alone)',
+    '• Software / asset-light → FCF / growth multiples (not book)',
+    '• Most operating cos → PE, fwd PE, FCF yield, EV/EBITDA when present',
+    '• Utilities / financials excluded from Magic Formula–style ROC ranking',
+    '',
+    '── *What I will not do* ──',
+    '• Call a stock undervalued only because it dropped',
+    '• Dump an unfiltered screener list as “buys”',
+    '• Invent PE, FCF, EV/EBITDA, or F-Scores',
+    '• Promise guaranteed outperformance — process + ranges + risks only',
+    '',
+    '── *After the screen* ──',
+    '• "Deep dive on the top 3 undervalued names"',
+    '• "Save this value analysis as an HTML report"',
+    '• "Take a portfolio snapshot"',
+    '',
+    'Basics: `/guidance analysis`  ·  Research depth: `/guidance research`  ·  Holdings: `/guidance portfolio`',
   ].join('\n');
 
 const research = (): string =>
@@ -146,14 +247,22 @@ const research = (): string =>
     '',
     'Skill: *firecrawl* · Tool: `firecrawl` (search / scrape). Needs FIRECRAWL_API_KEY on the server.',
     '',
+    'Use research *after* portfolio analyzer for quotes/metrics, or when you need narrative depth.',
+    '',
     '*What to say*',
     '• "Search the web for NVDA earnings this week"',
     '• "Scrape Yahoo analysis for AAPL and summarize targets"',
+    '• "Scrape Yahoo key-statistics for MSFT" (extra value fields / context)',
     '• "Find 10-K risk factors for MSFT on SEC"',
     '• "What did the Fed say about rates?"',
     '',
+    '*With advanced value analysis*',
+    '• "Is X undervalued? Also scrape Finviz and key-statistics"',
+    '• "Value trap check on Y with 10-K risks"',
+    '• Analyzer first (cheapness/quality/trap) → Firecrawl for filings/IR confirmation',
+    '',
     '*Preferred sources I use*',
-    '• Quotes/targets first via portfolio analyzer (Yahoo API)',
+    '• Quotes/targets/value metrics first via portfolio analyzer (Yahoo API)',
     '• Narrative: Yahoo Finance pages, SEC EDGAR, company IR, Reuters/CNBC, Finviz, Fed/BLS',
     '',
     '*Flow*',
@@ -162,6 +271,7 @@ const research = (): string =>
     '3. answer with bullets + source URLs (no invented headlines)',
     '',
     'Portfolio numbers still come from holdings + analyzer — research is context, not cost basis.',
+    'Value playbook: `/guidance value`',
   ].join('\n');
 
 const reports = (): string =>
@@ -172,6 +282,7 @@ const reports = (): string =>
     '',
     '*What to say*',
     '• "Save an analysis report to my drive"',
+    '• "Save this value screen / undervalued short list as HTML"',
     '• "Give me this as an HTML report" / "Post HTML of the full analysis"',
     '• "Take a portfolio snapshot" / "List my snapshots"',
     '• "Email the report to me" (uses your profile email when possible)',
@@ -194,12 +305,16 @@ const skills = (): string =>
     '',
     'I load skills on demand (specialist knowledge). You don\'t call them by name — just ask; I load the right one.',
     '',
-    '• *investment-analysis* — portfolio 3-axis + stock evaluation + undervalued discovery (cheap ∩ quality ∩ trap gate)',
-    '• *firecrawl* — web search/scrape + finance source playbook',
+    '• *investment-analysis* — portfolio 3-axis + stock evaluation + undervalued discovery',
+    '  ↳ Part A: Laggards / Overpriced / Buy opportunities',
+    '  ↳ Part B: full name evaluation (industry lens, valuation, moat)',
+    '  ↳ Part C: advanced value funnel (cheap ∩ quality ∩ trap + thesis)',
+    '  ↳ Tool: portfolio_analyzer VALUE SCREEN (cheapness / quality / trapRisk)',
+    '• *firecrawl* — web search/scrape + finance source playbook (10-K, IR, Finviz)',
     '• *bindrive* — reports, files, portal tokens',
     '• *getting-started* / *admin* (framework) — user state & invite codes',
     '',
-    'Focused how-tos: `/guidance portfolio` · `analysis` · `research` · `reports` · `start`',
+    'Focused how-tos: `/guidance portfolio` · `analysis` · `value` · `research` · `reports` · `start`',
   ].join('\n');
 
 const admin = (): string =>
@@ -231,11 +346,21 @@ const chat = (): string =>
     '• Slack: reactions (👀 → work → done) when scopes allow',
     '• Don\'t paste secrets or other people\'s auth tokens',
     '',
-    'Examples:',
+    '*Leverage advanced analysis*',
+    '• Prefer explicit asks: "undervalued", "value screen", "value trap", "average down?"',
+    '• After a screen: "deep dive top 3" · "compare trap risk" · "save HTML report"',
+    '• Combine: "Is KO undervalued? Pull key-statistics and 10-K risks"',
+    '',
+    '*Examples*',
     '• "Add 40 LLY at 780 category SL Healthcare S1"',
     '• "Analyze portfolio and list laggards only"',
+    '• "Which of my holdings look undervalued?"',
+    '• "Value screen AAPL, MSFT, JPM"',
+    '• "Is BA a value trap? Should I average down?"',
     '• "Research latest NEE guidance from IR or SEC"',
     '• "Save report and snapshot today"',
+    '',
+    'Playbooks: `/guidance value` · `/guidance analysis`',
   ].join('\n');
 
 /**
@@ -250,6 +375,8 @@ export function renderGuidance(args: string = ''): string {
       return portfolio();
     case 'analysis':
       return analysis();
+    case 'value':
+      return value();
     case 'research':
       return research();
     case 'reports':
@@ -285,9 +412,10 @@ export function createGuidanceCommand(): {
 } {
   return {
     name: 'guidance',
-    description: 'How to use Invester (portfolio, analysis, research, reports, …)',
+    description:
+      'How to use Invester: portfolio, 3-axis analysis, advanced undervalued value screen, research, reports',
     adminOnly: false,
-    usageHint: '[start|portfolio|analysis|research|reports|skills|admin|chat]',
+    usageHint: '[start|portfolio|analysis|value|research|reports|skills|admin|chat]',
     handle: (args: string) => renderGuidance(args),
   };
 }
