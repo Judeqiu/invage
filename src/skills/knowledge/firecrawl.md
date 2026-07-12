@@ -114,6 +114,24 @@ When the user wants **undervalued discovery**, EV/EBIT, FCF, ROIC, or peer cheap
 2. Scrape official or high-quality news summary.
 3. Map qualitatively to utilities, financials, growth tech — no fabricated beta math.
 
+### D2. Market themes / “how will X affect the stock market?” (IN SCOPE)
+
+Examples: AI impact on markets, energy transition, regulation, geopolitics, bubbles, sector futures.
+
+1. **Do not refuse** — thematic market questions are core Invester research, not off-topic.
+2. `firecrawl` **search** 2–3 queries, e.g.:
+   - `"AI impact stock market" OR "artificial intelligence equities" site:reuters.com OR site:cnbc.com`
+   - `"AI capital expenditure semiconductors cloud" 2025 OR 2026`
+   - Sector-specific follow-ups as needed
+3. `scrape` 2–4 best URLs (prefer Reuters, CNBC, Fed/official, major IR/earnings themes).
+4. Reply structure (bullets):
+   - Thesis / what markets may already price
+   - Transmission channels (earnings, multiples, capex, labor, regulation)
+   - Illustrative winners / losers (sectors or example tickers — not automatic buy calls)
+   - Risks, timeline, falsifiers
+   - Optional: link to user's portfolio exposure if they have holdings
+5. Always **cite source URLs**. Never invent market data. Offer follow-ups: portfolio AI exposure, value-screen a short list, deep-dive a ticker.
+
 ### E. Competitive set
 
 1. Search `"{Company} vs competitors {year}"` or peer tickers.
@@ -168,4 +186,4 @@ https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=AAPL&type=10-K&co
 2. Cite **title + URL** for web claims.
 3. Keep Slack/Telegram replies scannable (bullets, short sections).
 4. Portfolio mutations still use portfolio tools; Firecrawl is research only.
-5. Off-scope: licensed advice, tax, trade execution.
+5. Off-scope: licensed advice, tax, trade execution — **not** market themes, macro, or “how will X affect stocks?” (those are in scope; use playbook D2).

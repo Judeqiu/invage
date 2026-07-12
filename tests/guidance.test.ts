@@ -21,6 +21,7 @@ describe('renderGuidance', () => {
     const text = renderGuidance('firecrawl');
     expect(text).toMatch(/Firecrawl|web research/i);
     expect(text).toMatch(/SEC|Yahoo|search/i);
+    expect(text).toMatch(/market theme|AI|in scope/i);
   });
 
   it('returns analysis subcommand with full system layers', () => {
@@ -58,6 +59,13 @@ describe('renderGuidance', () => {
     const text = renderGuidance('chat');
     expect(text).toMatch(/undervalued|value screen|value trap/i);
     expect(text).toMatch(/guidance value/i);
+    expect(text).toMatch(/AI|market theme|stock market/i);
+  });
+
+  it('overview includes market themes as in-scope', () => {
+    const text = renderGuidance('');
+    expect(text).toMatch(/AI|market theme|stock market/i);
+    expect(text).toMatch(/research/i);
   });
 
   it('unknown topic falls back with hint', () => {

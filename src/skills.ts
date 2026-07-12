@@ -69,7 +69,7 @@ const CATALOG: RawSkill[] = [
     id: 'firecrawl',
     name: 'Firecrawl',
     description:
-      'Load for live web research with finance sources: Yahoo Finance pages, SEC EDGAR, company IR, Reuters/CNBC, Finviz, Fed/macro. Use firecrawl tool (search/scrape). Prefer portfolio_analyzer for quotes/targets; Firecrawl for news/filings/guidance text.',
+      'Load for live web research and market themes: Yahoo Finance, SEC EDGAR, company IR, Reuters/CNBC, Finviz, Fed/macro, and investment themes (e.g. AI impact on markets, sector outlooks). Use firecrawl tool (search/scrape). Prefer portfolio_analyzer for quotes/targets; Firecrawl for news/filings/guidance/theme text.',
     keywords: [
       'web',
       'search',
@@ -93,6 +93,15 @@ const CATALOG: RawSkill[] = [
       'macro',
       'fed',
       'investor relations',
+      'theme',
+      'sector',
+      'outlook',
+      'AI',
+      'market impact',
+      'stock market',
+      'geopolitics',
+      'rates',
+      'inflation',
     ],
   },
 ];
