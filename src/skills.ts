@@ -44,6 +44,23 @@ const CATALOG: RawSkill[] = [
       'Load when saving or sharing portfolio reports, listing BinDrive files, or when the user asks about their file portal. Use owner_slug + user.auth_token with bindrive_* tools; prefer save_report for analysis HTML.',
     keywords: ['bindrive', 'drive', 'files', 'reports', 'upload', 'download', 'portal'],
   },
+  {
+    id: 'firecrawl',
+    name: 'Firecrawl',
+    description:
+      'Load when you need live web search or page scrape — news, company research, filings, competitor pages. Use the firecrawl tool (action: search | scrape). Not for portfolio cost basis (use portfolio tools).',
+    keywords: [
+      'web',
+      'search',
+      'scrape',
+      'news',
+      'research',
+      'firecrawl',
+      'browse',
+      'url',
+      'article',
+    ],
+  },
 ];
 
 function readContent(id: string): string {
