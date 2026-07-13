@@ -96,6 +96,11 @@ features:
       usage_hint: "ADM-XXXXXXXX"
       url: https://example.com/slack/commands
       should_escape: false
+    - command: /demomode
+      description: Demo mode on/off/status (admin only) — open access without invite
+      usage_hint: "on|off|status"
+      url: https://example.com/slack/commands
+      should_escape: false
 
 oauth_config:
   scopes:

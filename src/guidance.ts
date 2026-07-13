@@ -112,8 +112,8 @@ const start = (): string =>
   [
     '*Getting started*',
     '',
-    '1. *Access* — non-admins need an invite code (`INV-…`). Admins can run `/invitecode` (Slack) to mint one.',
-    '2. *Instant join* — send the code in chat; profile is created immediately (Slack display name; no Q&A).',
+    '1. *Access* — invite code (`INV-…`) or **demo mode** (admin `/demomode on`). Admins mint invites with `/invitecode`.',
+    '2. *Instant join* — invite or demo auto-creates profile from Slack/Telegram name (no Q&A).',
     '3. *First holdings* — e.g. "Add 100 MSFT at average cost $400 in SL Technology S1"',
     '4. *First analysis* — "Analyze my portfolio" (3-axis + value screen on every holding)',
     '5. *Undervalued sweep* — "Which of my holdings look undervalued?" (uses advanced value system)',
@@ -369,12 +369,13 @@ const admin = (): string =>
     '• `/invites [all|unused|used]` — list invites',
     '• `/admincode [comment]` — mint admin onboard (`ADM-…`)',
     '• `/admincodes` · `/revoke ADM-…`',
+    '• `/demomode on|off|status` — when **on**, anyone can chat; missing profiles auto-created',
     '• `/list` · `/get <slug>`',
     '',
     '*Telegram* (when enabled)',
-    '• Same ideas via `/invite`, `/invites`, `/admincode`, …',
+    '• Same ideas via `/invite`, `/invites`, `/admincode`, `/demomode`, …',
     '',
-    'Users redeem by pasting the code in a DM.',
+    'Users redeem by pasting an invite in a DM, or join freely while demo mode is on.',
   ].join('\n');
 
 const chat = (): string =>
