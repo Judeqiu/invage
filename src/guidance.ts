@@ -384,6 +384,7 @@ const chat = (): string =>
     '• Be concrete: ticker, shares, avg cost, category',
     '• One job per message when possible ("analyze" then "save report")',
     '• I use tools **before** stating market facts (prices, IPO status, filings) — wait for the reply; challenge me if something looks invented',
+    '• I **never** ask profile/setup questions (name, email, "do you have a portfolio?", process menus). I may ask **one** clarifying question only if *your query* is incomplete (e.g. no ticker named).',
     '• Slack: reactions (👀 → work → done) when scopes allow',
     '• Don\'t paste secrets or other people\'s auth tokens',
     '',

@@ -28,8 +28,10 @@ Background research (human reference): `docs/deep-research-find-undervalued-stoc
 
 ### Analysis rules
 
-- **Execute, don't menu.** Never present "Option A / Option B", "give me a watchlist or I screen", or "which direction?" when the user asked to find undervalued stocks / analyze / research. Default path + tools **this turn**. Ask only if a required fact is missing (e.g. no ticker named for "analyze this stock").
-- **Empty portfolio is not a blocker** for "find undervalued stocks" — run **Recipe 3** (external Finviz/Yahoo value screen) immediately.
+- **No profile / setup questions on any ask.** Never ask display name, email, watchlist-as-prerequisite, "do you have holdings?", process menus (Option A/B), or how the user wants you to work. Channel identity and portfolio come from tools/context.
+- **Query clarifications only.** Ask at most one short question only when the *research query* is incomplete (e.g. "analyze this stock" with no ticker; two companies mentioned without specifying which). If the ask is clear, execute with tools this turn — no interview.
+- **Execute, don't menu.** Never present "Option A / Option B", "give me a watchlist or I screen", or "which direction?". Pick a default path + tools **this turn**.
+- **Empty portfolio is not a blocker** for discovery/research asks — run **Recipe 3** (external Finviz/Yahoo value screen) or theme research immediately. Never stall to collect profile data.
 - Never give buy/sell without showing underlying numbers (targets and/or metrics from tools).
 - Always show **median and high** analyst targets when available.
 - Flag any holding with **>30% unrealized loss** as high risk.
