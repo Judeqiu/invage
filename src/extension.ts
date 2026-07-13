@@ -1,9 +1,9 @@
 /**
  * Invage DomainExtension — plugs into the Utarus framework (same contract as Binary).
  *
- * Framework owns: user state, invite/admin, Telegram/CLI/Slack, skills tool,
- * firecrawl, BinDrive tools, write_report, usage.
- * Domain owns: portfolio tools, market analysis, investment skills, message enrichment.
+ * Framework owns: user state, **invite/admin access gate (instant INV- redeem)**,
+ * Telegram/CLI/Slack, skills tool, firecrawl, BinDrive tools, write_report, usage.
+ * Domain owns: portfolio tools, market analysis, investment skills, domain enrich.
  */
 
 import type { DomainExtension, EnrichMessageContext, Skill } from 'utarus';
@@ -16,14 +16,12 @@ import {
   resolveInvestorByTelegramUser,
   type InvestorState,
 } from './state/portfolio-state.js';
-import {
-  fetchSlackDisplayName,
-  redeemInviteInstantly,
-} from './state/instant-invite.js';
 
 const INVAGE_SKILLS: Skill[] = registerInvageSkills();
 
-const INVAGE_PURPOSE = `You are Invester — an **investment research and portfolio analyst** for individual investors. You help with holdings, live valuation, undervalued discovery, *and* investor-facing market questions (themes, sectors, macro, technology impact on markets). You are not a generic chatbot and not a licensed advisor.
+const INVAGE_PURPOSE = `You are Invester — an investment research and portfolio analyst for individual investors. You help with holdings, live valuation, undervalued discovery, and investor-facing market questions (themes, sectors, macro, technology impact on markets). You are not a generic chatbot and not a licensed advisor.
+
+**Voice:** warm, clear, professional — like a sharp colleague. Plain investor English. No robotic menus, no sycophancy.
 
 You serve users on **Telegram and Slack** (same agent, same portfolio state).
 
@@ -165,18 +163,9 @@ When the user asks a **market theme / outlook / "how will X affect the stock mar
 - Thematic answers are educational/research framing, not personalized regulated advice.`;
 
 /**
- * When DomainExtension.enrichMessage is set, Utarus skips its default invite
- * enrichment. We re-implement invite/admin-code guidance for unlinked users so
- * both Telegram and Slack keep the same onboarding gate.
- *
- * INV- codes are redeemed *instantly* in this hook (no display-name/email Q&A):
- * Slack display name is fetched from Slack; profile is created and linked before
- * the agent runs, so the same turn can serve the user as a linked investor.
+ * Domain enrich only. Access / INV- instant redeem is framework-owned
+ * (utarus resolveInboundMessage). Do not re-implement invite Q&A here.
  */
-
-const NEED_INVITE_REPLY =
-  'REPLY:⛔ You need an invite code to use this bot. Ask an admin for an invite code (INV-XXXXXXXX).';
-
 function investorContextPrefix(investor: InvestorState, ctx: EnrichMessageContext): string {
   const portfolio = getPortfolio(investor);
   const n = Object.keys(portfolio).length;
@@ -192,99 +181,6 @@ function investorContextPrefix(investor: InvestorState, ctx: EnrichMessageContex
     `Saved holdings: ${n}. ${channelHint} ` +
     `Load portfolio/state before mutating.]`
   );
-}
-
-function adminOnboardingPrompt(ctx: EnrichMessageContext, code: string): string | null {
-  const tg = ctx.telegramUserId;
-  const slack = ctx.slackUserId;
-  if (tg != null) {
-    return (
-      `[Admin onboard code] This user is redeeming admin onboard code "${code}". ` +
-      `Telegram user ID is ${tg}. Call redeem_admin_onboard_code with code="${code}" ` +
-      `and telegram_user_id=${tg}. After redemption, tell them they are now an admin.`
-    );
-  }
-  if (slack) {
-    return (
-      `[Admin onboard code] This user is redeeming admin onboard code "${code}". ` +
-      `Slack user ID is ${slack}. Call redeem_admin_onboard_code with code="${code}" ` +
-      `and slack_user_id="${slack}". After redemption, tell them they are now an admin.`
-    );
-  }
-  return null;
-}
-
-async function resolveDisplayNameForInvite(ctx: EnrichMessageContext): Promise<string> {
-  if (ctx.slackUserId) {
-    return fetchSlackDisplayName(ctx.slackUserId);
-  }
-  if (ctx.telegramUserId != null) {
-    // EnrichMessageContext has no Telegram first_name; use a stable channel label.
-    return `Telegram ${ctx.telegramUserId}`;
-  }
-  throw new Error('Invite redeem requires slackUserId or telegramUserId');
-}
-
-/**
- * If the message contains a valid INV- code, create the profile immediately and
- * return agent text with full investor context. On failure, REPLY: with the error.
- * Returns null when no INV- code is present.
- */
-async function tryInstantInviteOnboarding(ctx: EnrichMessageContext): Promise<string | null> {
-  const inviteMatch = ctx.text.trim().match(/\b(INV-[A-F0-9]{8})\b/i);
-  if (!inviteMatch) return null;
-
-  const code = inviteMatch[1].toUpperCase();
-  try {
-    const displayName = await resolveDisplayNameForInvite(ctx);
-    const redeemed = redeemInviteInstantly({
-      code,
-      displayName,
-      slackUserId: ctx.slackUserId,
-      telegramUserId: ctx.telegramUserId,
-    });
-
-    let investor: InvestorState | null = null;
-    if (ctx.slackUserId) {
-      investor = resolveInvestorBySlackUser(ctx.slackUserId);
-    } else if (ctx.telegramUserId != null) {
-      investor = resolveInvestorByTelegramUser(ctx.telegramUserId);
-    }
-    if (!investor) {
-      throw new Error(
-        `Invite "${code}" redeemed for slug "${redeemed.slug}" but user could not be resolved by channel id`,
-      );
-    }
-
-    const remainder = ctx.text.replace(/\bINV-[A-F0-9]{8}\b/gi, '').trim();
-    const userPayload =
-      remainder.length > 0
-        ? remainder
-        : 'I just joined with my invite code. Confirm I am ready and ask how you can help — no onboarding questions.';
-
-    return (
-      `${investorContextPrefix(investor, ctx)}\n` +
-      `[Just onboarded via invite ${code}. Profile is ready (display_name="${redeemed.displayName}"). ` +
-      `Do NOT ask for display name, email, or any further signup steps. Serve the user immediately.]\n\n` +
-      userPayload
-    );
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return `REPLY:⛔ ${msg}`;
-  }
-}
-
-async function enrichUnlinkedOnboarding(ctx: EnrichMessageContext): Promise<string> {
-  const adminCodeMatch = ctx.text.trim().match(/\b(ADM-[A-F0-9]{8})\b/i);
-  if (adminCodeMatch) {
-    const prompt = adminOnboardingPrompt(ctx, adminCodeMatch[1].toUpperCase());
-    if (prompt) return prompt;
-  }
-
-  const inviteResult = await tryInstantInviteOnboarding(ctx);
-  if (inviteResult != null) return inviteResult;
-
-  return NEED_INVITE_REPLY;
 }
 
 const guidanceCmd = createGuidanceCommand();
@@ -327,10 +223,8 @@ export const invageExtension: DomainExtension = {
       return `${investorContextPrefix(investor, ctx)}\n\n${ctx.text}`;
     }
 
-    if (ctx.isAdmin) {
-      return ctx.text;
-    }
-
-    return enrichUnlinkedOnboarding(ctx);
+    // Unlinked access is handled by Utarus before this runs for non-admins.
+    // Admins and edge cases: pass text through.
+    return ctx.text;
   },
 };
