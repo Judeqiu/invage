@@ -113,7 +113,7 @@ const start = (): string =>
     '*Getting started*',
     '',
     '1. *Access* — non-admins need an invite code (`INV-…`). Admins can run `/invitecode` (Slack) to mint one.',
-    '2. *Onboarding* — send the code in chat; I collect display name + email, then link your Slack/Telegram ID.',
+    '2. *Instant join* — send the code in chat; profile is created immediately (Slack display name; no Q&A).',
     '3. *First holdings* — e.g. "Add 100 MSFT at average cost $400 in SL Technology S1"',
     '4. *First analysis* — "Analyze my portfolio" (3-axis + value screen on every holding)',
     '5. *Undervalued sweep* — "Which of my holdings look undervalued?" (uses advanced value system)',

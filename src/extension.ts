@@ -14,7 +14,12 @@ import {
   getPortfolio,
   resolveInvestorBySlackUser,
   resolveInvestorByTelegramUser,
+  type InvestorState,
 } from './state/portfolio-state.js';
+import {
+  fetchSlackDisplayName,
+  redeemInviteInstantly,
+} from './state/instant-invite.js';
 
 const INVAGE_SKILLS: Skill[] = registerInvageSkills();
 
@@ -155,51 +160,123 @@ When the user asks a **market theme / outlook / "how will X affect the stock mar
  * When DomainExtension.enrichMessage is set, Utarus skips its default invite
  * enrichment. We re-implement invite/admin-code guidance for unlinked users so
  * both Telegram and Slack keep the same onboarding gate.
+ *
+ * INV- codes are redeemed *instantly* in this hook (no display-name/email Q&A):
+ * Slack display name is fetched from Slack; profile is created and linked before
+ * the agent runs, so the same turn can serve the user as a linked investor.
  */
-function enrichUnlinkedOnboarding(ctx: EnrichMessageContext): string {
-  const text = ctx.text;
+
+const NEED_INVITE_REPLY =
+  'REPLY:⛔ You need an invite code to use this bot. Ask an admin for an invite code (INV-XXXXXXXX).';
+
+function investorContextPrefix(investor: InvestorState, ctx: EnrichMessageContext): string {
+  const portfolio = getPortfolio(investor);
+  const n = Object.keys(portfolio).length;
+  const channelHint =
+    ctx.telegramUserId != null
+      ? `Use telegram_user_id=${ctx.telegramUserId} on portfolio tools.`
+      : ctx.slackUserId
+        ? `Use slack_user_id="${ctx.slackUserId}" on portfolio tools.`
+        : '';
+  return (
+    `[Investor context: You are working with user "${investor.user.slug}" ` +
+    `(${investor.profile.display_name}, email=${investor.profile.contact_email}). ` +
+    `Saved holdings: ${n}. ${channelHint} ` +
+    `Load portfolio/state before mutating.]`
+  );
+}
+
+function adminOnboardingPrompt(ctx: EnrichMessageContext, code: string): string | null {
   const tg = ctx.telegramUserId;
   const slack = ctx.slackUserId;
+  if (tg != null) {
+    return (
+      `[Admin onboard code] This user is redeeming admin onboard code "${code}". ` +
+      `Telegram user ID is ${tg}. Call redeem_admin_onboard_code with code="${code}" ` +
+      `and telegram_user_id=${tg}. After redemption, tell them they are now an admin.`
+    );
+  }
+  if (slack) {
+    return (
+      `[Admin onboard code] This user is redeeming admin onboard code "${code}". ` +
+      `Slack user ID is ${slack}. Call redeem_admin_onboard_code with code="${code}" ` +
+      `and slack_user_id="${slack}". After redemption, tell them they are now an admin.`
+    );
+  }
+  return null;
+}
 
-  const adminCodeMatch = text.trim().match(/\b(ADM-[A-F0-9]{8})\b/i);
+async function resolveDisplayNameForInvite(ctx: EnrichMessageContext): Promise<string> {
+  if (ctx.slackUserId) {
+    return fetchSlackDisplayName(ctx.slackUserId);
+  }
+  if (ctx.telegramUserId != null) {
+    // EnrichMessageContext has no Telegram first_name; use a stable channel label.
+    return `Telegram ${ctx.telegramUserId}`;
+  }
+  throw new Error('Invite redeem requires slackUserId or telegramUserId');
+}
+
+/**
+ * If the message contains a valid INV- code, create the profile immediately and
+ * return agent text with full investor context. On failure, REPLY: with the error.
+ * Returns null when no INV- code is present.
+ */
+async function tryInstantInviteOnboarding(ctx: EnrichMessageContext): Promise<string | null> {
+  const inviteMatch = ctx.text.trim().match(/\b(INV-[A-F0-9]{8})\b/i);
+  if (!inviteMatch) return null;
+
+  const code = inviteMatch[1].toUpperCase();
+  try {
+    const displayName = await resolveDisplayNameForInvite(ctx);
+    const redeemed = redeemInviteInstantly({
+      code,
+      displayName,
+      slackUserId: ctx.slackUserId,
+      telegramUserId: ctx.telegramUserId,
+    });
+
+    let investor: InvestorState | null = null;
+    if (ctx.slackUserId) {
+      investor = resolveInvestorBySlackUser(ctx.slackUserId);
+    } else if (ctx.telegramUserId != null) {
+      investor = resolveInvestorByTelegramUser(ctx.telegramUserId);
+    }
+    if (!investor) {
+      throw new Error(
+        `Invite "${code}" redeemed for slug "${redeemed.slug}" but user could not be resolved by channel id`,
+      );
+    }
+
+    const remainder = ctx.text.replace(/\bINV-[A-F0-9]{8}\b/gi, '').trim();
+    const userPayload =
+      remainder.length > 0
+        ? remainder
+        : 'I just joined with my invite code. Confirm I am ready and ask how you can help — no onboarding questions.';
+
+    return (
+      `${investorContextPrefix(investor, ctx)}\n` +
+      `[Just onboarded via invite ${code}. Profile is ready (display_name="${redeemed.displayName}"). ` +
+      `Do NOT ask for display name, email, or any further signup steps. Serve the user immediately.]\n\n` +
+      userPayload
+    );
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return `REPLY:⛔ ${msg}`;
+  }
+}
+
+async function enrichUnlinkedOnboarding(ctx: EnrichMessageContext): Promise<string> {
+  const adminCodeMatch = ctx.text.trim().match(/\b(ADM-[A-F0-9]{8})\b/i);
   if (adminCodeMatch) {
-    const code = adminCodeMatch[1].toUpperCase();
-    if (tg != null) {
-      return (
-        `[Admin onboard code] This user is redeeming admin onboard code "${code}". ` +
-        `Telegram user ID is ${tg}. Call redeem_admin_onboard_code with code="${code}" ` +
-        `and telegram_user_id=${tg}. After redemption, tell them they are now an admin.`
-      );
-    }
-    if (slack) {
-      return (
-        `[Admin onboard code] This user is redeeming admin onboard code "${code}". ` +
-        `Slack user ID is ${slack}. Call redeem_admin_onboard_code with code="${code}" ` +
-        `and slack_user_id="${slack}". After redemption, tell them they are now an admin.`
-      );
-    }
+    const prompt = adminOnboardingPrompt(ctx, adminCodeMatch[1].toUpperCase());
+    if (prompt) return prompt;
   }
 
-  const inviteMatch = text.trim().match(/\b(INV-[A-F0-9]{8})\b/i);
-  if (inviteMatch) {
-    const code = inviteMatch[1].toUpperCase();
-    if (tg != null) {
-      return (
-        `[Invite code onboarding] Redeeming invite "${code}". Telegram user ID is ${tg}. ` +
-        `Collect display_name and contact_email (one at a time is fine). Once you have both, ` +
-        `call redeem_invite_code with code, telegram_user_id=${tg}, display_name, contact_email.\n\n${text}`
-      );
-    }
-    if (slack) {
-      return (
-        `[Invite code onboarding] Redeeming invite "${code}". Slack user ID is ${slack}. ` +
-        `Collect display_name and contact_email (one at a time is fine). Once you have both, ` +
-        `call redeem_invite_code with code, slack_user_id="${slack}", display_name, contact_email.\n\n${text}`
-      );
-    }
-  }
+  const inviteResult = await tryInstantInviteOnboarding(ctx);
+  if (inviteResult != null) return inviteResult;
 
-  return 'REPLY:⛔ You need an invite code to use this bot. Ask an admin for an invite code (INV-XXXXXXXX).';
+  return NEED_INVITE_REPLY;
 }
 
 const guidanceCmd = createGuidanceCommand();
@@ -239,20 +316,7 @@ export const invageExtension: DomainExtension = {
     }
 
     if (investor) {
-      const portfolio = getPortfolio(investor);
-      const n = Object.keys(portfolio).length;
-      const channelHint =
-        ctx.telegramUserId != null
-          ? `Use telegram_user_id=${ctx.telegramUserId} on portfolio tools.`
-          : ctx.slackUserId
-            ? `Use slack_user_id="${ctx.slackUserId}" on portfolio tools.`
-            : '';
-      return (
-        `[Investor context: You are working with user "${investor.user.slug}" ` +
-        `(${investor.profile.display_name}, email=${investor.profile.contact_email}). ` +
-        `Saved holdings: ${n}. ${channelHint} ` +
-        `Load portfolio/state before mutating.]\n\n${ctx.text}`
-      );
+      return `${investorContextPrefix(investor, ctx)}\n\n${ctx.text}`;
     }
 
     if (ctx.isAdmin) {
