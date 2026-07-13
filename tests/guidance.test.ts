@@ -17,6 +17,14 @@ describe('renderGuidance', () => {
     expect(text).toMatch(/guidance value/i);
   });
 
+  it('returns playbook topic and aliases', () => {
+    const text = renderGuidance('playbook');
+    expect(text).toMatch(/Investment Playbook|methodology/i);
+    expect(text).toMatch(/value_investing|conservative|rebalanc/i);
+    expect(renderGuidance('strategy')).toMatch(/Playbook/i);
+    expect(renderGuidance('risk')).toMatch(/Playbook/i);
+  });
+
   it('aliases research keywords to firecrawl guidance', () => {
     const text = renderGuidance('firecrawl');
     expect(text).toMatch(/Firecrawl|news|research/i);
@@ -57,7 +65,14 @@ describe('renderGuidance', () => {
     const text = renderGuidance('skills');
     expect(text).toMatch(/investment-analysis/i);
     expect(text).toMatch(/Part C|VALUE SCREEN|undervalued/i);
+    expect(text).toMatch(/playbook-setup/i);
     expect(text).not.toMatch(/financial-analysis/i);
+  });
+
+  it('playbook guidance mentions guided wizard', () => {
+    const text = renderGuidance('playbook');
+    expect(text).toMatch(/playbook-setup|Guided setup|one easy question/i);
+    expect(text).toMatch(/Help me set up/i);
   });
 
   it('chat tips include advanced analysis examples', () => {

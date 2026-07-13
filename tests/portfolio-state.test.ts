@@ -12,8 +12,15 @@ const dataRoot = mkdtempSync(join(tmpdir(), 'invage-test-'));
 process.env.UTARUS_LOADED_BY_HOST = '1';
 process.env.UTARUS_DATA_ROOT = dataRoot;
 
-const { loadInvestorState, resolveInvestorByTelegramUser, getPortfolio, saveInvestorState, setPortfolio } =
-  await import('../src/state/portfolio-state.js');
+const {
+  loadInvestorState,
+  resolveInvestorByTelegramUser,
+  getPortfolio,
+  getPlaybook,
+  saveInvestorState,
+  setPortfolio,
+  updatePlaybook,
+} = await import('../src/state/portfolio-state.js');
 
 describe('portfolio-state', () => {
   beforeAll(() => {
@@ -63,5 +70,27 @@ describe('portfolio-state', () => {
 
     const reloaded = loadInvestorState('alice');
     expect(getPortfolio(reloaded).MSFT?.units).toBe(2);
+  });
+
+  it('resolves default playbook when none stored', () => {
+    const state = loadInvestorState('alice');
+    const pb = getPlaybook(state);
+    expect(pb.risk.profile).toBe('balanced');
+    expect(pb.philosophy).toBe('value_investing');
+  });
+
+  it('persists playbook updates', () => {
+    const state = loadInvestorState('alice');
+    updatePlaybook(state, {
+      risk: { profile: 'conservative' },
+      philosophy: 'dividend_investing',
+    });
+    state.log.push({ ts: '2026-06-28', action: 'playbook_updated' });
+    saveInvestorState(state);
+
+    const reloaded = loadInvestorState('alice');
+    const pb = getPlaybook(reloaded);
+    expect(pb.risk.profile).toBe('conservative');
+    expect(pb.philosophy).toBe('dividend_investing');
   });
 });

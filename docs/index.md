@@ -3,7 +3,7 @@ layout: default
 title: Invester — AI Investment Portfolio Analyzer
 ---
 
-**[Home](/invage/)** | **[Data Model](/invage/data-model.html)**
+**[Home](/invage/)** | **[Data Model](/invage/data-model.html)** | **[Playbook](/invage/playbook.html)**
 
 # Invester
 
@@ -187,6 +187,20 @@ Positions where current price is well below the median analyst target.
 
 ---
 
+## Investment Playbook
+
+Per-user methodology (strategy, philosophy, risk, allocation, buy/sell rules, rebalancing, watchlists). Unconfigured users get balanced defaults. Guided wizard: *“Help me set up my playbook”*.
+
+Full documentation: **[Playbook](playbook.html)**
+
+| Tool / skill | Role |
+|--------------|------|
+| `get_playbook` / `update_playbook` | Read or change settings |
+| `playbook-setup` skill | Patient one-question wizard (user-initiated) |
+| `portfolio_analyzer` | Applies playbook-derived thresholds on saved portfolios |
+
+---
+
 ## Architecture
 
 ```
@@ -194,38 +208,27 @@ Positions where current price is well below the median analyst target.
 │                Utarus Agent (TypeScript)               │
 │                                                       │
 │  ┌──────────────┐    ┌───────────────────┐           │
-│  │  DeepSeek LLM │    │  Telegram Bot     │           │
+│  │  DeepSeek LLM │    │  Telegram / Slack │           │
 │  └──────┬───────┘    └────────┬──────────┘           │
 │         │                     │                       │
 │         ▼                     ▼                       │
 │  ┌─────────────────────────────────────────────────┐ │
 │  │                   Tools Layer                    │ │
-│  │                                                  │ │
-│  │  ┌───────────────────┐  ┌────────────────────┐  │ │
-│  │  │  portfolio_tools   │  │ portfolio_analyzer  │  │ │
-│  │  │  (CRUD holdings)   │  │ (3-axis analysis)   │  │ │
-│  │  └─────────┬─────────┘  └──────────┬─────────┘  │ │
+│  │  portfolio · playbook · analyzer · reports       │ │
 │  │            │                       │             │ │
 │  │            ▼                       ▼             │ │
 │  │  ┌──────────────────────────────────────────┐   │ │
 │  │  │  User State (data/users/<slug>.yaml)      │   │ │
-│  │  │  └── portfolio: { AAPL: {...}, MSFT: {...}}│  │ │
+│  │  │  ├── portfolio: { AAPL: {...}, ... }      │   │ │
+│  │  │  └── playbook:  { strategy, risk, ... }   │   │ │
 │  │  └──────────────────────────────────────────┘   │ │
 │  └─────────────────────────────────────────────────┘ │
 │                         │                             │
 │                         ▼                             │
 │  ┌─────────────────────────────────────────────────┐ │
-│  │              src/market/ Module                  │ │
-│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐        │ │
-│  │  │  Prices  │ │  Targets │ │  Metrics │        │ │
-│  │  └──────────┘ └──────────┘ └──────────┘        │ │
-│  │         │           │           │                │ │
-│  │         └───────────┼───────────┘                │ │
-│  │                     ▼                            │ │
-│  │           ┌──────────────┐                       │ │
-│  │           │   Analyzer   │                       │ │
-│  │           │  (3-Axis)    │                       │ │
-│  │           └──────────────┘                       │ │
+│  │              src/market/ + src/playbook/         │ │
+│  │  Prices · Targets · Metrics · 3-Axis Analyzer    │ │
+│  │  (thresholds tilted by user playbook)            │ │
 │  └─────────────────────────────────────────────────┘ │
 │                         │                             │
 │                         ▼                             │
@@ -241,10 +244,13 @@ Positions where current price is well below the median analyst target.
 | `src/market/fetch-prices.ts` | Real-time stock prices via yahoo-finance2 |
 | `src/market/fetch-targets.ts` | Analyst price targets (low/median/mean/high) |
 | `src/market/fetch-metrics.ts` | Financial metrics (P/E, PEG, ROE, P/B) |
-| `src/market/analyzer.ts` | 3-axis analysis engine |
+| `src/market/analyzer.ts` | 3-axis analysis engine (playbook-aware thresholds) |
+| `src/playbook/` | Types, defaults, resolve, guidance, threshold tilt |
 | `src/tools/portfolio.ts` | Portfolio CRUD tools (add/remove/update/get/clear) |
+| `src/tools/playbook.ts` | `get_playbook` / `update_playbook` |
 | `src/tools/portfolio_analyzer.ts` | Analysis tool — reads saved portfolio or ad-hoc |
 | `src/skills/knowledge/investment-analysis.md` | Skill document with investment knowledge |
+| `src/skills/knowledge/playbook-setup.md` | Patient playbook configuration wizard |
 
 ---
 

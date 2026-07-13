@@ -12,6 +12,7 @@
 export const GUIDANCE_SUBCOMMANDS = [
   'start',
   'portfolio',
+  'playbook',
   'analysis',
   'value',
   'research',
@@ -28,6 +29,17 @@ function normalizeSub(args: string): GuidanceSubcommand {
   if (!raw || raw === 'help' || raw === '?' || raw === 'index') return 'overview';
   if (raw === 'onboarding' || raw === 'getting-started' || raw === 'begin') return 'start';
   if (raw === 'holdings' || raw === 'positions' || raw === 'pnl' || raw === 'p/l') return 'portfolio';
+  if (
+    raw === 'playbook' ||
+    raw === 'strategy' ||
+    raw === 'risk' ||
+    raw === 'philosophy' ||
+    raw === 'methodology' ||
+    raw === 'preferences' ||
+    raw === 'config'
+  ) {
+    return 'playbook';
+  }
   if (
     raw === '3-axis' ||
     raw === 'analyzer' ||
@@ -91,6 +103,7 @@ const overview = (): string =>
     '*Topics* (use as subcommands):',
     '• `start` — first-time setup & invite',
     '• `portfolio` — add/update/remove holdings',
+    '• `playbook` — investment strategy, risk, buy/sell rules (defaults if unset)',
     '• `analysis` — 3-axis + full stock evaluation system',
     '• `value` — *advanced* undervalued discovery (value screen, traps, thesis)',
     '• `research` — news→price-path, filings, themes (AI, rates, earnings reaction, …)',
@@ -115,12 +128,54 @@ const start = (): string =>
     '1. *Access* — invite code (`INV-…`) or **demo mode** (admin `/demomode on`). Admins mint invites with `/invitecode`.',
     '2. *Instant join* — invite or demo auto-creates profile from Slack/Telegram name (no Q&A).',
     '3. *First holdings* — e.g. "Add 100 MSFT at average cost $400 in SL Technology S1"',
-    '4. *First analysis* — "Analyze my portfolio" (3-axis + value screen on every holding)',
-    '5. *Undervalued sweep* — "Which of my holdings look undervalued?" (uses advanced value system)',
-    '6. *Optional research* — "Search web for MSFT earnings guidance" or "Scrape Yahoo key-statistics for AAPL"',
-    '7. *Save work* — "Save a report to my drive" or "Take a snapshot"',
+    '4. *Optional playbook* — "Help me set up my playbook" (patient wizard) or keep balanced defaults',
+    '5. *First analysis* — "Analyze my portfolio" (3-axis + value screen, playbook-aware thresholds)',
+    '6. *Undervalued sweep* — "Which of my holdings look undervalued?" (uses advanced value system)',
+    '7. *Optional research* — "Search web for MSFT earnings guidance" or "Scrape Yahoo key-statistics for AAPL"',
+    '8. *Save work* — "Save a report to my drive" or "Take a snapshot"',
     '',
-    'See also: `/guidance portfolio` · `/guidance analysis` · `/guidance value` · `/guidance research`',
+    'See also: `/guidance portfolio` · `/guidance playbook` · `/guidance analysis` · `/guidance value`',
+  ].join('\n');
+
+const playbook = (): string =>
+  [
+    '*Investment Playbook (your methodology)*',
+    '',
+    'Every investor has a unique methodology. Your playbook steers how I frame research and trade suggestions.',
+    'If you never set one, I use a *balanced market-standard* default — no interview required.',
+    '',
+    '*Guided setup (recommended if you are new)*',
+    '• Say: "Help me set up my investment playbook" or "Walk me through my risk and strategy"',
+    '• I load the *playbook-setup* skill and ask *one easy question at a time* with plain-English explanations',
+    '• Paths: full wizard · quick 3 questions · change one setting · explain current · reset defaults',
+    '• You can skip any step, keep defaults, or stop early — I save what you already chose',
+    '',
+    '*Axes*',
+    '• *Strategy* — growth · income · capital_preservation',
+    '• *Philosophy* — value_investing · growth_investing · dividend_investing',
+    '• *Risk* — conservative · balanced · aggressive (+ position / sector caps)',
+    '• *Allocation* — max position %, cash target %, max sector %',
+    '• *Buy & sell rules* — your criteria + AI recommendation style',
+    '• *Rebalancing* — monthly · quarterly · threshold-based',
+    '• *Watchlists* — markets, sectors, themes (default discovery universe)',
+    '',
+    '*What to say*',
+    '• "Help me set up my playbook" / "Quick setup — 3 questions"',
+    '• "Show my investment playbook" / "What defaults am I on?"',
+    '• "Set risk to conservative" / "Switch philosophy to growth investing"',
+    '• "Max position 8%, max sector 25%, cash target 10%"',
+    '• "Rebalance quarterly" / "Watch themes: AI, energy transition"',
+    '• "Buy only when trap gate passes and upside > 20%"',
+    '• "Reset my playbook to defaults"',
+    '',
+    '*How I use it*',
+    '• BUY/SELL language must respect your buy/sell criteria and risk profile',
+    '• Size suggestions stay under position/sector limits (I flag breaches)',
+    '• Value vs growth vs dividend changes which metrics count as "cheap"',
+    '• Discovery without a ticker prefers your watchlist markets/sectors/themes',
+    '• `portfolio_analyzer` on your holdings uses playbook-adjusted thresholds',
+    '',
+    'See also: `/guidance analysis` · `/guidance value` · `/guidance portfolio`',
   ].join('\n');
 
 const portfolio = (): string =>
@@ -351,11 +406,13 @@ const skills = (): string =>
     '  ↳ Part C: advanced value funnel (cheap ∩ quality ∩ trap + thesis)',
     '  ↳ Part D: news → price-path (under/overreaction, PEAD watch, earnings)',
     '  ↳ Tool: portfolio_analyzer VALUE SCREEN (cheapness / quality / trapRisk)',
+    '• *playbook-setup* — patient wizard for strategy / risk / buy-sell / watchlists (user-initiated)',
+    '  ↳ One easy question per turn · get_playbook / update_playbook · `/guidance playbook`',
     '• *firecrawl* — primary news, filings, finance sources, themes (pair with Part D)',
     '• *bindrive* — reports, files, portal tokens',
     '• *getting-started* / *admin* (framework) — user state & invite codes',
     '',
-    'Focused how-tos: `/guidance portfolio` · `analysis` · `value` · `research` · `reports` · `start`',
+    'Focused how-tos: `/guidance portfolio` · `playbook` · `analysis` · `value` · `research` · `reports` · `start`',
   ].join('\n');
 
 const admin = (): string =>
@@ -385,7 +442,7 @@ const chat = (): string =>
     '• Be concrete: ticker, shares, avg cost, category',
     '• One job per message when possible ("analyze" then "save report")',
     '• I use tools **before** stating market facts (prices, IPO status, filings) — wait for the reply; challenge me if something looks invented',
-    '• I **never** ask profile/setup questions (name, email, "do you have a portfolio?", process menus). I may ask **one** clarifying question only if *your query* is incomplete (e.g. no ticker named).',
+    '• I **never** cold-ask name/email/"do you have a portfolio?" or process menus for research. I *will* ask one easy playbook question at a time if *you* start setup ("help me set my playbook").',
     '• Slack: reactions (👀 → work → done) when scopes allow',
     '• Don\'t paste secrets or other people\'s auth tokens',
     '',
@@ -426,6 +483,8 @@ export function renderGuidance(args: string = ''): string {
       return start();
     case 'portfolio':
       return portfolio();
+    case 'playbook':
+      return playbook();
     case 'analysis':
       return analysis();
     case 'value':
@@ -466,9 +525,9 @@ export function createGuidanceCommand(): {
   return {
     name: 'guidance',
     description:
-      'How to use Invester: portfolio, 3-axis analysis, advanced undervalued value screen, research, reports',
+      'How to use Invester: portfolio, playbook, 3-axis analysis, value screen, research, reports',
     adminOnly: false,
-    usageHint: '[start|portfolio|analysis|value|research|reports|skills|admin|chat]',
+    usageHint: '[start|portfolio|playbook|analysis|value|research|reports|skills|admin|chat]',
     handle: (args: string) => renderGuidance(args),
   };
 }

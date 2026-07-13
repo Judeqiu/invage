@@ -1,5 +1,26 @@
 import { COMPANIES, THRESHOLDS } from './config.js';
+import type { PlaybookThresholds } from '../playbook/thresholds.js';
 import type { Holding, PositionAnalysis, AnalystTarget, AnalysisResult } from './types.js';
+
+/** Default thresholds when no playbook is supplied (matches global THRESHOLDS). */
+export function defaultAnalysisThresholds(): Pick<
+  PlaybookThresholds,
+  | 'buyMinUpsidePct'
+  | 'strongBuyUpsidePct'
+  | 'deepLossSellPct'
+  | 'holdLossMonitorPct'
+  | 'takeProfitPremiumPct'
+  | 'trailStopPremiumPct'
+> {
+  return {
+    buyMinUpsidePct: THRESHOLDS.buyMinUpsidePct,
+    strongBuyUpsidePct: THRESHOLDS.strongBuyUpsidePct,
+    deepLossSellPct: -30,
+    holdLossMonitorPct: -15,
+    takeProfitPremiumPct: 20,
+    trailStopPremiumPct: 10,
+  };
+}
 
 export function buildAnalysis(
   holdings: Record<string, Holding>,
@@ -57,55 +78,82 @@ export function buildAnalysis(
   });
 }
 
-function classifyLaggard(lossPct: number): string {
-  if (lossPct < -30) return 'SELL — Deep loss, no recovery path';
-  if (lossPct < -15) return 'HOLD — Monitor for catalyst';
+function classifyLaggard(
+  lossPct: number,
+  t: ReturnType<typeof defaultAnalysisThresholds>,
+): string {
+  if (lossPct <= t.deepLossSellPct) return `SELL — Deep loss (≤${t.deepLossSellPct}%), weak recovery path`;
+  if (lossPct <= t.holdLossMonitorPct) return `HOLD — Monitor for catalyst (loss ≤${t.holdLossMonitorPct}%)`;
   return 'REDUCE COST — Average down if fundamentals strong';
 }
 
-function classifyOverpriced(price: number, targetMedian: number): string {
+function classifyOverpriced(
+  price: number,
+  targetMedian: number,
+  t: ReturnType<typeof defaultAnalysisThresholds>,
+): string {
   const premium = ((price - targetMedian) / targetMedian) * 100;
-  if (premium > 20) return 'TAKE PROFIT — Significant overvaluation';
-  if (premium > 10) return 'TRAIL STOP — Protect gains';
+  if (premium >= t.takeProfitPremiumPct) {
+    return `TAKE PROFIT — ≥${t.takeProfitPremiumPct}% over median target`;
+  }
+  if (premium >= t.trailStopPremiumPct) {
+    return `TRAIL STOP — ≥${t.trailStopPremiumPct}% over median; protect gains`;
+  }
   return 'HOLD — Slight premium, momentum may continue';
 }
 
-function classifyOpportunity(upsidePct: number): string {
-  if (upsidePct > 30) return 'STRONG BUY — High conviction, >30% upside';
-  if (upsidePct > 20) return 'BUY — Moderate conviction, 20-30% upside';
-  return 'WATCH — Interesting, 15-20% upside';
+function classifyOpportunity(
+  upsidePct: number,
+  t: ReturnType<typeof defaultAnalysisThresholds>,
+): string {
+  if (upsidePct >= t.strongBuyUpsidePct) {
+    return `STRONG BUY — High conviction, ≥${t.strongBuyUpsidePct}% upside`;
+  }
+  if (upsidePct >= t.buyMinUpsidePct + 5) {
+    return `BUY — Moderate conviction, ~${(t.buyMinUpsidePct + 5).toFixed(0)}–${t.strongBuyUpsidePct}% upside`;
+  }
+  return `WATCH — Interesting, ≥${t.buyMinUpsidePct}% upside`;
 }
 
-export function analyzeLaggards(analysis: PositionAnalysis[]): PositionAnalysis[] {
+export function analyzeLaggards(
+  analysis: PositionAnalysis[],
+  thresholds: ReturnType<typeof defaultAnalysisThresholds> = defaultAnalysisThresholds(),
+): PositionAnalysis[] {
   return analysis
     .filter((s) => s.targetHigh != null && s.avgCost > s.targetHigh!)
     .map((s) => ({
       ...s,
-      recommendation: classifyLaggard((s.price - s.avgCost) / s.avgCost * 100),
+      recommendation: classifyLaggard((s.price - s.avgCost) / s.avgCost * 100, thresholds),
     }))
     .sort((a, b) => (b.costVsHigh ?? 0) - (a.costVsHigh ?? 0));
 }
 
-export function analyzeOverpriced(analysis: PositionAnalysis[]): PositionAnalysis[] {
+export function analyzeOverpriced(
+  analysis: PositionAnalysis[],
+  thresholds: ReturnType<typeof defaultAnalysisThresholds> = defaultAnalysisThresholds(),
+): PositionAnalysis[] {
   return analysis
     .filter((s) => s.targetMedian != null && s.price > s.targetMedian!)
     .map((s) => ({
       ...s,
-      recommendation: classifyOverpriced(s.price, s.targetMedian!),
+      recommendation: classifyOverpriced(s.price, s.targetMedian!, thresholds),
     }))
     .sort((a, b) => b.plPct - a.plPct);
 }
 
-export function analyzeBuyOpportunities(analysis: PositionAnalysis[]): PositionAnalysis[] {
+export function analyzeBuyOpportunities(
+  analysis: PositionAnalysis[],
+  thresholds: ReturnType<typeof defaultAnalysisThresholds> = defaultAnalysisThresholds(),
+): PositionAnalysis[] {
   return analysis
     .filter((s) => {
       if (s.targetMedian == null || s.price >= s.targetMedian) return false;
       const upside = s.upsideToMedian ?? 0;
-      return upside > THRESHOLDS.buyMinUpsidePct;
+      return upside >= thresholds.buyMinUpsidePct;
     })
     .map((s) => ({
       ...s,
-      recommendation: classifyOpportunity(s.upsideToMedian ?? 0),
+      recommendation: classifyOpportunity(s.upsideToMedian ?? 0, thresholds),
     }))
     .sort((a, b) => (b.upsideToMedian ?? 0) - (a.upsideToMedian ?? 0));
 }
@@ -114,12 +162,13 @@ export function runFullAnalysis(
   holdings: Record<string, Holding>,
   prices: Record<string, number>,
   targets: Record<string, AnalystTarget>,
+  thresholds: ReturnType<typeof defaultAnalysisThresholds> = defaultAnalysisThresholds(),
 ): AnalysisResult {
   const fullAnalysis = buildAnalysis(holdings, prices, targets);
   return {
-    laggards: analyzeLaggards(fullAnalysis),
-    overpriced: analyzeOverpriced(fullAnalysis),
-    buyOpportunities: analyzeBuyOpportunities(fullAnalysis),
+    laggards: analyzeLaggards(fullAnalysis, thresholds),
+    overpriced: analyzeOverpriced(fullAnalysis, thresholds),
+    buyOpportunities: analyzeBuyOpportunities(fullAnalysis, thresholds),
     fullAnalysis,
   };
 }

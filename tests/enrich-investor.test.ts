@@ -45,6 +45,8 @@ describe('invage enrichMessage (domain only — access is Utarus)', () => {
     expect(text).toMatch(/Investor context/);
     expect(text).toMatch(/CY/);
     expect(text).toContain('Help me find undervalued stocks');
+    expect(text).toMatch(/Investment Playbook/);
+    expect(text).toMatch(/Strategy=|strategy/i);
     expect(text).not.toMatch(/invite code|display_name would you|Option A/i);
   });
 

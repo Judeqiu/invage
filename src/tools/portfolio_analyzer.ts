@@ -9,8 +9,14 @@ import {
   rankValueCandidates,
   COMPANIES,
 } from '../market/index.js';
+import {
+  defaultValueThresholds,
+  valueThresholdsFromPlaybook,
+  type ValueThresholds,
+} from '../market/value-assess.js';
 import type { FinancialMetrics, Holding, ValueAssessment } from '../market/index.js';
-import { getPortfolio } from '../state/portfolio-state.js';
+import { thresholdsForPlaybook } from '../playbook/index.js';
+import { getPlaybook, getPortfolio } from '../state/portfolio-state.js';
 import {
   channelIdParams,
   resolveInvestorFromChannel,
@@ -117,6 +123,9 @@ export function createPortfolioAnalyzerTool(): AgentTool {
       try {
         let holdings: Record<string, Holding> | null = null;
         let tickerList: string[] = [];
+        let valueTh: ValueThresholds = defaultValueThresholds();
+        let analysisTh = undefined as ReturnType<typeof thresholdsForPlaybook> | undefined;
+        let playbookNote = '';
 
         if (params.telegram_user_id != null || params.slack_user_id) {
           const state = resolveInvestorFromChannel(params);
@@ -125,6 +134,13 @@ export function createPortfolioAnalyzerTool(): AgentTool {
             return fail('No portfolio saved. Use add_holding to build a portfolio first.');
           }
           tickerList = Object.keys(holdings);
+          const pb = getPlaybook(state);
+          analysisTh = thresholdsForPlaybook(pb);
+          valueTh = valueThresholdsFromPlaybook(analysisTh);
+          playbookNote =
+            `Playbook: ${pb.strategy} / ${pb.philosophy} / risk=${pb.risk.profile} ` +
+            `(buy≥${analysisTh.buyMinUpsidePct}% strong≥${analysisTh.strongBuyUpsidePct}% | ` +
+            `max pos ${pb.risk.position_limit_pct}% sector ${pb.risk.sector_exposure_pct}%)\n\n`;
         } else if (params.holdings) {
           holdings = JSON.parse(params.holdings) as Record<string, Holding>;
           tickerList = Object.keys(holdings);
@@ -150,16 +166,20 @@ export function createPortfolioAnalyzerTool(): AgentTool {
           if (!m) {
             throw new Error(`portfolio_analyzer: metrics missing for ${t} after fetchMetrics`);
           }
-          return assessValue(m);
+          return assessValue(m, valueTh);
         });
 
         if (holdings) {
-          const result = runFullAnalysis(holdings, prices, targets);
+          const result = runFullAnalysis(holdings, prices, targets, analysisTh);
 
+          const buyLabel = analysisTh
+            ? `BUY OPPORTUNITIES — ≥${analysisTh.buyMinUpsidePct}% Upside to Median`
+            : 'BUY OPPORTUNITIES — ≥15% Upside to Median';
           let output = `Portfolio Analysis — ${result.fullAnalysis.length} positions\n\n`;
+          output += playbookNote;
           output += formatAnalysisSection('LAGGARDS — Cost > Analyst High Target', '🔴', result.laggards);
           output += formatAnalysisSection('OVERPRICED — Price Above Median Target', '🟡', result.overpriced);
-          output += formatAnalysisSection('BUY OPPORTUNITIES — >15% Upside to Median', '🟢', result.buyOpportunities);
+          output += formatAnalysisSection(buyLabel, '🟢', result.buyOpportunities);
 
           output += formatValueSection(safeAssessments);
 
@@ -184,7 +204,7 @@ export function createPortfolioAnalyzerTool(): AgentTool {
           if (!m) {
             throw new Error(`portfolio_analyzer: metrics missing for ${ticker}`);
           }
-          const a = assessValue(m);
+          const a = assessValue(m, valueTh);
           const name = COMPANIES[ticker] ?? m.shortName ?? ticker;
           output += `${ticker} (${name})\n`;
           output += `  Price: ${price != null ? '$' + price.toFixed(2) : 'N/A'}`;

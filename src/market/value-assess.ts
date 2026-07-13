@@ -1,4 +1,5 @@
 import { THRESHOLDS } from './config.js';
+import type { PlaybookThresholds } from '../playbook/thresholds.js';
 import type {
   FinancialMetrics,
   ValueAssessment,
@@ -6,6 +7,66 @@ import type {
   QualityVerdict,
   TrapRisk,
 } from './types.js';
+
+/** Multiples used by assessValue; playbook can override PE/PEG/FCF cheapness bars. */
+export type ValueThresholds = {
+  peAttractive: number;
+  peExpensive: number;
+  forwardPeAttractive: number;
+  forwardPeExpensive: number;
+  pegAttractive: number;
+  pegExpensive: number;
+  fcfYieldAttractive: number;
+  fcfYieldWeak: number;
+  evEbitdaAttractive: number;
+  evEbitdaExpensive: number;
+  pbAttractiveFinancials: number;
+  pbExpensiveFinancials: number;
+  roeGood: number;
+  roeWeak: number;
+  roaGood: number;
+  opMarginGood: number;
+  revenueGrowthCollapse: number;
+  debtToEquityHigh: number;
+};
+
+export function defaultValueThresholds(): ValueThresholds {
+  return {
+    peAttractive: THRESHOLDS.peAttractive,
+    peExpensive: THRESHOLDS.peExpensive,
+    forwardPeAttractive: THRESHOLDS.forwardPeAttractive,
+    forwardPeExpensive: THRESHOLDS.forwardPeExpensive,
+    pegAttractive: THRESHOLDS.pegAttractive,
+    pegExpensive: THRESHOLDS.pegExpensive,
+    fcfYieldAttractive: THRESHOLDS.fcfYieldAttractive,
+    fcfYieldWeak: THRESHOLDS.fcfYieldWeak,
+    evEbitdaAttractive: THRESHOLDS.evEbitdaAttractive,
+    evEbitdaExpensive: THRESHOLDS.evEbitdaExpensive,
+    pbAttractiveFinancials: THRESHOLDS.pbAttractiveFinancials,
+    pbExpensiveFinancials: THRESHOLDS.pbExpensiveFinancials,
+    roeGood: THRESHOLDS.roeGood,
+    roeWeak: THRESHOLDS.roeWeak,
+    roaGood: THRESHOLDS.roaGood,
+    opMarginGood: THRESHOLDS.opMarginGood,
+    revenueGrowthCollapse: THRESHOLDS.revenueGrowthCollapse,
+    debtToEquityHigh: THRESHOLDS.debtToEquityHigh,
+  };
+}
+
+/** Overlay playbook-derived PE/PEG/FCF bars onto base value thresholds. */
+export function valueThresholdsFromPlaybook(pb: PlaybookThresholds): ValueThresholds {
+  const base = defaultValueThresholds();
+  return {
+    ...base,
+    peAttractive: pb.peAttractive,
+    peExpensive: pb.peExpensive,
+    forwardPeAttractive: pb.forwardPeAttractive,
+    forwardPeExpensive: pb.forwardPeExpensive,
+    pegAttractive: pb.pegAttractive,
+    pegExpensive: pb.pegExpensive,
+    fcfYieldAttractive: pb.fcfYieldAttractive,
+  };
+}
 
 function isFinancialOrUtility(sector: string): boolean {
   const s = sector.toLowerCase();
@@ -29,8 +90,13 @@ function fmtNum(n: number, digits = 1): string {
 /**
  * Score undervaluation inputs from metrics only.
  * Missing fields are skipped (not invented). UNKNOWN when too little data.
+ * Optional thresholds (from playbook) tilt PE/PEG/FCF cheapness bars.
  */
-export function assessValue(m: FinancialMetrics): ValueAssessment {
+export function assessValue(
+  m: FinancialMetrics,
+  thresholds: ValueThresholds = defaultValueThresholds(),
+): ValueAssessment {
+  const T = thresholds;
   const signals: string[] = [];
   let cheapScore = 0;
   let cheapVotes = 0;
@@ -54,12 +120,12 @@ export function assessValue(m: FinancialMetrics): ValueAssessment {
   // --- Cheapness ---
   if (m.trailingPE != null && m.trailingPE > 0) {
     cheapVotes++;
-    if (m.trailingPE < THRESHOLDS.peAttractive) {
+    if (m.trailingPE < T.peAttractive) {
       cheapScore++;
-      signals.push(`trailing PE ${fmtNum(m.trailingPE)} < ${THRESHOLDS.peAttractive} (cheap signal)`);
-    } else if (m.trailingPE > THRESHOLDS.peExpensive) {
+      signals.push(`trailing PE ${fmtNum(m.trailingPE)} < ${T.peAttractive} (cheap signal)`);
+    } else if (m.trailingPE > T.peExpensive) {
       cheapScore--;
-      signals.push(`trailing PE ${fmtNum(m.trailingPE)} > ${THRESHOLDS.peExpensive} (expensive signal)`);
+      signals.push(`trailing PE ${fmtNum(m.trailingPE)} > ${T.peExpensive} (expensive signal)`);
     } else {
       signals.push(`trailing PE ${fmtNum(m.trailingPE)} mid-range`);
     }
@@ -67,12 +133,12 @@ export function assessValue(m: FinancialMetrics): ValueAssessment {
 
   if (m.forwardPE != null && m.forwardPE > 0) {
     cheapVotes++;
-    if (m.forwardPE < THRESHOLDS.forwardPeAttractive) {
+    if (m.forwardPE < T.forwardPeAttractive) {
       cheapScore++;
-      signals.push(`forward PE ${fmtNum(m.forwardPE)} < ${THRESHOLDS.forwardPeAttractive} (cheap signal)`);
-    } else if (m.forwardPE > THRESHOLDS.forwardPeExpensive) {
+      signals.push(`forward PE ${fmtNum(m.forwardPE)} < ${T.forwardPeAttractive} (cheap signal)`);
+    } else if (m.forwardPE > T.forwardPeExpensive) {
       cheapScore--;
-      signals.push(`forward PE ${fmtNum(m.forwardPE)} > ${THRESHOLDS.forwardPeExpensive} (expensive signal)`);
+      signals.push(`forward PE ${fmtNum(m.forwardPE)} > ${T.forwardPeExpensive} (expensive signal)`);
     } else {
       signals.push(`forward PE ${fmtNum(m.forwardPE)} mid-range`);
     }
@@ -80,12 +146,12 @@ export function assessValue(m: FinancialMetrics): ValueAssessment {
 
   if (m.pegRatio != null && m.pegRatio > 0) {
     cheapVotes++;
-    if (m.pegRatio < THRESHOLDS.pegAttractive) {
+    if (m.pegRatio < T.pegAttractive) {
       cheapScore++;
-      signals.push(`PEG ${fmtNum(m.pegRatio, 2)} < ${THRESHOLDS.pegAttractive} (GARP-cheap)`);
-    } else if (m.pegRatio > THRESHOLDS.pegExpensive) {
+      signals.push(`PEG ${fmtNum(m.pegRatio, 2)} < ${T.pegAttractive} (GARP-cheap)`);
+    } else if (m.pegRatio > T.pegExpensive) {
       cheapScore--;
-      signals.push(`PEG ${fmtNum(m.pegRatio, 2)} > ${THRESHOLDS.pegExpensive} (growth-expensive)`);
+      signals.push(`PEG ${fmtNum(m.pegRatio, 2)} > ${T.pegExpensive} (growth-expensive)`);
     } else {
       signals.push(`PEG ${fmtNum(m.pegRatio, 2)} mid-range`);
     }
@@ -93,12 +159,12 @@ export function assessValue(m: FinancialMetrics): ValueAssessment {
 
   if (m.fcfYield != null) {
     cheapVotes++;
-    if (m.fcfYield >= THRESHOLDS.fcfYieldAttractive) {
+    if (m.fcfYield >= T.fcfYieldAttractive) {
       cheapScore++;
-      signals.push(`FCF yield ${fmtPct(m.fcfYield)} ≥ ${fmtPct(THRESHOLDS.fcfYieldAttractive)} (cash cheap)`);
-    } else if (m.fcfYield < THRESHOLDS.fcfYieldWeak) {
+      signals.push(`FCF yield ${fmtPct(m.fcfYield)} ≥ ${fmtPct(T.fcfYieldAttractive)} (cash cheap)`);
+    } else if (m.fcfYield < T.fcfYieldWeak) {
       cheapScore--;
-      signals.push(`FCF yield ${fmtPct(m.fcfYield)} < ${fmtPct(THRESHOLDS.fcfYieldWeak)} (weak cash yield)`);
+      signals.push(`FCF yield ${fmtPct(m.fcfYield)} < ${fmtPct(T.fcfYieldWeak)} (weak cash yield)`);
     } else {
       signals.push(`FCF yield ${fmtPct(m.fcfYield)} mid-range`);
     }
@@ -106,15 +172,15 @@ export function assessValue(m: FinancialMetrics): ValueAssessment {
 
   if (m.enterpriseToEbitda != null && m.enterpriseToEbitda > 0 && !finUtil) {
     cheapVotes++;
-    if (m.enterpriseToEbitda < THRESHOLDS.evEbitdaAttractive) {
+    if (m.enterpriseToEbitda < T.evEbitdaAttractive) {
       cheapScore++;
       signals.push(
-        `EV/EBITDA ${fmtNum(m.enterpriseToEbitda)} < ${THRESHOLDS.evEbitdaAttractive} (operating cheap)`,
+        `EV/EBITDA ${fmtNum(m.enterpriseToEbitda)} < ${T.evEbitdaAttractive} (operating cheap)`,
       );
-    } else if (m.enterpriseToEbitda > THRESHOLDS.evEbitdaExpensive) {
+    } else if (m.enterpriseToEbitda > T.evEbitdaExpensive) {
       cheapScore--;
       signals.push(
-        `EV/EBITDA ${fmtNum(m.enterpriseToEbitda)} > ${THRESHOLDS.evEbitdaExpensive} (operating expensive)`,
+        `EV/EBITDA ${fmtNum(m.enterpriseToEbitda)} > ${T.evEbitdaExpensive} (operating expensive)`,
       );
     } else {
       signals.push(`EV/EBITDA ${fmtNum(m.enterpriseToEbitda)} mid-range`);
@@ -123,12 +189,12 @@ export function assessValue(m: FinancialMetrics): ValueAssessment {
 
   if (m.priceToBook != null && m.priceToBook > 0 && finUtil) {
     cheapVotes++;
-    if (m.priceToBook < THRESHOLDS.pbAttractiveFinancials) {
+    if (m.priceToBook < T.pbAttractiveFinancials) {
       cheapScore++;
-      signals.push(`P/B ${fmtNum(m.priceToBook, 2)} < ${THRESHOLDS.pbAttractiveFinancials} (book cheap, sector-fit)`);
-    } else if (m.priceToBook > THRESHOLDS.pbExpensiveFinancials) {
+      signals.push(`P/B ${fmtNum(m.priceToBook, 2)} < ${T.pbAttractiveFinancials} (book cheap, sector-fit)`);
+    } else if (m.priceToBook > T.pbExpensiveFinancials) {
       cheapScore--;
-      signals.push(`P/B ${fmtNum(m.priceToBook, 2)} > ${THRESHOLDS.pbExpensiveFinancials} (book expensive)`);
+      signals.push(`P/B ${fmtNum(m.priceToBook, 2)} > ${T.pbExpensiveFinancials} (book expensive)`);
     } else {
       signals.push(`P/B ${fmtNum(m.priceToBook, 2)} mid-range for financials/utilities`);
     }
@@ -143,13 +209,13 @@ export function assessValue(m: FinancialMetrics): ValueAssessment {
   // --- Quality ---
   if (m.returnOnEquity != null) {
     qualityVotes++;
-    if (m.returnOnEquity >= THRESHOLDS.roeGood) {
+    if (m.returnOnEquity >= T.roeGood) {
       qualityScore++;
-      signals.push(`ROE ${fmtPct(m.returnOnEquity)} ≥ ${fmtPct(THRESHOLDS.roeGood)} (quality)`);
-    } else if (m.returnOnEquity < THRESHOLDS.roeWeak) {
+      signals.push(`ROE ${fmtPct(m.returnOnEquity)} ≥ ${fmtPct(T.roeGood)} (quality)`);
+    } else if (m.returnOnEquity < T.roeWeak) {
       qualityScore--;
       trapScore++;
-      signals.push(`ROE ${fmtPct(m.returnOnEquity)} < ${fmtPct(THRESHOLDS.roeWeak)} (weak profitability)`);
+      signals.push(`ROE ${fmtPct(m.returnOnEquity)} < ${fmtPct(T.roeWeak)} (weak profitability)`);
     } else {
       signals.push(`ROE ${fmtPct(m.returnOnEquity)} OK`);
     }
@@ -157,9 +223,9 @@ export function assessValue(m: FinancialMetrics): ValueAssessment {
 
   if (m.returnOnAssets != null) {
     qualityVotes++;
-    if (m.returnOnAssets >= THRESHOLDS.roaGood) {
+    if (m.returnOnAssets >= T.roaGood) {
       qualityScore++;
-      signals.push(`ROA ${fmtPct(m.returnOnAssets)} ≥ ${fmtPct(THRESHOLDS.roaGood)}`);
+      signals.push(`ROA ${fmtPct(m.returnOnAssets)} ≥ ${fmtPct(T.roaGood)}`);
     } else if (m.returnOnAssets < 0) {
       qualityScore--;
       trapScore++;
@@ -169,7 +235,7 @@ export function assessValue(m: FinancialMetrics): ValueAssessment {
 
   if (m.operatingMargins != null) {
     qualityVotes++;
-    if (m.operatingMargins >= THRESHOLDS.opMarginGood) {
+    if (m.operatingMargins >= T.opMarginGood) {
       qualityScore++;
       signals.push(`op. margin ${fmtPct(m.operatingMargins)} solid`);
     } else if (m.operatingMargins < 0) {
@@ -181,16 +247,16 @@ export function assessValue(m: FinancialMetrics): ValueAssessment {
 
   if (m.revenueGrowth != null) {
     signals.push(`revenue growth ${fmtPct(m.revenueGrowth)}`);
-    if (m.revenueGrowth < THRESHOLDS.revenueGrowthCollapse) {
+    if (m.revenueGrowth < T.revenueGrowthCollapse) {
       trapScore++;
-      signals.push(`revenue shrinking hard (< ${fmtPct(THRESHOLDS.revenueGrowthCollapse)})`);
+      signals.push(`revenue shrinking hard (< ${fmtPct(T.revenueGrowthCollapse)})`);
     }
   }
 
   // --- Trap risk extras ---
-  if (m.debtToEquity != null && m.debtToEquity > THRESHOLDS.debtToEquityHigh) {
+  if (m.debtToEquity != null && m.debtToEquity > T.debtToEquityHigh) {
     trapScore++;
-    signals.push(`D/E ${fmtNum(m.debtToEquity, 1)} > ${THRESHOLDS.debtToEquityHigh} (leverage risk)`);
+    signals.push(`D/E ${fmtNum(m.debtToEquity, 1)} > ${T.debtToEquityHigh} (leverage risk)`);
   }
 
   if (m.freeCashflow != null && m.freeCashflow < 0 && !finUtil) {

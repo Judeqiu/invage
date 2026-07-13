@@ -3,7 +3,7 @@ layout: default
 title: Data Model — Invester
 ---
 
-**[Home](/invage/)** | **[Data Model](/invage/data-model.html)**
+**[Home](/invage/)** | **[Data Model](/invage/data-model.html)** | **[Playbook](/invage/playbook.html)**
 
 # Data Model
 
@@ -109,6 +109,50 @@ profile:
   # Domain extensions can add more fields here
 ```
 
+### Investment Playbook Block
+
+Optional top-level `playbook` on the same user file. Missing playbook (or missing fields) resolves to the **balanced market-standard default** at read time.
+
+```yaml
+playbook:
+  strategy: growth                    # growth | income | capital_preservation
+  philosophy: value_investing         # growth_investing | value_investing | dividend_investing
+  allocation:
+    max_position_pct: 10              # max single-name weight %
+    cash_target_pct: 5
+    max_sector_pct: 35
+  buy_sell:
+    buy_criteria: "..."               # free-text rules for BUY language
+    sell_criteria: "..."
+    ai_recommendation_style: balanced # conservative | balanced | aggressive
+  rebalancing:
+    mode: quarterly                   # monthly | quarterly | threshold
+    threshold_pct: 5                  # drift pp when mode=threshold
+  risk:
+    profile: balanced                 # conservative | balanced | aggressive
+    position_limit_pct: 10
+    sector_exposure_pct: 35
+  watchlists:
+    markets: [US]
+    sectors: []
+    themes: []
+```
+
+| Field | Role in agent guidance |
+|-------|------------------------|
+| `strategy` | Optimize for appreciation vs income vs drawdown control |
+| `philosophy` | Tilt PE/PEG/FCF bars and which lenses count as “cheap” |
+| `risk` / allocation caps | BUY bar, take-profit speed, sizing language |
+| `buy_sell` | Hard criteria before BUY/SELL wording |
+| `rebalancing` | When to flag rebalance / concentration drift |
+| `watchlists` | Default discovery universe when no ticker is named |
+
+**Tools:** `get_playbook`, `update_playbook` (channel-bound like portfolio tools).
+
+**Guided setup skill:** `playbook-setup` — patient one-question-at-a-time wizard (user-initiated only). Knowledge: `src/skills/knowledge/playbook-setup.md`.
+
+**Analyzer:** `portfolio_analyzer` on a saved portfolio loads the user’s playbook and applies derived thresholds to 3-axis classification and value screen multiples.
+
 ### Log Block
 
 ```yaml
@@ -160,6 +204,15 @@ portfolio:
     avg_price: 140.00
     units: 40
     category: SL Technology S1
+
+# optional — omit to use balanced defaults
+playbook:
+  strategy: growth
+  philosophy: value_investing
+  risk:
+    profile: balanced
+    position_limit_pct: 10
+    sector_exposure_pct: 35
 ```
 
 ### Holding Shape

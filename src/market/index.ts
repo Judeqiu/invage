@@ -13,8 +13,12 @@ export {
   rankValueCandidates,
   deriveYields,
   emptyMetrics,
+  defaultValueThresholds,
+  valueThresholdsFromPlaybook,
 } from './value-assess.js';
+export type { ValueThresholds } from './value-assess.js';
 export { COMPANIES, BENCHMARKS, THRESHOLDS } from './config.js';
+export { defaultAnalysisThresholds } from './analyzer.js';
 export type {
   MarketQuote,
   AnalystTarget,

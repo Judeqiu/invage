@@ -1,5 +1,6 @@
 import type { AgentTool } from '@earendil-works/pi-agent-core';
 import { createPortfolioTools } from './portfolio.js';
+import { createPlaybookTools } from './playbook.js';
 import { createPortfolioAnalyzerTool } from './portfolio_analyzer.js';
 import { createSaveReportTool } from './save_report.js';
 import { createSendReportTool } from './send_report.js';
@@ -9,6 +10,7 @@ import { createSnapshotTool } from './snapshot.js';
 export function createInvageTools(): AgentTool[] {
   return [
     ...createPortfolioTools(),
+    ...createPlaybookTools(),
     createPortfolioAnalyzerTool(),
     createSaveReportTool(),
     createSendReportTool(),
