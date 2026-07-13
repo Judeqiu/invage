@@ -28,6 +28,8 @@ Background research (human reference): `docs/deep-research-find-undervalued-stoc
 
 ### Analysis rules
 
+- **Execute, don't menu.** Never present "Option A / Option B", "give me a watchlist or I screen", or "which direction?" when the user asked to find undervalued stocks / analyze / research. Default path + tools **this turn**. Ask only if a required fact is missing (e.g. no ticker named for "analyze this stock").
+- **Empty portfolio is not a blocker** for "find undervalued stocks" — run **Recipe 3** (external Finviz/Yahoo value screen) immediately.
 - Never give buy/sell without showing underlying numbers (targets and/or metrics from tools).
 - Always show **median and high** analyst targets when available.
 - Flag any holding with **>30% unrealized loss** as high risk.
@@ -275,8 +277,12 @@ Universe (liquidity / sector / user holdings or named list)
 
 #### C1.a Universe
 
-- Prefer **user holdings** or user-provided tickers first (agent has no full-market screener API).
-- For broader ideas: load **`firecrawl`** — Finviz/Yahoo-style lists, sector peers of holdings, or user-named screens. Then run `portfolio_analyzer` on the resulting tickers only.
+- **Default decision tree (no questions):**
+  1. `get_portfolio`. If holdings exist **and** the user asked about *their* names / "my holdings" → Recipe 1.
+  2. Else (empty portfolio, or "find undervalued stocks" / "screen for value" / "what looks cheap" with no ticker list) → **Recipe 3 this turn**. Do not ask for a watchlist. Do not offer paths.
+  3. If they named tickers or a sector → use that as the universe (still run tools this turn).
+- Prefer **user holdings** or user-provided tickers when present; otherwise **always** load **`firecrawl`** and scrape a Finviz/Yahoo value screen (or sector screen). Then `portfolio_analyzer` on the resulting tickers.
+- Default external screen when none specified: Finviz overview or Yahoo "undervalued" / high earnings yield style list (liquid mid/large cap preference). Sector if user named one.
 - Apply liquidity common sense: if scrape shows tiny market cap / illiquid microcap, flag capacity risk; do not size as a core position without warning.
 - Sector exclusions when using Magic Formula–style ranks: **financials and utilities** are poor fits for EV/EBIT + ROC ranking (use industry lens instead).
 
@@ -396,13 +402,18 @@ Value strategies can underperform for years — do not promise calendar outperfo
 4. C4 thesis if recommending buy.  
 5. Template **Undervalued verdict** below.
 
-#### Recipe 3 — External idea list → filtered short list
+#### Recipe 3 — External idea list → filtered short list (default when portfolio empty)
 
-1. User list **or** Firecrawl screen/peer scrape → tickers only.  
-2. `portfolio_analyzer` on full short list (fail fast per ticker errors).  
-3. Drop: missing price; clear expensive on PE+forward PE+PEG without asset case; ROE disaster without turnaround evidence.  
-4. Keep ~5–15; deep-dive top names.  
-5. Never present raw unfiltered screener spam as "undervalued stocks."
+**Trigger:** "find undervalued stocks" / "screen for value" / empty portfolio discovery. **Run immediately — zero clarifying questions.**
+
+1. Load \`firecrawl\`. Scrape Finviz or Yahoo Finance value/overview screen (or sector screen if named). Extract **tickers only** from the page.  
+2. If scrape fails, try one alternate URL/query; surface the error if both fail — still no "pick option A/B".  
+3. \`portfolio_analyzer\` on full short list (~8–15 names; fail fast per ticker errors).  
+4. Drop: missing price; clear expensive on PE+forward PE+PEG without asset case; ROE disaster without turnaround evidence.  
+5. Keep ~5–10; deep-dive top 3 with C2–C4.  
+6. Output ranked results with numbers + yardsticks. Optional one-liner: "Say a sector or tickers to re-screen" — only after the table.  
+7. Never present raw unfiltered screener spam as "undervalued stocks."  
+8. Never reply with only a menu of how you *could* help.
 
 #### Recipe 4 — Magic Formula–style check (when stats scraped)
 
