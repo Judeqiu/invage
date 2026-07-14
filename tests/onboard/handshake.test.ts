@@ -1,0 +1,112 @@
+import { describe, it, expect, beforeEach } from 'vitest';
+import { existsSync, rmSync, readdirSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
+import { join } from 'path';
+import { parse, stringify } from 'yaml';
+import { resolveDataRoot } from 'utarus';
+import { handleBind } from '../../src/onboard/handshake.js';
+import {
+  createPendingToken,
+  markUsed,
+  markRejected,
+  tokensFilePath,
+} from '../../src/onboard/token-store.js';
+import { resolveInvestorBySlackUser, loadInvestorState } from '../../src/state/portfolio-state.js';
+
+const USERS_DIR = join(resolveDataRoot(), 'users');
+const DRIVE_DIR = join(resolveDataRoot(), 'drive');
+
+function wipeState() {
+  const path = tokensFilePath();
+  if (existsSync(path)) rmSync(path, { force: true });
+  for (const dir of [USERS_DIR, DRIVE_DIR]) {
+    if (existsSync(dir)) {
+      for (const entry of readdirSync(dir)) {
+        rmSync(join(dir, entry), { recursive: true, force: true });
+      }
+    } else {
+      mkdirSync(dir, { recursive: true });
+    }
+  }
+}
+
+describe('handleBind — terminal cases', () => {
+  beforeEach(wipeState);
+
+  it('no payload → tells user to send a token', () => {
+    const result = handleBind({ payload: '', slackUserId: 'U111' });
+    expect(result.reply).toMatch(/\/bind BIND-XXXXXXXX/);
+    expect(result.reply).toMatch(/test\.example\.com\/onboard/);
+    expect(result.slug).toBeUndefined();
+  });
+
+  it('token not recognised', () => {
+    const result = handleBind({ payload: 'BIND-NOPE0000', slackUserId: 'U111' });
+    expect(result.reply).toMatch(/not recognised/);
+  });
+
+  it('token already used', () => {
+    const t = createPendingToken('Alex', 'a@example.com');
+    markUsed(t.token, 'U999', 'alex');
+    const result = handleBind({ payload: t.token, slackUserId: 'U111' });
+    expect(result.reply).toMatch(/already been used/);
+  });
+
+  it('token rejected', () => {
+    const t = createPendingToken('Alex', 'a@example.com');
+    markRejected(t.token, 'UADMIN', 'spam');
+    const result = handleBind({ payload: t.token, slackUserId: 'U111' });
+    expect(result.reply).toMatch(/has been rejected/);
+  });
+
+  it('token expired', () => {
+    const t = createPendingToken('Alex', 'a@example.com');
+    const raw = readFileSync(tokensFilePath(), 'utf-8');
+    const arr = parse(raw) as Array<{ token: string; expires_at: string }>;
+    const idx = arr.findIndex((e) => e.token === t.token);
+    arr[idx].expires_at = new Date(Date.now() - 1000).toISOString();
+    writeFileSync(tokensFilePath(), stringify(arr), 'utf-8');
+
+    const result = handleBind({ payload: t.token, slackUserId: 'U111' });
+    expect(result.reply).toMatch(/expired/);
+  });
+});
+
+describe('handleBind — happy path', () => {
+  beforeEach(wipeState);
+
+  it('creates user + drive folder; marks token used; greets by display name', () => {
+    const t = createPendingToken('Alex Chen', 'alex@example.com');
+    const result = handleBind({
+      payload: t.token,
+      slackUserId: 'U0ALEX123',
+    });
+
+    expect(result.slug).toBeDefined();
+    expect(result.reply).toMatch(/Hi \*Alex Chen\*/);
+    expect(result.reply).toContain(result.slug!);
+
+    const investor = resolveInvestorBySlackUser('U0ALEX123');
+    expect(investor).not.toBeNull();
+    expect(investor!.profile.display_name).toBe('Alex Chen');
+    expect(investor!.profile.contact_email).toBe('alex@example.com');
+    expect(investor!.user.slack_user_ids).toContain('U0ALEX123');
+    expect(investor!.portfolio ?? {}).toEqual({});
+
+    const drivePath = join(DRIVE_DIR, result.slug!);
+    expect(existsSync(drivePath)).toBe(true);
+
+    const state = loadInvestorState(result.slug!);
+    expect(state.log.some((e) => e.action === 'qr_onboard_bound')).toBe(true);
+  });
+
+  it('idempotent for already-linked slack user', () => {
+    const t1 = createPendingToken('Alex Chen', 'alex@example.com');
+    const r1 = handleBind({ payload: t1.token, slackUserId: 'U0ALEX123' });
+    expect(r1.slug).toBeDefined();
+
+    const t2 = createPendingToken('Other Name', 'other@example.com');
+    const r2 = handleBind({ payload: t2.token, slackUserId: 'U0ALEX123' });
+    expect(r2.reply).toMatch(/already registered/);
+    expect(r2.slug).toBe(r1.slug);
+  });
+});

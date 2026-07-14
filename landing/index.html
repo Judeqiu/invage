@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0d1117">
+  <meta name="robots" content="noindex">
+  <title>Invester — Onboard</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Invester</h1>
+      <p class="tagline">Your AI investment portfolio analyst — on Slack.</p>
+    </header>
+
+    <section id="info">
+      <ul class="features">
+        <li>Track holdings with live prices</li>
+        <li>3-axis portfolio analysis (laggard / overpriced / buy)</li>
+        <li>Undervalued screens and research briefs</li>
+      </ul>
+    </section>
+
+    <section id="form-section" aria-live="polite">
+      <form id="register-form" novalidate autocomplete="off">
+        <label for="display_name">Display name</label>
+        <input id="display_name" name="display_name" type="text"
+               maxlength="60" required
+               placeholder="Alex Chen"
+               autocomplete="off">
+
+        <label for="email">Email</label>
+        <input id="email" name="email" type="email"
+               maxlength="120" required
+               placeholder="you@example.com"
+               autocomplete="email"
+               inputmode="email">
+
+        <button type="submit" id="submit-btn">Connect on Slack</button>
+        <p id="form-error" class="error" hidden></p>
+      </form>
+    </section>
+
+    <section id="success-section" hidden aria-live="polite">
+      <h2>Almost there</h2>
+      <p>Step 1 — join the Invester Slack workspace:</p>
+      <a id="slack-link" class="big-button" href="#" rel="noopener" target="_blank">Open Slack workspace</a>
+
+      <p class="muted step-2">
+        Step 2 — open a DM with <em>Invester</em> (or any channel where the app is present) and send:
+      </p>
+      <code id="bind-command"></code>
+      <button id="copy-bind" type="button" class="copy-btn">Copy command</button>
+
+      <details class="trouble">
+        <summary>Slack didn't open?</summary>
+        <p>Open Slack manually, accept the workspace invite from your email or the button above, then message <strong>Invester</strong> and paste the command.</p>
+      </details>
+
+      <p class="muted expires">Link expires at <time id="expires-at"></time>.</p>
+    </section>
+
+    <footer>
+      <p>Already registered? Message <strong>Invester</strong> in Slack.</p>
+      <p class="legal">By registering you agree to receive portfolio-analysis messages from Invester on Slack. No spam.</p>
+    </footer>
+  </main>
+  <script src="app.js" defer></script>
+</body>
+</html>

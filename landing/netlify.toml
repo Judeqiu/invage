@@ -1,0 +1,24 @@
+# Netlify configuration for the Invester onboard landing page.
+#
+# No build step. Publish directory is "." (the directory this file lives in).
+# The /api/* proxy routes API calls to InvesterDrive (port 3001 on lextok03),
+# keeping the browser view same-origin so CORS does not apply.
+#
+# NOTE: Netlify does not interpolate env vars in [[redirects]].to. The host
+# must be hardcoded here. To switch environments, edit this file and redeploy.
+
+[[redirects]]
+  from = "/api/*"
+  to = "http://91.98.74.94:3001/api/:splat"
+  status = 200
+  force = true
+
+# SPA-style fallback: any non-asset path serves index.html.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[build]
+  publish = "."
+  command = ""

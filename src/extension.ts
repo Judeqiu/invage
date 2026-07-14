@@ -11,6 +11,8 @@ import { createInvageTools } from './tools/index.js';
 import { registerInvageSkills } from './skills.js';
 import { createGuidanceCommand } from './guidance.js';
 import { playbookAgentGuidance } from './playbook/index.js';
+import { handleBindCommand } from './onboard/bind-command.js';
+import { handleOnboardCommand } from './onboard/admin-commands.js';
 import {
   getPlaybook,
   getPortfolio,
@@ -208,6 +210,10 @@ export const invageExtension: DomainExtension = {
     },
   ],
 
+  // Access / INV- instant redeem / demo mode are framework-owned
+  // (utarus resolveInboundMessage on free text only). Domain QR path:
+  // investor.lextok.com → POST /api/onboard/register → Slack /bind BIND-…
+  // runs as a slash command and never hits the access gate. Keep adminOnly: false.
   slackCommands: [
     {
       name: guidanceCmd.name,
@@ -215,6 +221,20 @@ export const invageExtension: DomainExtension = {
       adminOnly: guidanceCmd.adminOnly,
       usageHint: guidanceCmd.usageHint,
       handler: ({ args }) => guidanceCmd.handle(args),
+    },
+    {
+      name: 'bind',
+      description: 'Finish registration with a BIND- code from investor.lextok.com',
+      adminOnly: false,
+      usageHint: 'BIND-XXXXXXXX',
+      handler: (ctx) => handleBindCommand(ctx),
+    },
+    {
+      name: 'onboard',
+      description: 'List or reject QR-onboarded registrations (admin)',
+      adminOnly: true,
+      usageHint: 'list [pending|used|rejected|all] | reject <token> [reason]',
+      handler: (ctx) => handleOnboardCommand(ctx),
     },
   ],
 

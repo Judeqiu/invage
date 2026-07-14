@@ -23,13 +23,18 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
     "tsx": "^4.22.4",
     "utarus": "github:Judeqiu/utarus#79fdca24b7e3ffa0d3c30bd542c8c57ced6283f2",
     "yahoo-finance2": "^3.15.3",
     "yaml": "^2.9.0"
   },
   "devDependencies": {
+    "@types/express": "^5.0.6",
     "@types/node": "^25.9.3",
+    "@types/supertest": "^7.2.0",
+    "supertest": "^7.2.2",
     "typescript": "^6.0.3",
     "vitest": "^4.1.8"
   }

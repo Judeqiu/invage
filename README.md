@@ -14,6 +14,7 @@ Channels (same agent process, shared user/portfolio YAML):
 |---------|---------|-----|
 | **Telegram** | like Binary | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ADMIN_IDS` |
 | **Slack** | like Marie (Socket Mode via Utarus) | `SLACK_BOT_TOKEN`, `SLACK_APP_TOKEN`, `SLACK_SIGNING_SECRET`, `SLACK_ADMIN_IDS` |
+| **Public onboard** | like Binary QR → Telegram, but Slack | `investor.lextok.com` + `INVAGE_*` env (see landing/) |
 
 ```
 invage (domain)  ──depends on──►  utarus (framework + BinDrive)

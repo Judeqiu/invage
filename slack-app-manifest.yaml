@@ -55,6 +55,16 @@ features:
       usage_hint: "[start|portfolio|analysis|research|reports|skills|admin|chat]"
       url: https://example.com/slack/commands
       should_escape: false
+    - command: /bind
+      description: Finish registration with a BIND- code from the landing page
+      usage_hint: "BIND-XXXXXXXX"
+      url: https://example.com/slack/commands
+      should_escape: false
+    - command: /onboard
+      description: List or reject landing-page registrations (admin)
+      usage_hint: "list [pending|used|rejected|all] | reject <token> [reason]"
+      url: https://example.com/slack/commands
+      should_escape: false
     - command: /clear
       description: Clear your conversation context
       usage_hint: "(no arguments)"
