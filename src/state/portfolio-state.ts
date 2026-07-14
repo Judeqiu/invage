@@ -111,6 +111,21 @@ export function resolveInvestorBySlackUser(slackUserId: string): InvestorState |
   return null;
 }
 
+/**
+ * Resolve an investor by exact slug. Used by the web channel where the user
+ * authenticates via auth_token (resolved to a slug by the framework middleware)
+ * and tools receive `user_slug` directly. Returns null on miss so callers can
+ * surface a domain-appropriate error.
+ */
+export function resolveInvestorBySlug(slug: string): InvestorState | null {
+  if (!slug) return null;
+  try {
+    return loadInvestorState(slug);
+  } catch {
+    return null;
+  }
+}
+
 export function getPortfolio(state: InvestorState): Record<string, Holding> {
   return state.portfolio ?? {};
 }
