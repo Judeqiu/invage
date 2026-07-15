@@ -2,13 +2,16 @@
  * Login — token entry OR invite-code redeem.
  *
  * Two paths:
- *  1. Existing user: paste auth_token. POSTs to /login (existing BinDrive
- *     endpoint). Sets bindrive_session cookie.
+ *  1. Existing user: paste auth_token. POSTs to /api/onboard/login
+ *     (JSON). Sets bindrive_session cookie.
  *  2. New user (invite): display name + INV-XXXXXXXX. POSTs to
  *     /api/onboard/redeem.
  *
- * Demo mode: if GET /api/onboard/demo shows demo=true, the invite form
+ * Demo mode: if GET /api/onboard/demo shows enabled=true, the invite form
  * collapses to "Try the demo" (display name only, code=null).
+ *
+ * Admin username/password login is not yet wired (utarus doesn't export
+ * authenticateAdmin) — the admin checkbox surfaces a clear error.
  *
  * Spec: docs/webui-chat-design.md §10.
  */
@@ -124,18 +127,13 @@ function TokenForm({ onSuccess }: { onSuccess: () => void }) {
 
     try {
       if (isAdmin) {
-        if (!username || !password) {
-          throw new Error('Username and password are required for admin login.');
-        }
-      } else {
-        if (!token.trim()) {
-          throw new Error('Auth token is required.');
-        }
+        throw new Error('Admin username/password login is not supported via web yet. Paste your auth_token instead.');
       }
-      const body = isAdmin
-        ? { username, password }
-        : { auth_token: token.trim() };
-      const res = await fetch('/login', {
+      if (!token.trim()) {
+        throw new Error('Auth token is required.');
+      }
+      const body = { auth_token: token.trim() };
+      const res = await fetch('/api/onboard/login', {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },

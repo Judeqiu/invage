@@ -19,6 +19,7 @@ import {
   ensureChannelUser,
   isDemoModeEnabled,
   createSession,
+  resolveByToken,
   type AuthUser,
 } from 'utarus';
 import { resolveInvestorBySlug } from '../../state/portfolio-state.js';
@@ -30,9 +31,59 @@ interface RedeemBody {
   code?: unknown;
 }
 
+interface LoginBody {
+  auth_token?: unknown;
+}
+
 function isNonEmptyString(v: unknown): v is string {
   return typeof v === 'string' && v.trim().length > 0;
 }
+
+/**
+ * GET /api/onboard/demo — reports whether demo mode is active.
+ *
+ * The SPA login screen polls this to decide whether to render the demo
+ * (display-name-only) login. Returns { enabled: boolean }. No auth — the
+ * login screen is unauthenticated by definition.
+ */
+onboardRedeemRouter.get('/demo', (_req, res) => {
+  res.json({ enabled: isDemoModeEnabled() });
+});
+
+/**
+ * POST /api/onboard/login — SPA token login.
+ *
+ * Body: { auth_token: string }. Resolves the user via the same path as
+ * BinDrive's HTML /login (resolveByToken), sets bindrive_session cookie,
+ * returns { type, slug, displayName }. JSON in, JSON out — distinct from
+ * BinDrive's form-based /login which the SPA cannot consume.
+ *
+ * Admin username/password login is intentionally NOT supported here:
+ * utarus does not export authenticateAdmin. Surface a clear 400 instead.
+ */
+onboardRedeemRouter.post('/login', (req, res) => {
+  const body = req.body as LoginBody;
+  if (typeof body.auth_token !== 'string' || !body.auth_token.trim()) {
+    res.status(400).json({ error: 'invalid_token', message: 'Auth token required.' });
+    return;
+  }
+  const user = resolveByToken(body.auth_token.trim());
+  if (!user) {
+    res.status(401).json({ error: 'invalid_token', message: 'Invalid auth token.' });
+    return;
+  }
+  const sessionToken = createSession(user);
+  res.cookie('bindrive_session', sessionToken, {
+    httpOnly: true,
+    sameSite: 'lax',
+    maxAge: 24 * 60 * 60 * 1000,
+  });
+  res.json({
+    type: user.type,
+    slug: user.slug,
+    displayName: user.displayName,
+  });
+});
 
 onboardRedeemRouter.post('/redeem', (req, res) => {
   const body = req.body as RedeemBody;
