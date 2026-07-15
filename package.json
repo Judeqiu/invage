@@ -27,7 +27,7 @@
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "tsx": "^4.22.4",
-    "utarus": "github:Judeqiu/utarus#020690ec4a490494497e4b2a757be796086a17c2",
+    "utarus": "github:Judeqiu/utarus#f91d6a9ef178220e115236e5920f04ab1465dd9d",
     "yahoo-finance2": "^3.15.3",
     "yaml": "^2.9.0"
   },
