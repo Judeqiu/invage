@@ -20,6 +20,7 @@ import { resolve, dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { existsSync } from 'fs';
 import express, { type Express, type Request, type Response, type NextFunction } from 'express';
+import cookieParser from 'cookie-parser';
 import type { Framework } from 'utarus';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -45,32 +46,51 @@ export { onboardRouter };
 const WEB_DIST_DIR = resolve(__dirname, '../../web/dist');
 
 /**
- * Build the combined express app: BinDrive routes (from utarus) + onboard
- * API + chat router + admin REST + SPA static serving. Requires the
+ * Build the combined express app: SPA static serving + BinDrive routes
+ * (from utarus) + onboard API + chat router + admin REST. Requires the
  * framework so the chat router can resolve agents.
  *
- * Static serving: any GET that isn't under /api, /login, /logout, /health,
+ * Ordering: SPA static is mounted BEFORE BinDrive so the SPA owns `/`
+ * (BinDrive also registers GET / for its folder view, which we want to
+ * suppress in favour of the chat SPA). BinDrive is mounted as a sub-app
+ * so its /login, /logout, /api/files/*, /api/auth/*, /health routes keep
+ * working at the same paths. Spec: docs/webui-chat-design.md §9.
+ *
+ * SPA fallback: any GET that isn't under /api, /login, /logout, /health,
  * or a file with an extension is treated as a client-side route and served
- * index.html. Spec: docs/webui-chat-design.md §9.
+ * index.html.
  */
 export function buildInvageApp(framework: Framework): Express {
-  const app = createBinDriveApp();
+  const app = express();
+  // Parent-level parsers so /api/onboard, /api/chat, /api/admin bodies parse.
+  // BinDrive's sub-app re-runs them; negligible cost, simpler than threading
+  // the router out of utarus.
+  app.use(express.urlencoded({ extended: false }));
+  app.use(express.json({ limit: '10mb' }));
+  app.use(cookieParser());
+  app.use(express.static(WEB_DIST_DIR, existsSync(WEB_DIST_DIR) ? {
+    index: 'index.html',
+    setHeaders: (_res, path) => {
+      // Immutable cache for hashed bundle assets.
+      if (/\.[0-9a-f]{8,}\.(js|css)$/i.test(path)) {
+        _res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      }
+    },
+  } : {}));
+
+  if (!existsSync(WEB_DIST_DIR)) {
+    console.warn(`[invage/web] SPA static dir missing: ${WEB_DIST_DIR}. API-only mode.`);
+  }
+
+  // BinDrive as sub-app — provides /login, /logout, /api/files/*, /api/auth/*, /health.
+  app.use(createBinDriveApp());
+
   app.use('/api/onboard', onboardRouter);
   app.use('/api/onboard', onboardRedeemRouter);
   app.use('/api/chat', createChatRouter({ framework }));
   app.use('/api/admin', adminRouter);
 
   if (existsSync(WEB_DIST_DIR)) {
-    // Static assets (JS/CSS/images with extensions) — served as files.
-    app.use(express.static(WEB_DIST_DIR, {
-      index: 'index.html',
-      setHeaders: (res, path) => {
-        // Immutable cache for hashed bundle assets.
-        if (/\.[0-9a-f]{8,}\.(js|css)$/i.test(path)) {
-          res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-        }
-      },
-    }));
     // SPA fallback: any non-API GET that didn't match a static file
     // returns index.html so client-side routing owns the URL.
     const indexHtml = join(WEB_DIST_DIR, 'index.html');
@@ -82,8 +102,6 @@ export function buildInvageApp(framework: Framework): Express {
       }
       res.sendFile(indexHtml);
     });
-  } else {
-    console.warn(`[invage/web] SPA static dir missing: ${WEB_DIST_DIR}. API-only mode.`);
   }
 
   return app;
