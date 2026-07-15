@@ -24,13 +24,19 @@ import puppeteer from 'puppeteer-core';
 import { setTimeout as sleep } from 'timers/promises';
 
 const AUTH_TOKEN = process.env.AUTH_TOKEN;
+const PASSWORD = process.env.PASSWORD ?? '';
+const IDENTIFIER = process.env.IDENTIFIER ?? '';
 const URL_BASE = process.env.URL_BASE ?? 'https://chat.investor.lextok.com';
 const CHROME_PATH =
   process.env.CHROME_PATH ??
   '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 
-if (!AUTH_TOKEN) {
-  console.error('AUTH_TOKEN env var required');
+if (!AUTH_TOKEN && !PASSWORD) {
+  console.error('Either AUTH_TOKEN or PASSWORD (with IDENTIFIER) env var required');
+  process.exit(2);
+}
+if (PASSWORD && !IDENTIFIER) {
+  console.error('PASSWORD env var requires IDENTIFIER (user slug or email)');
   process.exit(2);
 }
 
@@ -91,10 +97,33 @@ async function main() {
   const title = await page.title();
   console.log(`[smoke] title="${title}"`);
 
-  // 2. Token login
-  console.log('[smoke] performing token login');
-  await page.waitForSelector('input[type="password"]', { visible: true });
-  await page.type('input[type="password"]', AUTH_TOKEN);
+  // 2. Login. Two paths:
+  //    - PASSWORD env (preferred — tests the new default username+password tab)
+  //    - AUTH_TOKEN env (regression — switches to the "Auth token" tab)
+  //    The new SPA defaults to the password tab; if we don't switch, typing
+  //    into input[type=password] would hit the wrong form.
+  if (PASSWORD) {
+    console.log(`[smoke] performing password login as ${IDENTIFIER}`);
+    await page.waitForSelector('input[type="text"]', { visible: true });
+    await page.type('input[type="text"]', IDENTIFIER);
+    await page.type('input[type="password"]', PASSWORD);
+  } else {
+    console.log('[smoke] performing token login (switching to Auth token tab)');
+    // Click the "Auth token" tab button (second tab in the new SPA).
+    const tabButtons = await page.$$('button[type="button"]');
+    let clicked = false;
+    for (const btn of tabButtons) {
+      const text = await page.evaluate((el) => el.textContent ?? '', btn);
+      if (/auth token/i.test(text)) {
+        await btn.click();
+        clicked = true;
+        break;
+      }
+    }
+    if (!clicked) fail('could not find "Auth token" tab button');
+    await page.waitForSelector('input[type="password"]', { visible: true });
+    await page.type('input[type="password"]', AUTH_TOKEN);
+  }
   await page.click('button[type="submit"]');
 
   // 3. Wait for SPA to switch off the login screen
