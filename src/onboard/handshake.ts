@@ -39,7 +39,7 @@ export interface BindResult {
   slug?: string;
 }
 
-export function handleBind(args: BindArgs): BindResult {
+export async function handleBind(args: BindArgs): Promise<BindResult> {
   const { payload, slackUserId } = args;
   if (!slackUserId) {
     throw new Error('slackUserId is required for /bind');
@@ -87,7 +87,7 @@ export function handleBind(args: BindArgs): BindResult {
     };
   }
 
-  const userResult = ensureChannelUser({
+  const userResult = await ensureChannelUser({
     slackUserId,
     displayName: entry.display_name,
     contactEmail: entry.email_submitted,

@@ -171,6 +171,11 @@ export function subscribeStream(
 
 export interface RedeemResponse {
   slug: string;
+  display_name: string;
+  contact_email: string;
+  /** One-shot plaintext preset password. Populated when a new profile was
+   *  created this call. Show it once to the user; never persist client-side. */
+  preset_password: string;
   redirect: string;
 }
 
@@ -189,6 +194,51 @@ export async function redeemInvite(
     throw new Error(body.error || body.message || `HTTP ${res.status}`);
   }
   return body as RedeemResponse;
+}
+
+export interface LoginResponse {
+  type: 'user' | 'admin';
+  slug: string;
+  displayName?: string;
+}
+
+/**
+ * Sign in with username (slug OR contact_email) + password. The server
+ * dispatches via utarus `authenticateUser`. Throws on 401 / 400 / network.
+ */
+export async function loginWithPassword(
+  identifier: string,
+  password: string,
+): Promise<LoginResponse> {
+  const res = await fetch('/api/onboard/login', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ identifier, password }),
+  });
+  const body = await res.json().catch(() => ({ error: res.statusText }));
+  if (!res.ok) {
+    throw new Error(body.error || body.message || `HTTP ${res.status}`);
+  }
+  return body as LoginResponse;
+}
+
+/**
+ * Change the signed-in user's password. Requires active session cookie.
+ * `newPassword` must be ≥6 chars. Returns { ok: true } on success.
+ */
+export async function changePassword(newPassword: string): Promise<{ ok: boolean }> {
+  const res = await fetch('/api/onboard/profile/password', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ new_password: newPassword }),
+  });
+  const body = await res.json().catch(() => ({ error: res.statusText }));
+  if (!res.ok) {
+    throw new Error(body.error || body.message || `HTTP ${res.status}`);
+  }
+  return body as { ok: boolean };
 }
 
 // ── Admin ──────────────────────────────────────────────────────────────

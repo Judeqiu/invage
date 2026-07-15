@@ -13,14 +13,19 @@
  * Spec: docs/webui-chat-design.md §4.4, §10 (New user via web invite redeem).
  */
 
-import { Router } from 'express';
+import { Router, type Request, type Response } from 'express';
 import {
   redeemInviteInstantly,
   ensureChannelUser,
   isDemoModeEnabled,
   createSession,
   resolveByToken,
+  authenticateUser,
   resolveUserBySlug,
+  loadState,
+  saveState,
+  hashPassword,
+  requireAuth,
   type AuthUser,
 } from 'utarus';
 
@@ -33,6 +38,12 @@ interface RedeemBody {
 
 interface LoginBody {
   auth_token?: unknown;
+  identifier?: unknown;
+  password?: unknown;
+}
+
+interface ChangePasswordBody {
+  new_password?: unknown;
 }
 
 function isNonEmptyString(v: unknown): v is string {
@@ -51,27 +62,57 @@ onboardRedeemRouter.get('/demo', (_req, res) => {
 });
 
 /**
- * POST /api/onboard/login — SPA token login.
+ * POST /api/onboard/login — SPA login (token OR username + password).
  *
- * Body: { auth_token: string }. Resolves the user via the same path as
- * BinDrive's HTML /login (resolveByToken), sets bindrive_session cookie,
- * returns { type, slug, displayName }. JSON in, JSON out — distinct from
- * BinDrive's form-based /login which the SPA cannot consume.
+ * Two body shapes are accepted; dispatch on which fields are present:
+ *   - { auth_token: string }                → legacy token login (resolveByToken)
+ *   - { identifier, password }              → username+password (authenticateUser)
+ *     identifier is the user slug OR contact_email (case-insensitive)
  *
- * Admin username/password login is intentionally NOT supported here:
- * utarus does not export authenticateAdmin. Surface a clear 400 instead.
+ * Sets bindrive_session cookie, returns { type, slug, displayName }. JSON in,
+ * JSON out — distinct from BinDrive's form-based /login which the SPA cannot
+ * consume. Admin username/password login is intentionally NOT supported here
+ * (no env-driven adminCredentials in invage) — surface a clear 400 instead.
  */
-onboardRedeemRouter.post('/login', (req, res) => {
+onboardRedeemRouter.post('/login', async (req, res) => {
   const body = req.body as LoginBody;
-  if (typeof body.auth_token !== 'string' || !body.auth_token.trim()) {
-    res.status(400).json({ error: 'invalid_token', message: 'Auth token required.' });
+  const hasToken = typeof body.auth_token === 'string' && body.auth_token.trim().length > 0;
+  const hasIdentifier =
+    typeof body.identifier === 'string' && body.identifier.trim().length > 0;
+  const hasPassword = typeof body.password === 'string' && body.password.length > 0;
+
+  if (!hasToken && !(hasIdentifier && hasPassword)) {
+    res.status(400).json({
+      error: 'invalid_request',
+      message: 'Either auth_token or identifier+password required.',
+    });
     return;
   }
-  const user = resolveByToken(body.auth_token.trim());
-  if (!user) {
-    res.status(401).json({ error: 'invalid_token', message: 'Invalid auth token.' });
-    return;
+
+  let user: AuthUser | null;
+  if (hasToken) {
+    user = resolveByToken((body.auth_token as string).trim());
+    if (!user) {
+      res.status(401).json({ error: 'invalid_token', message: 'Invalid auth token.' });
+      return;
+    }
+  } else {
+    // identifier + password path. authenticateUser scans user files matching
+    // slug OR contact_email and verifies bcrypt hash. Returns null on no-match
+    // / wrong-password / legacy-user-without-hash — surface 401 either way.
+    user = await authenticateUser(
+      (body.identifier as string).trim(),
+      body.password as string,
+    );
+    if (!user) {
+      res.status(401).json({
+        error: 'invalid_credentials',
+        message: 'Invalid username or password.',
+      });
+      return;
+    }
   }
+
   const sessionToken = createSession(user);
   res.cookie('bindrive_session', sessionToken, {
     httpOnly: true,
@@ -85,7 +126,7 @@ onboardRedeemRouter.post('/login', (req, res) => {
   });
 });
 
-onboardRedeemRouter.post('/redeem', (req, res) => {
+onboardRedeemRouter.post('/redeem', async (req, res) => {
   const body = req.body as RedeemBody;
 
   if (!isNonEmptyString(body.display_name) || body.display_name.trim().length > 60) {
@@ -104,26 +145,29 @@ onboardRedeemRouter.post('/redeem', (req, res) => {
 
   let slug: string;
   let displayOut: string;
+  let presetPassword = '';
 
   try {
     if (hasCode) {
       const code = (body.code as string).trim().toUpperCase();
-      const result = redeemInviteInstantly({
+      const result = await redeemInviteInstantly({
         code,
         displayName,
         web: true,
       });
       slug = result.slug;
       displayOut = result.displayName;
+      presetPassword = result.presetPassword;
     } else {
       // Demo mode + no code → auto-create.
-      const result = ensureChannelUser({
+      const result = await ensureChannelUser({
         displayName,
         web: true,
         source: 'demo',
       });
       slug = result.slug;
       displayOut = result.displayName;
+      presetPassword = result.presetPassword;
     }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -162,5 +206,64 @@ onboardRedeemRouter.post('/redeem', (req, res) => {
     sameSite: 'lax',
     maxAge: 24 * 60 * 60 * 1000,
   });
-  res.json({ slug, redirect: '/' });
+  // preset_password is plaintext and one-shot — surfaced only here so the SPA
+  // can render it once on the redeem-confirmation screen. The hash is on disk
+  // in user.password_hash; the plaintext is never recoverable after this.
+  res.json({
+    slug,
+    display_name: displayOut,
+    contact_email: state.profile.contact_email,
+    preset_password: presetPassword,
+    redirect: '/',
+  });
 });
+
+/**
+ * POST /api/profile/password — change the signed-in user's password.
+ *
+ * Body: { new_password: string }. Requires an active session (any user type).
+ * Validates ≥6 chars (bcrypt/hashPassword constraint), hashes, writes to
+ * user.password_hash, pushes a log entry, returns { ok: true }.
+ *
+ * Fail-fast: short passwords return 400 with the raw error message — no
+ * silent padding or coercion.
+ */
+onboardRedeemRouter.post(
+  '/profile/password',
+  requireAuth,
+  async (req: Request, res: Response) => {
+    const body = req.body as ChangePasswordBody;
+    if (typeof body.new_password !== 'string' || body.new_password.length < 6) {
+      res.status(400).json({
+        error: 'invalid_password',
+        message: 'Password must be at least 6 characters.',
+      });
+      return;
+    }
+    const sessionUser = (req as unknown as { user: AuthUser }).user;
+    if (sessionUser.type !== 'user') {
+      res.status(403).json({
+        error: 'forbidden',
+        message: 'Only domain users may set a password (admin auth is env-driven).',
+      });
+      return;
+    }
+    const slug = sessionUser.slug;
+    const state = loadState(slug);
+    let hash: string;
+    try {
+      hash = await hashPassword(body.new_password);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      res.status(400).json({ error: 'hash_failed', message: msg });
+      return;
+    }
+    state.user.password_hash = hash;
+    state.log.push({
+      ts: new Date().toISOString().slice(0, 10),
+      action: 'password_changed',
+    });
+    saveState(state);
+    res.json({ ok: true });
+  },
+);

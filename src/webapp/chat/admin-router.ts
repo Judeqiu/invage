@@ -122,10 +122,10 @@ adminRouter.get('/users/:slug', (req: Request, res: Response) => {
   const slug = req.params.slug as string;
   try {
     const state = loadState(slug);
-    // Never expose auth_token over the wire — strip it.
+    // Never expose secrets over the wire — strip auth_token AND password_hash.
     const safe = {
       ...state,
-      user: { ...state.user, auth_token: undefined },
+      user: { ...state.user, auth_token: undefined, password_hash: undefined },
     };
     res.json(safe);
   } catch (e) {

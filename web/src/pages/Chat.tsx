@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   abortRun,
+  changePassword,
   clearContext,
   sendMessage,
   subscribeStream,
@@ -27,7 +28,7 @@ import type {
 } from '../types.js';
 import { ThreadView } from '../components/ThreadView.js';
 import { Composer } from '../components/Composer.js';
-import { LogOut, Settings, Sparkles, X } from 'lucide-react';
+import { KeyRound, LogOut, Settings, Sparkles, X } from 'lucide-react';
 
 interface ChatPageProps {
   session: SessionUser;
@@ -43,6 +44,7 @@ export function ChatPage({ session }: ChatPageProps) {
   const [now, setNow] = useState(() => Date.now());
   const [banner, setBanner] = useState<string | null>(null);
   const [showHelp, setShowHelp] = useState(false);
+  const [showChangePassword, setShowChangePassword] = useState(false);
   const currentRunController = useRef<AbortController | null>(null);
   const activeMessageId = useRef<string | null>(null);
   const toolMap = useRef<Map<string, ToolChip>>(new Map());
@@ -338,6 +340,15 @@ export function ChatPage({ session }: ChatPageProps) {
               <Settings className="h-3 w-3" /> Admin
             </a>
           )}
+          {session.type === 'user' && (
+            <button
+              type="button"
+              onClick={() => setShowChangePassword(true)}
+              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-700 hover:bg-slate-50"
+            >
+              <KeyRound className="h-3 w-3" /> Password
+            </button>
+          )}
           <button
             type="button"
             onClick={() => void logout()}
@@ -377,6 +388,10 @@ export function ChatPage({ session }: ChatPageProps) {
       />
 
       {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
+
+      {showChangePassword && (
+        <ChangePasswordModal onClose={() => setShowChangePassword(false)} />
+      )}
     </div>
   );
 }
@@ -414,6 +429,106 @@ function HelpModal({ onClose }: { onClose: () => void }) {
             Standard markdown is supported in replies: tables, code blocks, lists, images.
           </li>
         </ul>
+      </div>
+    </div>
+  );
+}
+
+function ChangePasswordModal({ onClose }: { onClose: () => void }) {
+  const [newPassword, setNewPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      if (newPassword.length < 6) {
+        throw new Error('Password must be at least 6 characters.');
+      }
+      if (newPassword !== confirm) {
+        throw new Error('Passwords do not match.');
+      }
+      await changePassword(newPassword);
+      setDone(true);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-base font-semibold text-slate-900">Change password</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            aria-label="Close"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        {done ? (
+          <div className="space-y-3">
+            <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+              Password updated. Use the new password next time you sign in.
+            </p>
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-full rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
+            >
+              Done
+            </button>
+          </div>
+        ) : (
+          <form onSubmit={submit} className="space-y-3">
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-slate-600">
+                New password (≥6 chars)
+              </span>
+              <input
+                type="password"
+                autoComplete="new-password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-slate-600">
+                Confirm new password
+              </span>
+              <input
+                type="password"
+                autoComplete="new-password"
+                value={confirm}
+                onChange={(e) => setConfirm(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+            </label>
+            {error && (
+              <p className="rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                {error}
+              </p>
+            )}
+            <button
+              type="submit"
+              disabled={busy}
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:bg-slate-300"
+            >
+              {busy && <Sparkles className="h-4 w-4 animate-spin" />}
+              Update password
+            </button>
+          </form>
+        )}
       </div>
     </div>
   );

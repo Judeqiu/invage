@@ -31,33 +31,33 @@ function wipeState() {
 describe('handleBind — terminal cases', () => {
   beforeEach(wipeState);
 
-  it('no payload → tells user to send a token', () => {
-    const result = handleBind({ payload: '', slackUserId: 'U111' });
+  it('no payload → tells user to send a token', async () => {
+    const result = await handleBind({ payload: '', slackUserId: 'U111' });
     expect(result.reply).toMatch(/\/bind BIND-XXXXXXXX/);
     expect(result.reply).toMatch(/test\.example\.com\/onboard/);
     expect(result.slug).toBeUndefined();
   });
 
-  it('token not recognised', () => {
-    const result = handleBind({ payload: 'BIND-NOPE0000', slackUserId: 'U111' });
+  it('token not recognised', async () => {
+    const result = await handleBind({ payload: 'BIND-NOPE0000', slackUserId: 'U111' });
     expect(result.reply).toMatch(/not recognised/);
   });
 
-  it('token already used', () => {
+  it('token already used', async () => {
     const t = createPendingToken('Alex', 'a@example.com');
     markUsed(t.token, 'U999', 'alex');
-    const result = handleBind({ payload: t.token, slackUserId: 'U111' });
+    const result = await handleBind({ payload: t.token, slackUserId: 'U111' });
     expect(result.reply).toMatch(/already been used/);
   });
 
-  it('token rejected', () => {
+  it('token rejected', async () => {
     const t = createPendingToken('Alex', 'a@example.com');
     markRejected(t.token, 'UADMIN', 'spam');
-    const result = handleBind({ payload: t.token, slackUserId: 'U111' });
+    const result = await handleBind({ payload: t.token, slackUserId: 'U111' });
     expect(result.reply).toMatch(/has been rejected/);
   });
 
-  it('token expired', () => {
+  it('token expired', async () => {
     const t = createPendingToken('Alex', 'a@example.com');
     const raw = readFileSync(tokensFilePath(), 'utf-8');
     const arr = parse(raw) as Array<{ token: string; expires_at: string }>;
@@ -65,7 +65,7 @@ describe('handleBind — terminal cases', () => {
     arr[idx].expires_at = new Date(Date.now() - 1000).toISOString();
     writeFileSync(tokensFilePath(), stringify(arr), 'utf-8');
 
-    const result = handleBind({ payload: t.token, slackUserId: 'U111' });
+    const result = await handleBind({ payload: t.token, slackUserId: 'U111' });
     expect(result.reply).toMatch(/expired/);
   });
 });
@@ -73,9 +73,9 @@ describe('handleBind — terminal cases', () => {
 describe('handleBind — happy path', () => {
   beforeEach(wipeState);
 
-  it('creates user + drive folder; marks token used; greets by display name', () => {
+  it('creates user + drive folder; marks token used; greets by display name', async () => {
     const t = createPendingToken('Alex Chen', 'alex@example.com');
-    const result = handleBind({
+    const result = await handleBind({
       payload: t.token,
       slackUserId: 'U0ALEX123',
     });
@@ -98,13 +98,13 @@ describe('handleBind — happy path', () => {
     expect(state.log.some((e) => e.action === 'qr_onboard_bound')).toBe(true);
   });
 
-  it('idempotent for already-linked slack user', () => {
+  it('idempotent for already-linked slack user', async () => {
     const t1 = createPendingToken('Alex Chen', 'alex@example.com');
-    const r1 = handleBind({ payload: t1.token, slackUserId: 'U0ALEX123' });
+    const r1 = await handleBind({ payload: t1.token, slackUserId: 'U0ALEX123' });
     expect(r1.slug).toBeDefined();
 
     const t2 = createPendingToken('Other Name', 'other@example.com');
-    const r2 = handleBind({ payload: t2.token, slackUserId: 'U0ALEX123' });
+    const r2 = await handleBind({ payload: t2.token, slackUserId: 'U0ALEX123' });
     expect(r2.reply).toMatch(/already registered/);
     expect(r2.slug).toBe(r1.slug);
   });

@@ -19,9 +19,10 @@ export interface CommandContext {
   isAdmin: boolean;
 }
 
-export function handleBindCommand(ctx: CommandContext): string {
-  return handleBind({
+export async function handleBindCommand(ctx: CommandContext): Promise<string> {
+  const result = await handleBind({
     payload: ctx.args,
     slackUserId: ctx.slackUserId,
-  }).reply;
+  });
+  return result.reply;
 }

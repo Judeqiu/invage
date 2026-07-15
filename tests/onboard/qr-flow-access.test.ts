@@ -63,7 +63,7 @@ describe('landing + /bind isolation from framework access gate', () => {
     expect(res.body.workspace_invite_url).toContain('join.slack.com');
 
     const slackUserId = 'U0QRTEST001';
-    const reply = handleBindCommand({
+    const reply = await handleBindCommand({
       args: res.body.token,
       slackUserId,
       isAdmin: false,
