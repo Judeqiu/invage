@@ -82,7 +82,18 @@ export function buildInvageApp(framework: Framework): Express {
     console.warn(`[invage/web] SPA static dir missing: ${WEB_DIST_DIR}. API-only mode.`);
   }
 
-  // BinDrive as sub-app — provides /login, /logout, /api/files/*, /api/auth/*, /health.
+  // The SPA owns /login now (password + auth_token tabs). Mount a specific
+  // route BEFORE BinDrive's sub-app so its server-rendered HTML form doesn't
+  // intercept the URL. /logout stays on BinDrive — it clears the cookie and
+  // redirects to /login, which now lands on the SPA.
+  if (existsSync(WEB_DIST_DIR)) {
+    const indexHtml = join(WEB_DIST_DIR, 'index.html');
+    app.get('/login', (_req: Request, res: Response) => {
+      res.sendFile(indexHtml);
+    });
+  }
+
+  // BinDrive as sub-app — provides /logout, /api/files/*, /api/auth/*, /health.
   app.use(createBinDriveApp());
 
   app.use('/api/onboard', onboardRouter);
@@ -93,8 +104,10 @@ export function buildInvageApp(framework: Framework): Express {
   if (existsSync(WEB_DIST_DIR)) {
     // SPA fallback: any non-API GET that didn't match a static file
     // returns index.html so client-side routing owns the URL.
+    // `/login` is handled explicitly above; `/logout` and `/health` stay on
+    // BinDrive (cookie clear + redirect, and health probe respectively).
     const indexHtml = join(WEB_DIST_DIR, 'index.html');
-    app.get(/^\/(?!api\/|login|logout|health).*$/, (req: Request, res: Response, next: NextFunction) => {
+    app.get(/^\/(?!api\/|logout|health).*$/, (req: Request, res: Response, next: NextFunction) => {
       // Skip anything that looks like a file (has an extension in the last segment).
       const last = req.path.split('/').pop() ?? '';
       if (last.includes('.')) {
