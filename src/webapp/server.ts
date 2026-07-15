@@ -1,26 +1,21 @@
 /**
- * Invage webapp — BinDrive portal + public onboard API + WebUI chat.
+ * Invage webapp entry — thin domain layer on top of Utarus WebUI.
+ *
+ * Framework owns: SPA chat, BinDrive, /api/chat, /api/admin, web onboard
+ * (login / redeem / password / demo).
+ *
+ * Invage adds: landing-page register API at POST /api/onboard/register
+ * (Slack workspace invite flow).
  *
  * Two entry points:
- *   - `npm run webapp` (standalone): BinDrive + onboard API only. Used for
- *     BinDrive-only deployments that do not need the in-memory agent pool.
- *   - `buildInvageApp({ framework })` (called from the agent process):
- *     BinDrive + onboard API + chat router. The chat router needs the
- *     in-memory agent pool, which lives in the agent process — see
- *     docs/webui-chat-design.md §5.
- *
- * Auth: user.auth_token from data/users/<slug>.yaml (same as Binary/Utarus).
- *
- * Load host .env BEFORE importing utarus / onboard so WEBAPP_PORT,
- * UTARUS_DATA_ROOT, and INVAGE_* onboard vars are taken from the host .env.
+ *   - Agent process: framework.startWebApp({ extraRouters: [...] })
+ *   - Standalone `npm run webapp`: BinDrive + invage register only (no chat pool)
  */
 
 import { config as dotenvConfig } from 'dotenv';
-import { resolve, dirname, join } from 'path';
+import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { existsSync } from 'fs';
-import express, { type Express, type Request, type Response, type NextFunction } from 'express';
-import cookieParser from 'cookie-parser';
+import type { Express } from 'express';
 import type { Framework } from 'utarus';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -28,101 +23,30 @@ const __dirname = dirname(__filename);
 dotenvConfig({ path: resolve(__dirname, '../../.env') });
 process.env.UTARUS_LOADED_BY_HOST = '1';
 
-const { createBinDriveApp, startBinDrive } = await import('utarus');
+const {
+  createBinDriveApp,
+  startBinDrive,
+  buildWebApp,
+  startWebApp,
+} = await import('utarus');
 const { onboardRouter } = await import('../onboard/api.js');
-const { createChatRouter } = await import('./chat/router.js');
-const { adminRouter } = await import('./chat/admin-router.js');
-const { onboardRedeemRouter } = await import('./chat/onboard.js');
 
-export { startBinDrive, createBinDriveApp };
+export { startBinDrive, createBinDriveApp, buildWebApp, startWebApp };
 export { onboardRouter };
 
-/**
- * Absolute path to the built SPA. In production this is
- * /opt/invage/web/dist; in dev (running from src/) it resolves under the
- * repo root. Missing dir is logged but does not crash — the API still
- * works, only static serving returns 404.
- */
-const WEB_DIST_DIR = resolve(__dirname, '../../web/dist');
+/** Domain-only mount: landing register API. */
+const INVAGE_EXTRA_ROUTERS = [{ path: '/api/onboard', router: onboardRouter }];
 
 /**
- * Build the combined express app: SPA static serving + BinDrive routes
- * (from utarus) + onboard API + chat router + admin REST. Requires the
- * framework so the chat router can resolve agents.
- *
- * Ordering: SPA static is mounted BEFORE BinDrive so the SPA owns `/`
- * (BinDrive also registers GET / for its folder view, which we want to
- * suppress in favour of the chat SPA). BinDrive is mounted as a sub-app
- * so its /login, /logout, /api/files/*, /api/auth/*, /health routes keep
- * working at the same paths. Spec: docs/webui-chat-design.md §9.
- *
- * SPA fallback: any GET that isn't under /api, /login, /logout, /health,
- * or a file with an extension is treated as a client-side route and served
- * index.html.
+ * Full WebUI for the agent process (chat needs the in-memory agent pool).
  */
 export function buildInvageApp(framework: Framework): Express {
-  const app = express();
-  // Parent-level parsers so /api/onboard, /api/chat, /api/admin bodies parse.
-  // BinDrive's sub-app re-runs them; negligible cost, simpler than threading
-  // the router out of utarus.
-  app.use(express.urlencoded({ extended: false }));
-  app.use(express.json({ limit: '10mb' }));
-  app.use(cookieParser());
-  app.use(express.static(WEB_DIST_DIR, existsSync(WEB_DIST_DIR) ? {
-    index: 'index.html',
-    setHeaders: (_res, path) => {
-      // Immutable cache for hashed bundle assets.
-      if (/\.[0-9a-f]{8,}\.(js|css)$/i.test(path)) {
-        _res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-      }
-    },
-  } : {}));
-
-  if (!existsSync(WEB_DIST_DIR)) {
-    console.warn(`[invage/web] SPA static dir missing: ${WEB_DIST_DIR}. API-only mode.`);
-  }
-
-  // The SPA owns /login now (password + auth_token tabs). Mount a specific
-  // route BEFORE BinDrive's sub-app so its server-rendered HTML form doesn't
-  // intercept the URL. /logout stays on BinDrive — it clears the cookie and
-  // redirects to /login, which now lands on the SPA.
-  if (existsSync(WEB_DIST_DIR)) {
-    const indexHtml = join(WEB_DIST_DIR, 'index.html');
-    app.get('/login', (_req: Request, res: Response) => {
-      res.sendFile(indexHtml);
-    });
-  }
-
-  // BinDrive as sub-app — provides /logout, /api/files/*, /api/auth/*, /health.
-  app.use(createBinDriveApp());
-
-  app.use('/api/onboard', onboardRouter);
-  app.use('/api/onboard', onboardRedeemRouter);
-  app.use('/api/chat', createChatRouter({ framework }));
-  app.use('/api/admin', adminRouter);
-
-  if (existsSync(WEB_DIST_DIR)) {
-    // SPA fallback: any non-API GET that didn't match a static file
-    // returns index.html so client-side routing owns the URL.
-    // `/login` is handled explicitly above; `/logout` and `/health` stay on
-    // BinDrive (cookie clear + redirect, and health probe respectively).
-    const indexHtml = join(WEB_DIST_DIR, 'index.html');
-    app.get(/^\/(?!api\/|logout|health).*$/, (req: Request, res: Response, next: NextFunction) => {
-      // Skip anything that looks like a file (has an extension in the last segment).
-      const last = req.path.split('/').pop() ?? '';
-      if (last.includes('.')) {
-        return next();
-      }
-      res.sendFile(indexHtml);
-    });
-  }
-
-  return app;
+  return buildWebApp(framework, { extraRouters: INVAGE_EXTRA_ROUTERS });
 }
 
 /**
- * BinDrive + onboard only — no chat router. Used by the standalone
- * `npm run webapp` entry when the agent process is not running here.
+ * BinDrive + landing register only — no chat router. Used by standalone
+ * `npm run webapp` when the agent process is not hosting HTTP.
  */
 function buildAppWithOnboard() {
   const app = createBinDriveApp();
@@ -143,7 +67,7 @@ if (isMain) {
   }
   app.listen(port, () => {
     console.log(
-      `[InvesterDrive] listening on http://localhost:${port} (onboard API at /api/onboard)`,
+      `[InvesterDrive] listening on http://localhost:${port} (BinDrive + landing /api/onboard/register)`,
     );
   });
 }

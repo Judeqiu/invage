@@ -71,18 +71,18 @@ async function main(): Promise<void> {
 
   const framework = createFramework({ extension: invageExtension });
 
-  // ── Web UI (chat + BinDrive + onboard + admin) ────────────────────────
-  // The chat router needs the in-memory agent pool, which lives in this
-  // process. When WEBAPP_PORT is set, the agent process also serves HTTP.
+  // ── Web UI (Utarus-owned: chat SPA + BinDrive + admin + web onboard) ──
+  // Chat needs the in-memory agent pool in this process. Invage only adds
+  // the landing-page register route.
   if (process.env.WEBAPP_PORT) {
-    const { buildInvageApp } = await import('./webapp/server.js');
+    const { onboardRouter } = await import('./onboard/api.js');
     const port = parseInt(process.env.WEBAPP_PORT, 10);
     if (!Number.isFinite(port) || port <= 0) {
       throw new Error(`WEBAPP_PORT must be a positive integer, got "${process.env.WEBAPP_PORT}".`);
     }
-    const app = buildInvageApp(framework);
-    app.listen(port, () => {
-      console.log(`[Invester/Web] listening on http://localhost:${port} (chat + BinDrive + admin)`);
+    framework.startWebApp({
+      port,
+      extraRouters: [{ path: '/api/onboard', router: onboardRouter }],
     });
   } else {
     console.log('WEBAPP_PORT not set — WebUI chat interface disabled.');

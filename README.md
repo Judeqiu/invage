@@ -4,9 +4,9 @@ Invage is a **domain agent** for investment portfolio analysis. It is built the 
 
 | Layer | Source |
 |-------|--------|
-| Framework (Telegram + Slack + CLI, invite/admin, user YAML, skills, firecrawl) | [`utarus`](https://github.com/Judeqiu/utarus) |
-| BinDrive file portal | **Utarus** (`startBinDrive` / `bindrive_*` tools) |
-| Domain (portfolio, Yahoo Finance, 3-axis analysis, reports) | **this repo** |
+| Framework (Telegram + Slack + CLI + **WebUI chat**, invite/admin, user YAML, skills, firecrawl) | [`utarus`](https://github.com/Judeqiu/utarus) |
+| BinDrive file portal + WebUI SPA | **Utarus** (`framework.startWebApp` / `bindrive_*`) |
+| Domain (portfolio, Yahoo Finance, 3-axis analysis, reports, landing register) | **this repo** |
 
 Channels (same agent process, shared user/portfolio YAML):
 
@@ -14,24 +14,25 @@ Channels (same agent process, shared user/portfolio YAML):
 |---------|---------|-----|
 | **Telegram** | like Binary | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ADMIN_IDS` |
 | **Slack** | like Marie (Socket Mode via Utarus) | `SLACK_BOT_TOKEN`, `SLACK_APP_TOKEN`, `SLACK_SIGNING_SECRET`, `SLACK_ADMIN_IDS` |
-| **Public onboard** | like Binary QR → Telegram, but Slack | `investor.lextok.com` + `INVAGE_*` env (see landing/) |
+| **WebUI** | Utarus chat SPA | `WEBAPP_PORT` |
+| **Public onboard** | landing → Slack bind | `investor.lextok.com` + `INVAGE_*` env (see landing/) |
 
 ```
-invage (domain)  ──depends on──►  utarus (framework + BinDrive)
+invage (domain)  ──depends on──►  utarus (framework + BinDrive + WebUI)
      │
      ├── createFramework({ extension: invageExtension })
-     ├── startTelegram() + startSlack()   # either or both
+     ├── startTelegram() + startSlack()
+     ├── startWebApp({ extraRouters: [landing register] })  # when WEBAPP_PORT set
      ├── src/tools/*          portfolio / analyzer / report / snapshot
      ├── src/market/*         Yahoo Finance + 3-axis engine
-     └── src/webapp/server.ts re-exports startBinDrive from utarus
+     └── src/onboard/*        landing register + Slack /bind handshake
 ```
 
-Pinned like Binary:
+Pin `utarus` to a commit that includes the WebUI (`src/webapp/chat`, `web/` SPA):
 
 ```json
-"utarus": "github:Judeqiu/utarus#bdd9962"
+"utarus": "github:Judeqiu/utarus#<commit-with-webui>"
 ```
-
 ---
 
 ## Prerequisites
