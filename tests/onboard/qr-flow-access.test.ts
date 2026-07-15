@@ -12,12 +12,11 @@ import { existsSync, rmSync, readdirSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import express from 'express';
 import request from 'supertest';
-import { resolveDataRoot } from 'utarus';
+import { resolveDataRoot, resolveUserBySlackUser } from 'utarus';
 import { tokensFilePath } from '../../src/onboard/token-store.js';
 import { handleBindCommand } from '../../src/onboard/bind-command.js';
 import { onboardRouter } from '../../src/onboard/api.js';
 import { invageExtension } from '../../src/extension.js';
-import { resolveInvestorBySlackUser } from '../../src/state/portfolio-state.js';
 
 const USERS_DIR = join(resolveDataRoot(), 'users');
 const DRIVE_DIR = join(resolveDataRoot(), 'drive');
@@ -71,7 +70,7 @@ describe('landing + /bind isolation from framework access gate', () => {
     });
 
     expect(reply).toMatch(/registered with Invester/i);
-    const investor = resolveInvestorBySlackUser(slackUserId);
+    const investor = resolveUserBySlackUser(slackUserId);
     expect(investor).not.toBeNull();
     expect(investor!.profile.display_name).toBe('LexTok Investor');
   });

@@ -1,9 +1,9 @@
 import { Type } from 'typebox';
 import type { AgentTool, AgentToolResult } from '@earendil-works/pi-agent-core';
+import { saveState } from 'utarus';
 import type { Holding } from '../market/types.js';
 import {
   getPortfolio,
-  saveInvestorState,
   setPortfolio,
 } from '../state/portfolio-state.js';
 import {
@@ -92,7 +92,7 @@ export function createPortfolioTools(): AgentTool[] {
           units: p.units,
           category: p.category,
         });
-        saveInvestorState(state);
+        saveState(state);
 
         const action = isUpdate ? 'Updated' : 'Added';
         const cost = p.avg_price * p.units;
@@ -138,7 +138,7 @@ export function createPortfolioTools(): AgentTool[] {
           avg_price: removed.avg_price,
           units: removed.units,
         });
-        saveInvestorState(state);
+        saveState(state);
 
         return ok(
           `Removed ${ticker} from portfolio (${removed.units} shares @ $${removed.avg_price.toFixed(2)}).`,
@@ -213,7 +213,7 @@ export function createPortfolioTools(): AgentTool[] {
           ticker,
           ...portfolio[ticker],
         });
-        saveInvestorState(state);
+        saveState(state);
 
         const h = portfolio[ticker];
         return ok(
@@ -254,7 +254,7 @@ export function createPortfolioTools(): AgentTool[] {
           action: 'portfolio_cleared',
           positions_removed: count,
         });
-        saveInvestorState(state);
+        saveState(state);
 
         return ok(`Cleared portfolio — ${count} position${count === 1 ? '' : 's'} removed.`, {
           cleared: count,

@@ -20,9 +20,9 @@ import {
   isDemoModeEnabled,
   createSession,
   resolveByToken,
+  resolveUserBySlug,
   type AuthUser,
 } from 'utarus';
-import { resolveInvestorBySlug } from '../../state/portfolio-state.js';
 
 export const onboardRedeemRouter = Router();
 
@@ -140,7 +140,7 @@ onboardRedeemRouter.post('/redeem', (req, res) => {
   }
 
   // Verify the freshly-created state file is loadable (fail fast — no fallback).
-  const state = resolveInvestorBySlug(slug);
+  const state = resolveUserBySlug(slug);
   if (!state) {
     res.status(500).json({ error: 'redeem_failed', message: `User "${slug}" was not created on disk.` });
     return;

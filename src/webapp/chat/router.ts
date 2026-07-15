@@ -27,7 +27,6 @@ import {
   type AuthUser,
   type Framework,
 } from 'utarus';
-import { loadInvestorState } from '../../state/portfolio-state.js';
 import { runAgent } from './run-agent.js';
 import { sendSSEEvent, sendSSEComment, setSSEHeaders } from './sse.js';
 import {
@@ -69,7 +68,7 @@ export function createChatRouter(deps: CreateChatRouterDeps): Router {
     let linkedUser = null;
     if (user.type === 'user' && user.slug) {
       try {
-        linkedUser = loadInvestorState(user.slug);
+        linkedUser = loadState(user.slug);
       } catch (e) {
         res.status(401).json({ error: 'session_invalid', message: (e as Error).message });
         return;

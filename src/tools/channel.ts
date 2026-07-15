@@ -5,11 +5,11 @@
 
 import { Type } from 'typebox';
 import {
-  resolveInvestorBySlackUser,
-  resolveInvestorByTelegramUser,
-  resolveInvestorBySlug,
-  type InvestorState,
-} from '../state/portfolio-state.js';
+  resolveUserBySlackUser,
+  resolveUserByTelegramUser,
+  resolveUserBySlug,
+} from 'utarus';
+import type { InvestorState } from '../state/portfolio-state.js';
 
 /** TypeBox fields to merge into tool parameters. */
 export const channelIdParams = {
@@ -41,7 +41,7 @@ export type ChannelIds = {
 
 export function resolveInvestorFromChannel(p: ChannelIds): InvestorState {
   if (p.user_slug) {
-    const state = resolveInvestorBySlug(p.user_slug);
+    const state = resolveUserBySlug(p.user_slug) as InvestorState | null;
     if (!state) {
       throw new Error(
         `No user with slug "${p.user_slug}". User must register first via invite code.`,
@@ -50,7 +50,7 @@ export function resolveInvestorFromChannel(p: ChannelIds): InvestorState {
     return state;
   }
   if (p.telegram_user_id != null) {
-    const state = resolveInvestorByTelegramUser(p.telegram_user_id);
+    const state = resolveUserByTelegramUser(p.telegram_user_id) as InvestorState | null;
     if (!state) {
       throw new Error(
         `No user linked to Telegram ID ${p.telegram_user_id}. User must register first via invite code.`,
@@ -59,7 +59,7 @@ export function resolveInvestorFromChannel(p: ChannelIds): InvestorState {
     return state;
   }
   if (p.slack_user_id) {
-    const state = resolveInvestorBySlackUser(p.slack_user_id);
+    const state = resolveUserBySlackUser(p.slack_user_id) as InvestorState | null;
     if (!state) {
       throw new Error(
         `No user linked to Slack ID ${p.slack_user_id}. User must register first via invite code.`,

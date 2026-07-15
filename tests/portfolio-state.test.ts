@@ -13,11 +13,13 @@ process.env.UTARUS_LOADED_BY_HOST = '1';
 process.env.UTARUS_DATA_ROOT = dataRoot;
 
 const {
-  loadInvestorState,
-  resolveInvestorByTelegramUser,
+  loadState,
+  saveState,
+  resolveUserByTelegramUser,
+} = await import('utarus');
+const {
   getPortfolio,
   getPlaybook,
-  saveInvestorState,
   setPortfolio,
   updatePlaybook,
 } = await import('../src/state/portfolio-state.js');
@@ -51,44 +53,44 @@ describe('portfolio-state', () => {
   });
 
   it('loads portfolio and resolves by telegram id', () => {
-    const state = loadInvestorState('alice');
+    const state = loadState('alice');
     expect(state.profile.display_name).toBe('Alice');
     expect(getPortfolio(state).AAPL?.units).toBe(5);
 
-    const byTg = resolveInvestorByTelegramUser(111);
+    const byTg = resolveUserByTelegramUser(111);
     expect(byTg?.user.slug).toBe('alice');
-    expect(resolveInvestorByTelegramUser(999)).toBeNull();
+    expect(resolveUserByTelegramUser(999)).toBeNull();
   });
 
   it('saves portfolio mutations', () => {
-    const state = loadInvestorState('alice');
+    const state = loadState('alice');
     const portfolio = getPortfolio(state);
     portfolio.MSFT = { avg_price: 300, units: 2 };
     setPortfolio(state, portfolio);
     state.log.push({ ts: '2026-06-28', action: 'holding_added', ticker: 'MSFT' });
-    saveInvestorState(state);
+    saveState(state);
 
-    const reloaded = loadInvestorState('alice');
+    const reloaded = loadState('alice');
     expect(getPortfolio(reloaded).MSFT?.units).toBe(2);
   });
 
   it('resolves default playbook when none stored', () => {
-    const state = loadInvestorState('alice');
+    const state = loadState('alice');
     const pb = getPlaybook(state);
     expect(pb.risk.profile).toBe('balanced');
     expect(pb.philosophy).toBe('value_investing');
   });
 
   it('persists playbook updates', () => {
-    const state = loadInvestorState('alice');
+    const state = loadState('alice');
     updatePlaybook(state, {
       risk: { profile: 'conservative' },
       philosophy: 'dividend_investing',
     });
     state.log.push({ ts: '2026-06-28', action: 'playbook_updated' });
-    saveInvestorState(state);
+    saveState(state);
 
-    const reloaded = loadInvestorState('alice');
+    const reloaded = loadState('alice');
     const pb = getPlaybook(reloaded);
     expect(pb.risk.profile).toBe('conservative');
     expect(pb.philosophy).toBe('dividend_investing');

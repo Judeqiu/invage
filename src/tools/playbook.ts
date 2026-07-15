@@ -1,5 +1,6 @@
 import { Type } from 'typebox';
 import type { AgentTool, AgentToolResult } from '@earendil-works/pi-agent-core';
+import { saveState } from 'utarus';
 import {
   PHILOSOPHIES,
   REBALANCE_MODES,
@@ -12,7 +13,7 @@ import {
   type RiskProfile,
   type Strategy,
 } from '../playbook/index.js';
-import { getPlaybook, saveInvestorState, updatePlaybook } from '../state/portfolio-state.js';
+import { getPlaybook, updatePlaybook } from '../state/portfolio-state.js';
 import {
   channelIdParams,
   resolveInvestorFromChannel,
@@ -204,7 +205,7 @@ export function createPlaybookTools(): AgentTool[] {
           action: 'playbook_updated',
           fields: Object.keys(patch),
         });
-        saveInvestorState(state);
+        saveState(state);
 
         return ok(`Updated playbook.\n\n${formatPlaybookSummary(playbook)}`, {
           playbook,

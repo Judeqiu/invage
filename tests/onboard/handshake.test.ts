@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { existsSync, rmSync, readdirSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { parse, stringify } from 'yaml';
-import { resolveDataRoot } from 'utarus';
+import { resolveDataRoot, resolveUserBySlackUser, loadState } from 'utarus';
 import { handleBind } from '../../src/onboard/handshake.js';
 import {
   createPendingToken,
@@ -10,7 +10,6 @@ import {
   markRejected,
   tokensFilePath,
 } from '../../src/onboard/token-store.js';
-import { resolveInvestorBySlackUser, loadInvestorState } from '../../src/state/portfolio-state.js';
 
 const USERS_DIR = join(resolveDataRoot(), 'users');
 const DRIVE_DIR = join(resolveDataRoot(), 'drive');
@@ -85,7 +84,7 @@ describe('handleBind — happy path', () => {
     expect(result.reply).toMatch(/Hi \*Alex Chen\*/);
     expect(result.reply).toContain(result.slug!);
 
-    const investor = resolveInvestorBySlackUser('U0ALEX123');
+    const investor = resolveUserBySlackUser('U0ALEX123');
     expect(investor).not.toBeNull();
     expect(investor!.profile.display_name).toBe('Alex Chen');
     expect(investor!.profile.contact_email).toBe('alex@example.com');
@@ -95,7 +94,7 @@ describe('handleBind — happy path', () => {
     const drivePath = join(DRIVE_DIR, result.slug!);
     expect(existsSync(drivePath)).toBe(true);
 
-    const state = loadInvestorState(result.slug!);
+    const state = loadState(result.slug!);
     expect(state.log.some((e) => e.action === 'qr_onboard_bound')).toBe(true);
   });
 

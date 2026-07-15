@@ -7,6 +7,11 @@
  */
 
 import type { DomainExtension, EnrichMessageContext, Skill } from 'utarus';
+import {
+  resolveUserBySlackUser,
+  resolveUserByTelegramUser,
+  resolveUserBySlug,
+} from 'utarus';
 import { createInvageTools } from './tools/index.js';
 import { registerInvageSkills } from './skills.js';
 import { createGuidanceCommand } from './guidance.js';
@@ -16,9 +21,6 @@ import { handleOnboardCommand } from './onboard/admin-commands.js';
 import {
   getPlaybook,
   getPortfolio,
-  resolveInvestorBySlackUser,
-  resolveInvestorBySlug,
-  resolveInvestorByTelegramUser,
   type InvestorState,
 } from './state/portfolio-state.js';
 
@@ -240,16 +242,16 @@ export const invageExtension: DomainExtension = {
   ],
 
   async enrichMessage(ctx: EnrichMessageContext): Promise<string> {
-    let investor = null;
+    let investor: InvestorState | null = null;
     if (ctx.telegramUserId != null) {
-      investor = resolveInvestorByTelegramUser(ctx.telegramUserId);
+      investor = resolveUserByTelegramUser(ctx.telegramUserId) as InvestorState | null;
     } else if (ctx.slackUserId) {
-      investor = resolveInvestorBySlackUser(ctx.slackUserId);
+      investor = resolveUserBySlackUser(ctx.slackUserId) as InvestorState | null;
     } else if (ctx.userSlug) {
       // Web channel: no chat-platform id, but the gate resolves the slug
       // from the session and passes it through. Without this branch the
       // agent gets a bare prompt with no user context and re-onboards.
-      investor = resolveInvestorBySlug(ctx.userSlug);
+      investor = resolveUserBySlug(ctx.userSlug) as InvestorState | null;
     }
 
     if (investor) {

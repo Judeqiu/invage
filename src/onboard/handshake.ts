@@ -8,14 +8,15 @@
 
 import { mkdirSync } from 'fs';
 import { join } from 'path';
-import { resolveDataRoot } from 'utarus';
-import { findToken, isExpired, markUsed, tokenTtlMinutes } from './token-store.js';
-import { ensureSlackUser } from './user-create.js';
 import {
-  loadInvestorState,
-  resolveInvestorBySlackUser,
-  saveInvestorState,
-} from '../state/portfolio-state.js';
+  resolveDataRoot,
+  ensureChannelUser,
+  loadState,
+  saveState,
+  resolveUserBySlackUser,
+} from 'utarus';
+import type { InvestorState } from '../state/portfolio-state.js';
+import { findToken, isExpired, markUsed, tokenTtlMinutes } from './token-store.js';
 
 const DATA_ROOT = resolveDataRoot();
 const DRIVE_DIR = join(DATA_ROOT, 'drive');
@@ -77,7 +78,7 @@ export function handleBind(args: BindArgs): BindResult {
   }
 
   // Already-registered Slack user → bind token for audit, stop.
-  const existing = resolveInvestorBySlackUser(slackUserId);
+  const existing = resolveUserBySlackUser(slackUserId);
   if (existing) {
     markUsed(token, slackUserId, existing.user.slug);
     return {
@@ -86,15 +87,16 @@ export function handleBind(args: BindArgs): BindResult {
     };
   }
 
-  const userResult = ensureSlackUser({
+  const userResult = ensureChannelUser({
     slackUserId,
     displayName: entry.display_name,
     contactEmail: entry.email_submitted,
-    action: 'qr_onboard_bind',
+    source: 'invite',
+    web: false,
   });
 
   // Annotate user YAML with onboard audit fields (reload + save).
-  const state = loadInvestorState(userResult.slug);
+  const state = loadState(userResult.slug) as InvestorState;
   state.log.push({
     ts: new Date().toISOString().slice(0, 10),
     action: 'qr_onboard_bound',
@@ -102,7 +104,7 @@ export function handleBind(args: BindArgs): BindResult {
     slack_user_id: slackUserId,
   });
   if (!state.portfolio) state.portfolio = {};
-  saveInvestorState(state);
+  saveState(state);
 
   const drivePath = join(DRIVE_DIR, userResult.slug);
   mkdirSync(drivePath, { recursive: true });
