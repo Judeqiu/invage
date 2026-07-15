@@ -17,6 +17,7 @@ import {
   getPlaybook,
   getPortfolio,
   resolveInvestorBySlackUser,
+  resolveInvestorBySlug,
   resolveInvestorByTelegramUser,
   type InvestorState,
 } from './state/portfolio-state.js';
@@ -244,6 +245,11 @@ export const invageExtension: DomainExtension = {
       investor = resolveInvestorByTelegramUser(ctx.telegramUserId);
     } else if (ctx.slackUserId) {
       investor = resolveInvestorBySlackUser(ctx.slackUserId);
+    } else if (ctx.userSlug) {
+      // Web channel: no chat-platform id, but the gate resolves the slug
+      // from the session and passes it through. Without this branch the
+      // agent gets a bare prompt with no user context and re-onboards.
+      investor = resolveInvestorBySlug(ctx.userSlug);
     }
 
     if (investor) {
