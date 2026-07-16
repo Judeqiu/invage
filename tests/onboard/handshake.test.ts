@@ -109,3 +109,43 @@ describe('handleBind — happy path', () => {
     expect(r2.slug).toBe(r1.slug);
   });
 });
+
+describe('handleBind — web channel', () => {
+  beforeEach(wipeState);
+
+  it('creates web user + drive folder; marks token used; includes preset password', async () => {
+    const t = createPendingToken('Web Investor', 'web@example.com');
+    const result = await handleBind({
+      payload: t.token,
+      web: true,
+    });
+
+    expect(result.slug).toBeDefined();
+    expect(result.reply).toMatch(/Hi \*Web Investor\*/);
+    expect(result.reply).toMatch(/one-time login password/i);
+    expect(result.reply).toContain(result.slug!);
+
+    const drivePath = join(DRIVE_DIR, result.slug!);
+    expect(existsSync(drivePath)).toBe(true);
+
+    const state = loadState(result.slug!);
+    expect(state.profile.display_name).toBe('Web Investor');
+    expect(state.profile.contact_email).toBe('web@example.com');
+    expect(state.log.some((e) => e.action === 'qr_onboard_bound')).toBe(true);
+  });
+
+  it('idempotent for already-authenticated web session slug', async () => {
+    const t1 = createPendingToken('Web Investor', 'web@example.com');
+    const r1 = await handleBind({ payload: t1.token, web: true });
+    expect(r1.slug).toBeDefined();
+
+    const t2 = createPendingToken('Other Name', 'other@example.com');
+    const r2 = await handleBind({
+      payload: t2.token,
+      web: true,
+      userSlug: r1.slug,
+    });
+    expect(r2.reply).toMatch(/already registered/);
+    expect(r2.slug).toBe(r1.slug);
+  });
+});

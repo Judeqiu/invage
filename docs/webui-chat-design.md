@@ -14,9 +14,26 @@ The WebUI is **owned by Utarus**, not Invage.
 |---|---|
 | Boot WebUI | `src/index.ts` → `framework.startWebApp({ extraRouters })` |
 | Web enrich (`userSlug` branch) | `src/extension.ts` |
+| Domain slash commands (`webCommands`) | `src/extension.ts` — same set as `slackCommands` |
 | Landing QR register | `src/onboard/api.ts` (mounted as extra router) |
 | Optional drive-only process | `src/webapp/server.ts` |
 | E2E | `tests/webui-e2e.mjs` |
+
+## Domain `webCommands` (parity with Slack)
+
+Utarus intercepts composer messages matching `/name args` and returns
+`{ kind: 'reply', text }` without calling the LLM. Catalog:
+`GET /api/chat/commands` (also powers SPA `/help`).
+
+Invage registers the **same domain commands** as Slack:
+
+| Command | Admin | Handler |
+|---|---|---|
+| `/guidance [topic]` | no | `createGuidanceCommand()` |
+| `/bind BIND-…` | no | `handleBindWebCommand` → handshake with `web: true` |
+| `/onboard list\|reject …` | yes | `handleOnboardWebCommand` |
+
+Framework-reserved (do **not** register): `/clear`, `/help`.
 
 ## What Invage does **not** own
 

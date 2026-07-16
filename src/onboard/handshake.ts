@@ -1,7 +1,7 @@
 /**
- * Handshake logic for the /bind <token> Slack command.
+ * Handshake logic for the /bind <token> command (Slack + WebUI).
  *
- * Creates a Utarus user linked to the Slack identity and an empty portfolio.
+ * Creates a Utarus user linked to the channel identity and an empty portfolio.
  * /bind is a domain slash command — it never hits the free-text access gate,
  * so landing-page users do not need an INV- code.
  */
@@ -14,6 +14,7 @@ import {
   loadState,
   saveState,
   resolveUserBySlackUser,
+  resolveUserBySlug,
 } from 'utarus';
 import type { InvestorState } from '../state/portfolio-state.js';
 import { findToken, isExpired, markUsed, tokenTtlMinutes } from './token-store.js';
@@ -31,7 +32,15 @@ if (!LANDING_URL) {
 export interface BindArgs {
   /** Full text after "/bind ". Empty when the user sent "/bind" alone. */
   payload: string;
-  slackUserId: string;
+  /** Slack identity when binding from Slack /bind. */
+  slackUserId?: string;
+  /**
+   * WebUI session slug when the caller is already authenticated.
+   * Used for the already-registered path and audit trail.
+   */
+  userSlug?: string;
+  /** When true, create via ensureChannelUser({ web: true }) if no session user. */
+  web?: boolean;
 }
 
 export interface BindResult {
@@ -40,9 +49,9 @@ export interface BindResult {
 }
 
 export async function handleBind(args: BindArgs): Promise<BindResult> {
-  const { payload, slackUserId } = args;
-  if (!slackUserId) {
-    throw new Error('slackUserId is required for /bind');
+  const { payload, slackUserId, userSlug, web } = args;
+  if (!slackUserId && !web) {
+    throw new Error('handleBind requires slackUserId or web: true');
   }
 
   const token = payload.trim().toUpperCase();
@@ -78,22 +87,43 @@ export async function handleBind(args: BindArgs): Promise<BindResult> {
   }
 
   // Already-registered Slack user → bind token for audit, stop.
-  const existing = resolveUserBySlackUser(slackUserId);
-  if (existing) {
-    markUsed(token, slackUserId, existing.user.slug);
-    return {
-      reply: `You're already registered as *${existing.profile.display_name}* (slug: \`${existing.user.slug}\`).`,
-      slug: existing.user.slug,
-    };
+  if (slackUserId) {
+    const existing = resolveUserBySlackUser(slackUserId);
+    if (existing) {
+      markUsed(token, slackUserId, existing.user.slug);
+      return {
+        reply: `You're already registered as *${existing.profile.display_name}* (slug: \`${existing.user.slug}\`).`,
+        slug: existing.user.slug,
+      };
+    }
   }
 
-  const userResult = await ensureChannelUser({
-    slackUserId,
-    displayName: entry.display_name,
-    contactEmail: entry.email_submitted,
-    source: 'invite',
-    web: false,
-  });
+  // Already-authenticated WebUI user → mark token used for this session, stop.
+  if (web && userSlug) {
+    const existing = resolveUserBySlug(userSlug);
+    if (existing) {
+      markUsed(token, `web:${userSlug}`, existing.user.slug);
+      return {
+        reply: `You're already registered as *${existing.profile.display_name}* (slug: \`${existing.user.slug}\`).`,
+        slug: existing.user.slug,
+      };
+    }
+  }
+
+  const userResult = slackUserId
+    ? await ensureChannelUser({
+        slackUserId,
+        displayName: entry.display_name,
+        contactEmail: entry.email_submitted,
+        source: 'invite',
+        web: false,
+      })
+    : await ensureChannelUser({
+        displayName: entry.display_name,
+        contactEmail: entry.email_submitted,
+        source: 'invite',
+        web: true,
+      });
 
   // Annotate user YAML with onboard audit fields (reload + save).
   const state = loadState(userResult.slug) as InvestorState;
@@ -102,6 +132,7 @@ export async function handleBind(args: BindArgs): Promise<BindResult> {
     action: 'qr_onboard_bound',
     token,
     slack_user_id: slackUserId,
+    web: web === true ? true : undefined,
   });
   if (!state.portfolio) state.portfolio = {};
   saveState(state);
@@ -109,16 +140,24 @@ export async function handleBind(args: BindArgs): Promise<BindResult> {
   const drivePath = join(DRIVE_DIR, userResult.slug);
   mkdirSync(drivePath, { recursive: true });
 
-  markUsed(token, slackUserId, userResult.slug);
+  const usedBy = slackUserId ?? `web:${userResult.slug}`;
+  markUsed(token, usedBy, userResult.slug);
 
   console.log(
-    `[onboard] handshake complete: token=${token} slack=${slackUserId} ` +
+    `[onboard] handshake complete: token=${token} ` +
+      `${slackUserId ? `slack=${slackUserId}` : 'channel=web'} ` +
       `user=${userResult.slug} drive=${drivePath}`,
   );
+
+  const passwordLine =
+    web && userResult.presetPassword
+      ? `\nYour one-time login password is \`${userResult.presetPassword}\` — change it after first login.\n`
+      : '';
 
   return {
     reply:
       `Hi *${entry.display_name}*! You're now registered with Invester as \`${userResult.slug}\`.\n` +
+      passwordLine +
       `\nYou can start right away — add holdings, ask for a portfolio review, or research a ticker. ` +
       `Try \`/guidance start\` for a short how-to.`,
     slug: userResult.slug,

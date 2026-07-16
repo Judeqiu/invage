@@ -16,8 +16,8 @@ import { createInvageTools } from './tools/index.js';
 import { registerInvageSkills } from './skills.js';
 import { createGuidanceCommand } from './guidance.js';
 import { playbookAgentGuidance } from './playbook/index.js';
-import { handleBindCommand } from './onboard/bind-command.js';
-import { handleOnboardCommand } from './onboard/admin-commands.js';
+import { handleBindCommand, handleBindWebCommand } from './onboard/bind-command.js';
+import { handleOnboardCommand, handleOnboardWebCommand } from './onboard/admin-commands.js';
 import {
   getPlaybook,
   getPortfolio,
@@ -30,7 +30,7 @@ const INVAGE_PURPOSE = `You are Invester — an investment research and portfoli
 
 **Voice:** warm, clear, professional — like a sharp colleague. Plain investor English. No robotic menus, no sycophancy.
 
-You serve users on **Telegram and Slack** (same agent, same portfolio state).
+You serve users on **Telegram, Slack, and Web** (same agent, same portfolio state).
 
 Success looks like:
 - Clearer P/L and 3-axis classification (laggard / overpriced / buy opportunity) **aligned to the user's Investment Playbook**
@@ -185,7 +185,9 @@ function investorContextPrefix(investor: InvestorState, ctx: EnrichMessageContex
       ? `Use telegram_user_id=${ctx.telegramUserId} on portfolio/playbook tools.`
       : ctx.slackUserId
         ? `Use slack_user_id="${ctx.slackUserId}" on portfolio/playbook tools.`
-        : '';
+        : ctx.userSlug
+          ? `Use user slug "${ctx.userSlug}" / channel tools that accept slug for this web session.`
+          : '';
   return (
     `[Investor context: You are working with user "${investor.user.slug}" ` +
     `(${investor.profile.display_name}, email=${investor.profile.contact_email}). ` +
@@ -217,6 +219,7 @@ export const invageExtension: DomainExtension = {
   // (utarus resolveInboundMessage on free text only). Domain QR path:
   // investor.lextok.com → POST /api/onboard/register → Slack /bind BIND-…
   // runs as a slash command and never hits the access gate. Keep adminOnly: false.
+  // WebUI mirrors the same domain commands via webCommands (composer /name args).
   slackCommands: [
     {
       name: guidanceCmd.name,
@@ -238,6 +241,33 @@ export const invageExtension: DomainExtension = {
       adminOnly: true,
       usageHint: 'list [pending|used|rejected|all] | reject <token> [reason]',
       handler: (ctx) => handleOnboardCommand(ctx),
+    },
+  ],
+
+  // Same domain set as slackCommands — Utarus WebUI intercepts `/name args`
+  // on POST /api/chat/messages and returns { kind: 'reply' } without the LLM.
+  // Framework-reserved names (do not register): clear, help.
+  webCommands: [
+    {
+      name: guidanceCmd.name,
+      description: guidanceCmd.description,
+      adminOnly: guidanceCmd.adminOnly,
+      usageHint: guidanceCmd.usageHint,
+      handler: ({ args }) => guidanceCmd.handle(args),
+    },
+    {
+      name: 'bind',
+      description: 'Finish registration with a BIND- code from investor.lextok.com',
+      adminOnly: false,
+      usageHint: 'BIND-XXXXXXXX',
+      handler: (ctx) => handleBindWebCommand(ctx),
+    },
+    {
+      name: 'onboard',
+      description: 'List or reject QR-onboarded registrations (admin)',
+      adminOnly: true,
+      usageHint: 'list [pending|used|rejected|all] | reject <token> [reason]',
+      handler: (ctx) => handleOnboardWebCommand(ctx),
     },
   ],
 

@@ -52,6 +52,21 @@ describe('landing + /bind isolation from framework access gate', () => {
     expect(bind!.description).toMatch(/BIND/i);
   });
 
+  it('registers the same domain command set on webCommands as slackCommands', () => {
+    const slackNames = (invageExtension.slackCommands ?? []).map((c) => c.name).sort();
+    const webNames = (invageExtension.webCommands ?? []).map((c) => c.name).sort();
+    expect(webNames).toEqual(slackNames);
+    expect(webNames).toEqual(['bind', 'guidance', 'onboard']);
+
+    const webBind = invageExtension.webCommands?.find((c) => c.name === 'bind');
+    expect(webBind).toBeDefined();
+    expect(webBind!.adminOnly).toBe(false);
+
+    const webOnboard = invageExtension.webCommands?.find((c) => c.name === 'onboard');
+    expect(webOnboard).toBeDefined();
+    expect(webOnboard!.adminOnly).toBe(true);
+  });
+
   it('landing register → /bind creates user without INV- or demo mode', async () => {
     const res = await request(appWithOnboard())
       .post('/api/onboard/register')

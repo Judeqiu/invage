@@ -42,6 +42,7 @@ Invage implements exactly these fields of `utarus.DomainExtension`:
 | `skills` | `INVAGE_SKILLS` from `skills.ts` | Static — investor knowledge docs |
 | `telegramCommands` | `/guidance` | One command |
 | `slackCommands` | `/guidance`, `/bind`, `/onboard` | Three commands |
+| `webCommands` | `/guidance`, `/bind`, `/onboard` | Same set as Slack (WebUI composer) |
 | `enrichMessage` | Prepends `[Investor context: ...]` block | Per-turn context injection |
 | `buildSessionAnnouncement` | — | Not used |
 | `resolveEntitySlug` | — | Not used (invage has no sub-entity like sellers) |
