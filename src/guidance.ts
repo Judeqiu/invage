@@ -378,6 +378,7 @@ const reports = (): string =>
     '*What to say*',
     '• "Save an analysis report to my drive" (`save_report` kind=analysis)',
     '• "Show my portfolio dashboard" / "Save a value-change dashboard" (`save_report` kind=dashboard)',
+    '• WebUI: open the **Dashboard** tab (live value + history; refresh for new prices)',
     '• "Save this value screen / undervalued short list as HTML"',
     '• "Give me this as an HTML report" / "Post HTML of the full analysis"',
     '• "Take a portfolio snapshot" / "List my snapshots" (snapshots feed dashboard history)',

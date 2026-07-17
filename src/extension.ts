@@ -23,6 +23,7 @@ import {
   getPortfolio,
   type InvestorState,
 } from './state/portfolio-state.js';
+import { createInvageWebUi } from './webapp/invage-webui.js';
 
 const INVAGE_SKILLS: Skill[] = registerInvageSkills();
 
@@ -205,6 +206,9 @@ export const invageExtension: DomainExtension = {
   tools: () => createInvageTools(),
 
   skills: INVAGE_SKILLS,
+
+  /** Dashboard tab + domain APIs in the Utarus WebUI shell. */
+  webUi: createInvageWebUi(),
 
   telegramCommands: [
     {

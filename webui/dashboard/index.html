@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Portfolio Dashboard</title>
+  <style>
+    :root {
+      --bg: #fafaf9;
+      --card: #ffffff;
+      --border: #e7e5e4;
+      --text: #1c1917;
+      --muted: #78716c;
+      --up: #15803d;
+      --down: #b91c1c;
+      --accent: #0c0a09;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.45;
+      min-height: 100%;
+    }
+    .wrap { max-width: 960px; margin: 0 auto; padding: 20px 16px 40px; }
+    header {
+      display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between;
+      gap: 12px; margin-bottom: 20px;
+    }
+    h1 { font-size: 1.25rem; margin: 0 0 4px; font-weight: 650; letter-spacing: -0.02em; }
+    .sub { color: var(--muted); font-size: 0.8125rem; margin: 0; }
+    .actions { display: flex; gap: 8px; align-items: center; }
+    button {
+      appearance: none; border: 1px solid var(--border); background: var(--card);
+      color: var(--text); border-radius: 8px; padding: 8px 12px; font-size: 0.8125rem;
+      font-weight: 550; cursor: pointer;
+    }
+    button:hover { background: #f5f5f4; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+    button.primary:hover { background: #292524; }
+    .status {
+      font-size: 0.75rem; color: var(--muted); min-height: 1.2em;
+    }
+    .status.error { color: var(--down); }
+    .hero {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 10px; margin-bottom: 16px;
+    }
+    .card {
+      background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+      padding: 14px 14px 12px;
+    }
+    .card .label {
+      font-size: 0.6875rem; font-weight: 600; letter-spacing: 0.04em;
+      text-transform: uppercase; color: var(--muted); margin-bottom: 6px;
+    }
+    .card .value { font-size: 1.35rem; font-weight: 700; letter-spacing: -0.02em; }
+    .card .hint { font-size: 0.75rem; color: var(--muted); margin-top: 4px; }
+    .up { color: var(--up); }
+    .down { color: var(--down); }
+    section.card { margin-bottom: 14px; padding: 16px; }
+    section h2 { font-size: 0.95rem; margin: 0 0 12px; font-weight: 650; }
+    .sparkline-wrap { overflow-x: auto; margin-bottom: 12px; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
+    th {
+      text-align: left; font-size: 0.6875rem; text-transform: uppercase;
+      letter-spacing: 0.03em; color: var(--muted); font-weight: 600;
+      padding: 6px 8px; border-bottom: 1px solid var(--border);
+    }
+    td { padding: 8px; border-bottom: 1px solid #f5f5f4; vertical-align: middle; }
+    tr:last-child td { border-bottom: none; }
+    .empty {
+      text-align: center; color: var(--muted); padding: 28px 12px; font-size: 0.875rem;
+    }
+    .banner {
+      background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412;
+      border-radius: 10px; padding: 12px 14px; font-size: 0.8125rem; margin-bottom: 14px;
+    }
+    .num { font-variant-numeric: tabular-nums; }
+    .right { text-align: right; }
+    footer {
+      margin-top: 20px; text-align: center; font-size: 0.6875rem; color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <h1>Portfolio Dashboard</h1>
+        <p class="sub" id="subtitle">Loading…</p>
+      </div>
+      <div class="actions">
+        <label class="sub" style="display:flex;align-items:center;gap:6px">
+          <input type="checkbox" id="autoRefresh" />
+          Auto 60s
+        </label>
+        <button type="button" class="primary" id="refreshBtn">Refresh</button>
+      </div>
+    </header>
+    <p class="status" id="status"></p>
+    <div id="root"></div>
+    <footer>Live data · Yahoo Finance · Not financial advice</footer>
+  </div>
+  <script src="./app.js"></script>
+</body>
+</html>

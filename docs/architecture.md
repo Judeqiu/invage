@@ -69,7 +69,9 @@ Legend: ✅ correctly placed · 🔁 duplicates utarus · ⬆️ generic, should
 
 | File | LOC | Class | Note |
 |---|---|---|---|
-| `server.ts` | 119 | ⬆️ | `buildInvageApp()` is generic except `WEB_DIST_DIR`. Should move to utarus as `createWebUiApp(framework, opts)`. |
+| `server.ts` | — | 🎯 | Drive-only process entry (re-exports utarus BinDrive). |
+| `invage-webui.ts` | — | 🎯 | `DomainExtension.webUi` — Dashboard nav tab + API + staticDir. |
+| `dashboard-api.ts` / `dashboard-data.ts` | — | 🎯 | Live portfolio dashboard JSON for WebUI iframe. |
 | `chat/router.ts` | 303 | ⬆️ | Generic chat router. Only investor-tinted line: `loadInvestorState` import for the gate. Replace with a `loadState` hook and upstream. |
 | `chat/run-agent.ts` | 181 | ⬆️ | Pure generic. Subscribe to pi-agent-core events → push to stream-registry. Upstream. |
 | `chat/sse.ts` | 41 | ⬆️ | Pure SSE wire helpers. Upstream. |

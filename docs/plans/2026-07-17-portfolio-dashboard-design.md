@@ -21,11 +21,18 @@ They want this as a **generated HTML report** (BinDrive + signed URL), not a liv
 - Holdings table with weight % and P/L
 - Fail-fast: no invented zeros, no silent skip of corrupt snapshots
 
-## Non-goals (v1)
+## Non-goals (report v1)
 
-- Live WebUI dashboard route
 - Auto-save snapshot when generating dashboard
 - Allocation pie charts, 7d/30d filters
+
+## WebUI tab (shipped)
+
+Dynamic page + plugin via `DomainExtension.webUi` (no Utarus SPA fork):
+
+- Nav **Dashboard** → iframe → `webui/dashboard/`
+- API `GET /api/domain/invage/dashboard`
+- See `docs/webui-chat-design.md`
 
 ## Product surface
 

@@ -15,9 +15,25 @@ The WebUI is **owned by Utarus**, not Invage.
 | Boot WebUI | `src/index.ts` → `framework.startWebApp({ extraRouters })` |
 | Web enrich (`userSlug` branch) | `src/extension.ts` |
 | Domain slash commands (`webCommands`) | `src/extension.ts` — same set as `slackCommands` |
+| **WebUI plugin (Dashboard tab)** | `src/extension.ts` → `webUi: createInvageWebUi()` |
+| Dashboard API | `GET /api/domain/invage/dashboard` — live model JSON |
+| Dashboard page (iframe) | `webui/dashboard/` served at `/domain-assets/invage/dashboard/` |
 | Landing QR register | `src/onboard/api.ts` (mounted as extra router) |
 | Optional drive-only process | `src/webapp/server.ts` |
 | E2E | `tests/webui-e2e.mjs` |
+
+### Dashboard tab (domain plugin)
+
+Utarus SPA shell loads `GET /api/webui/manifest` from `DomainExtension.webUi`. Invage registers:
+
+| Field | Value |
+|---|---|
+| Nav | **Dashboard** → `/dashboard` (`layout-dashboard` icon) |
+| Route | `pageKind: iframe` → `/domain-assets/invage/dashboard/index.html` |
+| API | `GET /api/domain/invage/dashboard` (session auth) — live prices + snapshot history |
+| Static | `webui/` → `/domain-assets/invage/` |
+
+The page is **dynamic**: Refresh / optional 60s auto-refresh re-fetches Yahoo prices and reloads snapshot history. Same model as `save_report kind=dashboard` (not a frozen HTML file).
 
 ## Domain `webCommands` (parity with Slack)
 
