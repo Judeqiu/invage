@@ -1,10 +1,16 @@
 import { Type } from 'typebox';
 import type { AgentTool, AgentToolResult } from '@earendil-works/pi-agent-core';
-import { writeFileSync, mkdirSync, readFileSync, existsSync } from 'fs';
+import { writeFileSync, mkdirSync, existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { resolveDataRoot } from 'utarus';
 import { fetchPrices } from '../market/index.js';
 import { getPortfolio } from '../state/portfolio-state.js';
+import {
+  loadSnapshotIndex,
+  loadSnapshots,
+  type Snapshot,
+  type SnapshotPosition,
+} from '../state/snapshot.js';
 import {
   channelIdParams,
   resolveInvestorFromChannel,
@@ -19,26 +25,6 @@ function fail(text: string): AgentToolResult<null> {
 }
 function failFrom(error: unknown): AgentToolResult<null> {
   return fail(error instanceof Error ? error.message : String(error));
-}
-
-interface SnapshotPosition {
-  ticker: string;
-  avgCost: number;
-  units: number;
-  price: number;
-  cost: number;
-  value: number;
-  pl: number;
-  plPct: number;
-}
-
-interface Snapshot {
-  date: string;
-  totalValue: number;
-  totalCost: number;
-  totalPL: number;
-  totalPLPct: number;
-  positions: SnapshotPosition[];
 }
 
 export function createSnapshotTool(): AgentTool[] {
@@ -142,24 +128,20 @@ export function createSnapshotTool(): AgentTool[] {
       const p = raw as ChannelIds;
       try {
         const state = resolveInvestorFromChannel(p);
+        const files = loadSnapshotIndex(state.user.slug);
+        if (files.length === 0) {
+          return fail('No snapshots saved yet. Use save_snapshot first.');
+        }
 
-        const indexPath = join(resolveDataRoot(), 'drive', state.user.slug, 'snapshots.json');
-        if (!existsSync(indexPath)) return fail('No snapshots saved yet. Use save_snapshot first.');
-
-        const history: string[] = JSON.parse(readFileSync(indexPath, 'utf-8')) as string[];
-        if (history.length === 0) return fail('No snapshots saved yet.');
-
-        const lines = history.map((fileName, i) => {
-          const filePath = join(resolveDataRoot(), 'drive', state.user.slug, fileName);
-          if (!existsSync(filePath)) return `  ${i + 1}. ${fileName} (file missing)`;
-          const snap: Snapshot = JSON.parse(readFileSync(filePath, 'utf-8')) as Snapshot;
+        const snaps = loadSnapshots(state.user.slug);
+        const lines = snaps.map((snap, i) => {
           const sign = snap.totalPL >= 0 ? '+' : '';
           return `  ${i + 1}. ${snap.date} — Value: $${snap.totalValue.toFixed(2)}, P/L: ${sign}${snap.totalPLPct.toFixed(1)}% (${snap.positions.length} positions)`;
         });
 
-        return ok(`${history.length} snapshot(s):\n${lines.join('\n')}`, {
-          count: history.length,
-          files: history,
+        return ok(`${snaps.length} snapshot(s):\n${lines.join('\n')}`, {
+          count: snaps.length,
+          files,
         });
       } catch (e) {
         return failFrom(e);

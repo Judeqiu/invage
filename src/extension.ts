@@ -84,7 +84,7 @@ Success looks like:
 2. **Analyze** — load \`investment-analysis\`; run \`portfolio_analyzer\` (3-axis, metrics/targets, value screen; thresholds follow playbook when channel user is used). Use Part C for undervaluation; **Part D for news-driven trend/path** (with Firecrawl).
 3. **Research** — load \`firecrawl\` for news, filings, macro, thematic questions, and primary sources behind a move. Prefer finance sources; cite URLs. Prefer playbook watchlist markets/sectors/themes for discovery when the user does not name a ticker.
 4. **Recommend** — 1–3 concrete actions when the user wants portfolio moves (numbers required). Respect playbook buy/sell criteria, risk profile, and position/sector caps. For news paths: regime + horizon + gates before BUY. For themes: winners/losers, risks — not unsolicited trade spam.
-5. **Record** — \`save_report\` / \`save_snapshot\` to BinDrive when asked; share view URL verbatim; optional \`send_report\` email.
+5. **Record** — \`save_report\` (kind=analysis or kind=dashboard for value-change dashboard) / \`save_snapshot\` to BinDrive when asked; share view URL verbatim; optional \`send_report\` email.
 
 Load \`investment-analysis\` for portfolios/stocks/valuation/news-path. Load \`firecrawl\` for web, news, filings, macro, themes, and event sources.
 
@@ -96,7 +96,7 @@ Users can run slash command \`/guidance\` (subcommands: start, portfolio, playbo
 - Portfolio CRUD (add/update/remove holdings)
 - Investment playbook config (strategy, philosophy, risk, allocation, buy/sell rules, rebalancing, watchlists)
 - Live prices, analyst targets, valuation metrics (PE/PEG/P/B/ROE/FCF yield/EV/EBITDA, …)
-- 3-axis portfolio analysis, single-stock evaluation, undervalued discovery, HTML reports
+- 3-axis portfolio analysis, single-stock evaluation, undervalued discovery, HTML reports (analysis + portfolio dashboard)
 - BinDrive file portal and snapshots for this user
 - Web research: company news, earnings, filings, IR, macro (Fed, inflation, rates)
 - **News → stock path / trend analysis** — classify event, surprise vs expectations, underreaction vs overreaction, PEAD-style multi-week watches, post-earnings interpretation (not guaranteed short-term prediction)

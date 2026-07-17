@@ -4,7 +4,10 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { fetchPrices, fetchTargets, runFullAnalysis } from '../market/index.js';
 import { getPortfolio } from '../state/portfolio-state.js';
+import { loadSnapshots } from '../state/snapshot.js';
 import { buildAnalysisReport } from '../report/template.js';
+import { buildDashboardModel, buildLivePositions } from '../report/dashboard-model.js';
+import { buildDashboardReport } from '../report/dashboard-template.js';
 import {
   channelIdParams,
   resolveInvestorFromChannel,
@@ -22,6 +25,8 @@ function fail(text: string): AgentToolResult<null> {
 function failFrom(error: unknown): AgentToolResult<null> {
   return fail(error instanceof Error ? error.message : String(error));
 }
+
+type ReportKind = 'analysis' | 'dashboard';
 
 async function sendEmail(to: string, subject: string, html: string): Promise<string> {
   const tmpFile = `/tmp/invage_report_${Date.now()}.html`;
@@ -54,10 +59,17 @@ export function createSendReportTool(): AgentTool {
     name: 'send_report',
     label: 'Send Report',
     description:
-      "Send a portfolio analysis report via email (gws Gmail CLI). Prefer the user's contact_email for `to`. Pass telegram_user_id or slack_user_id for auto-report mode.",
+      "Send a portfolio report via email (gws Gmail CLI). Prefer the user's contact_email for `to`. " +
+      'kind="analysis" (default) or kind="dashboard". Pass telegram_user_id or slack_user_id for auto-report mode.',
     parameters: Type.Object({
       to: Type.String({ description: 'Recipient email address.' }),
       ...channelIdParams,
+      kind: Type.Optional(
+        Type.Union([Type.Literal('analysis'), Type.Literal('dashboard')], {
+          description:
+            'Report type. "analysis" = 3-axis targets report (default). "dashboard" = live value, P/L vs cost, snapshot history.',
+        }),
+      ),
       subject: Type.Optional(Type.String({ description: 'Email subject line.' })),
       html: Type.Optional(
         Type.String({
@@ -66,13 +78,23 @@ export function createSendReportTool(): AgentTool {
       ),
     }),
     async execute(_id, raw) {
-      const p = raw as ChannelIds & { to: string; subject?: string; html?: string };
+      const p = raw as ChannelIds & {
+        to: string;
+        kind?: ReportKind;
+        subject?: string;
+        html?: string;
+      };
 
       try {
         let htmlBody: string;
         let subject: string;
+        let kind: ReportKind = p.kind ?? 'analysis';
 
         if (p.telegram_user_id != null || p.slack_user_id) {
+          if (kind !== 'analysis' && kind !== 'dashboard') {
+            return fail(`Invalid kind "${String(p.kind)}". Use "analysis" or "dashboard".`);
+          }
+
           const state = resolveInvestorFromChannel(p);
           const portfolio = getPortfolio(state);
           if (Object.keys(portfolio).length === 0) {
@@ -80,15 +102,28 @@ export function createSendReportTool(): AgentTool {
           }
 
           const tickers = Object.keys(portfolio);
-          const [prices, targets] = await Promise.all([fetchPrices(tickers), fetchTargets(tickers)]);
-
-          const result = runFullAnalysis(portfolio, prices, targets);
           const userName = state.profile.display_name;
-          htmlBody = buildAnalysisReport(result, userName);
-          subject = p.subject ?? `Portfolio Analysis Report — ${userName}`;
+
+          if (kind === 'dashboard') {
+            const prices = await fetchPrices(tickers);
+            const live = buildLivePositions(portfolio, prices);
+            const snapshots = loadSnapshots(state.user.slug);
+            const model = buildDashboardModel(live, snapshots);
+            htmlBody = buildDashboardReport(model, userName);
+            subject = p.subject ?? `Portfolio Dashboard — ${userName}`;
+          } else {
+            const [prices, targets] = await Promise.all([
+              fetchPrices(tickers),
+              fetchTargets(tickers),
+            ]);
+            const result = runFullAnalysis(portfolio, prices, targets);
+            htmlBody = buildAnalysisReport(result, userName);
+            subject = p.subject ?? `Portfolio Analysis Report — ${userName}`;
+          }
         } else if (p.html) {
           htmlBody = p.html;
           subject = p.subject ?? 'Report from Invester';
+          kind = p.kind ?? 'analysis';
         } else {
           return fail(
             'Provide telegram_user_id or slack_user_id (auto-report) or html (custom email).',
@@ -96,7 +131,7 @@ export function createSendReportTool(): AgentTool {
         }
 
         const result = await sendEmail(p.to, subject, htmlBody);
-        return ok(`Email sent to ${p.to}.\n${result}`, { to: p.to, subject });
+        return ok(`Email sent to ${p.to}.\n${result}`, { to: p.to, subject, kind });
       } catch (e) {
         return failFrom(e);
       }

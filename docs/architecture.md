@@ -101,6 +101,7 @@ Legend: ✅ correctly placed · 🔁 duplicates utarus · ⬆️ generic, should
 | File | LOC | Class | Note |
 |---|---|---|---|
 | `portfolio-state.ts` | 50 | 🎯 | **Refactored 2026-07-15** — now holds only investor-specific helpers (`InvestorState` type, `getPortfolio`/`setPortfolio`, `getPlaybook`/`setPlaybook`/`updatePlaybook`). YAML I/O (`loadState`/`saveState`) and lookups (`resolveUserBy{Slug,SlackUser,TelegramUser}`) come from utarus. Callers cast `UserState → InvestorState` at the boundary since the YAML file carries the extra `portfolio` / `playbook` fields. |
+| `snapshot.ts` | — | 🎯 | Snapshot types + BinDrive loaders (`loadSnapshotIndex` / `loadSnapshots`) for dashboard history. |
 
 ### `src/market/` — Yahoo Finance analytics
 
@@ -128,8 +129,8 @@ Legend: ✅ correctly placed · 🔁 duplicates utarus · ⬆️ generic, should
 | `portfolio.ts` | 269 | 🎯 | `add_holding` / `remove_holding` / `get_portfolio`. |
 | `playbook.ts` | 220 | 🎯 | `get_playbook` / `update_playbook`. |
 | `portfolio_analyzer.ts` | 238 | 🎯 | Live quote + metrics + targets. |
-| `snapshot.ts` | 171 | 🎯 | Save portfolio snapshot. |
-| `save_report.ts` | 85 | 🎯 | Render + save HTML to BinDrive. Depends on portfolio analysis. |
+| `snapshot.ts` | — | 🎯 | Save / list portfolio snapshots (types in `state/snapshot.ts`). |
+| `save_report.ts` | — | 🎯 | Render + save HTML to BinDrive (`kind=analysis|dashboard`). |
 | `send_report.ts` | 105 | 🎯 | Email HTML report via `gws` CLI. Investor-specific rendering. |
 | `channel.ts` | 73 | 🎯 | `channelIdParams` + `resolveInvestorFromChannel`. Investor-specific wrapper around `resolveInvestorBy*`. |
 
@@ -139,7 +140,9 @@ Legend: ✅ correctly placed · 🔁 duplicates utarus · ⬆️ generic, should
 
 | File | LOC | Class | Note |
 |---|---|---|---|
-| `template.ts` | 132 | 🎯 | Portfolio HTML template with GitHub-dark styling. Pure investor. |
+| `template.ts` | 132 | 🎯 | Portfolio analysis HTML template with GitHub-dark styling. Pure investor. |
+| `dashboard-model.ts` | — | 🎯 | Pure live + snapshot → dashboard model. |
+| `dashboard-template.ts` | — | 🎯 | Portfolio dashboard HTML (value change, sparkline, holdings). |
 
 ---
 

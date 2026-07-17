@@ -237,6 +237,54 @@ playbook:
 
 ---
 
+## Layer 3b: Portfolio Snapshots (BinDrive)
+
+Dated point-in-time valuations live under each user's BinDrive folder (not in the user YAML):
+
+```
+data/drive/<slug>/
+├── snapshots.json              # index: ["snapshot-2026-07-01.json", ...]
+├── snapshot-2026-07-01.json
+├── dashboard-2026-07-17.html   # optional generated dashboard report
+└── report-2026-07-17.html      # optional 3-axis analysis report
+```
+
+### Snapshot JSON
+
+```json
+{
+  "date": "2026-07-01",
+  "totalValue": 50000.0,
+  "totalCost": 42000.0,
+  "totalPL": 8000.0,
+  "totalPLPct": 19.05,
+  "positions": [
+    {
+      "ticker": "AAPL",
+      "avgCost": 200,
+      "units": 50,
+      "price": 210,
+      "cost": 10000,
+      "value": 10500,
+      "pl": 500,
+      "plPct": 5.0
+    }
+  ]
+}
+```
+
+| Tool / report | Role |
+|---------------|------|
+| `save_snapshot` | Fetch live prices, write one snapshot file + index entry |
+| `list_snapshots` | List saved snapshots |
+| `save_report` `kind=dashboard` | HTML dashboard: live value, P/L vs cost, history from snapshots |
+| `save_report` `kind=analysis` | 3-axis analysis HTML (default) |
+| `send_report` `kind=analysis|dashboard` | Email the same HTML via gws Gmail |
+
+Corrupt or missing snapshot files listed in the index fail fast (no silent skip).
+
+---
+
 ## Layer 4: Market Data (Runtime)
 
 Market data is fetched live from Yahoo Finance. It is **not persisted** — fetched fresh each time.

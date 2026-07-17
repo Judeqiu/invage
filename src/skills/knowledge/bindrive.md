@@ -10,9 +10,12 @@ File portal for each Utarus user. Files live under `data/drive/<user-slug>/`.
 
 ## Portfolio reports
 
-1. Prefer **`save_report`** — generates the 3-axis HTML analysis and writes it to BinDrive.
-2. Prefer **`save_snapshot`** for dated JSON performance snapshots.
-3. After save, always give the user the view URL (signed link when `UTARUS_REPORTS_URL` is set).
+1. Prefer **`save_report`** with `kind`:
+   - `"analysis"` (default) — 3-axis HTML analysis (laggards / overpriced / buy opportunities).
+   - `"dashboard"` — portfolio dashboard: live value, P/L vs cost, holdings weights, and value history from snapshots.
+2. Prefer **`save_snapshot`** for dated JSON performance snapshots (feeds the dashboard history / period change).
+3. Prefer **`send_report`** with the same `kind` (`analysis` | `dashboard`) to email the HTML via gws Gmail.
+4. After save, always give the user the view URL (signed link when `UTARUS_REPORTS_URL` is set).
 
 ## Generic file ops
 
