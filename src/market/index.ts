@@ -1,4 +1,5 @@
 export { fetchPrices, fetchQuote } from './fetch-prices.js';
+export { fetchHistoricalCloses } from './fetch-history.js';
 export { fetchTargets } from './fetch-targets.js';
 export { fetchMetrics } from './fetch-metrics.js';
 export {

@@ -4,107 +4,319 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Portfolio Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <style>
-    :root {
-      --bg: #fafaf9;
-      --card: #ffffff;
-      --border: #e7e5e4;
-      --text: #1c1917;
-      --muted: #78716c;
-      --up: #15803d;
-      --down: #b91c1c;
-      --accent: #0c0a09;
-    }
-    * { box-sizing: border-box; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      margin: 0;
-      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      line-height: 1.45;
-      min-height: 100%;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f0f2f5;
+      color: #1a1a1a;
+      line-height: 1.5;
     }
-    .wrap { max-width: 960px; margin: 0 auto; padding: 20px 16px 40px; }
-    header {
-      display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between;
-      gap: 12px; margin-bottom: 20px;
+    .header {
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      color: white;
+      padding: 1.5rem;
+      text-align: center;
+      position: sticky;
+      top: 0;
+      z-index: 100;
     }
-    h1 { font-size: 1.25rem; margin: 0 0 4px; font-weight: 650; letter-spacing: -0.02em; }
-    .sub { color: var(--muted); font-size: 0.8125rem; margin: 0; }
-    .actions { display: flex; gap: 8px; align-items: center; }
+    .header h1 { font-size: 1.5rem; font-weight: 600; }
+    .header .subtitle { font-size: 0.875rem; opacity: 0.8; margin-top: 0.25rem; }
+    .controls {
+      background: white;
+      padding: 1rem 1.5rem;
+      border-bottom: 1px solid #e0e0e0;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      align-items: center;
+      justify-content: center;
+      position: sticky;
+      top: 90px;
+      z-index: 99;
+    }
+    .date-selector { display: flex; align-items: center; gap: 0.5rem; }
+    .date-selector label { font-weight: 500; font-size: 0.875rem; }
+    select {
+      padding: 0.5rem 1rem;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      font-size: 0.875rem;
+      background: white;
+      cursor: pointer;
+    }
+    .live-badge, .archive-badge {
+      color: white;
+      padding: 0.25rem 0.75rem;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .live-badge { background: #10b981; }
+    .archive-badge { background: #6b7280; }
+    .actions { display: flex; gap: 0.5rem; align-items: center; }
     button {
-      appearance: none; border: 1px solid var(--border); background: var(--card);
-      color: var(--text); border-radius: 8px; padding: 8px 12px; font-size: 0.8125rem;
-      font-weight: 550; cursor: pointer;
+      appearance: none; border: 1px solid #ccc; background: white;
+      color: #1a1a1a; border-radius: 6px; padding: 0.5rem 1rem;
+      font-size: 0.875rem; font-weight: 500; cursor: pointer;
     }
     button:hover { background: #f5f5f4; }
     button:disabled { opacity: 0.5; cursor: not-allowed; }
-    button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
-    button.primary:hover { background: #292524; }
-    .status {
-      font-size: 0.75rem; color: var(--muted); min-height: 1.2em;
-    }
-    .status.error { color: var(--down); }
-    .hero {
-      display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-      gap: 10px; margin-bottom: 16px;
+    button.primary { background: #1a1a2e; color: #fff; border-color: #1a1a2e; }
+    button.primary:hover { background: #16213e; }
+    .auto-label { display: flex; align-items: center; gap: 0.375rem; font-size: 0.8125rem; color: #6b7280; }
+    .status { font-size: 0.75rem; color: #6b7280; text-align: center; padding: 0.5rem 1rem 0; min-height: 1.2em; }
+    .status.error { color: #ef4444; }
+    .container { max-width: 1400px; margin: 0 auto; padding: 1.5rem; }
+    .summary-cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1rem;
+      margin-bottom: 2rem;
     }
     .card {
-      background: var(--card); border: 1px solid var(--border); border-radius: 12px;
-      padding: 14px 14px 12px;
+      background: white;
+      border-radius: 12px;
+      padding: 1.25rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      transition: transform 0.2s, box-shadow 0.2s;
+      border-left: 4px solid transparent;
     }
-    .card .label {
-      font-size: 0.6875rem; font-weight: 600; letter-spacing: 0.04em;
-      text-transform: uppercase; color: var(--muted); margin-bottom: 6px;
+    .card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+    .card.positive { border-left-color: #10b981; }
+    .card.negative { border-left-color: #ef4444; }
+    .card.neutral { border-left-color: #6b7280; }
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: start;
+      margin-bottom: 0.75rem;
+      gap: 0.5rem;
     }
-    .card .value { font-size: 1.35rem; font-weight: 700; letter-spacing: -0.02em; }
-    .card .hint { font-size: 0.75rem; color: var(--muted); margin-top: 4px; }
-    .up { color: var(--up); }
-    .down { color: var(--down); }
-    section.card { margin-bottom: 14px; padding: 16px; }
-    section h2 { font-size: 0.95rem; margin: 0 0 12px; font-weight: 650; }
-    .sparkline-wrap { overflow-x: auto; margin-bottom: 12px; }
-    table { width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
-    th {
-      text-align: left; font-size: 0.6875rem; text-transform: uppercase;
-      letter-spacing: 0.03em; color: var(--muted); font-weight: 600;
-      padding: 6px 8px; border-bottom: 1px solid var(--border);
+    .card-title {
+      font-size: 0.875rem; font-weight: 600; color: #6b7280;
+      text-transform: uppercase; letter-spacing: 0.05em;
     }
-    td { padding: 8px; border-bottom: 1px solid #f5f5f4; vertical-align: middle; }
-    tr:last-child td { border-bottom: none; }
-    .empty {
-      text-align: center; color: var(--muted); padding: 28px 12px; font-size: 0.875rem;
+    .card-badge {
+      font-size: 0.75rem;
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+      font-weight: 600;
+      white-space: nowrap;
     }
-    .banner {
-      background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412;
-      border-radius: 10px; padding: 12px 14px; font-size: 0.8125rem; margin-bottom: 14px;
+    .badge-benchmark { background: #e0e7ff; color: #4338ca; }
+    .card-values { display: flex; align-items: baseline; gap: 1rem; margin-bottom: 0.5rem; }
+    .fund-value { font-size: 1.75rem; font-weight: 700; }
+    .bench-value { font-size: 1rem; color: #6b7280; }
+    .diff-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      font-size: 0.875rem;
+      font-weight: 600;
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
     }
-    .num { font-variant-numeric: tabular-nums; }
-    .right { text-align: right; }
-    footer {
-      margin-top: 20px; text-align: center; font-size: 0.6875rem; color: var(--muted);
+    .diff-positive { background: #d1fae5; color: #065f46; }
+    .diff-negative { background: #fee2e2; color: #991b1b; }
+    .card-footer { font-size: 0.75rem; color: #9ca3af; margin-top: 0.5rem; }
+    .allocation-section, .bar-section, .charts-section { margin-top: 2rem; }
+    .allocation-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+      gap: 1.5rem;
+    }
+    .allocation-card {
+      background: white;
+      border-radius: 12px;
+      padding: 1.5rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      text-align: center;
+    }
+    .allocation-card h3 { font-size: 1rem; font-weight: 600; margin-bottom: 1rem; }
+    .allocation-card .total-value { font-size: 1.5rem; font-weight: 700; color: #1a1a2e; margin-top: 0.5rem; }
+    .allocation-card .total-label { font-size: 0.875rem; color: #6b7280; margin-bottom: 1rem; }
+    .donut-container { position: relative; height: 300px; max-width: 400px; margin: 0 auto; }
+    .legend-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: 0.75rem;
+      margin-top: 1rem;
+      text-align: left;
+    }
+    .legend-item { display: flex; align-items: center; gap: 0.5rem; font-size: 0.875rem; }
+    .legend-color { width: 12px; height: 12px; border-radius: 2px; flex-shrink: 0; }
+    .bar-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(600px, 1fr)); gap: 1.5rem; }
+    .bar-card {
+      background: white;
+      border-radius: 12px;
+      padding: 1.5rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .bar-card h3 { font-size: 1rem; font-weight: 600; margin-bottom: 0.5rem; text-align: center; }
+    .bar-summary {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: 0.75rem;
+      margin-bottom: 1.5rem;
+      padding: 1rem;
+      background: #fef3c7;
+      border-radius: 8px;
+      border: 1px solid #f59e0b;
+    }
+    .bar-summary-item { text-align: center; }
+    .bar-summary-label {
+      font-size: 0.75rem; color: #92400e; font-weight: 600; text-transform: uppercase;
+    }
+    .bar-summary-value { font-size: 1rem; font-weight: 700; }
+    .bar-container { position: relative; height: 350px; }
+    .section-title {
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .chart-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+      gap: 1.5rem;
+    }
+    .chart-card {
+      background: white;
+      border-radius: 12px;
+      padding: 1.25rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .chart-card h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .chart-card .chart-meta { font-size: 0.75rem; color: #6b7280; margin-bottom: 1rem; }
+    .chart-container { position: relative; height: 250px; }
+    .insights {
+      background: white;
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin-top: 2rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .insight-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+    .insight-card {
+      background: #f8fafc;
+      border-radius: 8px;
+      padding: 1rem;
+      border-left: 3px solid #3b82f6;
+    }
+    .insight-card h4 { font-size: 0.875rem; font-weight: 600; margin-bottom: 0.5rem; }
+    .insight-card p { font-size: 0.875rem; color: #4b5563; }
+    .methodology {
+      background: #f8fafc;
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin-top: 2rem;
+      font-size: 0.875rem;
+      color: #4b5563;
+    }
+    .methodology h3 { font-size: 1rem; font-weight: 600; margin-bottom: 0.75rem; color: #1a1a1a; }
+    .methodology code {
+      background: #e5e7eb;
+      padding: 0.125rem 0.375rem;
+      border-radius: 4px;
+      font-family: monospace;
+    }
+    .loading, .error-box, .empty-box { text-align: center; padding: 3rem; }
+    .loading { color: #6b7280; }
+    .error-box { color: #ef4444; }
+    .empty-box { color: #6b7280; background: white; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    footer { margin-top: 2rem; text-align: center; font-size: 0.6875rem; color: #9ca3af; padding-bottom: 1.5rem; }
+    .hidden { display: none; }
+    @media (max-width: 768px) {
+      .chart-grid, .allocation-grid, .bar-grid, .summary-cards { grid-template-columns: 1fr; }
+      .header h1 { font-size: 1.25rem; }
+      .controls { top: 68px; padding: 0.75rem 1rem; }
+      .header { padding: 1rem; }
+      .donut-container { height: 250px; }
+      .bar-container { height: 300px; }
     }
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <header>
-      <div>
-        <h1>Portfolio Dashboard</h1>
-        <p class="sub" id="subtitle">Loading…</p>
-      </div>
-      <div class="actions">
-        <label class="sub" style="display:flex;align-items:center;gap:6px">
-          <input type="checkbox" id="autoRefresh" />
-          Auto 60s
-        </label>
-        <button type="button" class="primary" id="refreshBtn">Refresh</button>
-      </div>
-    </header>
-    <p class="status" id="status"></p>
-    <div id="root"></div>
-    <footer>Live data · Yahoo Finance · Not financial advice</footer>
+  <div class="header">
+    <h1>Portfolio Dashboard</h1>
+    <div class="subtitle" id="subtitle">Loading…</div>
   </div>
+
+  <div class="controls">
+    <div class="date-selector">
+      <label for="dateSelect">Data Date:</label>
+      <select id="dateSelect">
+        <option value="">Loading dates…</option>
+      </select>
+    </div>
+    <span id="statusBadge" class="live-badge">LIVE</span>
+    <div class="actions">
+      <label class="auto-label">
+        <input type="checkbox" id="autoRefresh" />
+        Auto 60s
+      </label>
+      <button type="button" class="primary" id="refreshBtn">Refresh</button>
+    </div>
+  </div>
+  <p class="status" id="status"></p>
+
+  <div class="container">
+    <div id="loading" class="loading">Loading portfolio data…</div>
+    <div id="error" class="error-box hidden">Failed to load data.</div>
+    <div id="dashboard" class="hidden">
+      <div class="summary-cards" id="summaryCards"></div>
+
+      <div class="allocation-section">
+        <div class="section-title"><span>Portfolio Allocation</span></div>
+        <div class="allocation-grid" id="allocationGrid"></div>
+      </div>
+
+      <div class="bar-section">
+        <div class="section-title"><span>Portfolio Performance by Position</span></div>
+        <div class="bar-grid" id="barGrid"></div>
+      </div>
+
+      <div class="charts-section">
+        <div class="section-title"><span>Performance Over Time</span></div>
+        <div class="chart-grid" id="chartGrid"></div>
+      </div>
+
+      <div class="insights">
+        <div class="section-title">Key Insights</div>
+        <div class="insight-grid" id="insightGrid"></div>
+      </div>
+
+      <div class="methodology">
+        <h3>Methodology</h3>
+        <p>
+          <strong>Fund Index</strong> = (Current Portfolio Value / Base Portfolio Value) × 100<br>
+          <strong>Base Portfolio Value</strong> = Σ(Units × Actual Purchase Price) = Total Cost Basis<br>
+          <strong>Current Portfolio Value</strong> = Σ(Units × Current Stock Price)<br>
+          <strong>Benchmark Index</strong> = (Current ETF Price / ETF Price on Base Date) × 100<br><br>
+          Benchmark prices are <strong>Adjusted Close</strong> (accounts for dividends and splits).<br>
+          Fund and Benchmark are both rebased to 100 at the first snapshot date for direct comparison.
+        </p>
+      </div>
+    </div>
+  </div>
+  <footer>Live data · Yahoo Finance · Benchmark SPY · Not financial advice</footer>
   <script src="./app.js"></script>
 </body>
 </html>

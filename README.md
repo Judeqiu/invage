@@ -148,7 +148,7 @@ src/
 | `portfolio_analyzer` | 3-axis analysis + market summary |
 | `save_report` | HTML report → BinDrive + signed URL (`kind=analysis` default, or `kind=dashboard` for value-change dashboard) |
 | `save_snapshot` / `list_snapshots` | Dated P/L JSON snapshots (feed dashboard history) |
-| WebUI **Dashboard** tab | Live portfolio dashboard (`DomainExtension.webUi`) — refresh prices + snapshot history in the chat shell |
+| WebUI **Dashboard** tab | Live portfolio dashboard (`DomainExtension.webUi`) — allocation donut, invested-vs-current bars, fund index vs SPY benchmark over snapshot history, archive-date views in the chat shell |
 | `send_report` | Email via `gws` Gmail CLI |
 
 Framework also provides: `get_user`, invite/admin codes, `bindrive_*`, `use_skill`, etc.

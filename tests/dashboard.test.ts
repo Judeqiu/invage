@@ -71,12 +71,25 @@ describe('buildDashboardModel', () => {
         totalCost: 900,
         totalPL: 100,
         totalPLPct: 11.1,
-        positions: [],
+        positions: [
+          {
+            ticker: 'AAPL',
+            avgCost: 90,
+            units: 10,
+            price: 100,
+            cost: 900,
+            value: 1000,
+            pl: 100,
+            plPct: 11.1,
+          },
+        ],
       },
     ];
     const model = buildDashboardModel(live, snaps);
     expect(model.history).toHaveLength(1);
     expect(model.history[0].deltaValue).toBeNull();
+    expect(model.history[0].positions).toHaveLength(1);
+    expect(model.history[0].positions[0].ticker).toBe('AAPL');
     expect(model.periodChange).toBeNull();
     expect(model.lastSnapshot).toEqual({ date: '2026-07-01', totalValue: 1000 });
   });

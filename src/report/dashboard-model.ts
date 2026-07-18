@@ -1,5 +1,5 @@
 import type { Holding } from '../market/types.js';
-import type { Snapshot } from '../state/snapshot.js';
+import type { Snapshot, SnapshotPosition } from '../state/snapshot.js';
 
 export interface LivePosition {
   ticker: string;
@@ -22,6 +22,8 @@ export interface HistoryRow {
   /** Null on the first history row (no prior snapshot). */
   deltaValue: number | null;
   deltaPct: number | null;
+  /** Per-position detail from the snapshot (drives archive-date rendering). */
+  positions: SnapshotPosition[];
 }
 
 export interface PeriodChange {
@@ -123,6 +125,7 @@ export function buildDashboardModel(
         totalPLPct: snap.totalPLPct,
         deltaValue: null,
         deltaPct: null,
+        positions: snap.positions,
       };
     }
     const prev = snapshots[i - 1];
@@ -136,6 +139,7 @@ export function buildDashboardModel(
       totalPLPct: snap.totalPLPct,
       deltaValue,
       deltaPct,
+      positions: snap.positions,
     };
   });
 
