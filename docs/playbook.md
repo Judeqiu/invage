@@ -54,7 +54,7 @@ Used when `playbook` is missing from the user YAML (or a field is omitted).
 | cash target | 5% |
 | AI recommendation style | `balanced` |
 | rebalancing | `quarterly` (threshold 5 pp if threshold mode) |
-| markets | `[US]` |
+| markets | `[US]` (add `HK`, `CN`/`China` for multi-market discovery) |
 | sectors / themes | empty |
 | buy criteria | Cheapness or quality-growth with trap gate PASS; Street upside when available; clear thesis (why cheap / what closes gap / kill criteria) |
 | sell criteria | Thesis broken, trap HIGH, deep loss with no recovery path vs targets, or material overvaluation vs median with risk-profile take-profit rules |

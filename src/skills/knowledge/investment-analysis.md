@@ -1,15 +1,18 @@
 # Investment Analysis
 
-**Invester agent skill** for evaluating stocks and portfolio positions. Combines:
+**Invester agent skill** for evaluating stocks, **options (calls/puts)**, and portfolio positions across **US, Hong Kong, and China** markets. Combines:
 
 1. **Portfolio 3-axis** — cost basis vs live price vs analyst targets (action on holdings)
 2. **Stock evaluation workflow** — fundamentals, valuation, style filters, risks (analyze any ticker)
 3. **Undervalued discovery funnel** — find candidates that are *cheap ∩ quality/health ∩ not a trap* (idea generation)
 4. **News → price-path analysis** — smart trend/hypothesis from news (underreaction vs overreaction, PEAD, surprise vs consensus)
+5. **Index relative framework** — evaluate names vs a wide range of market / sector / style / regional indices (Part E)
+6. **Multi-market equities** — US + HK + China A/H dual listings, ticker conventions, local sources (Part F)
+7. **Options evaluation** — calls/puts structure, moneyness, IV, Greeks *when sourced*, strategy gates (Part G)
 
-Load for portfolio analysis, stock evaluation, **finding undervalued stocks**, **news impact / trend after news**, earnings reaction, screens, value traps, P/E·PEG·ROE·P/B, analyst targets, buy/sell/hold, DCF/multiples, moat/value/growth, or "what should I do with my stocks".
+Load for portfolio analysis, stock evaluation, **options / call / put analysis**, **finding undervalued stocks**, **HK/China listings**, **index-relative value**, **news impact / trend after news**, earnings reaction, screens, value traps, P/E·PEG·ROE·P/B, analyst targets, buy/sell/hold, DCF/multiples, moat/value/growth, or "what should I do with my stocks".
 
-For news/filings/IR/key-statistics/Finviz screens, also load **`firecrawl`**. For saving reports, use **`bindrive`**.
+For news/filings/IR/key-statistics/Finviz/HKEX/China sources and options-chain pages, also load **`firecrawl`**. For saving reports, use **`bindrive`**.
 
 Background research (human reference): `docs/deep-research-find-undervalued-stocks.md`, `docs/deep-research-news-stock-price-prediction.md`, `docs/deep-research-stock-analysis-methods.md`.
 
@@ -88,7 +91,10 @@ Every linked user has an **Investment Playbook** (strategy, philosophy, risk, al
 | EV/EBIT, FCF, enterprise value, detailed stats | Load **`firecrawl`** → Yahoo `/key-statistics`, Finviz quote |
 | News, earnings, filings, IR, "why it moved", news→trend | Load **`firecrawl`** → search/scrape primary + 1 quality secondary; then Part D |
 | Multi-name screens / idea lists | Firecrawl Finviz/Yahoo screeners or peer scrapes — then `portfolio_analyzer` on short list |
-| Macro (Fed, CPI) | Firecrawl → federalreserve.gov / Reuters / BLS |
+| Macro (Fed, CPI, PBOC, HKD peg context) | Firecrawl → official + Reuters / BLS / HKMA when relevant |
+| Index levels / regional benchmarks | `portfolio_analyzer` with index or ETF tickers (Part E table); Firecrawl if quote fails |
+| HK / China A-share / dual listing | Yahoo suffix tickers via `portfolio_analyzer` (Part F); Firecrawl → HKEX / SSE / CNINFO / IR |
+| Options chain, IV, open interest | Firecrawl Yahoo options page (Part G) — **not** invent Greeks; analyzer is for underlying first |
 
 ### Metrics available from `portfolio_analyzer` (always try first)
 
@@ -119,6 +125,12 @@ Every linked user has an **Investment Playbook** (strategy, philosophy, risk, al
 **Deep dive:** above + Firecrawl (Yahoo key-statistics/analysis, Finviz, `TICKER 10-K site:sec.gov`, company IR).
 
 **News / "will this move the stock?" / earnings reaction:** Load **`firecrawl`** + **`investment-analysis` Part D** → primary source scrape → `portfolio_analyzer` on ticker → path hypothesis + value gate. Never invent the news content.
+
+**Index-relative / "vs market / vs HSI / vs CSI 300":** Part E → pick fit-for-purpose index/ETF → quote both name and benchmark when tools allow.
+
+**HK / China / dual-list ticker:** Part F ticker map → `portfolio_analyzer` with correct Yahoo suffix → local filing source via Firecrawl if needed.
+
+**Call / put / options strategy:** Part G → analyze **underlying** with Part B/C first → scrape chain for premium/IV only if user asks options → never invent Greeks or premiums.
 
 ---
 
@@ -179,6 +191,8 @@ Always provide for each position discussed:
 | Food Staples | VDC | Consumer Staples |
 | Utility | XLU | US Utilities |
 | Technology | QQQ | NASDAQ-100 |
+
+For names outside these funds, or for **regional / style** context, use **Part E** index map (do not force every HK/China name onto SPY alone).
 
 ---
 
@@ -317,8 +331,9 @@ Universe (liquidity / sector / user holdings or named list)
   2. Else (empty portfolio, or "find undervalued stocks" / "screen for value" / "what looks cheap" with no ticker list) → **Recipe 3 this turn**. Do not ask for a watchlist. Do not offer paths.
   3. If they named tickers or a sector → use that as the universe (still run tools this turn).
 - Prefer **user holdings** or user-provided tickers when present; otherwise **always** load **`firecrawl`** and scrape a Finviz/Yahoo value screen (or sector screen). Then `portfolio_analyzer` on the resulting tickers.
-- Default external screen when none specified: Finviz overview or Yahoo "undervalued" / high earnings yield style list (liquid mid/large cap preference). Sector if user named one.
-- Apply liquidity common sense: if scrape shows tiny market cap / illiquid microcap, flag capacity risk; do not size as a core position without warning.
+- **Playbook markets:** if `watchlists.markets` includes `HK` and/or `CN`/`China` (and not only `US`), bias Recipe 3 screens and example tickers toward those markets (Part F suffixes). If only `US` (default), stay US-liquid mid/large. If user says "Hong Kong" / "A-shares" / "H-shares" explicitly, that overrides default US.
+- Default external screen when none specified: Finviz overview or Yahoo "undervalued" / high earnings yield style list (liquid mid/large cap preference). Sector if user named one. For HK: Yahoo or HKEX-linked liquid large caps / Hang Seng constituents. For China A: liquid CSI 300–style names via Yahoo `.SS` / `.SZ` — flag ADR/OTC confusion.
+- Apply liquidity common sense: if scrape shows tiny market cap / illiquid microcap, flag capacity risk; do not size as a core position without warning. HK small-caps and ST/* China special-treatment names need extra trap emphasis.
 - Sector exclusions when using Magic Formula–style ranks: **financials and utilities** are poor fits for EV/EBIT + ROC ranking (use industry lens instead).
 
 #### C1.b Cheapness yardsticks (pick industry-fit primary + 1 supporting)
@@ -579,6 +594,302 @@ Always load **`firecrawl`** for news content. Run **`portfolio_analyzer`** on th
 
 ---
 
+## Part E — Index framework (relative evaluation)
+
+**Goal:** Never evaluate a stock in a vacuum when a fit-for-purpose **index or liquid ETF** can contextualize performance, beta, sector rotation, and “cheap vs what.”
+
+Indices are **context and relative-performance tools**, not intrinsic value. A stock can beat its index and still be a trap (or lag and still be undervalued).
+
+### E0 — When to use indices
+
+| User ask | What to do |
+|----------|------------|
+| "How is TICKER doing?" / performance | Quote TICKER + **primary** regional index (and sector ETF if known) over same horizon if tools allow |
+| "Is the market expensive?" | Quote broad index ETF(s) + value metrics on the ETF if available; label regime as hypothesis |
+| Sector rotation / "tech vs market" | Sector ETF vs SPY/QQQ or local broad index |
+| HK / China names | Prefer local benchmarks (HSI, HSCEI, CSI 300) over SPY alone |
+| Style (value/growth/small) | Style indices/ETFs (e.g. IWD/IWF/IWM) as factor context — one line unless asked |
+| Options on an index | Part G on the **underlying index/ETF** first |
+
+### E1 — Index & liquid proxy map (Yahoo-style symbols)
+
+Use **`portfolio_analyzer`** with these symbols when you need a live level/proxy. Prefer **ETF proxies** for multi-metric screens; use caret indices (`^…`) for level only when needed. If a symbol errors, say **not verified** — do not invent levels.
+
+#### E1.a Broad equity — United States
+
+| Role | Index (level) | Liquid proxy ETF | Use for |
+|------|---------------|------------------|---------|
+| Large-cap US | `^GSPC` S&P 500 | `SPY` / `VOO` | Default US portfolio / large-cap context |
+| Mega-growth / tech-heavy | `^NDX` Nasdaq-100 | `QQQ` | Growth/tech names, software, semis |
+| Blue-chip price-weighted | `^DJI` Dow | `DIA` | Industrial/blue-chip narrative only |
+| Small-cap | `^RUT` Russell 2000 | `IWM` | Small-cap risk-on / domestic cyclical |
+| Total market | — | `VTI` / `ITOT` | Broader-than-S&P context |
+| Volatility (fear gauge) | `^VIX` | — | Risk regime only; **not** a stock valuation |
+
+#### E1.b US sector & industry (common)
+
+| Sector lens | Proxy ETF | Use for |
+|-------------|-----------|---------|
+| Technology | `XLK` or fund `QQQ` | Tech holdings (this product: QQQ for SL Tech) |
+| Healthcare | `XLV` / `IYH` | Pharma, devices, managed care |
+| Financials | `XLF` | Banks, brokers (use P/B lens on names) |
+| Energy | `XLE` | Oil/gas operators |
+| Industrials / aero | `XLI` / `ITA` | Aerospace & defense (ITA for SL Aero) |
+| Consumer staples | `XLP` / `VDC` | Staples / food |
+| Utilities | `XLU` | Regulated utilities |
+| Consumer discretionary | `XLY` | Retail, autos (cyclical) |
+| Communication | `XLC` | Platforms, media |
+| Real estate | `XLRE` | REITs (use AFFO/FFO when scraped) |
+| Materials | `XLB` | Cyclical materials |
+
+#### E1.c Style / factor proxies (US)
+
+| Style | Proxy | Use for |
+|-------|-------|---------|
+| Value | `IWD` / `VTV` | Value-factor backdrop |
+| Growth | `IWF` / `VUG` | Growth-factor backdrop |
+| Quality / high dividend | `QUAL` / `SCHD` (when relevant) | Quality or income tilt context |
+| Momentum | `MTUM` | Momentum regime (optional one-liner) |
+
+#### E1.d Hong Kong & China-related
+
+| Role | Index / note | Proxy ETF (examples) | Use for |
+|------|--------------|----------------------|---------|
+| HK large-cap | `^HSI` Hang Seng | `2800.HK` (Tracker Fund) when available | Default **HK** listed names |
+| HK China enterprises | `^HSCE` Hang Seng China Ent. (H-share style) | — | H-shares / China SOE–linked HK |
+| HK tech | Hang Seng TECH (quote via related ETF if `^HSI` alone is wrong fit) | `3067.HK` / `KWEB` (US-listed China internet) when available | HK/China internet & tech |
+| Mainland broad | SSE Composite `000001.SS` | — | China A **mood** only (not investable pure-play for most retail abroad) |
+| Mainland large blue-chip | CSI 300 `000300.SS` | `ASHR` / `MCHI` (US) when available | A-share large-cap relative |
+| Mainland mid | CSI 500 `000905.SS` | — | Mid-cap China context |
+| Shenzhen component | `399001.SZ` | — | SZ-listed lens |
+| China large (US access) | — | `FXI`, `MCHI` | ADR / US-listed China basket |
+| China internet (US) | — | `KWEB` | Platform / internet names |
+
+**Currency note:** HK stocks trade in HKD; A-shares in CNY; many ADRs in USD. When comparing A vs H of the **same company**, discuss **AH premium/discount** only with sourced prices for both lines (Part F). Do not convert FX inventively — if tools give currency codes, state them; if not, label FX gap.
+
+#### E1.e Global / other regions (when user asks)
+
+| Region | Index | Proxy ETF examples |
+|--------|-------|--------------------|
+| Japan | `^N225` | `EWJ` |
+| Europe broad | — | `VGK` / `IEUR` |
+| Euro STOXX | `^STOXX50E` when available | `FEZ` |
+| Emerging ex-specific | — | `EEM` / `VWO` |
+| Developed ex-US | — | `EFA` / `VEA` |
+| Gold / rates backdrop | — | `GLD`, `TLT` (macro context only) |
+
+### E2 — How to apply indices in analysis
+
+1. **Pick 1 primary + optional 1 secondary** benchmark (do not dump 10 indices).
+   - Primary = listing region + size (e.g. HK name → HSI or 2800.HK; US large → SPY; A-share large → CSI 300 / 000300.SS).
+   - Secondary = sector or style ETF when the story is sector-driven.
+2. **Relative performance:** if history is available (snapshots or scraped returns), state stock vs index over the same window; if not, quote **current** levels only and say full relative return not computed this run.
+3. **Relative valuation:** when comparing PE of a stock to “the market,” prefer **sector peers** first; index aggregate PE only if sourced (ETF stats scrape). Absolute PE bands from Part B remain screens, not law.
+4. **Risk regime:** rising `^VIX` or risk-off tape → raise caution on aggressive accumulate language; do not claim a VIX level you did not quote.
+5. **Product funds:** keep existing SL fund → ETF map; add Part E only when the name is outside that map or user asks market/index context.
+6. **Fail fast:** bad index ticker → omit that benchmark line; do not substitute a guessed number.
+
+### E3 — Index context one-liner (required when discussing performance or “is this strong?”)
+
+```text
+Benchmark context: primary={SYMBOL} ({name}) | secondary={optional}
+  Stock: … | Index/ETF: … (from tools)
+  Relative note: leading | lagging | in-line | not compared this run
+```
+
+---
+
+## Part F — Multi-market equities (US · Hong Kong · China)
+
+**Goal:** Correct tickers, correct filings culture, and market-structure traps for **US, HK, and China** listings. Yahoo Finance is the default quote path via `portfolio_analyzer` — **suffixes matter**.
+
+### F0 — Intent routing
+
+| User ask | Path |
+|----------|------|
+| Ticker with `.HK` / `.SS` / `.SZ` / Chinese name | Normalize → `portfolio_analyzer` → Part B (+ C if value) |
+| "Tencent" / "Moutai" / "Alibaba" without venue | Prefer primary liquid listing user implies; if dual-listed, state venues and ask **only** if two venues would change the answer (else pick playbook market or most liquid and label) |
+| "A-share vs H-share" / AH premium | Quote both lines with correct suffixes; compare prices only with currency labels |
+| Screen "cheap HK / China stocks" | C1 with Part F universe + local benchmarks (Part E) |
+| China ADR in US (e.g. BABA, PDD, JD) | Treat as US-listed **China exposure** — SEC + variable China policy risk; still Part B/C |
+
+### F1 — Yahoo ticker conventions (mandatory)
+
+| Market | Yahoo form | Examples | Notes |
+|--------|------------|----------|-------|
+| US common | `SYMBOL` | `AAPL`, `MSFT`, `BRK-B` | Use hyphen for class shares (`BRK-B`) |
+| Hong Kong | `####.HK` or `#####.HK` | `0700.HK` Tencent, `9988.HK` Alibaba HK, `0005.HK` HSBC, `2800.HK` Tracker | **Zero-pad** to 4 digits when that is the local code (e.g. `700` → `0700.HK`). Always include `.HK` |
+| Shanghai A | `######.SS` | `600519.SS` Kweichow Moutai, `601318.SS` Ping An | 6-digit code + `.SS` |
+| Shenzhen A | `######.SZ` | `000001.SZ` Ping An Bank, `300750.SZ` CATL | 6-digit code + `.SZ` |
+| US index | `^GSPC`, `^VIX`, … | see Part E | Caret prefix |
+| HK index | `^HSI`, `^HSCE` | | |
+| China index | `000001.SS`, `000300.SS`, `399001.SZ` | | Do not confuse SSE Composite `000001.SS` with stock `000001.SZ` |
+
+**Normalization rules:**
+
+1. Strip spaces; uppercase letters; preserve numeric codes and dots.
+2. If user writes `0700`, `700.HK`, or `HK0700` and context is Hong Kong → try `0700.HK`.
+3. If user writes a 6-digit code and says Shanghai / 沪 / SSE → `.SS`; Shenzhen / 深 / SZSE → `.SZ`. If venue unknown and both could work, **fail with a clear ask** (one short question) rather than invent the exchange.
+4. Never invent a listing. If `portfolio_analyzer` errors: say **not tradable / not verified on Yahoo** — then Firecrawl search for correct listing; do not invent IPO stories.
+
+### F2 — Market structure notes (analysis, not trivia)
+
+| Topic | Implication for evaluation |
+|-------|----------------------------|
+| **US** | Deep analyst coverage; SEC 10-K/10-Q/8-K; shorting & options liquid on large names |
+| **Hong Kong** | International investors; HKD peg; southbound/northbound Stock Connect flows matter for some names; filings via **HKEXnews** / company announcements (not SEC) |
+| **China A-shares** | T+1, daily limit moves on many names, retail-heavy tape; accounting/standards differ from US GAAP; local filings on exchange / CNINFO / company IR |
+| **H-shares / red chips / P-chips** | China business, HK listing — use HK ticker + China macro/policy risk |
+| **AH dual listing** | Same economic entity can trade at different valuations in CNY vs HKD — **AH premium/discount** is a real object of analysis when both quotes exist |
+| **VIE / ADR China** | US-listed China ADRs often use VIE structures — flag regulatory/structure risk when discussing; do not invent legal conclusions |
+| **Connect programs** | Northbound/southbound liquidity can affect who sets the marginal price — qualitative only unless sourced flow data |
+| **Currency** | Report price **with currency** from tools (USD/HKD/CNY). Do not silently treat all prices as USD |
+
+### F3 — Filings & news sources by market (via Firecrawl)
+
+| Market | Primary disclosure | News bias |
+|--------|-------------------|-----------|
+| US | `site:sec.gov` EDGAR 10-K / 10-Q / 8-K | Reuters, CNBC, company IR |
+| HK | HKEXnews / company “announcements” / annual & interim reports | SCMP, Reuters, company IR |
+| China A | SSE/SZSE announcements, CNINFO (`cninfo.com.cn`), company IR | Reuters, official Xinhua cautiously, local IR — **prefer primary filing over blog** |
+
+Always load **`firecrawl`** for non-US filings text. Prefer primary announcement over aggregator paraphrase.
+
+### F4 — Valuation & trap adjustments by market
+
+| Lens | US | HK | China A |
+|------|----|----|---------|
+| Multiples | Sector-relative PE/EV standard | Often cross-check HSI peers + China comps for H-shares | Peer A-shares; beware limit-up narrative chasing |
+| Quality | ROE, FCF, 10-K risks | Same + geopolitical / Connect / property-sector spillovers when relevant | Earnings quality, related-party, policy sector risk (education, gaming, internet historically) |
+| Street targets | Often available on Yahoo | Patchier — if missing, say so; do not invent | Often missing/patchy on Yahoo — **do not force Part A Street upside**; use Part B/C without fake targets |
+| Value traps | Classic melting ice cube | SOE capital allocation, property chain stress when evidenced | ST/* status, repeated goodwill, policy cliff, accounting restatements when evidenced |
+
+**Part A (3-axis) when targets missing:** Still report cost vs live price. For Street axes, say **analyst targets unavailable** — classify using fundamentals (Part B/C) only. Never invent median/high targets.
+
+### F5 — Dual-list / ADR recipe
+
+1. Identify all relevant lines (e.g. `BABA` vs `9988.HK`; A-share + H-share pair).
+2. `portfolio_analyzer` on **each** ticker the user cares about (or both if comparing).
+3. Table: venue | ticker | price | currency | market cap if present | PE/PB when present.
+4. AH or ADR–HK gap: state **premium/discount only if both prices and currencies are tool-sourced**; else “gap not computed.”
+5. Thesis: which line is more liquid / investable for *this* user (playbook markets); structure risks for ADRs/VIEs when relevant.
+6. Recommendation language applies to a **specific ticker**, never “buy Alibaba” without venue.
+
+### F6 — Multi-market discovery (extends Recipe 3)
+
+When playbook or user intent is HK/China:
+
+1. Universe from liquid index constituents or named sector (HSI / CSI 300 style lists via scrape) — extract tickers **with correct suffixes**.
+2. `portfolio_analyzer` on the list ( cap ~8–15 ).
+3. Part C gates; prefer local Part E benchmark in the write-up.
+4. Flag: foreign ownership limits, Connect eligibility, and illiquidity when evidence appears in scrape — do not invent eligibility.
+
+---
+
+## Part G — Options (calls & puts)
+
+**Goal:** Evaluate **calls and puts** as contingent claims on an underlying — not as lottery tickets and not as a substitute for Part B/C on the stock.
+
+**Hard fact rule:** Never invent **premium, bid/ask, IV, delta, gamma, theta, vega, open interest, volume, or greeks**. If not in tool/scrape output → say **unavailable**.
+
+### G0 — Intent routing
+
+| User ask | Path |
+|----------|------|
+| "Analyze CALL/PUT on TICKER" / strike & expiry | G1–G5 on that contract family + Part B on underlying |
+| "Should I buy calls on X?" | Underlying Part B/C first → options structure → only then directional language |
+| "Protect my shares" / hedge | Prefer **protective put** or collar framing; size vs holding from `get_portfolio` |
+| "Covered call income" | Confirm long stock exists or is assumed; yield = premium/spot only if premium sourced |
+| "IV crush after earnings" | Part D earnings path + G IV section; no guaranteed crush magnitude |
+| Index options (SPX/SPY) | Underlying = index/ETF from Part E; same gates |
+
+### G1 — Definitions (use precisely)
+
+| Term | Meaning |
+|------|---------|
+| **Call** | Right to **buy** underlying at strike before/at expiry (style depends on product) |
+| **Put** | Right to **sell** underlying at strike |
+| **Long call/put** | Paid premium; max loss ≈ premium; convex upside (call) or downside hedge/speculation (put) |
+| **Short call/put** | Received premium; **obligation** — undefined or large risk if naked; always state risk |
+| **Strike / expiry** | Contract identity — must be user-specified or scraped; never invent “the” ATM strike |
+| **Moneyness** | ITM / ATM / OTM vs **live** underlying price from tools |
+| **Intrinsic** | Call: max(S−K,0); Put: max(K−S,0) with S,K from tools |
+| **Extrinsic / time value** | Premium − intrinsic (only if premium sourced) |
+| **IV** | Market’s implied vol — compare to history only if IV rank/percentile sourced |
+| **Delta / theta / vega** | Sensitivity labels — optional; only quote if scraped |
+
+### G2 — Workflow (always this order)
+
+```text
+1. Underlying   portfolio_analyzer on stock/ETF/index proxy → Part B snapshot (+ C if buy/sell stock implied)
+2. Thesis       Directional / vol / income / hedge? Horizon vs expiry?
+3. Contract     Strike, expiry, call vs put, long vs short — from user or scrape (fail if missing)
+4. Market data  Firecrawl Yahoo options chain for that expiry when user needs premium/IV
+5. Structure    Moneyness, intrinsic/extrinsic, breakeven = f(premium) when premium known
+6. Risk         Max loss / max gain / assignment / naked short risk
+7. Gate         G4 — do not recommend long options on a Part C trap FAIL underlying for “bullish lottery”
+8. Output       Template Options verdict
+```
+
+**Yahoo options scrape pattern:** load **`firecrawl`**, scrape  
+`https://finance.yahoo.com/quote/{TICKER}/options`  
+(optionally with date query if the page supports a known expiry). Extract only rows you can see. HK/China single-stock options liquidity is often thin or absent on Yahoo — if chain missing, say **options chain not verified** and stop inventing.
+
+### G3 — Strategy cheat-sheet (recommendation framing)
+
+| Strategy | When it can fit | Kill / caution |
+|----------|-----------------|----------------|
+| **Long call** | Defined-risk upside; bullish underlying + accepts time decay | IV already extreme; short-dated lottery; trap FAIL underlying |
+| **Long put** | Defined-risk downside / hedge | Buying puts as sole “analysis” without underlying view; expensive IV |
+| **Covered call** | Long stock + short call; income / mild upside cap | Assignment risk; caps upside on strong re-rating |
+| **Protective put** | Long stock + long put; floor | Cost of insurance; wrong expiry/strike vs risk horizon |
+| **Collar** | Long stock + put financed by short call | Upside cap + floor; complexity |
+| **Naked short call/put** | Rarely appropriate in this product’s advice tone | **State unlimited/large risk**; prefer avoid unless user explicitly accepts and playbook risk is aggressive |
+| **Vertical spreads** | Defined risk debit/credit | Need both strikes’ premiums; if missing data → WATCH |
+
+### G4 — Options gates (before BUY call/put language)
+
+| Want to say | Required |
+|-------------|----------|
+| Buy calls (bullish) | Underlying thesis not trap FAIL; horizon fits expiry; premium/IV sourced or explicitly unknown; max loss = premium stated |
+| Buy puts (bearish/hedge) | For hedge: holding or explicit hedge target; for speculation: underlying thesis + premium risk |
+| Sell covered calls | Confirmed or assumed long shares; strike/expiry; upside cap explained |
+| Sell naked | Strong warning + risk profile aggressive + user intent clear — else refuse naked short |
+| “Cheap options” | Means **low premium vs structure**, not “stock is undervalued”; still run stock Part C separately |
+| Earnings long straddle/strangle | Part D event; IV likely elevated — say crush risk; no guaranteed profit |
+
+### G5 — Link to indices (index options & beta)
+
+- Prefer liquid proxies (`SPY`, `QQQ`, `IWM`, `2800.HK` if chain exists) over illiquid names for index-vol discussion.
+- Stock vs index: if user hedges a portfolio with index puts, map **exposure** qualitatively from holdings (sector weights) — do not invent beta unless sourced.
+- VIX (`^VIX`) is a **regime indicator**, not a hedge by itself.
+
+### G6 — Output: options verdict (required template)
+
+```text
+{TICKER} options — {CALL|PUT} | strike … | expiry … | side long|short
+  Underlying: price … | currency … | Part C: cheapness=… trap=… (or N/A)
+  Benchmark context: … (Part E one-liner if relevant)
+  Contract: moneyness ITM|ATM|OTM | intrinsic … | premium … | extrinsic … (or unavailable)
+  IV / greeks: … (or unavailable — not invented)
+  Breakeven: … (only if premium known) | max loss … | max gain …
+  Thesis fit: hedge|income|directional|vol | horizon vs expiry: …
+  Gate: PASS|WATCH|FAIL — …
+  Action: … | Confidence: low|med|high
+  Gaps: …
+```
+
+### G7 — What not to do (options)
+
+- Invent Greeks, IV rank, or “fair” premium  
+- Treat options advice as stock advice without expiry/strike  
+- Recommend naked shorts by default  
+- Claim guaranteed earnings IV crush profits  
+- Ignore that OTM short-dated options often expire worthless  
+- Use options language when the user only asked about the stock  
+
+---
+
 ## Output templates
 
 ### Portfolio position (3-axis)
@@ -667,6 +978,25 @@ Rejected as traps / expensive: …
 
 Use the **News path verdict** block in Part D6. Keep Slack/Telegram scannable: regime + horizon + 3 fact bullets + action + sources.
 
+### Index context (Part E)
+
+Use the **Benchmark context** one-liner in Part E3 whenever discussing performance or market-relative strength.
+
+### Multi-market / dual-list (Part F)
+
+```text
+{NAME} listings
+  | Venue | Ticker | Price | Ccy | PE/PB | Notes |
+  |------|--------|-------|-----|-------|-------|
+  | … | … | … | … | … | … |
+  AH/ADR gap: … | not computed
+  Preferred line for this user: … (playbook markets / liquidity)
+```
+
+### Options (Part G)
+
+Use the **Options verdict** block in Part G6.
+
 ---
 
 ## Recommendation language
@@ -682,6 +1012,10 @@ Use the **News path verdict** block in Part D6. Keep Slack/Telegram scannable: r
 | Hard earnings surprise, UNDERREACT regime, gates OK | PEAD-watch or measured add — not "guaranteed up" |
 | Soft headline / mega-cap first print | Avoid chase; re-value when full info in |
 | Incomplete data | Watch — no size-up; list gaps |
+| HK/China name, targets missing | Fundamentals + local index context; no fake Street median |
+| Long call/put, gates pass, premium known | Defined-risk framing + max loss; not “free leverage” |
+| Options data missing | WATCH on contract; still may analyze underlying only |
+| Naked short options | Avoid / heavy warning — not default advice |
 
 ---
 
@@ -697,6 +1031,12 @@ Use the **News path verdict** block in Part D6. Keep Slack/Telegram scannable: r
 - Predict next-tick price from a single headline
 - Skip stating uncertainty or data gaps
 - Invent EV/EBIT, F-Score, FCF, or consensus estimates when not in tool/scrape output
+- Use **SPY alone** as the only benchmark for HK/China names when local indices are available
+- Invent Yahoo suffixes or swap `.SS` / `.SZ` / `.HK` without evidence
+- Treat all prices as USD — always carry currency from tools
+- Invent options premiums, IV, or Greeks
+- Recommend options without strike/expiry (or explicit “structure-only, no live chain”)
+- Confuse SSE Composite `000001.SS` with Shenzhen stock `000001.SZ`
 
 ---
 
@@ -704,8 +1044,8 @@ Use the **News path verdict** block in Part D6. Keep Slack/Telegram scannable: r
 
 | Skill | Role |
 |-------|------|
-| **`playbook-setup`** | Patient wizard to configure strategy / risk / buy-sell / watchlists |
-| **`firecrawl`** | Filings, IR, news, Yahoo key-statistics/analysis, Finviz, screens, macro |
+| **`playbook-setup`** | Patient wizard to configure strategy / risk / buy-sell / watchlists (incl. markets US/HK/CN) |
+| **`firecrawl`** | Filings, IR, news, Yahoo key-statistics/analysis/options, Finviz, HKEX/China sources, screens, macro |
 | **`bindrive`** | Save HTML reports / portal |
 
 ## Related research (not loaded automatically)

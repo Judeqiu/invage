@@ -133,7 +133,7 @@ playbook:
     position_limit_pct: 10
     sector_exposure_pct: 35
   watchlists:
-    markets: [US]
+    markets: [US]              # also: HK, CN/China for multi-market discovery
     sectors: []
     themes: []
 ```
@@ -145,7 +145,7 @@ playbook:
 | `risk` / allocation caps | BUY bar, take-profit speed, sizing language |
 | `buy_sell` | Hard criteria before BUY/SELL wording |
 | `rebalancing` | When to flag rebalance / concentration drift |
-| `watchlists` | Default discovery universe when no ticker is named |
+| `watchlists` | Default discovery universe when no ticker is named (`US`, `HK`, `CN`/`China`, …) |
 
 **Tools:** `get_playbook`, `update_playbook` (channel-bound like portfolio tools).
 

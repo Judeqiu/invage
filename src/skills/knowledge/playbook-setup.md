@@ -246,11 +246,15 @@ Call `update_playbook` with the chosen criteria strings.
 
 **Ask lightly** (all optional — empty is fine):
 
-1. **Markets** — e.g. US, HK, Europe (default `US`). → `markets` array  
+1. **Markets** — e.g. `US`, `HK`, `CN` / `China` (default `US` only). Multi-market example: `US, HK, China`. → `markets` array  
+   - **US** — NYSE/Nasdaq-style discovery (default screens)  
+   - **HK** — Hong Kong listings (`####.HK`), Hang Seng context  
+   - **CN** / **China** — A-shares (`.SS` / `.SZ`) and China-related ideas; dual-list aware  
 2. **Sectors you care about** — e.g. Technology, Healthcare (or none). → `sectors`  
 3. **Themes** — e.g. AI, energy transition, aging (or none). → `themes`  
 
-Accept free text; split on commas; store clean strings. Empty array = no bias beyond defaults.
+Accept free text; split on commas; store clean strings. Empty array = no bias beyond defaults.  
+If they say “global” or “Asia,” map to something concrete (e.g. `US, HK, China`) and confirm before save.
 
 ---
 
