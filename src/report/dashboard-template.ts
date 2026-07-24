@@ -198,8 +198,8 @@ ${optionsBlock}
 <div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px;margin-bottom:20px">
   <h2 style="font-size:16px;margin:0 0 12px">Holdings (${live.positionCount})</h2>
   <p style="color:#8b949e;font-size:12px;margin:0 0 12px">
-    Options: avg cost / price = premium per share; units = contracts; value uses direction (short = liability).
-    Contingent obligation is not subtracted from live MTM — shown in the options cards above.
+    Options: avg / mark = premium <strong>$ per contract</strong> (not ×100 again); units = contracts; short MTM = −mark until closed.
+    Contingent obligation (if assigned) is separate from live MTM — shown in the options cards above.
   </p>
   <table style="width:100%;border-collapse:collapse;font-size:13px">
     <tr style="text-align:left;color:#8b949e;font-size:11px">

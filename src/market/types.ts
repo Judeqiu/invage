@@ -58,8 +58,14 @@ export type OptionSide = 'long' | 'short';
 export type OptionSettlement = 'physical' | 'cash';
 
 /**
- * Option contract fields. Premiums are per share of underlying;
- * total cash = premium × units × multiplier (units = contracts).
+ * Option contract fields.
+ *
+ * Premium convention: avg_price / mark are **total dollars per contract**
+ * (what you paid or received for one contract). Multiplier only sizes
+ * assignment obligation (shares), never multiplies premium again.
+ *
+ * Example short put: 1 contract, $265 premium total, strike $90, mult 100
+ * → premium cash $265; contingent buy $9,000 if assigned; open MTM = −mark.
  */
 export interface OptionSpec {
   right: OptionRight;
@@ -68,15 +74,16 @@ export interface OptionSpec {
   strike: number;
   /** Expiry date YYYY-MM-DD. */
   expiry: string;
-  /** Shares per contract (US equity options: 100). */
+  /** Shares controlled per contract (US equity options: 100). Assignment size only. */
   multiplier: number;
   /** Underlying symbol (public ticker or private name, e.g. SPACEX). */
   underlying: string;
   /** Settlement style — required, no silent default. */
   settlement: OptionSettlement;
   /**
-   * Current option premium mark per share (for MTM).
-   * Required for valuation. Set to trade premium at entry if no live quote.
+   * Current option premium mark in **dollars per contract** (to close).
+   * Required for MTM. Set to trade premium at entry if no live quote.
+   * Open short is not "triggered" until assigned — mark is option premium, not strike loss.
    */
   mark: number;
   /** Optional underlying price mark (private names / scenario work). */
@@ -86,7 +93,7 @@ export interface OptionSpec {
 /**
  * Portfolio holding.
  * - Equity (default when instrument omitted): avg_price = cost/share, units = shares.
- * - Option: avg_price = premium/share at trade, units = contracts; option fields required.
+ * - Option: avg_price = premium $ per contract at trade, units = contracts; option fields required.
  */
 export interface Holding {
   avg_price: number;

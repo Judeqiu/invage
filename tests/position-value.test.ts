@@ -24,10 +24,10 @@ describe('buildOptionKey', () => {
   });
 });
 
-describe('SpaceX short put economics (100 shares/contract)', () => {
+describe('SpaceX short put — $265 total premium for 1 contract (100 shares)', () => {
   const holding: Holding = {
     instrument: 'option',
-    avg_price: 265,
+    avg_price: 265, // total $ per contract, NOT per share
     units: 1,
     category: 'Private / Secondary',
     option: {
@@ -42,25 +42,33 @@ describe('SpaceX short put economics (100 shares/contract)', () => {
     },
   };
 
-  it('values entry mark: premium $26,500 credit, obligation $9,000, P/L ~0', () => {
+  it('does not multiply premium by 100: credit $265, obligation $9,000, P/L 0 at entry', () => {
     const e = valuePosition('SPACEX-P-90-20260807-S', holding);
-    expect(e.premiumAbsolute).toBe(26500);
-    expect(e.contingentCashObligation).toBe(9000);
+    expect(e.premiumAbsolute).toBe(265);
+    expect(e.contingentCashObligation).toBe(9000); // 90 × 100 — only if assigned
     expect(e.contingentShareObligation).toBe(0);
-    expect(e.cost).toBe(-26500);
-    expect(e.value).toBe(-26500);
+    expect(e.cost).toBe(-265);
+    expect(e.value).toBe(-265); // open short liability = mark, not strike loss
     expect(e.pl).toBe(0);
   });
 
-  it('expires worthless (mark 0): full premium profit +$26,500', () => {
+  it('expires worthless (mark 0): keep full $265 premium profit', () => {
     const expired: Holding = {
       ...holding,
       option: { ...holding.option!, mark: 0 },
     };
     const e = valuePosition('SPACEX-P-90-20260807-S', expired);
     expect(e.value).toBe(0);
-    expect(e.pl).toBe(26500);
+    expect(e.pl).toBe(265);
     expect(e.contingentCashObligation).toBe(9000);
+  });
+
+  it('two contracts double premium and obligation, still no ×100 on premium', () => {
+    const two: Holding = { ...holding, units: 2 };
+    const e = valuePosition('X', two);
+    expect(e.premiumAbsolute).toBe(530);
+    expect(e.cost).toBe(-530);
+    expect(e.contingentCashObligation).toBe(18000);
   });
 
   it('fails without mark', () => {
@@ -101,7 +109,7 @@ describe('mixed portfolio valuation', () => {
     const rows = valuePortfolio(portfolio, { AAPL: 110 });
     expect(rows).toHaveLength(2);
     const opt = rows.find((r) => r.instrument === 'option')!;
-    expect(opt.pl).toBe(26500);
+    expect(opt.pl).toBe(265);
     expect(opt.contingentCashObligation).toBe(9000);
   });
 
@@ -109,14 +117,14 @@ describe('mixed portfolio valuation', () => {
     const live = buildLivePositions(portfolio, { AAPL: 110 });
     expect(live.equityValue).toBe(1100);
     expect(live.equityCost).toBe(1000);
-    expect(live.optionsPremiumCollected).toBe(26500);
+    expect(live.optionsPremiumCollected).toBe(265);
     expect(live.contingentCashObligation).toBe(9000);
     expect(live.optionCount).toBe(1);
     expect(live.equityCount).toBe(1);
-    // Equity 1100 + option MTM 0 = 1100; costs 1000 + (-26500) = -25500
+    // Equity 1100 + option MTM 0; costs 1000 + (−265)
     expect(live.totalValue).toBe(1100);
-    expect(live.totalCost).toBe(-25500);
-    expect(live.totalPL).toBe(1100 - -25500);
+    expect(live.totalCost).toBe(735);
+    expect(live.totalPL).toBe(1100 - 735);
   });
 
   it('analyzer skips options for 3-axis buckets but includes them in fullAnalysis', () => {

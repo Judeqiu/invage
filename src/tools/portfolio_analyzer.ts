@@ -202,10 +202,10 @@ export function createPortfolioAnalyzerTool(): AgentTool {
               if (!o) continue;
               output += `  ${s.ticker}\n`;
               output += `    ${s.company}\n`;
-              output += `    Premium abs: $${(s.premiumAbsolute ?? 0).toFixed(2)} (${o.side}) | Mark: $${s.price.toFixed(2)}/sh\n`;
+              output += `    Premium: $${(s.premiumAbsolute ?? 0).toFixed(2)} (${o.side}) | Mark: $${s.price.toFixed(2)}/ct\n`;
               output += `    MTM value: $${s.value.toFixed(2)} | P/L: ${s.pl >= 0 ? '+' : ''}$${s.pl.toFixed(2)} (${s.plPct >= 0 ? '+' : ''}${s.plPct.toFixed(1)}%)\n`;
               if ((s.contingentCashObligation ?? 0) > 0) {
-                output += `    Contingent cash obligation: $${s.contingentCashObligation!.toFixed(2)}\n`;
+                output += `    Contingent cash if assigned (not current MTM): $${s.contingentCashObligation!.toFixed(2)}\n`;
                 contingentCash += s.contingentCashObligation!;
               }
               if ((s.contingentShareObligation ?? 0) > 0) {

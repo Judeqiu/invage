@@ -2,15 +2,24 @@
  * Position valuation for equities and option contracts.
  *
  * Equity: cost = avg_price × units; value = market × units.
- * Option: units = contracts; avg_price / mark are premium per share of underlying.
- *   notionalShares = contracts × multiplier (typically 100)
+ *
+ * Option (premium is total $ per contract — NOT per share):
+ *   units      = number of contracts
+ *   avg_price  = premium dollars paid/received for ONE contract at trade
+ *   mark       = current premium dollars per contract (to close)
+ *   multiplier = shares controlled per contract (typically 100) — used for
+ *                assignment obligation only, never for premium MTM
+ *
+ *   premiumAbsolute = avg_price × units
  *   direction = +1 long, −1 short
- *   cost  = direction × avg_price × notionalShares
- *   value = direction × mark × notionalShares
+ *   cost  = direction × avg_price × units
+ *   value = direction × mark × units
  *   pl    = value − cost
  *
- * Short put max cash obligation = strike × notionalShares (if assigned).
- * Short call delivery obligation = notionalShares of underlying (cash max unbounded).
+ * Short put contingent cash if assigned = strike × multiplier × units
+ *   (e.g. strike $90 × 100 sh × 1 ct = $9,000). This is NOT current MTM —
+ *   it only applies if the put is assigned ("triggered").
+ * Short call delivery if assigned = multiplier × units shares.
  */
 
 import type { Holding, OptionSpec } from './types.js';
@@ -22,7 +31,7 @@ export interface PositionEconomics {
   label: string;
   units: number;
   avgCost: number;
-  /** Mark used for MTM (equity market price or option premium mark). */
+  /** Mark used for MTM (equity market price or option premium $/contract). */
   price: number;
   cost: number;
   value: number;
@@ -31,7 +40,7 @@ export interface PositionEconomics {
   category: string;
   /** Absolute premium exchanged (options only); 0 for equity. */
   premiumAbsolute: number;
-  /** Contingent cash outlay if short put assigned; 0 otherwise. */
+  /** Contingent cash outlay if short put assigned; 0 otherwise. Not current MTM. */
   contingentCashObligation: number;
   /** Shares deliverable if short call assigned; 0 otherwise. */
   contingentShareObligation: number;
@@ -67,7 +76,6 @@ export function buildOptionKey(input: {
     throw new Error(`option expiry must be YYYY-MM-DD (got "${input.expiry}").`);
   }
   if (!(input.strike > 0)) throw new Error('option strike must be positive.');
-  // Strike in key: drop trailing zeros after decimal for readability
   const strikeKey = Number.isInteger(input.strike)
     ? String(input.strike)
     : String(input.strike).replace(/\.?0+$/, '');
@@ -102,7 +110,7 @@ export function assertOptionSpec(o: OptionSpec, key: string): void {
   }
   if (o.mark == null || !(o.mark >= 0) || !Number.isFinite(o.mark)) {
     throw new Error(
-      `Option ${key}: mark (option premium per share) is required and must be ≥ 0. Use update_holding to set mark.`,
+      `Option ${key}: mark (premium $ per contract) is required and must be ≥ 0. Use update_holding to set mark.`,
     );
   }
   if (o.underlying_mark != null && (!(o.underlying_mark >= 0) || !Number.isFinite(o.underlying_mark))) {
@@ -142,19 +150,22 @@ export function valuePosition(
 
   if (isOptionHolding(h)) {
     const o = h.option!;
-    const notional = h.units * o.multiplier;
+    const contracts = h.units;
     const direction = o.side === 'short' ? -1 : 1;
+    // Premium is already total $ per contract — do NOT multiply by multiplier.
     // +0 avoids signed-zero from direction × 0
-    const cost = direction * h.avg_price * notional + 0;
-    const value = direction * o.mark * notional + 0;
+    const cost = direction * h.avg_price * contracts + 0;
+    const value = direction * o.mark * contracts + 0;
     const pl = value - cost + 0;
-    const premiumAbsolute = h.avg_price * notional;
+    const premiumAbsolute = h.avg_price * contracts;
     const plPct = premiumAbsolute > 0 ? (pl / premiumAbsolute) * 100 : 0;
 
+    // Assignment size only — not current MTM (open short is not "triggered" until assigned)
+    const sharesControlled = contracts * o.multiplier;
     const contingentCashObligation =
-      o.side === 'short' && o.right === 'put' ? o.strike * notional : 0;
+      o.side === 'short' && o.right === 'put' ? o.strike * sharesControlled : 0;
     const contingentShareObligation =
-      o.side === 'short' && o.right === 'call' ? notional : 0;
+      o.side === 'short' && o.right === 'call' ? sharesControlled : 0;
 
     return {
       key,

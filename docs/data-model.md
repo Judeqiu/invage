@@ -201,10 +201,10 @@ portfolio:
     avg_price: 300.00
     units: 30
     category: SL Technology S1
-  # Short put: 1 contract × 100 shares, $265 premium/share, strike $90, expiry 2026-08-07
+  # Short put: 1 contract (controls 100 sh), $265 total premium, strike $90, expiry 2026-08-07
   SPACEX-P-90-20260807-S:
     instrument: option
-    avg_price: 265              # premium per share of underlying
+    avg_price: 265              # total premium $ per contract (NOT per share)
     units: 1                    # contracts
     category: Private / Secondary
     option:
@@ -212,10 +212,10 @@ portfolio:
       side: short               # long | short
       strike: 90
       expiry: "2026-08-07"
-      multiplier: 100           # shares per contract (US equity standard)
+      multiplier: 100           # shares controlled per contract (assignment size only)
       underlying: SPACEX        # public ticker or private name
       settlement: physical      # physical | cash — required
-      mark: 265                 # current premium/share for MTM
+      mark: 265                 # current premium $ per contract for MTM
       # underlying_mark: 50     # optional scenario mark on the underlying
 
 # optional — omit to use balanced defaults
@@ -242,28 +242,28 @@ playbook:
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `instrument` | `"option"` | Yes | Must be `option` |
-| `avg_price` | number | Yes | **Premium per share** at trade (not total premium) |
+| `avg_price` | number | Yes | **Premium $ per contract** at trade (e.g. 265 = $265 total for one contract) |
 | `units` | number | Yes | Number of **contracts** |
 | `category` | string | No | e.g. `Private / Secondary` |
 | `option.right` | `call` \| `put` | Yes | Option type |
 | `option.side` | `long` \| `short` | Yes | Bought or written |
 | `option.strike` | number | Yes | Strike per share |
 | `option.expiry` | `YYYY-MM-DD` | Yes | Expiration |
-| `option.multiplier` | number | Yes | Shares per contract (**100** for standard US equity options) |
+| `option.multiplier` | number | Yes | Shares controlled per contract (**100** US) — **assignment only** |
 | `option.underlying` | string | Yes | Public ticker or private name (`SPACEX`) |
 | `option.settlement` | `physical` \| `cash` | Yes | No silent default |
-| `option.mark` | number | Yes | Current premium/share for MTM (≥ 0) |
+| `option.mark` | number | Yes | Current premium **$ per contract** for MTM (≥ 0) |
 | `option.underlying_mark` | number | No | Optional underlying price for scenarios |
 
 **Economics (options):**
 
-- Total premium = `avg_price × units × multiplier` (e.g. $265 × 1 × 100 = **$26,500**)
+- Total premium = `avg_price × units` (e.g. $265 × 1 = **$265**) — **never** × multiplier again
 - Direction: long = +1, short = −1
-- Cost (signed) = direction × premium total  
-- Value (signed MTM) = direction × `mark` × units × multiplier  
+- Cost (signed) = direction × avg_price × units  
+- Value (signed MTM) = direction × mark × units  (open short liability = −mark; not strike loss)  
 - P/L = value − cost  
-- Short put contingent cash obligation = `strike × units × multiplier` (e.g. $90 × 100 = **$9,000**)  
-- Short call contingent share delivery = `units × multiplier` shares of underlying  
+- Short put contingent cash **if assigned** = `strike × multiplier × units` (e.g. $90 × 100 = **$9,000**) — separate from MTM  
+- Short call contingent share delivery if assigned = `units × multiplier` shares  
 
 **Position key:** if `ticker` is omitted on add, auto-built as  
 `{UNDERLYING}-{P|C}-{STRIKE}-{YYYYMMDD}-{L|S}`  

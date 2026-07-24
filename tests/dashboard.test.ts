@@ -56,7 +56,7 @@ describe('buildLivePositions', () => {
         AAPL: { avg_price: 100, units: 10 },
         'SPACEX-P-90-20260807-S': {
           instrument: 'option',
-          avg_price: 265,
+          avg_price: 265, // $ per contract total, not ×100
           units: 1,
           option: {
             right: 'put',
@@ -74,10 +74,10 @@ describe('buildLivePositions', () => {
     );
     expect(live.positionCount).toBe(2);
     expect(live.contingentCashObligation).toBe(9000);
-    expect(live.optionsPremiumCollected).toBe(26500);
+    expect(live.optionsPremiumCollected).toBe(265);
     expect(live.optionCount).toBe(1);
     const opt = live.positions.find((p) => p.instrument === 'option');
-    expect(opt?.value).toBe(-26500);
+    expect(opt?.value).toBe(-265);
     expect(opt?.pl).toBe(0);
   });
 });

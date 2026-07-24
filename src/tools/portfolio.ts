@@ -60,13 +60,13 @@ function formatPortfolio(portfolio: Record<string, Holding>): string {
       const right = o.right.toUpperCase();
       lines.push(
         `  ${key}`,
-        `    ${formatOptionLabel(o, h.units)} | ${o.settlement} settle`,
-        `    Premium/share: $${h.avg_price.toFixed(2)} × ${h.units} ct × ${o.multiplier} = $${e.premiumAbsolute.toFixed(2)} (${side})`,
-        `    Mark: $${o.mark.toFixed(2)}/share | MTM value: $${e.value.toFixed(2)} | P/L: ${e.pl >= 0 ? '+' : ''}$${e.pl.toFixed(2)} (${e.plPct >= 0 ? '+' : ''}${e.plPct.toFixed(1)}%)`,
+        `    ${formatOptionLabel(o, h.units)} | ${o.settlement} settle | ${o.multiplier} sh/ct`,
+        `    Premium $/contract: $${h.avg_price.toFixed(2)} × ${h.units} ct = $${e.premiumAbsolute.toFixed(2)} (${side})`,
+        `    Mark: $${o.mark.toFixed(2)}/ct | MTM value: $${e.value.toFixed(2)} | P/L: ${e.pl >= 0 ? '+' : ''}$${e.pl.toFixed(2)} (${e.plPct >= 0 ? '+' : ''}${e.plPct.toFixed(1)}%)`,
       );
       if (e.contingentCashObligation > 0) {
         lines.push(
-          `    Contingent cash obligation (if assigned): $${e.contingentCashObligation.toFixed(2)}`,
+          `    Contingent cash if assigned (not current MTM): $${e.contingentCashObligation.toFixed(2)}`,
         );
       }
       if (e.contingentShareObligation > 0) {
@@ -179,7 +179,9 @@ export function createPortfolioTools(): AgentTool[] {
       "Add or update a stock or option position in the user's portfolio. " +
       'Equity: ticker + avg_price + units. ' +
       'Option: set instrument=option with option_right (call|put), option_side (long|short), strike, expiry (YYYY-MM-DD), ' +
-      'multiplier (typically 100), underlying, settlement (physical|cash); avg_price = premium per share; units = contracts. ' +
+      'multiplier (typically 100 shares/contract — assignment size only), underlying, settlement (physical|cash). ' +
+      'avg_price = total premium dollars PER CONTRACT (e.g. $265 credit for one put covering 100 shares — do NOT enter per-share ×100). ' +
+      'units = contracts. mark = current premium $ per contract. Contingent obligation (strike×mult×cts) is separate from MTM. ' +
       'Option portfolio key auto-builds as UNDERLYING-P|C-STRIKE-YYYYMMDD-L|S unless ticker is provided. ' +
       'Pass telegram_user_id or slack_user_id from the message context — never ask the user for it.',
     parameters: Type.Object({
@@ -192,7 +194,7 @@ export function createPortfolioTools(): AgentTool[] {
       ),
       avg_price: Type.Number({
         description:
-          'Equity: average cost per share. Option: premium per share of underlying at trade (not total premium).',
+          'Equity: average cost per share. Option: total premium dollars per contract at trade (e.g. 265 means $265 for one contract).',
       }),
       units: Type.Number({
         description: 'Equity: number of shares. Option: number of contracts.',
@@ -221,7 +223,8 @@ export function createPortfolioTools(): AgentTool[] {
       ),
       multiplier: Type.Optional(
         Type.Number({
-          description: 'Option only: shares per contract. US equity options = 100.',
+          description:
+            'Option only: shares controlled per contract (US = 100). Used for assignment obligation only — not premium math.',
         }),
       ),
       underlying: Type.Optional(
@@ -237,7 +240,7 @@ export function createPortfolioTools(): AgentTool[] {
       mark: Type.Optional(
         Type.Number({
           description:
-            'Option only: current premium mark per share for MTM. Defaults to avg_price at entry when omitted.',
+            'Option only: current premium mark in dollars per contract for MTM. Defaults to avg_price at entry when omitted.',
         }),
       ),
       underlying_mark: Type.Optional(
@@ -330,13 +333,13 @@ export function createPortfolioTools(): AgentTool[] {
           const o = holding.option!;
           return ok(
             `${action} option ${key}: ${formatOptionLabel(o, p.units)}\n` +
-              `Premium: $${e.premiumAbsolute.toFixed(2)} (${o.side}) @ $${p.avg_price.toFixed(2)}/share × ${p.units} × ${o.multiplier}\n` +
-              `Mark: $${o.mark.toFixed(2)} | MTM: $${e.value.toFixed(2)} | P/L: ${e.pl >= 0 ? '+' : ''}$${e.pl.toFixed(2)}\n` +
+              `Premium: $${e.premiumAbsolute.toFixed(2)} (${o.side}) @ $${p.avg_price.toFixed(2)}/contract × ${p.units} ct\n` +
+              `Mark: $${o.mark.toFixed(2)}/ct | MTM: $${e.value.toFixed(2)} | P/L: ${e.pl >= 0 ? '+' : ''}$${e.pl.toFixed(2)}\n` +
               (e.contingentCashObligation > 0
-                ? `Contingent cash obligation: $${e.contingentCashObligation.toFixed(2)}\n`
+                ? `Contingent cash if assigned (not current MTM): $${e.contingentCashObligation.toFixed(2)}\n`
                 : '') +
               (e.contingentShareObligation > 0
-                ? `Contingent share delivery: ${e.contingentShareObligation} ${o.underlying}\n`
+                ? `Contingent share delivery if assigned: ${e.contingentShareObligation} ${o.underlying}\n`
                 : '') +
               (p.category ? `Category: ${p.category}` : ''),
             {
@@ -434,11 +437,15 @@ export function createPortfolioTools(): AgentTool[] {
     parameters: Type.Object({
       ...channelIdParams,
       ticker: Type.String({ description: 'Portfolio key (equity ticker or option key).' }),
-      avg_price: Type.Optional(Type.Number({ description: 'New avg cost (equity) or trade premium/share (option).' })),
+      avg_price: Type.Optional(
+        Type.Number({
+          description: 'New avg cost (equity) or trade premium $ per contract (option).',
+        }),
+      ),
       units: Type.Optional(Type.Number({ description: 'New shares (equity) or contracts (option).' })),
       category: Type.Optional(Type.String({ description: 'New fund category.' })),
       mark: Type.Optional(
-        Type.Number({ description: 'Option only: new premium mark per share for MTM.' }),
+        Type.Number({ description: 'Option only: new premium mark in $ per contract for MTM.' }),
       ),
       underlying_mark: Type.Optional(
         Type.Number({ description: 'Option only: new underlying price mark.' }),

@@ -280,8 +280,10 @@ function renderCards(view) {
     const pDiff = isOpt || view.benchmarkIndex == null ? null : pIdx - view.benchmarkIndex;
     const title = isOpt ? p.label || p.ticker : p.ticker;
     const footer = isOpt
-      ? `${p.units} ct @ $${fmtUsd2(p.avgCost).replace('$', '')}/sh prem | MTM ${fmtUsd0(p.value)} | P/L ${fmtSignedUsd0(p.pl)}` +
-        (p.contingentCashObligation > 0 ? ` | Oblig. ${fmtUsd0(p.contingentCashObligation)}` : '')
+      ? `${p.units} ct @ ${fmtUsd2(p.avgCost)}/ct prem | MTM ${fmtUsd0(p.value)} | P/L ${fmtSignedUsd0(p.pl)}` +
+        (p.contingentCashObligation > 0
+          ? ` | If assigned ${fmtUsd0(p.contingentCashObligation)}`
+          : '')
       : `${p.units} units @ ${fmtUsd2(p.avgCost)} | Cost: ${fmtUsd0(p.cost)}`;
     cards.push(cardHtml(title, pIdx, isOpt ? null : view.benchmarkIndex, pDiff, footer));
   });
