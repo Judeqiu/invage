@@ -67,7 +67,19 @@ function escapeHtml(s) {
 }
 
 function fundIndex(value, cost) {
-  return cost > 0 ? (value / cost) * 100 : 100;
+  // Short-option credits make totalCost non-positive; use abs only when cost is
+  // strictly positive (equity-style). Otherwise treat as flat 100 base.
+  if (cost > 0) return (value / cost) * 100;
+  if (cost < 0) return cost !== 0 ? (value / Math.abs(cost)) * 100 : 100;
+  return 100;
+}
+
+/** Prefer equity-only cost/value for SPY fund-index when options are present. */
+function portfolioFundIndex(view) {
+  if (view.equityCost != null && view.equityCost > 0 && view.equityValue != null) {
+    return fundIndex(view.equityValue, view.equityCost);
+  }
+  return fundIndex(view.totalValue, view.totalCost);
 }
 
 /* ---------- benchmark ---------- */
@@ -101,9 +113,7 @@ function buildView(dateKey) {
   const model = payload.model;
   if (dateKey === 'live') {
     const live = model.live;
-    const fIdx = fundIndex(live.totalValue, live.totalCost);
-    const bIdx = benchIndexAt('live');
-    return {
+    const viewBase = {
       isLive: true,
       label: 'Live',
       positions: live.positions,
@@ -111,6 +121,19 @@ function buildView(dateKey) {
       totalCost: live.totalCost,
       totalPL: live.totalPL,
       totalPLPct: live.totalPLPct,
+      equityValue: live.equityValue,
+      equityCost: live.equityCost,
+      optionsPremiumCollected: live.optionsPremiumCollected ?? 0,
+      optionsPremiumPaid: live.optionsPremiumPaid ?? 0,
+      contingentCashObligation: live.contingentCashObligation ?? 0,
+      contingentShareObligation: live.contingentShareObligation ?? 0,
+      optionCount: live.optionCount ?? 0,
+      equityCount: live.equityCount ?? live.positions.length,
+    };
+    const fIdx = portfolioFundIndex(viewBase);
+    const bIdx = benchIndexAt('live');
+    return {
+      ...viewBase,
       fundIndex: fIdx,
       benchmarkIndex: bIdx,
       diff: bIdx == null ? null : fIdx - bIdx,
@@ -118,15 +141,16 @@ function buildView(dateKey) {
   }
   const row = model.history.find((h) => h.date === dateKey);
   if (!row) return null;
+  const absSum = (row.positions || []).reduce((s, p) => s + Math.abs(p.value), 0);
   const positions = (row.positions || [])
     .map((p) => ({
       ...p,
-      weightPct: row.totalValue > 0 ? (p.value / row.totalValue) * 100 : 0,
+      label: p.label || p.ticker,
+      instrument: p.instrument || 'equity',
+      weightPct: absSum > 0 ? (Math.abs(p.value) / absSum) * 100 : 0,
     }))
-    .sort((a, b) => b.value - a.value);
-  const fIdx = fundIndex(row.totalValue, row.totalCost);
-  const bIdx = benchIndexAt(dateKey);
-  return {
+    .sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
+  const viewBase = {
     isLive: false,
     label: row.date,
     positions,
@@ -134,6 +158,19 @@ function buildView(dateKey) {
     totalCost: row.totalCost,
     totalPL: row.totalPL,
     totalPLPct: row.totalPLPct,
+    equityValue: row.equityValue,
+    equityCost: row.equityCost,
+    optionsPremiumCollected: row.optionsPremiumCollected ?? 0,
+    optionsPremiumPaid: row.optionsPremiumPaid ?? 0,
+    contingentCashObligation: row.contingentCashObligation ?? 0,
+    contingentShareObligation: 0,
+    optionCount: positions.filter((p) => p.instrument === 'option').length,
+    equityCount: positions.filter((p) => p.instrument !== 'option').length,
+  };
+  const fIdx = portfolioFundIndex(viewBase);
+  const bIdx = benchIndexAt(dateKey);
+  return {
+    ...viewBase,
     fundIndex: fIdx,
     benchmarkIndex: bIdx,
     diff: bIdx == null ? null : fIdx - bIdx,
@@ -219,58 +256,74 @@ function renderCards(view) {
       </div>`;
   };
 
+  const optionNote =
+    (view.optionCount || 0) > 0
+      ? ` | ${view.optionCount} option · prem coll. ${fmtUsd0(view.optionsPremiumCollected || 0)} · oblig. ${fmtUsd0(view.contingentCashObligation || 0)}`
+      : '';
+
   cards.push(
     cardHtml(
       'Overall Portfolio',
       view.fundIndex,
       view.benchmarkIndex,
       view.diff,
-      `Base: ${escapeHtml(baseDate)} | ${view.positions.length} holdings | Cost: ${fmtUsd0(view.totalCost)}`,
+      `Base: ${escapeHtml(baseDate)} | ${view.positions.length} holdings | Cost: ${fmtUsd0(view.totalCost)}${optionNote}`,
     ),
   );
 
   view.positions.forEach((p) => {
-    const pIdx = fundIndex(p.value, p.cost);
-    const pDiff = view.benchmarkIndex == null ? null : pIdx - view.benchmarkIndex;
-    cards.push(
-      cardHtml(
-        p.ticker,
-        pIdx,
-        view.benchmarkIndex,
-        pDiff,
-        `${p.units} units @ ${fmtUsd2(p.avgCost)} | Cost: ${fmtUsd0(p.cost)}`,
-      ),
-    );
+    const isOpt = p.instrument === 'option';
+    // Options: show premium P/L % as index-style (100 + plPct); equities: value/cost.
+    const pIdx = isOpt
+      ? 100 + (p.plPct || 0)
+      : fundIndex(p.value, p.cost);
+    const pDiff = isOpt || view.benchmarkIndex == null ? null : pIdx - view.benchmarkIndex;
+    const title = isOpt ? p.label || p.ticker : p.ticker;
+    const footer = isOpt
+      ? `${p.units} ct @ $${fmtUsd2(p.avgCost).replace('$', '')}/sh prem | MTM ${fmtUsd0(p.value)} | P/L ${fmtSignedUsd0(p.pl)}` +
+        (p.contingentCashObligation > 0 ? ` | Oblig. ${fmtUsd0(p.contingentCashObligation)}` : '')
+      : `${p.units} units @ ${fmtUsd2(p.avgCost)} | Cost: ${fmtUsd0(p.cost)}`;
+    cards.push(cardHtml(title, pIdx, isOpt ? null : view.benchmarkIndex, pDiff, footer));
   });
 
   el.summaryCards.innerHTML = cards.join('');
 }
 
 function renderAllocation(view) {
-  const total = view.totalValue;
+  // Use |value| so short options appear in the donut without negative slices.
   const sectors = view.positions.map((p, i) => ({
-    label: p.ticker,
-    value: p.value,
+    label: p.label || p.ticker,
+    value: Math.abs(p.value),
+    signed: p.value,
     color: COLORS[i % COLORS.length],
   }));
+  const absTotal = sectors.reduce((s, x) => s + x.value, 0);
 
   const wrapper = document.createElement('div');
   wrapper.className = 'allocation-card';
   wrapper.innerHTML = `
     <h3>Allocation by Position</h3>
-    <div class="total-label">${view.isLive ? 'Current Market Value' : 'Market Value · ' + escapeHtml(view.label)}</div>
-    <div class="total-value">${fmtUsd0(total)}</div>
+    <div class="total-label">${view.isLive ? 'Current Market Value (MTM)' : 'Market Value · ' + escapeHtml(view.label)}</div>
+    <div class="total-value">${fmtUsd0(view.totalValue)}</div>
+    ${
+      (view.optionCount || 0) > 0
+        ? `<div style="font-size:0.8rem;color:#6b7280;margin:4px 0 8px">
+            Premium collected: ${fmtUsd0(view.optionsPremiumCollected || 0)} ·
+            Contingent obligation: ${fmtUsd0(view.contingentCashObligation || 0)}
+          </div>`
+        : ''
+    }
     <div class="donut-container"><canvas id="allocChart"></canvas></div>
     <div class="legend-grid">
       ${sectors
         .map((s) => {
-          const pct = total > 0 ? ((s.value / total) * 100).toFixed(1) : '0.0';
+          const pct = absTotal > 0 ? ((s.value / absTotal) * 100).toFixed(1) : '0.0';
           return `
         <div class="legend-item">
           <div class="legend-color" style="background:${s.color}"></div>
           <div>
             <div style="font-weight:600">${escapeHtml(s.label)}</div>
-            <div style="font-size:0.75rem;color:#6b7280">${pct}% (${fmtUsd0(s.value)})</div>
+            <div style="font-size:0.75rem;color:#6b7280">${pct}% (MTM ${fmtUsd0(s.signed)})</div>
           </div>
         </div>`;
         })
@@ -303,8 +356,8 @@ function renderAllocation(view) {
         tooltip: {
           callbacks: {
             label: (ctx) => {
-              const pct = total > 0 ? ((ctx.raw / total) * 100).toFixed(1) : '0.0';
-              return `${ctx.label}: ${pct}% (${fmtUsd0(ctx.raw)})`;
+              const pct = absTotal > 0 ? ((ctx.raw / absTotal) * 100).toFixed(1) : '0.0';
+              return `${ctx.label}: ${pct}% (|MTM| ${fmtUsd0(ctx.raw)})`;
             },
           },
         },
@@ -314,7 +367,7 @@ function renderAllocation(view) {
 }
 
 function renderBar(view) {
-  const labels = view.positions.map((p) => p.ticker);
+  const labels = view.positions.map((p) => p.label || p.ticker);
   const invested = view.positions.map((p) => p.cost);
   const current = view.positions.map((p) => p.value);
   const plColor = view.totalPL >= 0 ? '#10b981' : '#ef4444';

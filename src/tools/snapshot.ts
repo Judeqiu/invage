@@ -3,7 +3,7 @@ import type { AgentTool, AgentToolResult } from '@earendil-works/pi-agent-core';
 import { writeFileSync, mkdirSync, existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { resolveDataRoot } from 'utarus';
-import { fetchPrices } from '../market/index.js';
+import { equityKeys, fetchPrices, valuePortfolio } from '../market/index.js';
 import { getPortfolio } from '../state/portfolio-state.js';
 import {
   loadSnapshotIndex,
@@ -32,7 +32,8 @@ export function createSnapshotTool(): AgentTool[] {
     name: 'save_snapshot',
     label: 'Save Snapshot',
     description:
-      'Take a portfolio snapshot and save JSON to BinDrive. Pass telegram_user_id or slack_user_id from the message context.',
+      'Take a portfolio snapshot (equities + options MTM) and save JSON to BinDrive. ' +
+      'Pass telegram_user_id or slack_user_id from the message context.',
     parameters: Type.Object({ ...channelIdParams }),
     async execute(_id, raw) {
       const p = raw as ChannelIds;
@@ -44,41 +45,59 @@ export function createSnapshotTool(): AgentTool[] {
           return fail('No portfolio saved. Use add_holding to build a portfolio first.');
         }
 
-        const tickers = Object.keys(portfolio);
-        const prices = await fetchPrices(tickers);
+        const eqKeys = equityKeys(portfolio);
+        const prices = eqKeys.length > 0 ? await fetchPrices(eqKeys) : {};
+        const economics = valuePortfolio(portfolio, prices);
 
-        const positions: SnapshotPosition[] = tickers.map((ticker) => {
-          const h = portfolio[ticker];
-          const price = prices[ticker];
-          if (price == null) {
-            throw new Error(`Missing market price for ${ticker}. Cannot save snapshot.`);
-          }
-          const cost = h.avg_price * h.units;
-          const value = price * h.units;
-          const pl = value - cost;
-          return {
-            ticker,
-            avgCost: h.avg_price,
-            units: h.units,
-            price,
-            cost,
-            value,
-            pl,
-            plPct: cost > 0 ? (pl / cost) * 100 : 0,
-          };
-        });
+        const positions: SnapshotPosition[] = economics.map((e) => ({
+          ticker: e.key,
+          avgCost: e.avgCost,
+          units: e.units,
+          price: e.price,
+          cost: e.cost,
+          value: e.value,
+          pl: e.pl,
+          plPct: e.plPct,
+          instrument: e.instrument,
+          label: e.label,
+          premiumAbsolute: e.premiumAbsolute,
+          contingentCashObligation: e.contingentCashObligation,
+          contingentShareObligation: e.contingentShareObligation,
+          ...(e.option ? { option: e.option } : {}),
+        }));
 
         const totalValue = positions.reduce((s, pos) => s + pos.value, 0);
         const totalCost = positions.reduce((s, pos) => s + pos.cost, 0);
         const totalPL = totalValue - totalCost;
+
+        let equityValue = 0;
+        let equityCost = 0;
+        let contingentCashObligation = 0;
+        let optionsPremiumCollected = 0;
+        let optionsPremiumPaid = 0;
+        for (const e of economics) {
+          if (e.instrument === 'equity') {
+            equityValue += e.value;
+            equityCost += e.cost;
+          } else {
+            contingentCashObligation += e.contingentCashObligation;
+            if (e.option?.side === 'short') optionsPremiumCollected += e.premiumAbsolute;
+            else optionsPremiumPaid += e.premiumAbsolute;
+          }
+        }
 
         const snapshot: Snapshot = {
           date: new Date().toISOString().slice(0, 10),
           totalValue,
           totalCost,
           totalPL,
-          totalPLPct: totalCost > 0 ? (totalPL / totalCost) * 100 : 0,
+          totalPLPct: totalCost !== 0 ? (totalPL / Math.abs(totalCost)) * 100 : 0,
           positions,
+          contingentCashObligation,
+          optionsPremiumCollected,
+          optionsPremiumPaid,
+          equityValue,
+          equityCost,
         };
 
         const slug = state.user.slug;
@@ -99,17 +118,23 @@ export function createSnapshotTool(): AgentTool[] {
         }
 
         const sign = totalPL >= 0 ? '+' : '';
+        const obligationNote =
+          contingentCashObligation > 0
+            ? `\nContingent cash obligation (short puts): $${contingentCashObligation.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
+            : '';
         return ok(
           `Snapshot saved as "${fileName}".\n` +
             `Total Value: $${totalValue.toLocaleString('en-US', { minimumFractionDigits: 2 })}\n` +
             `Total P/L: ${sign}$${totalPL.toFixed(2)} (${sign}${snapshot.totalPLPct.toFixed(1)}%)\n` +
-            `${positions.length} positions recorded.`,
+            `${positions.length} positions recorded.` +
+            obligationNote,
           {
             fileName,
             totalValue,
             totalPL,
             totalPLPct: snapshot.totalPLPct,
             positions: positions.length,
+            contingentCashObligation,
           },
         );
       } catch (e) {

@@ -4,7 +4,7 @@
  */
 
 import { loadState } from 'utarus';
-import { fetchHistoricalCloses, fetchPrices } from '../market/index.js';
+import { equityKeys, fetchHistoricalCloses, fetchPrices } from '../market/index.js';
 import { getPortfolio, type InvestorState } from '../state/portfolio-state.js';
 import { loadSnapshots, type Snapshot } from '../state/snapshot.js';
 import {
@@ -84,7 +84,9 @@ export async function loadDashboardForSlug(
     };
   }
 
-  const prices = priceOverride ?? (await fetchPrices(tickers));
+  const eqKeys = equityKeys(portfolio);
+  const prices =
+    priceOverride ?? (eqKeys.length > 0 ? await fetchPrices(eqKeys) : {});
   const live = buildLivePositions(portfolio, prices);
   const snapshots = loadSnapshots(slug);
   const model = buildDashboardModel(live, snapshots);

@@ -94,7 +94,7 @@ Users can run slash command \`/guidance\` (subcommands: start, portfolio, playbo
 ## Scope
 
 **In scope (do answer these):**
-- Portfolio CRUD (add/update/remove holdings)
+- Portfolio CRUD (add/update/remove holdings) including **options** (calls/puts, long/short, multiplier usually 100, private underlyings with manual mark)
 - Investment playbook config (strategy, philosophy, risk, allocation, buy/sell rules, rebalancing, watchlists)
 - Live prices, analyst targets, valuation metrics (PE/PEG/P/B/ROE/FCF yield/EV/EBITDA, …)
 - 3-axis portfolio analysis, single-stock evaluation, undervalued discovery, HTML reports (analysis + portfolio dashboard)

@@ -19,6 +19,23 @@ export interface SnapshotPosition {
   value: number;
   pl: number;
   plPct: number;
+  /** equity (default) or option — older snapshots omit this. */
+  instrument?: 'equity' | 'option';
+  label?: string;
+  premiumAbsolute?: number;
+  contingentCashObligation?: number;
+  contingentShareObligation?: number;
+  option?: {
+    right: 'call' | 'put';
+    side: 'long' | 'short';
+    strike: number;
+    expiry: string;
+    multiplier: number;
+    underlying: string;
+    settlement: 'physical' | 'cash';
+    mark: number;
+    underlying_mark?: number;
+  };
 }
 
 export interface Snapshot {
@@ -28,6 +45,12 @@ export interface Snapshot {
   totalPL: number;
   totalPLPct: number;
   positions: SnapshotPosition[];
+  /** Optional aggregates (newer snapshots). */
+  contingentCashObligation?: number;
+  optionsPremiumCollected?: number;
+  optionsPremiumPaid?: number;
+  equityValue?: number;
+  equityCost?: number;
 }
 
 function driveDir(slug: string): string {

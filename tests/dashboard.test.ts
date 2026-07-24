@@ -46,6 +46,39 @@ describe('buildLivePositions', () => {
     expect(live.positions[1].weightPct).toBeCloseTo(45, 5);
     const weightSum = live.positions.reduce((s, p) => s + p.weightPct, 0);
     expect(weightSum).toBeCloseTo(100, 5);
+    expect(live.equityCount).toBe(2);
+    expect(live.optionCount).toBe(0);
+  });
+
+  it('includes short put without Yahoo price on the option key', () => {
+    const live = buildLivePositions(
+      {
+        AAPL: { avg_price: 100, units: 10 },
+        'SPACEX-P-90-20260807-S': {
+          instrument: 'option',
+          avg_price: 265,
+          units: 1,
+          option: {
+            right: 'put',
+            side: 'short',
+            strike: 90,
+            expiry: '2026-08-07',
+            multiplier: 100,
+            underlying: 'SPACEX',
+            settlement: 'physical',
+            mark: 265,
+          },
+        },
+      },
+      { AAPL: 110 },
+    );
+    expect(live.positionCount).toBe(2);
+    expect(live.contingentCashObligation).toBe(9000);
+    expect(live.optionsPremiumCollected).toBe(26500);
+    expect(live.optionCount).toBe(1);
+    const opt = live.positions.find((p) => p.instrument === 'option');
+    expect(opt?.value).toBe(-26500);
+    expect(opt?.pl).toBe(0);
   });
 });
 

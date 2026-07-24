@@ -3,7 +3,7 @@ import type { AgentTool, AgentToolResult } from '@earendil-works/pi-agent-core';
 import { writeFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { resolveDataRoot, signedBinDriveViewUrl } from 'utarus';
-import { fetchPrices, fetchTargets, runFullAnalysis } from '../market/index.js';
+import { equityKeys, fetchPrices, fetchTargets, runFullAnalysis } from '../market/index.js';
 import { getPortfolio } from '../state/portfolio-state.js';
 import { loadSnapshots } from '../state/snapshot.js';
 import { buildAnalysisReport } from '../report/template.js';
@@ -64,7 +64,7 @@ export function createSaveReportTool(): AgentTool {
           return fail('No portfolio saved. Use add_holding to build a portfolio first.');
         }
 
-        const tickers = Object.keys(portfolio);
+        const eqKeys = equityKeys(portfolio);
         const userName = state.profile.display_name;
         const today = new Date().toISOString().slice(0, 10);
         let html: string;
@@ -73,7 +73,7 @@ export function createSaveReportTool(): AgentTool {
         let historyNote = '';
 
         if (kind === 'dashboard') {
-          const prices = await fetchPrices(tickers);
+          const prices = eqKeys.length > 0 ? await fetchPrices(eqKeys) : {};
           const live = buildLivePositions(portfolio, prices);
           const snapshots = loadSnapshots(state.user.slug);
           const model = buildDashboardModel(live, snapshots);
@@ -85,10 +85,10 @@ export function createSaveReportTool(): AgentTool {
               ? 'Snapshot history is thin — use save_snapshot periodically so period change and sparkline appear.'
               : `History: ${snapshots.length} snapshot(s).`;
         } else {
-          const [prices, targets] = await Promise.all([
-            fetchPrices(tickers),
-            fetchTargets(tickers),
-          ]);
+          const [prices, targets] =
+            eqKeys.length > 0
+              ? await Promise.all([fetchPrices(eqKeys), fetchTargets(eqKeys)])
+              : [{}, {} as Awaited<ReturnType<typeof fetchTargets>>];
           const result = runFullAnalysis(portfolio, prices, targets);
           html = buildAnalysisReport(result, userName);
           defaultName = `report-${today}.html`;

@@ -180,7 +180,7 @@ Every mutation appends to `log[]`. The agent never manually logs — the framewo
 
 ## Layer 3: Portfolio Holdings
 
-Stored as a top-level `portfolio` key in the user state file:
+Stored as a top-level `portfolio` key in the user state file. Keys are equity tickers **or** option position ids.
 
 ```yaml
 user:
@@ -193,6 +193,7 @@ log:
   - ...
 portfolio:
   AAPL:
+    instrument: equity          # optional; omit = equity
     avg_price: 200.00
     units: 50
     category: SL Technology S1
@@ -200,10 +201,22 @@ portfolio:
     avg_price: 300.00
     units: 30
     category: SL Technology S1
-  GOOGL:
-    avg_price: 140.00
-    units: 40
-    category: SL Technology S1
+  # Short put: 1 contract × 100 shares, $265 premium/share, strike $90, expiry 2026-08-07
+  SPACEX-P-90-20260807-S:
+    instrument: option
+    avg_price: 265              # premium per share of underlying
+    units: 1                    # contracts
+    category: Private / Secondary
+    option:
+      right: put                # call | put
+      side: short               # long | short
+      strike: 90
+      expiry: "2026-08-07"
+      multiplier: 100           # shares per contract (US equity standard)
+      underlying: SPACEX        # public ticker or private name
+      settlement: physical      # physical | cash — required
+      mark: 265                 # current premium/share for MTM
+      # underlying_mark: 50     # optional scenario mark on the underlying
 
 # optional — omit to use balanced defaults
 playbook:
@@ -215,25 +228,60 @@ playbook:
     sector_exposure_pct: 35
 ```
 
-### Holding Shape
+### Holding Shape (equity)
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
+| `instrument` | `"equity"` | No | Omit or set `equity` (default) |
 | `avg_price` | number | Yes | Average cost per share in USD |
 | `units` | number | Yes | Number of shares owned |
 | `category` | string | No | Fund category (e.g. "SL Technology S1") |
+
+### Holding Shape (option)
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `instrument` | `"option"` | Yes | Must be `option` |
+| `avg_price` | number | Yes | **Premium per share** at trade (not total premium) |
+| `units` | number | Yes | Number of **contracts** |
+| `category` | string | No | e.g. `Private / Secondary` |
+| `option.right` | `call` \| `put` | Yes | Option type |
+| `option.side` | `long` \| `short` | Yes | Bought or written |
+| `option.strike` | number | Yes | Strike per share |
+| `option.expiry` | `YYYY-MM-DD` | Yes | Expiration |
+| `option.multiplier` | number | Yes | Shares per contract (**100** for standard US equity options) |
+| `option.underlying` | string | Yes | Public ticker or private name (`SPACEX`) |
+| `option.settlement` | `physical` \| `cash` | Yes | No silent default |
+| `option.mark` | number | Yes | Current premium/share for MTM (≥ 0) |
+| `option.underlying_mark` | number | No | Optional underlying price for scenarios |
+
+**Economics (options):**
+
+- Total premium = `avg_price × units × multiplier` (e.g. $265 × 1 × 100 = **$26,500**)
+- Direction: long = +1, short = −1
+- Cost (signed) = direction × premium total  
+- Value (signed MTM) = direction × `mark` × units × multiplier  
+- P/L = value − cost  
+- Short put contingent cash obligation = `strike × units × multiplier` (e.g. $90 × 100 = **$9,000**)  
+- Short call contingent share delivery = `units × multiplier` shares of underlying  
+
+**Position key:** if `ticker` is omitted on add, auto-built as  
+`{UNDERLYING}-{P|C}-{STRIKE}-{YYYYMMDD}-{L|S}`  
+e.g. `SPACEX-P-90-20260807-S`.
+
+**Pricing:** equities use Yahoo Finance live quotes. Options **never** fetch Yahoo under the contract key; valuation uses stored `mark` (works for private underlyings).
 
 ### Portfolio Tools
 
 | Tool | Auth | Description |
 |------|------|-------------|
-| `add_holding` | telegram_user_id | Add or update a position |
-| `remove_holding` | telegram_user_id | Remove a position |
-| `get_portfolio` | telegram_user_id | List all positions |
-| `update_holding` | telegram_user_id | Update specific fields |
-| `clear_portfolio` | telegram_user_id | Remove all positions (requires confirm) |
+| `add_holding` | channel id | Add or update equity **or** option (`instrument=option` + contract fields) |
+| `remove_holding` | channel id | Remove a position by portfolio key |
+| `get_portfolio` | channel id | List all positions (premium / obligation for options) |
+| `update_holding` | channel id | Update fields including option `mark` for MTM |
+| `clear_portfolio` | channel id | Remove all positions (requires confirm) |
 
-**Isolation**: Every tool resolves the user via `telegram_user_id` from the message context. The LLM never directly specifies which user file to access — the framework enforces it.
+**Isolation**: Every tool resolves the user via channel id from the message context. The LLM never directly specifies which user file to access — the framework enforces it.
 
 ---
 

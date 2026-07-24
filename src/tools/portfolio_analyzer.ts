@@ -8,6 +8,7 @@ import {
   assessValue,
   rankValueCandidates,
   COMPANIES,
+  equityKeys,
 } from '../market/index.js';
 import {
   defaultValueThresholds,
@@ -133,7 +134,7 @@ export function createPortfolioAnalyzerTool(): AgentTool {
           if (Object.keys(holdings).length === 0) {
             return fail('No portfolio saved. Use add_holding to build a portfolio first.');
           }
-          tickerList = Object.keys(holdings);
+          tickerList = equityKeys(holdings);
           const pb = getPlaybook(state);
           analysisTh = thresholdsForPlaybook(pb);
           valueTh = valueThresholdsFromPlaybook(analysisTh);
@@ -143,7 +144,7 @@ export function createPortfolioAnalyzerTool(): AgentTool {
             `max pos ${pb.risk.position_limit_pct}% sector ${pb.risk.sector_exposure_pct}%)\n\n`;
         } else if (params.holdings) {
           holdings = JSON.parse(params.holdings) as Record<string, Holding>;
-          tickerList = Object.keys(holdings);
+          tickerList = equityKeys(holdings);
         } else if (params.tickers) {
           tickerList = params.tickers.split(',').map((t) => t.trim().toUpperCase()).filter(Boolean);
           if (tickerList.length === 0) {
@@ -155,41 +156,89 @@ export function createPortfolioAnalyzerTool(): AgentTool {
           );
         }
 
-        const [prices, targets, metrics] = await Promise.all([
-          fetchPrices(tickerList),
-          fetchTargets(tickerList),
-          fetchMetrics(tickerList),
-        ]);
+        // Options use stored marks — only fetch Yahoo data for equity tickers.
+        const [prices, targets, metrics] =
+          tickerList.length > 0
+            ? await Promise.all([
+                fetchPrices(tickerList),
+                fetchTargets(tickerList),
+                fetchMetrics(tickerList),
+              ])
+            : [{}, {}, {} as Record<string, FinancialMetrics>];
 
-        const safeAssessments = tickerList.map((t) => {
-          const m = metrics[t];
-          if (!m) {
-            throw new Error(`portfolio_analyzer: metrics missing for ${t} after fetchMetrics`);
-          }
-          return assessValue(m, valueTh);
-        });
+        const safeAssessments =
+          tickerList.length > 0
+            ? tickerList.map((t) => {
+                const m = metrics[t];
+                if (!m) {
+                  throw new Error(`portfolio_analyzer: metrics missing for ${t} after fetchMetrics`);
+                }
+                return assessValue(m, valueTh);
+              })
+            : [];
 
         if (holdings) {
           const result = runFullAnalysis(holdings, prices, targets, analysisTh);
+          const optionRows = result.fullAnalysis.filter((s) => s.instrument === 'option');
+          const equityRows = result.fullAnalysis.filter((s) => s.instrument !== 'option');
 
           const buyLabel = analysisTh
             ? `BUY OPPORTUNITIES — ≥${analysisTh.buyMinUpsidePct}% Upside to Median`
             : 'BUY OPPORTUNITIES — ≥15% Upside to Median';
-          let output = `Portfolio Analysis — ${result.fullAnalysis.length} positions\n\n`;
+          let output = `Portfolio Analysis — ${result.fullAnalysis.length} positions`;
+          output += ` (${equityRows.length} equity, ${optionRows.length} option)\n\n`;
           output += playbookNote;
           output += formatAnalysisSection('LAGGARDS — Cost > Analyst High Target', '🔴', result.laggards);
           output += formatAnalysisSection('OVERPRICED — Price Above Median Target', '🟡', result.overpriced);
           output += formatAnalysisSection(buyLabel, '🟢', result.buyOpportunities);
+
+          if (optionRows.length > 0) {
+            output += '── OPTIONS ──\n';
+            let contingentCash = 0;
+            let premiumCollected = 0;
+            let premiumPaid = 0;
+            for (const s of optionRows) {
+              const o = s.option;
+              if (!o) continue;
+              output += `  ${s.ticker}\n`;
+              output += `    ${s.company}\n`;
+              output += `    Premium abs: $${(s.premiumAbsolute ?? 0).toFixed(2)} (${o.side}) | Mark: $${s.price.toFixed(2)}/sh\n`;
+              output += `    MTM value: $${s.value.toFixed(2)} | P/L: ${s.pl >= 0 ? '+' : ''}$${s.pl.toFixed(2)} (${s.plPct >= 0 ? '+' : ''}${s.plPct.toFixed(1)}%)\n`;
+              if ((s.contingentCashObligation ?? 0) > 0) {
+                output += `    Contingent cash obligation: $${s.contingentCashObligation!.toFixed(2)}\n`;
+                contingentCash += s.contingentCashObligation!;
+              }
+              if ((s.contingentShareObligation ?? 0) > 0) {
+                output += `    Contingent share delivery: ${s.contingentShareObligation} ${o.underlying}\n`;
+              }
+              if (o.side === 'short') premiumCollected += s.premiumAbsolute ?? 0;
+              else premiumPaid += s.premiumAbsolute ?? 0;
+              output += '\n';
+            }
+            if (premiumCollected > 0) {
+              output += `  Premium collected (shorts): $${premiumCollected.toFixed(2)}\n`;
+            }
+            if (premiumPaid > 0) {
+              output += `  Premium paid (longs): $${premiumPaid.toFixed(2)}\n`;
+            }
+            if (contingentCash > 0) {
+              output += `  Total contingent cash obligation: $${contingentCash.toFixed(2)}\n`;
+            }
+            output += '\n';
+          }
 
           output += formatValueSection(safeAssessments);
 
           output += '── FULL PORTFOLIO (by P/L) ──\n';
           const sorted = [...result.fullAnalysis].sort((a, b) => b.plPct - a.plPct);
           for (const s of sorted) {
-            output += `  ${s.ticker.padEnd(6)} ${s.company.padEnd(28)} ${s.plPct >= 0 ? '+' : ''}${s.plPct.toFixed(1)}% ($${s.price.toFixed(2)})\n`;
-            const m = metrics[s.ticker];
-            if (m) {
-              output += formatMetricsBlock(m) + '\n';
+            const tag = s.instrument === 'option' ? 'OPT' : 'EQ ';
+            output += `  [${tag}] ${s.ticker.padEnd(22)} ${s.company.padEnd(36)} ${s.plPct >= 0 ? '+' : ''}${s.plPct.toFixed(1)}% (mark $${s.price.toFixed(2)})\n`;
+            if (s.instrument !== 'option') {
+              const m = metrics[s.ticker];
+              if (m) {
+                output += formatMetricsBlock(m) + '\n';
+              }
             }
           }
 

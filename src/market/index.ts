@@ -20,11 +20,28 @@ export {
 export type { ValueThresholds } from './value-assess.js';
 export { COMPANIES, BENCHMARKS, THRESHOLDS } from './config.js';
 export { defaultAnalysisThresholds } from './analyzer.js';
+export {
+  isOptionHolding,
+  equityKeys,
+  optionKeys,
+  buildOptionKey,
+  formatOptionLabel,
+  assertHolding,
+  assertOptionSpec,
+  valuePosition,
+  valuePortfolio,
+} from './position-value.js';
+export type { PositionEconomics } from './position-value.js';
 export type {
   MarketQuote,
   AnalystTarget,
   FinancialMetrics,
   Holding,
+  OptionSpec,
+  InstrumentKind,
+  OptionRight,
+  OptionSide,
+  OptionSettlement,
   PositionAnalysis,
   AnalysisResult,
   ValueAssessment,

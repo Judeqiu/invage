@@ -144,7 +144,7 @@ src/
 
 | Tool | Role |
 |------|------|
-| `add_holding` / `update_holding` / `remove_holding` / `get_portfolio` / `clear_portfolio` | Portfolio CRUD on `data/users/<slug>.yaml` |
+| `add_holding` / `update_holding` / `remove_holding` / `get_portfolio` / `clear_portfolio` | Portfolio CRUD (equities + options call/put) on `data/users/<slug>.yaml` |
 | `portfolio_analyzer` | 3-axis analysis + market summary |
 | `save_report` | HTML report → BinDrive + signed URL (`kind=analysis` default, or `kind=dashboard` for value-change dashboard) |
 | `save_snapshot` / `list_snapshots` | Dated P/L JSON snapshots (feed dashboard history) |

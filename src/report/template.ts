@@ -34,23 +34,72 @@ function sectionRows(positions: PositionAnalysis[], showMetric: 'upside' | 'prem
 function fullPortfolioRows(positions: PositionAnalysis[]): string {
   return [...positions]
     .sort((a, b) => b.plPct - a.plPct)
-    .map((s, i) => `<tr>
+    .map((s, i) => {
+      const kind = s.instrument === 'option' ? 'OPT' : 'EQ';
+      return `<tr>
       <td style="padding:6px 10px;border-bottom:1px solid #21262d;color:#8b949e">${i + 1}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid #21262d;color:#8b949e;font-size:11px">${kind}</td>
       <td style="padding:6px 10px;border-bottom:1px solid #21262d;font-weight:600">${escapeHtml(s.ticker)}</td>
       <td style="padding:6px 10px;border-bottom:1px solid #21262d;color:#8b949e">${escapeHtml(s.company)}</td>
       <td style="padding:6px 10px;border-bottom:1px solid #21262d">${formatUsd(s.avgCost)}</td>
       <td style="padding:6px 10px;border-bottom:1px solid #21262d">${formatUsd(s.price)}</td>
       <td style="padding:6px 10px;border-bottom:1px solid #21262d;${s.plPct >= 0 ? 'color:#3fb950' : 'color:#f85149'}">${formatPct(s.plPct)}</td>
       <td style="padding:6px 10px;border-bottom:1px solid #21262d;${s.pl >= 0 ? 'color:#3fb950' : 'color:#f85149'}">${formatUsd(s.pl)}</td>
-    </tr>`)
+    </tr>`;
+    })
     .join('\n');
+}
+
+function optionsSection(positions: PositionAnalysis[]): string {
+  const opts = positions.filter((s) => s.instrument === 'option');
+  if (opts.length === 0) return '';
+  let contingentCash = 0;
+  let premiumCollected = 0;
+  let premiumPaid = 0;
+  const rows = opts
+    .map((s) => {
+      const o = s.option;
+      contingentCash += s.contingentCashObligation ?? 0;
+      if (o?.side === 'short') premiumCollected += s.premiumAbsolute ?? 0;
+      else premiumPaid += s.premiumAbsolute ?? 0;
+      const oblig =
+        (s.contingentCashObligation ?? 0) > 0
+          ? formatUsd(s.contingentCashObligation!)
+          : (s.contingentShareObligation ?? 0) > 0
+            ? `${s.contingentShareObligation} sh`
+            : '—';
+      return `<tr>
+      <td style="padding:6px 10px;border-bottom:1px solid #21262d;font-weight:600">${escapeHtml(s.ticker)}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid #21262d;color:#8b949e">${escapeHtml(s.company)}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid #21262d">${formatUsd(s.premiumAbsolute ?? 0)}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid #21262d">${formatUsd(s.price)}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid #21262d">${formatUsd(s.value)}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid #21262d;${s.pl >= 0 ? 'color:#3fb950' : 'color:#f85149'}">${formatUsd(s.pl)}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid #21262d;color:#f0883e">${oblig}</td>
+    </tr>`;
+    })
+    .join('\n');
+  return `<div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px;margin-bottom:20px;border-left:4px solid #a371f7">
+  <h2 style="font-size:16px;margin:0 0 8px">Options (${opts.length})</h2>
+  <p style="color:#8b949e;font-size:12px;margin:0 0 12px">
+    Premium collected: ${formatUsd(premiumCollected)} · Paid: ${formatUsd(premiumPaid)} ·
+    Contingent cash obligation: ${formatUsd(contingentCash)}
+  </p>
+  <table style="width:100%;border-collapse:collapse;font-size:13px">
+    <tr style="text-align:left;color:#8b949e;font-size:11px">
+      <th style="padding:6px 10px">Key</th><th>Contract</th><th>Premium $</th><th>Mark</th><th>MTM</th><th>P/L</th><th>Obligation</th>
+    </tr>
+    ${rows}
+  </table>
+</div>`;
 }
 
 export function buildAnalysisReport(result: AnalysisResult, userName: string): string {
   const totalCost = result.fullAnalysis.reduce((sum, s) => sum + s.cost, 0);
   const totalValue = result.fullAnalysis.reduce((sum, s) => sum + s.value, 0);
   const totalPL = totalValue - totalCost;
-  const totalPLPct = totalCost > 0 ? (totalPL / totalCost) * 100 : 0;
+  const totalPLPct = totalCost !== 0 ? (totalPL / Math.abs(totalCost)) * 100 : 0;
+  const optionCount = result.fullAnalysis.filter((s) => s.instrument === 'option').length;
   const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
 
   return `<!DOCTYPE html>
@@ -66,6 +115,7 @@ export function buildAnalysisReport(result: AnalysisResult, userName: string): s
   <div style="flex:1;min-width:140px;background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px;text-align:center">
     <div style="color:#8b949e;font-size:12px;margin-bottom:4px">POSITIONS</div>
     <div style="font-size:28px;font-weight:700">${result.fullAnalysis.length}</div>
+    ${optionCount > 0 ? `<div style="color:#8b949e;font-size:11px;margin-top:4px">${optionCount} option</div>` : ''}
   </div>
   <div style="flex:1;min-width:140px;background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px;text-align:center">
     <div style="color:#8b949e;font-size:12px;margin-bottom:4px">TOTAL VALUE</div>
@@ -81,6 +131,8 @@ export function buildAnalysisReport(result: AnalysisResult, userName: string): s
     <div style="font-size:28px;font-weight:700;color:#3fb950">${result.buyOpportunities.length}</div>
   </div>
 </div>
+
+${optionsSection(result.fullAnalysis)}
 
 <div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px;margin-bottom:20px;border-left:4px solid #f85149">
   <h2 style="font-size:16px;margin:0 0 12px">🔴 Laggards — Cost > Analyst High Target (${result.laggards.length})</h2>
@@ -116,14 +168,14 @@ export function buildAnalysisReport(result: AnalysisResult, userName: string): s
   <h2 style="font-size:16px;margin:0 0 12px">Full Portfolio (${result.fullAnalysis.length})</h2>
   <table style="width:100%;border-collapse:collapse;font-size:13px">
     <tr style="text-align:left;color:#8b949e;font-size:11px">
-      <th style="padding:6px 10px">#</th><th>Ticker</th><th>Company</th><th>Cost</th><th>Price</th><th>P/L %</th><th>P/L $</th>
+      <th style="padding:6px 10px">#</th><th>Type</th><th>Ticker</th><th>Company</th><th>Avg/Prem</th><th>Mark</th><th>P/L %</th><th>P/L $</th>
     </tr>
     ${fullPortfolioRows(result.fullAnalysis)}
   </table>
 </div>
 
 <p style="color:#8b949e;font-size:11px;text-align:center;margin-top:24px">
-  Generated by Invester · Data from Yahoo Finance · Not financial advice
+  Generated by Invester · Equities: Yahoo Finance · Options: stored marks · Not financial advice
 </p>
 
 </div>

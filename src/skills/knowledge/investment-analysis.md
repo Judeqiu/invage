@@ -85,7 +85,7 @@ Every linked user has an **Investment Playbook** (strategy, philosophy, risk, al
 
 | Need | Tool |
 |------|------|
-| Holdings, cost, units | `get_portfolio` |
+| Holdings, cost, units, **options** (call/put, premium, obligation) | `get_portfolio` / `add_holding` with `instrument=option` |
 | Strategy / risk / buy-sell methodology | `get_playbook` / `update_playbook` |
 | Live price, P/L, PE/PEG/ROE/P/B, analyst targets | `portfolio_analyzer` (Yahoo Finance; uses playbook thresholds for channel users) |
 | EV/EBIT, FCF, enterprise value, detailed stats | Load **`firecrawl`** → Yahoo `/key-statistics`, Finviz quote |

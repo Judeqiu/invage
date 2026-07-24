@@ -1,6 +1,7 @@
 import { COMPANIES, THRESHOLDS } from './config.js';
 import type { PlaybookThresholds } from '../playbook/thresholds.js';
 import type { Holding, PositionAnalysis, AnalystTarget, AnalysisResult } from './types.js';
+import { isOptionHolding, valuePosition } from './position-value.js';
 
 /** Default thresholds when no playbook is supplied (matches global THRESHOLDS). */
 export function defaultAnalysisThresholds(): Pick<
@@ -30,16 +31,50 @@ export function buildAnalysis(
   const analysis: PositionAnalysis[] = [];
 
   for (const [ticker, h] of Object.entries(holdings)) {
-    const price = prices[ticker] ?? 0;
-    const avg = h.avg_price;
-    const units = h.units;
-    const cost = avg * units;
-    const category = h.category ?? 'Unknown';
-    const value = units * price;
-    const pl = value - cost;
-    const plPct = cost > 0 ? (pl / cost) * 100 : 0;
+    if (isOptionHolding(h)) {
+      const e = valuePosition(ticker, h);
+      analysis.push({
+        ticker,
+        company: e.label,
+        category: e.category,
+        price: e.price,
+        avgCost: e.avgCost,
+        units: e.units,
+        cost: e.cost,
+        value: e.value,
+        pl: e.pl,
+        plPct: e.plPct,
+        targetLow: null,
+        targetMedian: null,
+        targetMean: null,
+        targetHigh: null,
+        upsideToMedian: null,
+        upsideToMean: null,
+        costVsHigh: null,
+        currentVsCost: e.avgCost > 0 ? ((e.price - e.avgCost) / e.avgCost) * 100 : null,
+        instrument: 'option',
+        option: e.option,
+        contingentCashObligation: e.contingentCashObligation,
+        contingentShareObligation: e.contingentShareObligation,
+        premiumAbsolute: e.premiumAbsolute,
+      });
+      continue;
+    }
 
-    const t = targets[ticker] ?? {};
+    const price = prices[ticker];
+    if (price == null || !Number.isFinite(price)) {
+      throw new Error(`Missing market price for ${ticker}. Cannot analyze equity position.`);
+    }
+    const e = valuePosition(ticker, h, price);
+    const avg = h.avg_price;
+
+    const t = targets[ticker] ?? {
+      ticker,
+      targetLowPrice: null,
+      targetMedianPrice: null,
+      targetMeanPrice: null,
+      targetHighPrice: null,
+    };
     const low = t.targetLowPrice ?? null;
     const median = t.targetMedianPrice ?? null;
     const mean = t.targetMeanPrice ?? null;
@@ -53,14 +88,14 @@ export function buildAnalysis(
     analysis.push({
       ticker,
       company: COMPANIES[ticker] ?? ticker,
-      category,
+      category: e.category,
       price,
       avgCost: avg,
-      units,
-      cost,
-      value,
-      pl,
-      plPct,
+      units: h.units,
+      cost: e.cost,
+      value: e.value,
+      pl: e.pl,
+      plPct: e.plPct,
       targetLow: low,
       targetMedian: median,
       targetMean: mean,
@@ -69,6 +104,7 @@ export function buildAnalysis(
       upsideToMean,
       costVsHigh,
       currentVsCost,
+      instrument: 'equity',
     });
   }
 
@@ -115,12 +151,16 @@ function classifyOpportunity(
   return `WATCH — Interesting, ≥${t.buyMinUpsidePct}% upside`;
 }
 
+function isEquityRow(s: PositionAnalysis): boolean {
+  return s.instrument !== 'option';
+}
+
 export function analyzeLaggards(
   analysis: PositionAnalysis[],
   thresholds: ReturnType<typeof defaultAnalysisThresholds> = defaultAnalysisThresholds(),
 ): PositionAnalysis[] {
   return analysis
-    .filter((s) => s.targetHigh != null && s.avgCost > s.targetHigh!)
+    .filter((s) => isEquityRow(s) && s.targetHigh != null && s.avgCost > s.targetHigh!)
     .map((s) => ({
       ...s,
       recommendation: classifyLaggard((s.price - s.avgCost) / s.avgCost * 100, thresholds),
@@ -133,7 +173,7 @@ export function analyzeOverpriced(
   thresholds: ReturnType<typeof defaultAnalysisThresholds> = defaultAnalysisThresholds(),
 ): PositionAnalysis[] {
   return analysis
-    .filter((s) => s.targetMedian != null && s.price > s.targetMedian!)
+    .filter((s) => isEquityRow(s) && s.targetMedian != null && s.price > s.targetMedian!)
     .map((s) => ({
       ...s,
       recommendation: classifyOverpriced(s.price, s.targetMedian!, thresholds),
@@ -147,6 +187,7 @@ export function analyzeBuyOpportunities(
 ): PositionAnalysis[] {
   return analysis
     .filter((s) => {
+      if (!isEquityRow(s)) return false;
       if (s.targetMedian == null || s.price >= s.targetMedian) return false;
       const upside = s.upsideToMedian ?? 0;
       return upside >= thresholds.buyMinUpsidePct;

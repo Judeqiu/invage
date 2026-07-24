@@ -51,10 +51,51 @@ export interface FinancialMetrics {
   fetchError?: string;
 }
 
+/** Equity share position or option contract position. */
+export type InstrumentKind = 'equity' | 'option';
+export type OptionRight = 'call' | 'put';
+export type OptionSide = 'long' | 'short';
+export type OptionSettlement = 'physical' | 'cash';
+
+/**
+ * Option contract fields. Premiums are per share of underlying;
+ * total cash = premium × units × multiplier (units = contracts).
+ */
+export interface OptionSpec {
+  right: OptionRight;
+  side: OptionSide;
+  /** Strike price per share of underlying. */
+  strike: number;
+  /** Expiry date YYYY-MM-DD. */
+  expiry: string;
+  /** Shares per contract (US equity options: 100). */
+  multiplier: number;
+  /** Underlying symbol (public ticker or private name, e.g. SPACEX). */
+  underlying: string;
+  /** Settlement style — required, no silent default. */
+  settlement: OptionSettlement;
+  /**
+   * Current option premium mark per share (for MTM).
+   * Required for valuation. Set to trade premium at entry if no live quote.
+   */
+  mark: number;
+  /** Optional underlying price mark (private names / scenario work). */
+  underlying_mark?: number;
+}
+
+/**
+ * Portfolio holding.
+ * - Equity (default when instrument omitted): avg_price = cost/share, units = shares.
+ * - Option: avg_price = premium/share at trade, units = contracts; option fields required.
+ */
 export interface Holding {
   avg_price: number;
   units: number;
   category?: string;
+  /** Omit or "equity" for stocks; "option" for calls/puts. */
+  instrument?: InstrumentKind;
+  /** Required when instrument === "option". */
+  option?: OptionSpec;
 }
 
 export interface PositionAnalysis {
@@ -77,6 +118,12 @@ export interface PositionAnalysis {
   costVsHigh: number | null;
   currentVsCost: number | null;
   recommendation?: string;
+  /** Present when this row is an option contract. */
+  instrument?: InstrumentKind;
+  option?: OptionSpec;
+  contingentCashObligation?: number;
+  contingentShareObligation?: number;
+  premiumAbsolute?: number;
 }
 
 export interface AnalysisResult {
