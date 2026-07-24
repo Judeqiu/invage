@@ -223,7 +223,8 @@ const analysis = (): string =>
   [
     '*Investment analysis system*',
     '',
-    'Skill: *investment-analysis* · Tool: *portfolio_analyzer* (Yahoo Finance live data)',
+    'Skill: *investment-analysis* · Tools: *get_quote* (live price) · *portfolio_analyzer* (3-axis + metrics)',
+    'Price questions → always `get_quote` this turn (never reuse chat/snapshot prices; never report prevClose as live).',
     '',
     'I use three layers. Use plain English; I load the skill and tools for you.',
     '',
