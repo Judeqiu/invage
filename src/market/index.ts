@@ -1,4 +1,12 @@
-export { fetchPrices, fetchQuote } from './fetch-prices.js';
+export {
+  fetchPrices,
+  fetchQuote,
+  fetchPriceSnapshots,
+  pickCurrentPrice,
+  snapshotFromYahooQuote,
+  formatPriceSnapshot,
+} from './fetch-prices.js';
+export type { YahooPriceSnapshot } from './fetch-prices.js';
 export { fetchHistoricalCloses } from './fetch-history.js';
 export { fetchTargets } from './fetch-targets.js';
 export { fetchMetrics } from './fetch-metrics.js';

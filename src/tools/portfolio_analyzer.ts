@@ -2,6 +2,8 @@ import { Type } from 'typebox';
 import type { AgentTool, AgentToolResult } from '@earendil-works/pi-agent-core';
 import {
   fetchPrices,
+  fetchPriceSnapshots,
+  formatPriceSnapshot,
   fetchTargets,
   fetchMetrics,
   runFullAnalysis,
@@ -11,7 +13,7 @@ import {
   equityKeys,
   resolvePortfolioMarket,
 } from '../market/index.js';
-import type { OptionLiveMark } from '../market/index.js';
+import type { OptionLiveMark, YahooPriceSnapshot } from '../market/index.js';
 import {
   defaultValueThresholds,
   valueThresholdsFromPlaybook,
@@ -159,6 +161,7 @@ export function createPortfolioAnalyzerTool(): AgentTool {
         }
 
         let prices: Record<string, number> = {};
+        let priceSnapshots: Record<string, YahooPriceSnapshot> = {};
         let targets: Awaited<ReturnType<typeof fetchTargets>> = {};
         let metrics: Record<string, FinancialMetrics> = {};
         let valuedHoldings = holdings;
@@ -170,20 +173,29 @@ export function createPortfolioAnalyzerTool(): AgentTool {
           prices = resolved.equityPrices;
           optionMarks = resolved.optionMarks;
           if (tickerList.length > 0) {
-            const [t, m] = await Promise.all([
+            const [snaps, t, m] = await Promise.all([
+              fetchPriceSnapshots(tickerList),
               fetchTargets(tickerList),
               fetchMetrics(tickerList),
             ]);
+            priceSnapshots = snaps;
+            // Prefer snapshot prices (explicit field selection) over bare quote map
+            for (const [tk, snap] of Object.entries(snaps)) {
+              prices[tk] = snap.price;
+            }
             targets = t;
             metrics = m;
           }
         } else if (tickerList.length > 0) {
-          const [p, t, m] = await Promise.all([
-            fetchPrices(tickerList),
+          const [snaps, t, m] = await Promise.all([
+            fetchPriceSnapshots(tickerList),
             fetchTargets(tickerList),
             fetchMetrics(tickerList),
           ]);
-          prices = p;
+          priceSnapshots = snaps;
+          for (const [tk, snap] of Object.entries(snaps)) {
+            prices[tk] = snap.price;
+          }
           targets = t;
           metrics = m;
         }
@@ -278,8 +290,11 @@ export function createPortfolioAnalyzerTool(): AgentTool {
         }
 
         let output = `Market Data for ${tickerList.join(', ')}\n\n`;
+        output +=
+          'Price fields: use "Price" as current MTM — do NOT report prevClose as the live price.\n\n';
         for (const ticker of tickerList) {
           const price = prices[ticker];
+          const snap = priceSnapshots[ticker];
           const t = targets[ticker] ?? {};
           const m = metrics[ticker];
           if (!m) {
@@ -288,7 +303,13 @@ export function createPortfolioAnalyzerTool(): AgentTool {
           const a = assessValue(m, valueTh);
           const name = COMPANIES[ticker] ?? m.shortName ?? ticker;
           output += `${ticker} (${name})\n`;
-          output += `  Price: ${price != null ? '$' + price.toFixed(2) : 'N/A'}`;
+          if (snap) {
+            output += `  ${formatPriceSnapshot(snap)}\n`;
+          }
+          output += `  Price (use this): ${price != null ? '$' + price.toFixed(2) : 'N/A'}`;
+          if (snap?.previousClose != null) {
+            output += ` | prevClose: $${snap.previousClose.toFixed(2)} (NOT live)`;
+          }
           output += ` | Median Target: ${t.targetMedianPrice != null ? '$' + t.targetMedianPrice.toFixed(2) : 'N/A'}`;
           if (price && t.targetMedianPrice) {
             const upside = (((t.targetMedianPrice - price) / price) * 100).toFixed(1);
@@ -306,6 +327,7 @@ export function createPortfolioAnalyzerTool(): AgentTool {
 
         return ok(output, {
           prices,
+          priceSnapshots,
           targets,
           metrics,
           valueAssessments: safeAssessments,
