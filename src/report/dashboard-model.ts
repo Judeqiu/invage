@@ -1,4 +1,5 @@
 import type { Holding, InstrumentKind, OptionSpec } from '../market/types.js';
+import type { OptionLiveMark } from '../market/fetch-option-marks.js';
 import { valuePortfolio, type PositionEconomics } from '../market/position-value.js';
 import type { Snapshot, SnapshotPosition } from '../state/snapshot.js';
 
@@ -20,6 +21,10 @@ export interface LivePosition {
   contingentCashObligation: number;
   contingentShareObligation: number;
   category: string;
+  /** Option only: where the mark came from. */
+  markSource?: 'manual' | 'yahoo';
+  markNote?: string;
+  contractSymbol?: string;
 }
 
 export interface HistoryRow {
@@ -75,7 +80,11 @@ export interface DashboardModel {
   lastSnapshot: { date: string; totalValue: number } | null;
 }
 
-function economicsToLive(e: PositionEconomics, weightPct: number): LivePosition {
+function economicsToLive(
+  e: PositionEconomics,
+  weightPct: number,
+  markMeta?: OptionLiveMark,
+): LivePosition {
   return {
     ticker: e.key,
     label: e.label,
@@ -93,17 +102,22 @@ function economicsToLive(e: PositionEconomics, weightPct: number): LivePosition 
     contingentCashObligation: e.contingentCashObligation,
     contingentShareObligation: e.contingentShareObligation,
     category: e.category,
+    markSource: markMeta?.source,
+    markNote: markMeta?.note,
+    contractSymbol: markMeta?.contractSymbol,
   };
 }
 
 /**
  * Build live positions from portfolio + equity prices.
- * Option positions use stored option.mark (no Yahoo fetch).
+ * Option positions use option.mark on the holding (apply Yahoo marks before calling).
+ * Pass optionMarks to annotate source on LivePosition.
  * Fails if portfolio empty or any equity ticker lacks a price.
  */
 export function buildLivePositions(
   portfolio: Record<string, Holding>,
   prices: Record<string, number>,
+  optionMarks?: Record<string, OptionLiveMark>,
 ): {
   positions: LivePosition[];
   totalValue: number;
@@ -131,7 +145,11 @@ export function buildLivePositions(
 
   const positions: LivePosition[] = economics
     .map((e) =>
-      economicsToLive(e, absSum > 0 ? (Math.abs(e.value) / absSum) * 100 : 0),
+      economicsToLive(
+        e,
+        absSum > 0 ? (Math.abs(e.value) / absSum) * 100 : 0,
+        optionMarks?.[e.key],
+      ),
     )
     .sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
 

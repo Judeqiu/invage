@@ -2,7 +2,12 @@ import { Type } from 'typebox';
 import type { AgentTool, AgentToolResult } from '@earendil-works/pi-agent-core';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { equityKeys, fetchPrices, fetchTargets, runFullAnalysis } from '../market/index.js';
+import {
+  equityKeys,
+  fetchTargets,
+  resolvePortfolioMarket,
+  runFullAnalysis,
+} from '../market/index.js';
 import { getPortfolio } from '../state/portfolio-state.js';
 import { loadSnapshots } from '../state/snapshot.js';
 import { buildAnalysisReport } from '../report/template.js';
@@ -103,20 +108,21 @@ export function createSendReportTool(): AgentTool {
 
           const eqKeys = equityKeys(portfolio);
           const userName = state.profile.display_name;
+          const { portfolio: valued, equityPrices, optionMarks } =
+            await resolvePortfolioMarket(portfolio);
 
           if (kind === 'dashboard') {
-            const prices = eqKeys.length > 0 ? await fetchPrices(eqKeys) : {};
-            const live = buildLivePositions(portfolio, prices);
+            const live = buildLivePositions(valued, equityPrices, optionMarks);
             const snapshots = loadSnapshots(state.user.slug);
             const model = buildDashboardModel(live, snapshots);
             htmlBody = buildDashboardReport(model, userName);
             subject = p.subject ?? `Portfolio Dashboard — ${userName}`;
           } else {
-            const [prices, targets] =
+            const targets =
               eqKeys.length > 0
-                ? await Promise.all([fetchPrices(eqKeys), fetchTargets(eqKeys)])
-                : [{}, {} as Awaited<ReturnType<typeof fetchTargets>>];
-            const result = runFullAnalysis(portfolio, prices, targets);
+                ? await fetchTargets(eqKeys)
+                : ({} as Awaited<ReturnType<typeof fetchTargets>>);
+            const result = runFullAnalysis(valued, equityPrices, targets);
             htmlBody = buildAnalysisReport(result, userName);
             subject = p.subject ?? `Portfolio Analysis Report — ${userName}`;
           }

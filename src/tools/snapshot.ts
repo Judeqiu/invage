@@ -3,7 +3,7 @@ import type { AgentTool, AgentToolResult } from '@earendil-works/pi-agent-core';
 import { writeFileSync, mkdirSync, existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { resolveDataRoot } from 'utarus';
-import { equityKeys, fetchPrices, valuePortfolio } from '../market/index.js';
+import { resolvePortfolioMarket, valuePortfolio } from '../market/index.js';
 import { getPortfolio } from '../state/portfolio-state.js';
 import {
   loadSnapshotIndex,
@@ -45,9 +45,9 @@ export function createSnapshotTool(): AgentTool[] {
           return fail('No portfolio saved. Use add_holding to build a portfolio first.');
         }
 
-        const eqKeys = equityKeys(portfolio);
-        const prices = eqKeys.length > 0 ? await fetchPrices(eqKeys) : {};
-        const economics = valuePortfolio(portfolio, prices);
+        const { portfolio: valued, equityPrices, optionMarks } =
+          await resolvePortfolioMarket(portfolio);
+        const economics = valuePortfolio(valued, equityPrices);
 
         const positions: SnapshotPosition[] = economics.map((e) => ({
           ticker: e.key,
@@ -64,6 +64,12 @@ export function createSnapshotTool(): AgentTool[] {
           contingentCashObligation: e.contingentCashObligation,
           contingentShareObligation: e.contingentShareObligation,
           ...(e.option ? { option: e.option } : {}),
+          ...(optionMarks[e.key]
+            ? {
+                markSource: optionMarks[e.key].source,
+                contractSymbol: optionMarks[e.key].contractSymbol,
+              }
+            : {}),
         }));
 
         const totalValue = positions.reduce((s, pos) => s + pos.value, 0);

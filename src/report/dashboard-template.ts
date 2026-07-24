@@ -31,12 +31,18 @@ function holdingRows(positions: LivePosition[]): string {
         p.instrument === 'option'
           ? `${p.units} ct` + (p.option ? ` ×${p.option.multiplier}` : '')
           : String(p.units);
+      const markSrc =
+        p.instrument === 'option'
+          ? p.markSource === 'yahoo'
+            ? `<div style="font-size:10px;color:#8b949e">yahoo${p.contractSymbol ? ' · ' + escapeHtml(p.contractSymbol) : ''}</div>`
+            : `<div style="font-size:10px;color:#8b949e">manual mark</div>`
+          : '';
       return `<tr>
       <td style="padding:6px 10px;border-bottom:1px solid #21262d;color:#8b949e;font-size:11px">${kind}</td>
       <td style="padding:6px 10px;border-bottom:1px solid #21262d;font-weight:600">${escapeHtml(name)}<div style="font-size:11px;color:#8b949e;font-weight:400">${escapeHtml(p.ticker)}</div></td>
       <td style="padding:6px 10px;border-bottom:1px solid #21262d">${escapeHtml(unitsLabel)}</td>
       <td style="padding:6px 10px;border-bottom:1px solid #21262d">${formatUsd(p.avgCost)}</td>
-      <td style="padding:6px 10px;border-bottom:1px solid #21262d">${formatUsd(p.price)}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid #21262d">${formatUsd(p.price)}${markSrc}</td>
       <td style="padding:6px 10px;border-bottom:1px solid #21262d">${formatUsd(p.value)}</td>
       <td style="padding:6px 10px;border-bottom:1px solid #21262d;color:#8b949e">${p.weightPct.toFixed(1)}%</td>
       <td style="padding:6px 10px;border-bottom:1px solid #21262d;${signedColor(p.pl)}">${formatUsd(p.pl)}</td>
@@ -198,8 +204,9 @@ ${optionsBlock}
 <div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px;margin-bottom:20px">
   <h2 style="font-size:16px;margin:0 0 12px">Holdings (${live.positionCount})</h2>
   <p style="color:#8b949e;font-size:12px;margin:0 0 12px">
-    Options: avg / mark = premium <strong>$ per contract</strong> (not ×100 again); units = contracts; short MTM = −mark until closed.
-    Contingent obligation (if assigned) is separate from live MTM — shown in the options cards above.
+    Options: avg / mark = premium <strong>$ per contract</strong>; units = contracts; short MTM = −mark until closed.
+    Listed underlyings: mark from <strong>Yahoo options chain</strong> when available; private/OTC: stored manual mark.
+    Contingent obligation (if assigned) is separate from live MTM.
   </p>
   <table style="width:100%;border-collapse:collapse;font-size:13px">
     <tr style="text-align:left;color:#8b949e;font-size:11px">

@@ -32,6 +32,18 @@ export {
   valuePortfolio,
 } from './position-value.js';
 export type { PositionEconomics } from './position-value.js';
+export {
+  fetchOptionMarks,
+  applyOptionMarks,
+  resolvePortfolioForValuation,
+  pickPerSharePremium,
+  perShareToContractMark,
+  findYahooContract,
+  toDateKey,
+} from './fetch-option-marks.js';
+export type { OptionLiveMark, OptionMarkSource, YahooContractRow } from './fetch-option-marks.js';
+export { resolvePortfolioMarket } from './resolve-portfolio.js';
+export type { ResolvedPortfolioMarket } from './resolve-portfolio.js';
 export type {
   MarketQuote,
   AnalystTarget,
@@ -42,6 +54,7 @@ export type {
   OptionRight,
   OptionSide,
   OptionSettlement,
+  OptionQuoteSource,
   PositionAnalysis,
   AnalysisResult,
   ValueAssessment,

@@ -56,6 +56,13 @@ export type InstrumentKind = 'equity' | 'option';
 export type OptionRight = 'call' | 'put';
 export type OptionSide = 'long' | 'short';
 export type OptionSettlement = 'physical' | 'cash';
+/**
+ * Where option MTM comes from.
+ * - manual: always use stored mark (private/OTC, or force manual)
+ * - yahoo: require a matching Yahoo options-chain contract (fail if missing)
+ * - omit: auto — Yahoo when chain matches; otherwise stored mark (private)
+ */
+export type OptionQuoteSource = 'manual' | 'yahoo';
 
 /**
  * Option contract fields.
@@ -63,6 +70,8 @@ export type OptionSettlement = 'physical' | 'cash';
  * Premium convention: avg_price / mark are **total dollars per contract**
  * (what you paid or received for one contract). Multiplier only sizes
  * assignment obligation (shares), never multiplies premium again.
+ *
+ * Yahoo lastPrice is per share → live mark = lastPrice (or mid) × multiplier.
  *
  * Example short put: 1 contract, $265 premium total, strike $90, mult 100
  * → premium cash $265; contingent buy $9,000 if assigned; open MTM = −mark.
@@ -82,10 +91,16 @@ export interface OptionSpec {
   settlement: OptionSettlement;
   /**
    * Current option premium mark in **dollars per contract** (to close).
-   * Required for MTM. Set to trade premium at entry if no live quote.
+   * Required. Used for MTM when quote_source is manual or Yahoo has no match (auto).
    * Open short is not "triggered" until assigned — mark is option premium, not strike loss.
    */
   mark: number;
+  /**
+   * manual = stored mark only.
+   * yahoo = live Yahoo chain required.
+   * omit = auto (Yahoo if listed contract found, else stored mark).
+   */
+  quote_source?: OptionQuoteSource;
   /** Optional underlying price mark (private names / scenario work). */
   underlying_mark?: number;
 }

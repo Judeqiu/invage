@@ -9,7 +9,9 @@ import {
   rankValueCandidates,
   COMPANIES,
   equityKeys,
+  resolvePortfolioMarket,
 } from '../market/index.js';
+import type { OptionLiveMark } from '../market/index.js';
 import {
   defaultValueThresholds,
   valueThresholdsFromPlaybook,
@@ -156,15 +158,35 @@ export function createPortfolioAnalyzerTool(): AgentTool {
           );
         }
 
-        // Options use stored marks — only fetch Yahoo data for equity tickers.
-        const [prices, targets, metrics] =
-          tickerList.length > 0
-            ? await Promise.all([
-                fetchPrices(tickerList),
-                fetchTargets(tickerList),
-                fetchMetrics(tickerList),
-              ])
-            : [{}, {}, {} as Record<string, FinancialMetrics>];
+        let prices: Record<string, number> = {};
+        let targets: Awaited<ReturnType<typeof fetchTargets>> = {};
+        let metrics: Record<string, FinancialMetrics> = {};
+        let valuedHoldings = holdings;
+        let optionMarks: Record<string, OptionLiveMark> = {};
+
+        if (holdings) {
+          const resolved = await resolvePortfolioMarket(holdings);
+          valuedHoldings = resolved.portfolio;
+          prices = resolved.equityPrices;
+          optionMarks = resolved.optionMarks;
+          if (tickerList.length > 0) {
+            const [t, m] = await Promise.all([
+              fetchTargets(tickerList),
+              fetchMetrics(tickerList),
+            ]);
+            targets = t;
+            metrics = m;
+          }
+        } else if (tickerList.length > 0) {
+          const [p, t, m] = await Promise.all([
+            fetchPrices(tickerList),
+            fetchTargets(tickerList),
+            fetchMetrics(tickerList),
+          ]);
+          prices = p;
+          targets = t;
+          metrics = m;
+        }
 
         const safeAssessments =
           tickerList.length > 0
@@ -177,8 +199,8 @@ export function createPortfolioAnalyzerTool(): AgentTool {
               })
             : [];
 
-        if (holdings) {
-          const result = runFullAnalysis(holdings, prices, targets, analysisTh);
+        if (valuedHoldings) {
+          const result = runFullAnalysis(valuedHoldings, prices, targets, analysisTh);
           const optionRows = result.fullAnalysis.filter((s) => s.instrument === 'option');
           const equityRows = result.fullAnalysis.filter((s) => s.instrument !== 'option');
 
@@ -200,9 +222,14 @@ export function createPortfolioAnalyzerTool(): AgentTool {
             for (const s of optionRows) {
               const o = s.option;
               if (!o) continue;
+              const markMeta = optionMarks[s.ticker];
+              const src =
+                markMeta?.source === 'yahoo'
+                  ? `yahoo${markMeta.contractSymbol ? ` ${markMeta.contractSymbol}` : ''}`
+                  : `manual${markMeta?.note ? ` (${markMeta.note})` : ''}`;
               output += `  ${s.ticker}\n`;
               output += `    ${s.company}\n`;
-              output += `    Premium: $${(s.premiumAbsolute ?? 0).toFixed(2)} (${o.side}) | Mark: $${s.price.toFixed(2)}/ct\n`;
+              output += `    Premium: $${(s.premiumAbsolute ?? 0).toFixed(2)} (${o.side}) | Mark: $${s.price.toFixed(2)}/ct [${src}]\n`;
               output += `    MTM value: $${s.value.toFixed(2)} | P/L: ${s.pl >= 0 ? '+' : ''}$${s.pl.toFixed(2)} (${s.plPct >= 0 ? '+' : ''}${s.plPct.toFixed(1)}%)\n`;
               if ((s.contingentCashObligation ?? 0) > 0) {
                 output += `    Contingent cash if assigned (not current MTM): $${s.contingentCashObligation!.toFixed(2)}\n`;
@@ -242,7 +269,12 @@ export function createPortfolioAnalyzerTool(): AgentTool {
             }
           }
 
-          return ok(output, { ...result, metrics, valueAssessments: safeAssessments });
+          return ok(output, {
+            ...result,
+            metrics,
+            valueAssessments: safeAssessments,
+            optionMarks,
+          });
         }
 
         let output = `Market Data for ${tickerList.join(', ')}\n\n`;

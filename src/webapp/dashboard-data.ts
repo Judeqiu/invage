@@ -4,7 +4,11 @@
  */
 
 import { loadState } from 'utarus';
-import { equityKeys, fetchHistoricalCloses, fetchPrices } from '../market/index.js';
+import {
+  fetchHistoricalCloses,
+  fetchPrices,
+  resolvePortfolioMarket,
+} from '../market/index.js';
 import { getPortfolio, type InvestorState } from '../state/portfolio-state.js';
 import { loadSnapshots, type Snapshot } from '../state/snapshot.js';
 import {
@@ -12,6 +16,7 @@ import {
   buildLivePositions,
   type DashboardModel,
 } from '../report/dashboard-model.js';
+import type { Holding } from '../market/types.js';
 
 export const BENCHMARK_TICKER = 'SPY';
 
@@ -84,10 +89,24 @@ export async function loadDashboardForSlug(
     };
   }
 
-  const eqKeys = equityKeys(portfolio);
-  const prices =
-    priceOverride ?? (eqKeys.length > 0 ? await fetchPrices(eqKeys) : {});
-  const live = buildLivePositions(portfolio, prices);
+  let valuedPortfolio: Record<string, Holding>;
+  let prices: Record<string, number>;
+  let optionMarks: Awaited<ReturnType<typeof resolvePortfolioMarket>>['optionMarks'];
+
+  if (priceOverride) {
+    // Tests / overrides: equity prices forced; still resolve option marks unless empty options
+    const resolved = await resolvePortfolioMarket(portfolio);
+    valuedPortfolio = resolved.portfolio;
+    prices = priceOverride;
+    optionMarks = resolved.optionMarks;
+  } else {
+    const resolved = await resolvePortfolioMarket(portfolio);
+    valuedPortfolio = resolved.portfolio;
+    prices = resolved.equityPrices;
+    optionMarks = resolved.optionMarks;
+  }
+
+  const live = buildLivePositions(valuedPortfolio, prices, optionMarks);
   const snapshots = loadSnapshots(slug);
   const model = buildDashboardModel(live, snapshots);
   const benchmark =

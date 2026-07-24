@@ -25,6 +25,8 @@ export interface SnapshotPosition {
   premiumAbsolute?: number;
   contingentCashObligation?: number;
   contingentShareObligation?: number;
+  markSource?: 'manual' | 'yahoo';
+  contractSymbol?: string;
   option?: {
     right: 'call' | 'put';
     side: 'long' | 'short';

@@ -252,7 +252,8 @@ playbook:
 | `option.multiplier` | number | Yes | Shares controlled per contract (**100** US) — **assignment only** |
 | `option.underlying` | string | Yes | Public ticker or private name (`SPACEX`) |
 | `option.settlement` | `physical` \| `cash` | Yes | No silent default |
-| `option.mark` | number | Yes | Current premium **$ per contract** for MTM (≥ 0) |
+| `option.mark` | number | Yes | Stored premium **$ per contract** for MTM (≥ 0); used when manual/auto-miss |
+| `option.quote_source` | `manual` \| `yahoo` | No | `manual` = always mark; `yahoo` = require Yahoo chain; omit = auto |
 | `option.underlying_mark` | number | No | Optional underlying price for scenarios |
 
 **Economics (options):**
@@ -269,7 +270,15 @@ playbook:
 `{UNDERLYING}-{P|C}-{STRIKE}-{YYYYMMDD}-{L|S}`  
 e.g. `SPACEX-P-90-20260807-S`.
 
-**Pricing:** equities use Yahoo Finance live quotes. Options **never** fetch Yahoo under the contract key; valuation uses stored `mark` (works for private underlyings).
+**Pricing:**
+
+| Instrument | Live source |
+|------------|-------------|
+| Equity | Yahoo `quote` → `regularMarketPrice` |
+| Option (listed / auto) | Yahoo `options(underlying, { date: expiry })` → match strike + call/put → mark = mid-or-last **per share × multiplier** |
+| Option (private / manual / auto miss) | Stored `option.mark` ($ per contract) |
+
+Live Yahoo option marks are applied **in memory** for analysis/dashboard/snapshot valuation; they do not rewrite YAML unless you `update_holding` mark.
 
 ### Portfolio Tools
 

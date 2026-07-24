@@ -123,6 +123,7 @@ function parseOptionFromParams(p: {
   underlying?: string;
   settlement?: string;
   mark?: number;
+  quote_source?: 'manual' | 'yahoo';
   underlying_mark?: number;
   avg_price: number;
 }): OptionSpec {
@@ -164,6 +165,9 @@ function parseOptionFromParams(p: {
     settlement,
     mark,
   };
+  if (p.quote_source === 'manual' || p.quote_source === 'yahoo') {
+    spec.quote_source = p.quote_source;
+  }
   if (p.underlying_mark != null) {
     if (!(p.underlying_mark >= 0)) throw new Error('underlying_mark must be ≥ 0.');
     spec.underlying_mark = p.underlying_mark;
@@ -181,7 +185,8 @@ export function createPortfolioTools(): AgentTool[] {
       'Option: set instrument=option with option_right (call|put), option_side (long|short), strike, expiry (YYYY-MM-DD), ' +
       'multiplier (typically 100 shares/contract — assignment size only), underlying, settlement (physical|cash). ' +
       'avg_price = total premium dollars PER CONTRACT (e.g. $265 credit for one put covering 100 shares — do NOT enter per-share ×100). ' +
-      'units = contracts. mark = current premium $ per contract. Contingent obligation (strike×mult×cts) is separate from MTM. ' +
+      'units = contracts. mark = stored premium $ per contract. Live MTM: Yahoo chain for listed underlyings (auto), manual mark for private. ' +
+      'quote_source=manual|yahoo optional. Contingent obligation (strike×mult×cts) is separate from MTM. ' +
       'Option portfolio key auto-builds as UNDERLYING-P|C-STRIKE-YYYYMMDD-L|S unless ticker is provided. ' +
       'Pass telegram_user_id or slack_user_id from the message context — never ask the user for it.',
     parameters: Type.Object({
@@ -243,6 +248,12 @@ export function createPortfolioTools(): AgentTool[] {
             'Option only: current premium mark in dollars per contract for MTM. Defaults to avg_price at entry when omitted.',
         }),
       ),
+      quote_source: Type.Optional(
+        Type.Union([Type.Literal('manual'), Type.Literal('yahoo')], {
+          description:
+            'Option only: manual = always stored mark (private/OTC); yahoo = require Yahoo chain match; omit = auto (Yahoo if listed, else mark).',
+        }),
+      ),
       underlying_mark: Type.Optional(
         Type.Number({
           description: 'Option only: optional underlying price mark (private names / scenarios).',
@@ -264,6 +275,7 @@ export function createPortfolioTools(): AgentTool[] {
         underlying?: string;
         settlement?: 'physical' | 'cash';
         mark?: number;
+        quote_source?: 'manual' | 'yahoo';
         underlying_mark?: number;
       };
       try {
@@ -279,6 +291,7 @@ export function createPortfolioTools(): AgentTool[] {
 
         if (instrument === 'option') {
           const option = parseOptionFromParams(p);
+          if (p.quote_source) option.quote_source = p.quote_source;
           key = p.ticker?.trim()
             ? p.ticker.trim().toUpperCase()
             : buildOptionKey({
@@ -447,6 +460,11 @@ export function createPortfolioTools(): AgentTool[] {
       mark: Type.Optional(
         Type.Number({ description: 'Option only: new premium mark in $ per contract for MTM.' }),
       ),
+      quote_source: Type.Optional(
+        Type.Union([Type.Literal('manual'), Type.Literal('yahoo')], {
+          description: 'Option only: manual | yahoo (omit = auto).',
+        }),
+      ),
       underlying_mark: Type.Optional(
         Type.Number({ description: 'Option only: new underlying price mark.' }),
       ),
@@ -476,6 +494,7 @@ export function createPortfolioTools(): AgentTool[] {
         units?: number;
         category?: string;
         mark?: number;
+        quote_source?: 'manual' | 'yahoo';
         underlying_mark?: number;
         strike?: number;
         expiry?: string;
@@ -504,6 +523,7 @@ export function createPortfolioTools(): AgentTool[] {
           const nextOption: OptionSpec = {
             ...existing.option,
             ...(p.mark != null ? { mark: p.mark } : {}),
+            ...(p.quote_source != null ? { quote_source: p.quote_source } : {}),
             ...(p.underlying_mark != null ? { underlying_mark: p.underlying_mark } : {}),
             ...(p.strike != null ? { strike: p.strike } : {}),
             ...(p.expiry != null ? { expiry: p.expiry } : {}),
@@ -524,6 +544,7 @@ export function createPortfolioTools(): AgentTool[] {
         } else {
           if (
             p.mark != null ||
+            p.quote_source != null ||
             p.underlying_mark != null ||
             p.strike != null ||
             p.expiry != null ||
