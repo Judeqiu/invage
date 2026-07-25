@@ -14,6 +14,7 @@ import {
 } from 'utarus';
 import { createInvageTools } from './tools/index.js';
 import { registerInvageSkills } from './skills.js';
+import { INVAGE_CREDIT_RATES } from './credit-rates.js';
 import { createGuidanceCommand } from './guidance.js';
 import { playbookAgentGuidance } from './playbook/index.js';
 import { handleBindCommand, handleBindWebCommand } from './onboard/bind-command.js';
@@ -212,6 +213,12 @@ export const invageExtension: DomainExtension = {
   tools: () => createInvageTools(),
 
   skills: INVAGE_SKILLS,
+
+  // Credit rates required at boot (utarus ≥ 1.17) even when paywall is off.
+  // Do NOT set plans / UTARUS_BILLING_ENABLED until Stripe prices exist.
+  billing: {
+    creditRates: INVAGE_CREDIT_RATES,
+  },
 
   /** Dashboard tab + domain APIs in the Utarus WebUI shell. */
   webUi: createInvageWebUi(),
