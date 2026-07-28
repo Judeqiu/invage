@@ -88,6 +88,19 @@ async function main(): Promise<void> {
     console.log('WEBAPP_PORT not set — WebUI chat interface disabled.');
   }
 
+  // ── Task scheduler (process-local 30s tick; catch-up overdue active tasks) ──
+  // Must be started explicitly — createFramework does not auto-start it.
+  // Start before awaiting channel adapters so long-lived bot sockets do not
+  // delay the first tick. Requires finite UTARUS_AGENT_RUN_TIMEOUT_MS.
+  const { stop: stopTaskScheduler } = framework.startTaskScheduler();
+  console.log('[Invester] Task scheduler started');
+  process.on('SIGTERM', () => {
+    stopTaskScheduler();
+  });
+  process.on('SIGINT', () => {
+    stopTaskScheduler();
+  });
+
   const botPromises: Promise<void>[] = [];
 
   // ── Telegram (Binary-style) ──────────────────────────────────────────
