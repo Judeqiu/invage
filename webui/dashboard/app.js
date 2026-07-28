@@ -7,6 +7,11 @@
 
 const API = '/api/domain/invage/dashboard';
 
+/** Unassigned broker tags resolve to this channel on the dashboard. */
+const DEFAULT_CHANNEL = 'default';
+/** Combined multi-broker view. */
+const MERGED_CHANNEL_VIEW = 'merged';
+
 const COLORS = [
   '#c084c0', '#ff6b6b', '#4ecdc4', '#45b7d1', '#ffeaa7', '#98d8c8',
   '#3b82f6', '#f59e0b', '#8b5cf6', '#10b981', '#ef4444', '#6b7280',
@@ -15,6 +20,7 @@ const COLORS = [
 const el = {
   subtitle: document.getElementById('subtitle'),
   dateSelect: document.getElementById('dateSelect'),
+  channelSelect: document.getElementById('channelSelect'),
   statusBadge: document.getElementById('statusBadge'),
   status: document.getElementById('status'),
   refreshBtn: document.getElementById('refreshBtn'),
@@ -31,6 +37,7 @@ const el = {
 
 let payload = null;
 let selectedDate = 'live';
+let selectedChannel = MERGED_CHANNEL_VIEW;
 let charts = {};
 let timer = null;
 let loading = false;
@@ -64,6 +71,18 @@ function escapeHtml(s) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+function resolveDashboardChannel(raw) {
+  if (raw == null) return DEFAULT_CHANNEL;
+  const t = String(raw).trim();
+  return t.length === 0 ? DEFAULT_CHANNEL : t;
+}
+
+function channelBadgeHtml(channel) {
+  const ch = resolveDashboardChannel(channel);
+  const cls = ch === DEFAULT_CHANNEL ? 'badge-channel-default' : 'badge-channel';
+  return `<span class="card-badge ${cls}">${escapeHtml(ch)}</span>`;
 }
 
 function fundIndex(value, cost) {
@@ -108,8 +127,127 @@ function benchIndexAt(dateKey) {
 
 /* ---------- view model ---------- */
 
+function reweightPositions(positions, cashAmount) {
+  const absPositions = positions.reduce((s, p) => s + Math.abs(p.value), 0);
+  const absSum = absPositions + (cashAmount != null ? Number(cashAmount) : 0);
+  return positions
+    .map((p) => ({
+      ...p,
+      channel: resolveDashboardChannel(p.channel),
+      label: p.label || p.ticker,
+      instrument: p.instrument || 'equity',
+      weightPct: absSum > 0 ? (Math.abs(p.value) / absSum) * 100 : 0,
+    }))
+    .sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
+}
+
+/**
+ * Apply channel filter to a base view (merged or single channel).
+ * Missing channel tags become DEFAULT_CHANNEL.
+ */
+function applyChannelFilter(base, channelKey) {
+  const allPositions = (base.positions || []).map((p) => ({
+    ...p,
+    channel: resolveDashboardChannel(p.channel),
+  }));
+  const cashChannel =
+    base.cashAmount != null
+      ? resolveDashboardChannel(base.cashChannel)
+      : null;
+
+  const channels = base.channels
+    ? [...base.channels]
+    : [...new Set([
+        ...allPositions.map((p) => p.channel),
+        ...(cashChannel != null ? [cashChannel] : []),
+      ])].sort((a, b) => {
+        if (a === DEFAULT_CHANNEL) return -1;
+        if (b === DEFAULT_CHANNEL) return 1;
+        return a.localeCompare(b);
+      });
+
+  if (channelKey === MERGED_CHANNEL_VIEW) {
+    const positions = reweightPositions(allPositions, base.cashAmount ?? null);
+    return {
+      ...base,
+      positions,
+      channelView: MERGED_CHANNEL_VIEW,
+      channelLabel: 'All (merged)',
+      channels,
+      cashChannel,
+    };
+  }
+
+  const filtered = allPositions.filter((p) => p.channel === channelKey);
+  const cashBelongs = cashChannel != null && cashChannel === channelKey;
+  const cashAmount = cashBelongs ? base.cashAmount : null;
+  const cashCurrency = cashBelongs ? base.cashCurrency : null;
+
+  let positionsValue = 0;
+  let totalCost = 0;
+  let equityValue = 0;
+  let equityCost = 0;
+  let optionsPremiumCollected = 0;
+  let optionsPremiumPaid = 0;
+  let contingentCashObligation = 0;
+  let contingentShareObligation = 0;
+  let optionCount = 0;
+  let equityCount = 0;
+
+  for (const p of filtered) {
+    positionsValue += p.value;
+    totalCost += p.cost;
+    if (p.instrument === 'option') {
+      optionCount += 1;
+      contingentCashObligation += p.contingentCashObligation || 0;
+      contingentShareObligation += p.contingentShareObligation || 0;
+      if (p.option?.side === 'short') optionsPremiumCollected += p.premiumAbsolute || 0;
+      else optionsPremiumPaid += p.premiumAbsolute || 0;
+    } else {
+      equityCount += 1;
+      equityValue += p.value;
+      equityCost += p.cost;
+    }
+  }
+
+  const totalPL = positionsValue - totalCost;
+  const totalValue = cashAmount != null ? positionsValue + cashAmount : positionsValue;
+  const cashWeightPct =
+    cashAmount != null && totalValue !== 0
+      ? (cashAmount / totalValue) * 100
+      : cashAmount != null
+        ? 0
+        : null;
+  const positions = reweightPositions(filtered, cashAmount);
+
+  return {
+    ...base,
+    positions,
+    totalValue,
+    totalCost,
+    totalPL,
+    totalPLPct: totalCost !== 0 ? (totalPL / Math.abs(totalCost)) * 100 : 0,
+    equityValue,
+    equityCost,
+    optionsPremiumCollected,
+    optionsPremiumPaid,
+    contingentCashObligation,
+    contingentShareObligation,
+    optionCount,
+    equityCount,
+    cashAmount,
+    cashCurrency,
+    cashChannel: cashBelongs ? channelKey : null,
+    positionsValue,
+    cashWeightPct,
+    channelView: channelKey,
+    channelLabel: channelKey,
+    channels,
+  };
+}
+
 /** Build the per-date view: 'live' or a snapshot date from model.history. */
-function buildView(dateKey) {
+function buildView(dateKey, channelKey = selectedChannel) {
   const model = payload.model;
   if (dateKey === 'live') {
     const live = model.live;
@@ -129,11 +267,19 @@ function buildView(dateKey) {
       contingentShareObligation: live.contingentShareObligation ?? 0,
       optionCount: live.optionCount ?? 0,
       equityCount: live.equityCount ?? live.positions.length,
+      cashAmount: live.cashAmount ?? null,
+      cashCurrency: live.cashCurrency ?? null,
+      cashChannel: live.cashChannel ?? null,
+      positionsValue: live.positionsValue ?? live.totalValue,
+      cashWeightPct: live.cashWeightPct ?? null,
+      channels: live.channels ?? [],
+      byChannel: live.byChannel ?? [],
     };
-    const fIdx = portfolioFundIndex(viewBase);
+    const filtered = applyChannelFilter(viewBase, channelKey);
+    const fIdx = portfolioFundIndex(filtered);
     const bIdx = benchIndexAt('live');
     return {
-      ...viewBase,
+      ...filtered,
       fundIndex: fIdx,
       benchmarkIndex: bIdx,
       diff: bIdx == null ? null : fIdx - bIdx,
@@ -141,19 +287,16 @@ function buildView(dateKey) {
   }
   const row = model.history.find((h) => h.date === dateKey);
   if (!row) return null;
-  const absSum = (row.positions || []).reduce((s, p) => s + Math.abs(p.value), 0);
-  const positions = (row.positions || [])
-    .map((p) => ({
-      ...p,
-      label: p.label || p.ticker,
-      instrument: p.instrument || 'equity',
-      weightPct: absSum > 0 ? (Math.abs(p.value) / absSum) * 100 : 0,
-    }))
-    .sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
+  const rawPositions = (row.positions || []).map((p) => ({
+    ...p,
+    label: p.label || p.ticker,
+    instrument: p.instrument || 'equity',
+    channel: resolveDashboardChannel(p.channel),
+  }));
   const viewBase = {
     isLive: false,
     label: row.date,
-    positions,
+    positions: rawPositions,
     totalValue: row.totalValue,
     totalCost: row.totalCost,
     totalPL: row.totalPL,
@@ -164,13 +307,24 @@ function buildView(dateKey) {
     optionsPremiumPaid: row.optionsPremiumPaid ?? 0,
     contingentCashObligation: row.contingentCashObligation ?? 0,
     contingentShareObligation: 0,
-    optionCount: positions.filter((p) => p.instrument === 'option').length,
-    equityCount: positions.filter((p) => p.instrument !== 'option').length,
+    optionCount: rawPositions.filter((p) => p.instrument === 'option').length,
+    equityCount: rawPositions.filter((p) => p.instrument !== 'option').length,
+    cashAmount: row.cashAmount ?? null,
+    cashCurrency: row.cashCurrency ?? null,
+    cashChannel: row.cashAmount != null ? resolveDashboardChannel(row.cashChannel) : null,
+    positionsValue: row.positionsValue ?? row.totalValue,
+    cashWeightPct:
+      row.cashAmount != null && row.totalValue
+        ? (row.cashAmount / row.totalValue) * 100
+        : null,
+    channels: null,
+    byChannel: null,
   };
-  const fIdx = portfolioFundIndex(viewBase);
+  const filtered = applyChannelFilter(viewBase, channelKey);
+  const fIdx = portfolioFundIndex(filtered);
   const bIdx = benchIndexAt(dateKey);
   return {
-    ...viewBase,
+    ...filtered,
     fundIndex: fIdx,
     benchmarkIndex: bIdx,
     diff: bIdx == null ? null : fIdx - bIdx,
@@ -231,7 +385,7 @@ function renderCards(view) {
   const baseDate = payload.benchmark?.baseDate || 'cost basis';
   const cards = [];
 
-  const cardHtml = (title, fIdx, bIdx, diff, footer) => {
+  const cardHtml = (title, fIdx, bIdx, diff, footer, extraBadgeHtml = '') => {
     const d = diff == null ? 0 : diff;
     const isNeutral = Math.abs(d) < 1;
     const cardClass = diff == null ? 'neutral' : isNeutral ? 'neutral' : d > 0 ? 'positive' : 'negative';
@@ -245,7 +399,10 @@ function renderCards(view) {
       <div class="card ${cardClass}">
         <div class="card-header">
           <div class="card-title">${escapeHtml(title)}</div>
-          <span class="card-badge badge-benchmark">${escapeHtml(benchTicker)}</span>
+          <div style="display:flex;gap:0.35rem;flex-wrap:wrap;justify-content:flex-end">
+            ${extraBadgeHtml}
+            <span class="card-badge badge-benchmark">${escapeHtml(benchTicker)}</span>
+          </div>
         </div>
         <div class="card-values">
           <div class="fund-value">${fIdx.toFixed(2)}</div>
@@ -260,16 +417,57 @@ function renderCards(view) {
     (view.optionCount || 0) > 0
       ? ` | ${view.optionCount} option · prem coll. ${fmtUsd0(view.optionsPremiumCollected || 0)} · oblig. ${fmtUsd0(view.contingentCashObligation || 0)}`
       : '';
+  const cashNote =
+    view.cashAmount != null
+      ? ` | Cash ${fmtUsd0(view.cashAmount)}${view.cashCurrency ? ' ' + view.cashCurrency : ''}` +
+        (view.cashWeightPct != null ? ` (${view.cashWeightPct.toFixed(1)}%)` : '') +
+        (view.cashChannel ? ` · ch ${view.cashChannel}` : '')
+      : '';
+  const channelNote =
+    view.channelView === MERGED_CHANNEL_VIEW
+      ? ` | Channels: ${(view.channels || []).join(', ') || DEFAULT_CHANNEL}`
+      : ` | Channel: ${view.channelLabel || view.channelView}`;
 
   cards.push(
     cardHtml(
-      'Overall Portfolio',
+      view.channelView === MERGED_CHANNEL_VIEW
+        ? 'Overall Portfolio (merged)'
+        : `Portfolio · ${view.channelLabel || view.channelView}`,
       view.fundIndex,
       view.benchmarkIndex,
       view.diff,
-      `Base: ${escapeHtml(baseDate)} | ${view.positions.length} holdings | Cost: ${fmtUsd0(view.totalCost)}${optionNote}`,
+      `Base: ${escapeHtml(baseDate)} | ${view.positions.length} holdings | Cost: ${fmtUsd0(view.totalCost)}${optionNote}${cashNote}${channelNote}`,
     ),
   );
+
+  // When merged and multi-channel, surface per-channel summary cards.
+  if (
+    view.channelView === MERGED_CHANNEL_VIEW &&
+    Array.isArray(view.byChannel) &&
+    view.byChannel.length > 1
+  ) {
+    view.byChannel.forEach((c) => {
+      const chIdx = portfolioFundIndex({
+        equityCost: c.equityCost,
+        equityValue: c.equityValue,
+        totalValue: c.totalValue,
+        totalCost: c.totalCost,
+      });
+      const chDiff = view.benchmarkIndex == null ? null : chIdx - view.benchmarkIndex;
+      cards.push(
+        cardHtml(
+          `Channel · ${c.channel}`,
+          chIdx,
+          view.benchmarkIndex,
+          chDiff,
+          `${c.positionCount} holdings | NAV ${fmtUsd0(c.totalValue)} | P/L ${fmtSignedUsd0(c.totalPL)}` +
+            (c.cashAmount != null
+              ? ` | Cash ${fmtUsd0(c.cashAmount)}${c.cashCurrency ? ' ' + c.cashCurrency : ''}`
+              : ''),
+        ),
+      );
+    });
+  }
 
   view.positions.forEach((p) => {
     const isOpt = p.instrument === 'option';
@@ -279,34 +477,140 @@ function renderCards(view) {
       : fundIndex(p.value, p.cost);
     const pDiff = isOpt || view.benchmarkIndex == null ? null : pIdx - view.benchmarkIndex;
     const title = isOpt ? p.label || p.ticker : p.ticker;
+    const ch = resolveDashboardChannel(p.channel);
     const footer = isOpt
       ? `${p.units} ct @ ${fmtUsd2(p.avgCost)}/ct prem | MTM ${fmtUsd0(p.value)} | P/L ${fmtSignedUsd0(p.pl)}` +
         (p.contingentCashObligation > 0
           ? ` | If assigned ${fmtUsd0(p.contingentCashObligation)}`
-          : '')
-      : `${p.units} units @ ${fmtUsd2(p.avgCost)} | Cost: ${fmtUsd0(p.cost)}`;
-    cards.push(cardHtml(title, pIdx, isOpt ? null : view.benchmarkIndex, pDiff, footer));
+          : '') +
+        ` | ${ch}`
+      : `${p.units} units @ ${fmtUsd2(p.avgCost)} | Cost: ${fmtUsd0(p.cost)} | ${ch}`;
+    cards.push(
+      cardHtml(title, pIdx, isOpt ? null : view.benchmarkIndex, pDiff, footer, channelBadgeHtml(ch)),
+    );
   });
 
   el.summaryCards.innerHTML = cards.join('');
 }
 
 function renderAllocation(view) {
+  el.allocationGrid.innerHTML = '';
+
+  // When merged with multiple channels, also show allocation by channel.
+  if (
+    view.channelView === MERGED_CHANNEL_VIEW &&
+    Array.isArray(view.byChannel) &&
+    view.byChannel.length > 1
+  ) {
+    const chSectors = view.byChannel.map((c, i) => ({
+      label: c.channel,
+      value: Math.abs(c.totalValue),
+      signed: c.totalValue,
+      color: COLORS[i % COLORS.length],
+    }));
+    const chTotal = chSectors.reduce((s, x) => s + x.value, 0);
+    const chWrapper = document.createElement('div');
+    chWrapper.className = 'allocation-card';
+    chWrapper.innerHTML = `
+      <h3>Allocation by Channel (merged)</h3>
+      <div class="total-label">NAV across brokers</div>
+      <div class="total-value">${fmtUsd0(view.totalValue)}</div>
+      <div class="donut-container"><canvas id="allocChannelChart"></canvas></div>
+      <div class="legend-grid">
+        ${chSectors
+          .map((s) => {
+            const pct = chTotal > 0 ? ((s.value / chTotal) * 100).toFixed(1) : '0.0';
+            return `
+          <div class="legend-item">
+            <div class="legend-color" style="background:${s.color}"></div>
+            <div>
+              <div style="font-weight:600">${escapeHtml(s.label)}</div>
+              <div style="font-size:0.75rem;color:#6b7280">${pct}% (NAV ${fmtUsd0(s.signed)})</div>
+            </div>
+          </div>`;
+          })
+          .join('')}
+      </div>`;
+    el.allocationGrid.appendChild(chWrapper);
+    if (chartAvailable()) {
+      charts.allocChannel = new Chart(document.getElementById('allocChannelChart').getContext('2d'), {
+        type: 'doughnut',
+        data: {
+          labels: chSectors.map((s) => s.label),
+          datasets: [
+            {
+              data: chSectors.map((s) => s.value),
+              backgroundColor: chSectors.map((s) => s.color),
+              borderColor: '#ffffff',
+              borderWidth: 3,
+              hoverOffset: 8,
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          cutout: '50%',
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => {
+                  const pct = chTotal > 0 ? ((ctx.raw / chTotal) * 100).toFixed(1) : '0.0';
+                  return `${ctx.label}: ${pct}% (NAV ${fmtUsd0(ctx.raw)})`;
+                },
+              },
+            },
+          },
+        },
+      });
+    }
+  }
+
   // Use |value| so short options appear in the donut without negative slices.
   const sectors = view.positions.map((p, i) => ({
-    label: p.label || p.ticker,
+    label:
+      (p.label || p.ticker) +
+      (view.channelView === MERGED_CHANNEL_VIEW
+        ? ` · ${resolveDashboardChannel(p.channel)}`
+        : ''),
     value: Math.abs(p.value),
     signed: p.value,
     color: COLORS[i % COLORS.length],
   }));
+  if (view.cashAmount != null && view.cashAmount > 0) {
+    sectors.push({
+      label: `Cash${view.cashCurrency ? ' (' + view.cashCurrency + ')' : ''}${
+        view.cashChannel ? ' · ' + view.cashChannel : ''
+      }`,
+      value: view.cashAmount,
+      signed: view.cashAmount,
+      color: COLORS[sectors.length % COLORS.length],
+    });
+  }
   const absTotal = sectors.reduce((s, x) => s + x.value, 0);
+
+  const scope =
+    view.channelView === MERGED_CHANNEL_VIEW
+      ? 'by Position (merged)'
+      : `by Position · ${view.channelLabel || view.channelView}`;
 
   const wrapper = document.createElement('div');
   wrapper.className = 'allocation-card';
   wrapper.innerHTML = `
-    <h3>Allocation by Position</h3>
-    <div class="total-label">${view.isLive ? 'Current Market Value (MTM)' : 'Market Value · ' + escapeHtml(view.label)}</div>
+    <h3>Allocation ${escapeHtml(scope)}</h3>
+    <div class="total-label">${view.isLive ? 'Current NAV (positions + cash)' : 'NAV · ' + escapeHtml(view.label)}</div>
     <div class="total-value">${fmtUsd0(view.totalValue)}</div>
+    ${
+      view.cashAmount != null
+        ? `<div style="font-size:0.8rem;color:#6b7280;margin:4px 0 4px">
+            Positions MTM: ${fmtUsd0(view.positionsValue ?? view.totalValue - view.cashAmount)} ·
+            Cash: ${fmtUsd0(view.cashAmount)}${view.cashCurrency ? ' ' + escapeHtml(view.cashCurrency) : ''}
+            ${view.cashWeightPct != null ? `(${view.cashWeightPct.toFixed(1)}%)` : ''}
+            ${view.cashChannel ? ` · ch ${escapeHtml(view.cashChannel)}` : ''}
+          </div>`
+        : ''
+    }
     ${
       (view.optionCount || 0) > 0
         ? `<div style="font-size:0.8rem;color:#6b7280;margin:4px 0 8px">
@@ -331,7 +635,6 @@ function renderAllocation(view) {
         })
         .join('')}
     </div>`;
-  el.allocationGrid.innerHTML = '';
   el.allocationGrid.appendChild(wrapper);
 
   if (!chartAvailable()) return;
@@ -603,6 +906,26 @@ function renderInsights(view) {
     });
   }
 
+  if (view.channelView === MERGED_CHANNEL_VIEW && (view.channels || []).length > 1) {
+    insights.push({
+      title: 'Multi-channel portfolio',
+      text: `Merged view across: ${(view.channels || []).join(', ')}. Use the Channel control to isolate one broker. Unassigned holdings appear under "${DEFAULT_CHANNEL}".`,
+      color: '#7c3aed',
+    });
+  } else if (view.channelView === DEFAULT_CHANNEL) {
+    insights.push({
+      title: 'Default channel',
+      text: `Showing holdings without an explicit broker tag (channel "${DEFAULT_CHANNEL}"). Tag positions with add_holding/update_holding channel=… when you know the broker.`,
+      color: '#6b7280',
+    });
+  } else if (view.channelView !== MERGED_CHANNEL_VIEW) {
+    insights.push({
+      title: `Channel ${view.channelLabel || view.channelView}`,
+      text: `Filtered to one broker channel. Switch to All (merged) to see the full portfolio.`,
+      color: '#7c3aed',
+    });
+  }
+
   insights.push({
     title: 'Data Note',
     text: `${view.isLive ? 'Live prices' : 'Archive view of ' + view.label} · generated ${new Date(payload.generatedAt).toLocaleString()}. Fund baseline uses actual purchase prices (cost basis).`,
@@ -622,13 +945,17 @@ function renderInsights(view) {
 
 /* ---------- orchestration ---------- */
 
-function renderDate(dateKey) {
+function renderDate(dateKey, channelKey = selectedChannel) {
   if (!payload?.model) return;
-  const view = buildView(dateKey);
+  const view = buildView(dateKey, channelKey);
   if (!view) return;
 
+  const chLabel =
+    view.channelView === MERGED_CHANNEL_VIEW
+      ? 'All channels (merged)'
+      : `Channel: ${view.channelLabel || view.channelView}`;
   el.subtitle.textContent =
-    `${payload.displayName || payload.slug} · Data Date: ${view.label} · ${view.isLive ? 'Latest' : 'Archived'}`;
+    `${payload.displayName || payload.slug} · ${view.label} · ${view.isLive ? 'Latest' : 'Archived'} · ${chLabel}`;
   el.statusBadge.className = view.isLive ? 'live-badge' : 'archive-badge';
   el.statusBadge.textContent = view.isLive ? 'LIVE' : 'ARCHIVE';
 
@@ -638,6 +965,31 @@ function renderDate(dateKey) {
   renderBar(view);
   renderCharts(view);
   renderInsights(view);
+}
+
+function initChannelSelect() {
+  const live = payload.model.live;
+  const channels = Array.isArray(live.channels) && live.channels.length > 0
+    ? live.channels
+    : [DEFAULT_CHANNEL];
+
+  el.channelSelect.innerHTML = '';
+  const mergedOpt = document.createElement('option');
+  mergedOpt.value = MERGED_CHANNEL_VIEW;
+  mergedOpt.textContent = 'All (merged)';
+  el.channelSelect.appendChild(mergedOpt);
+
+  channels.forEach((ch) => {
+    const opt = document.createElement('option');
+    opt.value = ch;
+    opt.textContent = ch === DEFAULT_CHANNEL ? 'default (unassigned)' : ch;
+    el.channelSelect.appendChild(opt);
+  });
+
+  const stillValid =
+    selectedChannel === MERGED_CHANNEL_VIEW || channels.includes(selectedChannel);
+  if (!stillValid) selectedChannel = MERGED_CHANNEL_VIEW;
+  el.channelSelect.value = selectedChannel;
 }
 
 function initDashboard() {
@@ -658,11 +1010,13 @@ function initDashboard() {
   });
   el.dateSelect.value = selectedDate;
 
+  initChannelSelect();
+
   el.loading.classList.add('hidden');
   el.error.classList.add('hidden');
   el.dashboard.classList.remove('hidden');
 
-  renderDate(selectedDate);
+  renderDate(selectedDate, selectedChannel);
 }
 
 function renderEmpty(body) {
@@ -727,7 +1081,11 @@ function syncTimer() {
 
 el.dateSelect.addEventListener('change', (e) => {
   selectedDate = e.target.value;
-  renderDate(selectedDate);
+  renderDate(selectedDate, selectedChannel);
+});
+el.channelSelect.addEventListener('change', (e) => {
+  selectedChannel = e.target.value;
+  renderDate(selectedDate, selectedChannel);
 });
 el.refreshBtn.addEventListener('click', () => void load());
 el.autoRefresh.addEventListener('change', syncTimer);

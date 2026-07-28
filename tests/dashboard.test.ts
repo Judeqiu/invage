@@ -11,6 +11,10 @@ const { loadSnapshotIndex, loadSnapshots } = await import('../src/state/snapshot
 const {
   buildLivePositions,
   buildDashboardModel,
+  filterLiveByChannel,
+  resolveDashboardChannel,
+  DEFAULT_CHANNEL,
+  MERGED_CHANNEL_VIEW,
 } = await import('../src/report/dashboard-model.js');
 const {
   buildDashboardReport,
@@ -40,6 +44,9 @@ describe('buildLivePositions', () => {
     expect(live.positionCount).toBe(2);
     expect(live.totalCost).toBe(2000);
     expect(live.totalValue).toBe(2000); // 1100 + 900
+    expect(live.positionsValue).toBe(2000);
+    expect(live.cashAmount).toBeNull();
+    expect(live.cashWeightPct).toBeNull();
     expect(live.totalPL).toBe(0);
     expect(live.positions[0].ticker).toBe('AAPL');
     expect(live.positions[0].weightPct).toBeCloseTo(55, 5);
@@ -48,6 +55,27 @@ describe('buildLivePositions', () => {
     expect(weightSum).toBeCloseTo(100, 5);
     expect(live.equityCount).toBe(2);
     expect(live.optionCount).toBe(0);
+  });
+
+  it('includes recorded cash in NAV and cash weight', () => {
+    const live = buildLivePositions(
+      {
+        AAPL: { avg_price: 100, units: 10 },
+      },
+      { AAPL: 110 },
+      undefined,
+      { amount: 400, currency: 'USD' },
+    );
+    // positions 1100 + cash 400
+    expect(live.positionsValue).toBe(1100);
+    expect(live.cashAmount).toBe(400);
+    expect(live.cashCurrency).toBe('USD');
+    expect(live.totalValue).toBe(1500);
+    expect(live.cashWeightPct).toBeCloseTo((400 / 1500) * 100, 5);
+    // AAPL weight of full NAV abs sum
+    expect(live.positions[0].weightPct).toBeCloseTo((1100 / 1500) * 100, 5);
+    // P/L still position-only (1100 - 1000)
+    expect(live.totalPL).toBe(100);
   });
 
   it('includes short put without Yahoo price on the option key', () => {
@@ -79,6 +107,73 @@ describe('buildLivePositions', () => {
     const opt = live.positions.find((p) => p.instrument === 'option');
     expect(opt?.value).toBe(-265);
     expect(opt?.pl).toBe(0);
+  });
+
+  it('tags missing channel as default and builds byChannel', () => {
+    expect(resolveDashboardChannel(undefined)).toBe(DEFAULT_CHANNEL);
+    expect(resolveDashboardChannel('')).toBe(DEFAULT_CHANNEL);
+    expect(resolveDashboardChannel('  ibkr  ')).toBe('ibkr');
+
+    const live = buildLivePositions(
+      {
+        AAPL: { avg_price: 100, units: 10 },
+        MSFT: { avg_price: 200, units: 5, channel: 'moomoo' },
+      },
+      { AAPL: 110, MSFT: 180 },
+      undefined,
+      { amount: 500, currency: 'USD' },
+    );
+
+    expect(live.positions.find((p) => p.ticker === 'AAPL')?.channel).toBe(DEFAULT_CHANNEL);
+    expect(live.positions.find((p) => p.ticker === 'MSFT')?.channel).toBe('moomoo');
+    expect(live.cashChannel).toBe(DEFAULT_CHANNEL);
+    expect(live.channels).toEqual([DEFAULT_CHANNEL, 'moomoo']);
+    expect(live.byChannel).toHaveLength(2);
+
+    const def = live.byChannel.find((c) => c.channel === DEFAULT_CHANNEL);
+    const moo = live.byChannel.find((c) => c.channel === 'moomoo');
+    expect(def?.positionCount).toBe(1);
+    expect(def?.cashAmount).toBe(500);
+    expect(def?.positionsValue).toBe(1100);
+    expect(def?.totalValue).toBe(1600); // 1100 + 500 cash
+    expect(moo?.positionCount).toBe(1);
+    expect(moo?.cashAmount).toBeNull();
+    expect(moo?.positionsValue).toBe(900);
+    expect(moo?.totalValue).toBe(900);
+
+    // Merged totals
+    expect(live.totalValue).toBe(2500); // 1100 + 900 + 500
+    expect(live.positionsValue).toBe(2000);
+  });
+
+  it('filterLiveByChannel isolates one broker; merged returns full slice', () => {
+    const live = buildLivePositions(
+      {
+        AAPL: { avg_price: 100, units: 10, channel: 'ibkr' },
+        MSFT: { avg_price: 200, units: 5, channel: 'moomoo' },
+      },
+      { AAPL: 110, MSFT: 180 },
+      undefined,
+      { amount: 400, currency: 'USD', channel: 'ibkr' },
+    );
+
+    const merged = filterLiveByChannel(live, MERGED_CHANNEL_VIEW);
+    expect(merged.positionCount).toBe(2);
+    expect(merged.totalValue).toBe(2400); // 1100+900+400
+
+    const ibkr = filterLiveByChannel(live, 'ibkr');
+    expect(ibkr.positionCount).toBe(1);
+    expect(ibkr.positions[0].ticker).toBe('AAPL');
+    expect(ibkr.cashAmount).toBe(400);
+    expect(ibkr.cashChannel).toBe('ibkr');
+    expect(ibkr.totalValue).toBe(1500); // 1100 + 400
+    // Weight is within filtered set
+    expect(ibkr.positions[0].weightPct).toBeCloseTo((1100 / 1500) * 100, 5);
+
+    const moo = filterLiveByChannel(live, 'moomoo');
+    expect(moo.positionCount).toBe(1);
+    expect(moo.cashAmount).toBeNull();
+    expect(moo.totalValue).toBe(900);
   });
 });
 
@@ -246,6 +341,41 @@ describe('buildDashboardReport', () => {
     expect(html).toContain('$1,500.00');
     expect(html).toContain('No snapshots yet');
     expect(html).toContain('No prior snapshot for period change');
+    expect(html).toContain('default'); // unassigned channel
+    expect(html).toContain('By Channel');
+    expect(html).toContain('Merged');
+  });
+
+  it('normalizes snapshot positions without channel to default', () => {
+    const live = buildLivePositions(
+      { AAPL: { avg_price: 100, units: 10 } },
+      { AAPL: 150 },
+    );
+    const model = buildDashboardModel(live, [
+      {
+        date: '2026-07-01',
+        totalValue: 1000,
+        totalCost: 900,
+        totalPL: 100,
+        totalPLPct: 11.1,
+        positions: [
+          {
+            ticker: 'AAPL',
+            avgCost: 90,
+            units: 10,
+            price: 100,
+            cost: 900,
+            value: 1000,
+            pl: 100,
+            plPct: 11.1,
+          },
+        ],
+        cashAmount: 50,
+        cashCurrency: 'USD',
+      },
+    ]);
+    expect(model.history[0].positions[0].channel).toBe(DEFAULT_CHANNEL);
+    expect(model.history[0].cashChannel).toBe(DEFAULT_CHANNEL);
   });
 
   it('includes history rows and sparkline when ≥2 snapshots', () => {

@@ -107,6 +107,8 @@
       white-space: nowrap;
     }
     .badge-benchmark { background: #e0e7ff; color: #4338ca; }
+    .badge-channel { background: #f3e8ff; color: #7c3aed; }
+    .badge-channel-default { background: #f3f4f6; color: #4b5563; }
     .card-values { display: flex; align-items: baseline; gap: 1rem; margin-bottom: 0.5rem; }
     .fund-value { font-size: 1.75rem; font-weight: 700; }
     .bench-value { font-size: 1rem; color: #6b7280; }
@@ -264,6 +266,12 @@
       <label for="dateSelect">Data Date:</label>
       <select id="dateSelect">
         <option value="">Loading dates…</option>
+      </select>
+    </div>
+    <div class="date-selector">
+      <label for="channelSelect">Channel:</label>
+      <select id="channelSelect">
+        <option value="merged">All (merged)</option>
       </select>
     </div>
     <span id="statusBadge" class="live-badge">LIVE</span>

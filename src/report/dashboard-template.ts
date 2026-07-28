@@ -1,4 +1,10 @@
-import type { DashboardModel, HistoryRow, LivePosition } from './dashboard-model.js';
+import {
+  DEFAULT_CHANNEL,
+  type ChannelTotals,
+  type DashboardModel,
+  type HistoryRow,
+  type LivePosition,
+} from './dashboard-model.js';
 
 function escapeHtml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -21,7 +27,7 @@ function signedColor(value: number): string {
 
 function holdingRows(positions: LivePosition[]): string {
   if (positions.length === 0) {
-    return '<tr><td colspan="9" style="text-align:center;color:#8b949e;padding:16px">No positions</td></tr>';
+    return '<tr><td colspan="10" style="text-align:center;color:#8b949e;padding:16px">No positions</td></tr>';
   }
   return positions
     .map((p) => {
@@ -40,6 +46,7 @@ function holdingRows(positions: LivePosition[]): string {
       return `<tr>
       <td style="padding:6px 10px;border-bottom:1px solid #21262d;color:#8b949e;font-size:11px">${kind}</td>
       <td style="padding:6px 10px;border-bottom:1px solid #21262d;font-weight:600">${escapeHtml(name)}<div style="font-size:11px;color:#8b949e;font-weight:400">${escapeHtml(p.ticker)}</div></td>
+      <td style="padding:6px 10px;border-bottom:1px solid #21262d;color:#8b949e;font-size:11px">${escapeHtml(p.channel)}</td>
       <td style="padding:6px 10px;border-bottom:1px solid #21262d">${escapeHtml(unitsLabel)}</td>
       <td style="padding:6px 10px;border-bottom:1px solid #21262d">${formatUsd(p.avgCost)}</td>
       <td style="padding:6px 10px;border-bottom:1px solid #21262d">${formatUsd(p.price)}${markSrc}</td>
@@ -47,6 +54,28 @@ function holdingRows(positions: LivePosition[]): string {
       <td style="padding:6px 10px;border-bottom:1px solid #21262d;color:#8b949e">${p.weightPct.toFixed(1)}%</td>
       <td style="padding:6px 10px;border-bottom:1px solid #21262d;${signedColor(p.pl)}">${formatUsd(p.pl)}</td>
       <td style="padding:6px 10px;border-bottom:1px solid #21262d;${signedColor(p.plPct)}">${formatPct(p.plPct)}</td>
+    </tr>`;
+    })
+    .join('\n');
+}
+
+function channelRows(byChannel: ChannelTotals[]): string {
+  if (byChannel.length === 0) {
+    return '<tr><td colspan="6" style="text-align:center;color:#8b949e;padding:16px">No channels</td></tr>';
+  }
+  return byChannel
+    .map((c) => {
+      const cashCell =
+        c.cashAmount != null
+          ? `${formatUsd(c.cashAmount)}${c.cashCurrency ? ` ${escapeHtml(c.cashCurrency)}` : ''}`
+          : '—';
+      return `<tr>
+      <td style="padding:6px 10px;border-bottom:1px solid #21262d;font-weight:600">${escapeHtml(c.channel)}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid #21262d">${c.positionCount}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid #21262d">${formatUsd(c.positionsValue)}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid #21262d">${cashCell}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid #21262d">${formatUsd(c.totalValue)}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid #21262d;${signedColor(c.totalPL)}">${formatUsd(c.totalPL)} (${formatPct(c.totalPLPct)})</td>
     </tr>`;
     })
     .join('\n');
@@ -119,6 +148,9 @@ export function buildDashboardReport(model: DashboardModel, userName: string): s
       ? `<p style="color:#8b949e;margin:0 0 24px;font-size:13px">No snapshots on file yet.</p>`
       : `<p style="color:#8b949e;margin:0 0 24px;font-size:13px">Last snapshot: ${escapeHtml(lastSnapshot.date)} · ${formatUsd(lastSnapshot.totalValue)} (may differ from live value)</p>`;
 
+  const channelList = live.channels.length > 0 ? live.channels.join(', ') : DEFAULT_CHANNEL;
+  const multiChannel = live.channels.length > 1;
+
   const optionsBlock =
     live.optionCount === 0
       ? ''
@@ -149,6 +181,11 @@ export function buildDashboardReport(model: DashboardModel, userName: string): s
   </div>
 </div>`;
 
+  const cashChannelNote =
+    live.cashAmount != null
+      ? ` · Cash channel: ${escapeHtml(live.cashChannel ?? DEFAULT_CHANNEL)}`
+      : '';
+
   return `<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Portfolio Dashboard</title></head>
@@ -157,6 +194,7 @@ export function buildDashboardReport(model: DashboardModel, userName: string): s
 
 <h1 style="font-size:24px;margin:0 0 8px">Portfolio Dashboard</h1>
 <p style="color:#8b949e;margin:0 0 4px">${escapeHtml(userName)} · ${now} UTC</p>
+<p style="color:#8b949e;margin:0 0 4px;font-size:13px">View: <strong>Merged (all channels)</strong> · Channels: ${escapeHtml(channelList)}</p>
 ${lastSnapLine}
 
 <div style="display:flex;gap:12px;margin-bottom:24px;flex-wrap:wrap">
@@ -165,9 +203,13 @@ ${lastSnapLine}
     <div style="font-size:28px;font-weight:700">${live.positionCount}</div>
   </div>
   <div style="flex:1;min-width:140px;background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px;text-align:center">
-    <div style="color:#8b949e;font-size:12px;margin-bottom:4px">LIVE VALUE (MTM)</div>
+    <div style="color:#8b949e;font-size:12px;margin-bottom:4px">LIVE NAV</div>
     <div style="font-size:28px;font-weight:700">${formatUsd(live.totalValue)}</div>
-    <div style="color:#8b949e;font-size:11px;margin-top:4px">Equity MTM ${formatUsd(live.equityValue)}</div>
+    <div style="color:#8b949e;font-size:11px;margin-top:4px">Equity MTM ${formatUsd(live.equityValue)}${
+      live.cashAmount != null
+        ? ` · Cash ${formatUsd(live.cashAmount)}${live.cashCurrency ? ` ${escapeHtml(live.cashCurrency)}` : ''}`
+        : ''
+    }${cashChannelNote}</div>
   </div>
   <div style="flex:1;min-width:140px;background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px;text-align:center">
     <div style="color:#8b949e;font-size:12px;margin-bottom:4px">TOTAL P/L (VS COST)</div>
@@ -181,6 +223,25 @@ ${lastSnapLine}
 </div>
 
 ${optionsBlock}
+
+<div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px;margin-bottom:20px">
+  <h2 style="font-size:16px;margin:0 0 8px">By Channel</h2>
+  <p style="color:#8b949e;font-size:12px;margin:0 0 12px">
+    Positions and cash without a broker tag are under <code>${DEFAULT_CHANNEL}</code>.
+    ${multiChannel ? 'This report is the <strong>merged</strong> view across all channels.' : 'Single channel — merged view equals this channel.'}
+  </p>
+  <table style="width:100%;border-collapse:collapse;font-size:13px">
+    <tr style="text-align:left;color:#8b949e;font-size:11px">
+      <th style="padding:6px 10px">Channel</th>
+      <th style="padding:6px 10px">Positions</th>
+      <th style="padding:6px 10px">Positions MTM</th>
+      <th style="padding:6px 10px">Cash</th>
+      <th style="padding:6px 10px">NAV</th>
+      <th style="padding:6px 10px">P/L</th>
+    </tr>
+    ${channelRows(live.byChannel)}
+  </table>
+</div>
 
 <div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px;margin-bottom:20px">
   <h2 style="font-size:16px;margin:0 0 12px">Value History</h2>
@@ -202,16 +263,18 @@ ${optionsBlock}
 </div>
 
 <div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px;margin-bottom:20px">
-  <h2 style="font-size:16px;margin:0 0 12px">Holdings (${live.positionCount})</h2>
+  <h2 style="font-size:16px;margin:0 0 12px">Holdings (${live.positionCount}) — Merged</h2>
   <p style="color:#8b949e;font-size:12px;margin:0 0 12px">
     Options: avg / mark = premium <strong>$ per contract</strong>; units = contracts; short MTM = −mark until closed.
     Listed underlyings: mark from <strong>Yahoo options chain</strong> when available; private/OTC: stored manual mark.
     Contingent obligation (if assigned) is separate from live MTM.
+    Channel column: broker tag or <code>${DEFAULT_CHANNEL}</code> when unassigned.
   </p>
   <table style="width:100%;border-collapse:collapse;font-size:13px">
     <tr style="text-align:left;color:#8b949e;font-size:11px">
       <th style="padding:6px 10px">Type</th>
       <th style="padding:6px 10px">Position</th>
+      <th style="padding:6px 10px">Channel</th>
       <th style="padding:6px 10px">Size</th>
       <th style="padding:6px 10px">Avg / Prem</th>
       <th style="padding:6px 10px">Mark</th>

@@ -27,7 +27,7 @@ Every linked user has an **Investment Playbook** (strategy, philosophy, risk, al
 | **Strategy** | `growth` · `income` · `capital_preservation` | What outcome to optimize (appreciation vs yield vs drawdown control) |
 | **Philosophy** | `value_investing` · `growth_investing` · `dividend_investing` | Which cheapness/quality lenses and PE/PEG bars to emphasize |
 | **Risk** | `conservative` · `balanced` · `aggressive` | Buy upside bar, take-profit speed, deep-loss SELL, sizing aggressiveness |
-| **Allocation** | max position % · cash target % · max sector % | Cap suggested size; flag concentration breaches |
+| **Allocation** | max position % · cash target % · max sector % | Cap suggested size; flag concentration breaches; compare to **recorded cash** via `set_cash` / `get_portfolio` |
 | **Buy / sell rules** | free-text criteria + AI style | Hard constraints on when BUY/SELL language is allowed |
 | **Rebalancing** | `monthly` · `quarterly` · `threshold` | When to suggest rebalance / drift checks |
 | **Watchlists** | markets · sectors · themes | Default discovery universe when no ticker is named |
@@ -39,7 +39,7 @@ Every linked user has an **Investment Playbook** (strategy, philosophy, risk, al
 ### Playbook → recommendation rules
 
 1. **Always filter trade language through buy_criteria / sell_criteria** and risk profile before saying BUY/SELL/accumulate.
-2. **Size suggestions** as % of portfolio; never propose a single name above `position_limit_pct` or a sector above `sector_exposure_pct` without explicitly flagging the breach.
+2. **Size suggestions** as % of **Total NAV** (positions MTM + recorded cash) when cash is known; if cash is not recorded, size vs positions only and say cash is unknown. Never invent cash. Never propose a single name above `position_limit_pct` or a sector above `sector_exposure_pct` without explicitly flagging the breach.
 3. **Philosophy tilt:**
    - *value* — cheapness yardstick + trap gate required; Street upside alone is not BUY
    - *growth* — PEG/growth/margins can justify higher multiples; trap gate still required
@@ -47,7 +47,7 @@ Every linked user has an **Investment Playbook** (strategy, philosophy, risk, al
 4. **Strategy tilt:** income → prefer durable payout; growth → trajectory; capital_preservation → quality/defensive, avoid speculative accumulate.
 5. **Risk tilt:** conservative raises the bar (more WATCH, earlier take-profit); aggressive lowers upside bar and allows sizing toward the cap when gates pass.
 6. **Watchlists:** for undervalued/theme discovery with no ticker named, prefer configured markets/sectors/themes before a generic screen.
-7. **Rebalancing:** if mode is calendar or threshold drift, mention when holdings look out of band vs cash target or concentration limits.
+7. **Rebalancing:** if mode is calendar or threshold drift, mention when holdings look out of band vs cash target or concentration limits. When cash is recorded, compare **actual cash weight** to `cash_target_pct` and state surplus/shortfall of dry powder.
 8. Changing playbook only when the user asks (e.g. "set me to conservative value") — use `update_playbook`, confirm the new summary.
 
 ## Hard rules
@@ -86,6 +86,9 @@ Every linked user has an **Investment Playbook** (strategy, philosophy, risk, al
 | Need | Tool |
 |------|------|
 | Holdings, cost, units, **options** (call/put, premium, obligation) | `get_portfolio` / `add_holding` with `instrument=option` |
+| **Broker channel** (multi-broker tag on equity/option/cash) | Optional `channel` on `add_holding` / `update_holding` / `set_cash` (e.g. `moomoo`, `ibkr`, `webull`); omit or empty when unassigned |
+| **Cash / dry powder** (amount + currency) | `set_cash` / `get_portfolio` (cash section) / `clear_cash` |
+| **Buy / sell bookkeeping** | `add_holding` / `update_holding` / `remove_holding` auto-adjust cash when recorded (cost/premium delta); fail if insufficient cash; `adjust_cash=false` only for historical import |
 | Strategy / risk / buy-sell methodology | `get_playbook` / `update_playbook` |
 | Live price, P/L, PE/PEG/ROE/P/B, analyst targets | `portfolio_analyzer` (Yahoo Finance; uses playbook thresholds for channel users) |
 | EV/EBIT, FCF, enterprise value, detailed stats | Load **`firecrawl`** → Yahoo `/key-statistics`, Finviz quote |
@@ -116,7 +119,7 @@ Every linked user has an **Investment Playbook** (strategy, philosophy, risk, al
 
 ### Minimum paths
 
-**Portfolio:** `get_portfolio` → `portfolio_analyzer` (channel user) → 3-axis below. For "which holdings look undervalued?" also run **Part C gate** on each candidate.
+**Portfolio:** `get_portfolio` → `portfolio_analyzer` (channel user) → 3-axis below. Use the analyzer **CASH & NAV** block for dry powder, cash weight vs target, and short-put cover. If cash is "not recorded" and the user is discussing deployable capital or rebalance, ask once for cash amount + currency and `set_cash` — do not invent 0. For "which holdings look undervalued?" also run **Part C gate** on each candidate.
 
 **Single ticker:** `portfolio_analyzer` with `tickers=TICKER` → Part B (+ Part C undervalued verdict if asked or if recommending buy).
 
@@ -180,6 +183,20 @@ Always provide for each position discussed:
 5. Specific recommendation + reasoning
 6. When undervalued or accumulate: **why cheap / what closes gap / kill criteria** (Part C thesis gate)
 7. When depth requested: Part B stock workflow on that ticker
+
+### Cash & strategy (when discussing portfolio-level action)
+
+When cash is recorded (`get_portfolio` / analyzer CASH & NAV):
+
+| Use cash for | How |
+|--------------|-----|
+| Deployable capital | Recorded amount is the max dry powder to size new buys (before margin; this product does not invent margin) |
+| Cash weight vs target | Compare cash weight % to playbook `cash_target_pct`; flag if drift exceeds rebalance threshold when mode is threshold |
+| Position sizing | New buy $ ≈ NAV × suggested weight %; cap at `position_limit_pct` of NAV |
+| Short put / CSP | Cash vs contingent cash obligation — flag shortfall if cash < obligation |
+| Income strategy | Prefer not deploying below cash target when strategy is income / capital_preservation unless user overrides |
+
+When cash is **not** recorded: say cash unknown; size only vs positions MTM; do **not** assume full investment or 0 cash.
 
 ### Sector benchmarks (this product’s funds)
 

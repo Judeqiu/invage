@@ -7,11 +7,20 @@ import {
   buildOptionKey,
   formatOptionLabel,
   isOptionHolding,
+  normalizeOptionalChannel,
   valuePosition,
 } from '../market/position-value.js';
 import {
+  applyCashDelta,
+  cashDeltaForHoldingChange,
+  clearCash,
+  getCash,
+  getPlaybook,
   getPortfolio,
+  setCash,
   setPortfolio,
+  type CashApplyResult,
+  type CashBalance,
 } from '../state/portfolio-state.js';
 import {
   channelIdParams,
@@ -29,9 +38,55 @@ function failFrom(error: unknown): AgentToolResult<null> {
   return fail(error instanceof Error ? error.message : String(error));
 }
 
-function formatPortfolio(portfolio: Record<string, Holding>): string {
+function formatCashApplyNote(result: CashApplyResult): string {
+  if (result.adjusted) return result.note;
+  if (result.note) return `Cash ledger: ${result.note}`;
+  return '';
+}
+
+function formatChannelTag(channel: string | undefined): string {
+  return channel != null && channel.length > 0 ? ` | channel: ${channel}` : '';
+}
+
+function formatCashSection(cash: CashBalance | null, cashTargetPct: number): string {
+  const lines = ['── CASH ──'];
+  if (cash == null) {
+    lines.push(
+      '  Cash: not recorded. Use set_cash so strategy can size vs dry powder and cash_target_pct.',
+      `  Playbook cash target: ${cashTargetPct}% (unknown actual weight until cash is set).`,
+    );
+    return lines.join('\n');
+  }
+  lines.push(
+    `  Cash: ${cash.amount.toFixed(2)} ${cash.currency} (updated ${cash.updated_at})${formatChannelTag(cash.channel)}`,
+    `  Playbook cash target: ${cashTargetPct}% — compare after live NAV (portfolio_analyzer / save_snapshot).`,
+  );
+  return lines.join('\n');
+}
+
+/** Resolve optional channel for add/update: omit param keeps prior; empty clears. */
+function resolveChannelParam(
+  raw: string | undefined,
+  previous: string | undefined,
+  paramProvided: boolean,
+): string | undefined {
+  if (!paramProvided) return previous;
+  return normalizeOptionalChannel(raw, 'channel');
+}
+
+function formatPortfolio(
+  portfolio: Record<string, Holding>,
+  cash: CashBalance | null,
+  cashTargetPct: number,
+): string {
   const keys = Object.keys(portfolio);
-  if (keys.length === 0) return 'Portfolio is empty. Use add_holding to add positions.';
+  if (keys.length === 0) {
+    return [
+      'Portfolio is empty. Use add_holding to add positions.',
+      '',
+      formatCashSection(cash, cashTargetPct),
+    ].join('\n');
+  }
 
   let equityCost = 0;
   let optionPremiumCollected = 0;
@@ -78,6 +133,7 @@ function formatPortfolio(portfolio: Record<string, Holding>): string {
         lines.push(`    Underlying mark: $${o.underlying_mark.toFixed(2)}`);
       }
       if (h.category) lines.push(`    Category: ${h.category}`);
+      if (h.channel) lines.push(`    Channel: ${h.channel}`);
       lines.push('');
 
       if (o.side === 'short') optionPremiumCollected += e.premiumAbsolute;
@@ -89,7 +145,7 @@ function formatPortfolio(portfolio: Record<string, Holding>): string {
       const cost = h.avg_price * h.units;
       equityCost += cost;
       lines.push(
-        `  ${key.padEnd(8)} | ${h.units} shares @ $${h.avg_price.toFixed(2)} | Cost: $${cost.toFixed(2)} | ${h.category ?? 'Uncategorized'}`,
+        `  ${key.padEnd(8)} | ${h.units} shares @ $${h.avg_price.toFixed(2)} | Cost: $${cost.toFixed(2)} | ${h.category ?? 'Uncategorized'}${formatChannelTag(h.channel)}`,
       );
     }
   }
@@ -110,6 +166,15 @@ function formatPortfolio(portfolio: Record<string, Holding>): string {
     if (contingentShares > 0) {
       lines.push(`  Contingent share delivery (short calls): ${contingentShares} shares`);
     }
+  }
+  lines.push('');
+  lines.push(formatCashSection(cash, cashTargetPct));
+  if (cash != null && contingentCash > 0) {
+    const cover = cash.amount - contingentCash;
+    lines.push(
+      `  Short-put assignment cover: cash ${cash.amount.toFixed(2)} ${cash.currency} vs obligation $${contingentCash.toFixed(2)} → ` +
+        (cover >= 0 ? `surplus ${cover.toFixed(2)}` : `shortfall ${Math.abs(cover).toFixed(2)}`),
+    );
   }
   return lines.join('\n');
 }
@@ -188,6 +253,9 @@ export function createPortfolioTools(): AgentTool[] {
       'units = contracts. mark = stored premium $ per contract. Live MTM: Yahoo chain for listed underlyings (auto), manual mark for private. ' +
       'quote_source=manual|yahoo optional. Contingent obligation (strike×mult×cts) is separate from MTM. ' +
       'Option portfolio key auto-builds as UNDERLYING-P|C-STRIKE-YYYYMMDD-L|S unless ticker is provided. ' +
+      'When cash is recorded, equity/long buys DECREASE cash by cost/premium; short option opens INCREASE cash by premium credit. ' +
+      'Updates adjust cash by the cost delta. Fails if cash would go negative. Pass adjust_cash=false only for historical import (no ledger). ' +
+      'Optional channel tags the broker/custody source (e.g. moomoo, ibkr, webull); omit or empty when unassigned. ' +
       'Pass telegram_user_id or slack_user_id from the message context — never ask the user for it.',
     parameters: Type.Object({
       ...channelIdParams,
@@ -206,6 +274,18 @@ export function createPortfolioTools(): AgentTool[] {
       }),
       category: Type.Optional(
         Type.String({ description: 'Fund category (e.g. "SL Technology S1", "Private / Secondary").' }),
+      ),
+      channel: Type.Optional(
+        Type.String({
+          description:
+            'Broker / custody source (e.g. moomoo, ibkr, webull, tiger). Omit or empty when unassigned.',
+        }),
+      ),
+      adjust_cash: Type.Optional(
+        Type.Boolean({
+          description:
+            'When cash is recorded: true (default) adjusts cash for this trade; false skips ledger (import/correction only).',
+        }),
       ),
       instrument: Type.Optional(
         Type.Union([Type.Literal('equity'), Type.Literal('option')], {
@@ -266,6 +346,8 @@ export function createPortfolioTools(): AgentTool[] {
         avg_price: number;
         units: number;
         category?: string;
+        channel?: string;
+        adjust_cash?: boolean;
         instrument?: 'equity' | 'option';
         option_right?: 'call' | 'put';
         option_side?: 'long' | 'short';
@@ -285,6 +367,8 @@ export function createPortfolioTools(): AgentTool[] {
         const instrument = p.instrument ?? 'equity';
         const state = resolveInvestorFromChannel(p);
         const portfolio = getPortfolio(state);
+        const adjustCash = p.adjust_cash !== false;
+        const channelProvided = Object.prototype.hasOwnProperty.call(raw, 'channel');
 
         let key: string;
         let holding: Holding;
@@ -301,12 +385,14 @@ export function createPortfolioTools(): AgentTool[] {
                 expiry: option.expiry,
                 side: option.side,
               });
+          const channel = resolveChannelParam(p.channel, portfolio[key]?.channel, channelProvided);
           holding = {
             instrument: 'option',
             avg_price: p.avg_price,
             units: p.units,
             category: p.category ?? portfolio[key]?.category,
             option,
+            ...(channel != null ? { channel } : {}),
           };
           assertHolding(key, holding);
         } else {
@@ -314,20 +400,33 @@ export function createPortfolioTools(): AgentTool[] {
             return fail('ticker is required for equity holdings.');
           }
           key = p.ticker.trim().toUpperCase();
+          const channel = resolveChannelParam(p.channel, portfolio[key]?.channel, channelProvided);
           holding = {
             instrument: 'equity',
             avg_price: p.avg_price,
             units: p.units,
             category: p.category ?? portfolio[key]?.category,
+            ...(channel != null ? { channel } : {}),
           };
           assertHolding(key, holding);
         }
 
         const isUpdate = key in portfolio;
+        const before = isUpdate ? portfolio[key] : null;
+        const today = new Date().toISOString().slice(0, 10);
+        const cashResult = applyCashDelta(
+          getCash(state),
+          cashDeltaForHoldingChange(before, holding),
+          today,
+          adjustCash,
+        );
+        if (cashResult.adjusted && cashResult.cash != null) {
+          setCash(state, cashResult.cash);
+        }
+
         portfolio[key] = holding;
         setPortfolio(state, portfolio);
 
-        const today = new Date().toISOString().slice(0, 10);
         state.log.push({
           ts: today,
           action: isUpdate ? 'holding_updated' : 'holding_added',
@@ -336,11 +435,16 @@ export function createPortfolioTools(): AgentTool[] {
           avg_price: p.avg_price,
           units: p.units,
           category: p.category,
+          channel: holding.channel,
+          cash_delta: cashResult.adjusted ? cashResult.cashDelta : undefined,
+          cash_after: cashResult.cash?.amount,
           ...(instrument === 'option' ? { option: holding.option } : {}),
         });
         saveState(state);
 
         const action = isUpdate ? 'Updated' : 'Added';
+        const cashLine = formatCashApplyNote(cashResult);
+        const channelLine = holding.channel ? `Channel: ${holding.channel}\n` : '';
         if (instrument === 'option') {
           const e = valuePosition(key, holding);
           const o = holding.option!;
@@ -354,20 +458,36 @@ export function createPortfolioTools(): AgentTool[] {
               (e.contingentShareObligation > 0
                 ? `Contingent share delivery if assigned: ${e.contingentShareObligation} ${o.underlying}\n`
                 : '') +
-              (p.category ? `Category: ${p.category}` : ''),
+              (p.category ? `Category: ${p.category}\n` : '') +
+              channelLine +
+              (cashLine ? cashLine : ''),
             {
               ticker: key,
               holding,
               isUpdate,
               economics: e,
+              cash: cashResult.cash,
+              cashDelta: cashResult.adjusted ? cashResult.cashDelta : 0,
+              cashAdjusted: cashResult.adjusted,
             },
           );
         }
 
         const cost = p.avg_price * p.units;
         return ok(
-          `${action} ${key}: ${p.units} shares @ $${p.avg_price.toFixed(2)} (cost: $${cost.toFixed(2)})${p.category ? ` [${p.category}]` : ''}`,
-          { ticker: key, avg_price: p.avg_price, units: p.units, category: p.category, isUpdate },
+          `${action} ${key}: ${p.units} shares @ $${p.avg_price.toFixed(2)} (cost: $${cost.toFixed(2)})${p.category ? ` [${p.category}]` : ''}${formatChannelTag(holding.channel)}` +
+            (cashLine ? `\n${cashLine}` : ''),
+          {
+            ticker: key,
+            avg_price: p.avg_price,
+            units: p.units,
+            category: p.category,
+            channel: holding.channel,
+            isUpdate,
+            cash: cashResult.cash,
+            cashDelta: cashResult.adjusted ? cashResult.cashDelta : 0,
+            cashAdjusted: cashResult.adjusted,
+          },
         );
       } catch (e) {
         return failFrom(e);
@@ -379,19 +499,29 @@ export function createPortfolioTools(): AgentTool[] {
     name: 'remove_holding',
     label: 'Remove Holding',
     description:
-      "Remove a stock or option position from the user's portfolio. Pass telegram_user_id or slack_user_id from the message context.",
+      "Remove a stock or option position from the user's portfolio. " +
+      'When cash is recorded, credits cash by cost basis (equity/long premium) or reverses short premium credit. ' +
+      'This is bookkeeping at cost, not live sale proceeds — pass adjust_cash=false to skip. ' +
+      'Pass telegram_user_id or slack_user_id from the message context.',
     parameters: Type.Object({
       ...channelIdParams,
       ticker: Type.String({
         description: 'Portfolio key to remove (equity ticker or option key, e.g. SPACEX-P-90-20260807-S).',
       }),
+      adjust_cash: Type.Optional(
+        Type.Boolean({
+          description:
+            'When cash is recorded: true (default) credits cash at cost basis; false skips ledger.',
+        }),
+      ),
     }),
     async execute(_id, raw) {
-      const p = raw as ChannelIds & { ticker: string };
+      const p = raw as ChannelIds & { ticker: string; adjust_cash?: boolean };
       try {
         const state = resolveInvestorFromChannel(p);
         const ticker = p.ticker.toUpperCase();
         const portfolio = getPortfolio(state);
+        const adjustCash = p.adjust_cash !== false;
 
         if (!(ticker in portfolio)) {
           return fail(
@@ -400,22 +530,43 @@ export function createPortfolioTools(): AgentTool[] {
         }
 
         const removed = portfolio[ticker];
+        const today = new Date().toISOString().slice(0, 10);
+        const cashResult = applyCashDelta(
+          getCash(state),
+          cashDeltaForHoldingChange(removed, null),
+          today,
+          adjustCash,
+        );
+        if (cashResult.adjusted && cashResult.cash != null) {
+          setCash(state, cashResult.cash);
+        }
+
         delete portfolio[ticker];
         setPortfolio(state, portfolio);
         state.log.push({
-          ts: new Date().toISOString().slice(0, 10),
+          ts: today,
           action: 'holding_removed',
           ticker,
           avg_price: removed.avg_price,
           units: removed.units,
           instrument: removed.instrument ?? 'equity',
+          cash_delta: cashResult.adjusted ? cashResult.cashDelta : undefined,
+          cash_after: cashResult.cash?.amount,
         });
         saveState(state);
 
         const kind = isOptionHolding(removed) ? 'option' : 'equity';
+        const cashLine = formatCashApplyNote(cashResult);
         return ok(
-          `Removed ${ticker} (${kind}: ${removed.units} @ $${removed.avg_price.toFixed(2)}).`,
-          { ticker, removed },
+          `Removed ${ticker} (${kind}: ${removed.units} @ $${removed.avg_price.toFixed(2)}).` +
+            (cashLine ? `\n${cashLine}` : ''),
+          {
+            ticker,
+            removed,
+            cash: cashResult.cash,
+            cashDelta: cashResult.adjusted ? cashResult.cashDelta : 0,
+            cashAdjusted: cashResult.adjusted,
+          },
         );
       } catch (e) {
         return failFrom(e);
@@ -427,14 +578,128 @@ export function createPortfolioTools(): AgentTool[] {
     name: 'get_portfolio',
     label: 'Get Portfolio',
     description:
-      "Retrieve the user's saved portfolio (equities + options). Pass telegram_user_id or slack_user_id from the message context.",
+      "Retrieve the user's saved portfolio (equities + options + cash). Pass telegram_user_id or slack_user_id from the message context.",
     parameters: Type.Object({ ...channelIdParams }),
     async execute(_id, raw) {
       const p = raw as ChannelIds;
       try {
         const state = resolveInvestorFromChannel(p);
         const portfolio = getPortfolio(state);
-        return ok(formatPortfolio(portfolio), { portfolio, count: Object.keys(portfolio).length });
+        const cash = getCash(state);
+        const cashTargetPct = getPlaybook(state).allocation.cash_target_pct;
+        return ok(formatPortfolio(portfolio, cash, cashTargetPct), {
+          portfolio,
+          cash,
+          count: Object.keys(portfolio).length,
+        });
+      } catch (e) {
+        return failFrom(e);
+      }
+    },
+  };
+
+  const setCashTool: AgentTool = {
+    name: 'set_cash',
+    label: 'Set Cash',
+    description:
+      "Record the user's available cash balance for strategy (dry powder, cash weight vs cash_target_pct, short-put cover). " +
+      'amount ≥ 0; currency required (e.g. USD, HKD) — no silent default. ' +
+      'Optional channel tags the broker holding this cash (e.g. moomoo, ibkr); omit or empty when unassigned. ' +
+      'Pass telegram_user_id or slack_user_id from the message context. Does not clear holdings.',
+    parameters: Type.Object({
+      ...channelIdParams,
+      amount: Type.Number({
+        description: 'Available cash amount (≥ 0). Settled / free cash for deployment.',
+      }),
+      currency: Type.String({
+        description: 'Currency code (e.g. USD, HKD). Required — no default.',
+      }),
+      channel: Type.Optional(
+        Type.String({
+          description:
+            'Broker / custody source for this cash (e.g. moomoo, ibkr). Omit or empty when unassigned.',
+        }),
+      ),
+    }),
+    async execute(_id, raw) {
+      const p = raw as ChannelIds & { amount: number; currency: string; channel?: string };
+      try {
+        if (typeof p.amount !== 'number' || !Number.isFinite(p.amount)) {
+          return fail('amount must be a finite number.');
+        }
+        if (p.amount < 0) return fail('amount must be ≥ 0.');
+        if (!p.currency?.trim()) {
+          return fail('currency is required (e.g. USD, HKD) — no silent default.');
+        }
+
+        const state = resolveInvestorFromChannel(p);
+        const today = new Date().toISOString().slice(0, 10);
+        const prev = getCash(state);
+        const channelProvided = Object.prototype.hasOwnProperty.call(raw, 'channel');
+        const channel = resolveChannelParam(p.channel, prev?.channel, channelProvided);
+        const cash: CashBalance = {
+          amount: p.amount,
+          currency: p.currency.trim().toUpperCase(),
+          updated_at: today,
+          ...(channel != null ? { channel } : {}),
+        };
+        setCash(state, cash);
+        state.log.push({
+          ts: today,
+          action: 'cash_set',
+          amount: cash.amount,
+          currency: cash.currency,
+          channel: cash.channel,
+        });
+        saveState(state);
+
+        const target = getPlaybook(state).allocation.cash_target_pct;
+        return ok(
+          `Cash set to ${cash.amount.toFixed(2)} ${cash.currency} (as of ${cash.updated_at})${formatChannelTag(cash.channel)}.\n` +
+            `Playbook cash target: ${target}%. Use get_portfolio / portfolio_analyzer for weight vs target after live marks.`,
+          { cash, cash_target_pct: target },
+        );
+      } catch (e) {
+        return failFrom(e);
+      }
+    },
+  };
+
+  const clearCashTool: AgentTool = {
+    name: 'clear_cash',
+    label: 'Clear Cash',
+    description:
+      'Remove the recorded cash balance (cash becomes unknown). Requires confirm=true. ' +
+      'Does not clear holdings. Pass telegram_user_id or slack_user_id from the message context.',
+    parameters: Type.Object({
+      ...channelIdParams,
+      confirm: Type.Boolean({
+        description: 'Must be true to proceed. Confirm with the user first.',
+      }),
+    }),
+    async execute(_id, raw) {
+      const p = raw as ChannelIds & { confirm: boolean };
+      try {
+        if (!p.confirm) {
+          return fail('Set confirm=true to clear recorded cash. Confirm with the user first.');
+        }
+        const state = resolveInvestorFromChannel(p);
+        const prev = getCash(state);
+        if (prev == null) {
+          return fail('No cash is recorded. Nothing to clear.');
+        }
+        clearCash(state);
+        state.log.push({
+          ts: new Date().toISOString().slice(0, 10),
+          action: 'cash_cleared',
+          amount: prev.amount,
+          currency: prev.currency,
+        });
+        saveState(state);
+        return ok(
+          `Cleared cash record (was ${prev.amount.toFixed(2)} ${prev.currency}). Cash is now unknown.`,
+          { cleared: prev },
+        );
       } catch (e) {
         return failFrom(e);
       }
@@ -446,6 +711,8 @@ export function createPortfolioTools(): AgentTool[] {
     label: 'Update Holding',
     description:
       'Update fields of an existing equity or option position (including option mark for MTM). ' +
+      'When cash is recorded, changes to units/avg_price/side adjust cash by the cost/premium delta (mark-only MTM updates do not). ' +
+      'Fails if cash would go negative. Pass adjust_cash=false to skip ledger. ' +
       'Pass telegram_user_id or slack_user_id from the message context.',
     parameters: Type.Object({
       ...channelIdParams,
@@ -457,6 +724,18 @@ export function createPortfolioTools(): AgentTool[] {
       ),
       units: Type.Optional(Type.Number({ description: 'New shares (equity) or contracts (option).' })),
       category: Type.Optional(Type.String({ description: 'New fund category.' })),
+      channel: Type.Optional(
+        Type.String({
+          description:
+            'Broker / custody source (e.g. moomoo, ibkr). Pass empty string to clear. Omit to leave unchanged.',
+        }),
+      ),
+      adjust_cash: Type.Optional(
+        Type.Boolean({
+          description:
+            'When cash is recorded: true (default) applies cost/premium delta to cash; false skips ledger.',
+        }),
+      ),
       mark: Type.Optional(
         Type.Number({ description: 'Option only: new premium mark in $ per contract for MTM.' }),
       ),
@@ -493,6 +772,8 @@ export function createPortfolioTools(): AgentTool[] {
         avg_price?: number;
         units?: number;
         category?: string;
+        channel?: string;
+        adjust_cash?: boolean;
         mark?: number;
         quote_source?: 'manual' | 'yahoo';
         underlying_mark?: number;
@@ -507,6 +788,8 @@ export function createPortfolioTools(): AgentTool[] {
         const state = resolveInvestorFromChannel(p);
         const ticker = p.ticker.toUpperCase();
         const portfolio = getPortfolio(state);
+        const adjustCash = p.adjust_cash !== false;
+        const channelProvided = Object.prototype.hasOwnProperty.call(raw, 'channel');
 
         if (!(ticker in portfolio)) {
           return fail(`Ticker "${ticker}" not found in portfolio. Use add_holding to create it first.`);
@@ -516,6 +799,8 @@ export function createPortfolioTools(): AgentTool[] {
         if (p.avg_price != null && p.avg_price <= 0) return fail('avg_price must be positive.');
         if (p.units != null && p.units <= 0) return fail('units must be positive.');
 
+        const channel = resolveChannelParam(p.channel, existing.channel, channelProvided);
+        let next: Holding;
         if (isOptionHolding(existing)) {
           if (!existing.option) {
             return fail(`Holding ${ticker} is instrument=option but option fields are missing.`);
@@ -532,15 +817,15 @@ export function createPortfolioTools(): AgentTool[] {
             ...(p.option_side != null ? { side: p.option_side } : {}),
             ...(p.option_right != null ? { right: p.option_right } : {}),
           };
-          const next: Holding = {
+          next = {
             instrument: 'option',
             avg_price: p.avg_price ?? existing.avg_price,
             units: p.units ?? existing.units,
             category: p.category ?? existing.category,
             option: nextOption,
+            ...(channel != null ? { channel } : {}),
           };
           assertHolding(ticker, next);
-          portfolio[ticker] = next;
         } else {
           if (
             p.mark != null ||
@@ -557,26 +842,41 @@ export function createPortfolioTools(): AgentTool[] {
               `Holding ${ticker} is equity. To convert to an option, remove it and add_holding with instrument=option.`,
             );
           }
-          const next: Holding = {
+          next = {
             instrument: 'equity',
             avg_price: p.avg_price ?? existing.avg_price,
             units: p.units ?? existing.units,
             category: p.category ?? existing.category,
+            ...(channel != null ? { channel } : {}),
           };
           assertHolding(ticker, next);
-          portfolio[ticker] = next;
         }
 
+        const today = new Date().toISOString().slice(0, 10);
+        const cashResult = applyCashDelta(
+          getCash(state),
+          cashDeltaForHoldingChange(existing, next),
+          today,
+          adjustCash,
+        );
+        if (cashResult.adjusted && cashResult.cash != null) {
+          setCash(state, cashResult.cash);
+        }
+
+        portfolio[ticker] = next;
         setPortfolio(state, portfolio);
         state.log.push({
-          ts: new Date().toISOString().slice(0, 10),
+          ts: today,
           action: 'holding_updated',
           ticker,
           ...portfolio[ticker],
+          cash_delta: cashResult.adjusted ? cashResult.cashDelta : undefined,
+          cash_after: cashResult.cash?.amount,
         });
         saveState(state);
 
         const h = portfolio[ticker];
+        const cashLine = formatCashApplyNote(cashResult);
         if (isOptionHolding(h)) {
           const e = valuePosition(ticker, h);
           return ok(
@@ -585,14 +885,29 @@ export function createPortfolioTools(): AgentTool[] {
               `MTM: $${e.value.toFixed(2)} | P/L: ${e.pl >= 0 ? '+' : ''}$${e.pl.toFixed(2)}` +
               (e.contingentCashObligation > 0
                 ? `\nContingent cash obligation: $${e.contingentCashObligation.toFixed(2)}`
-                : ''),
-            { ticker, holding: h, economics: e },
+                : '') +
+              (cashLine ? `\n${cashLine}` : ''),
+            {
+              ticker,
+              holding: h,
+              economics: e,
+              cash: cashResult.cash,
+              cashDelta: cashResult.adjusted ? cashResult.cashDelta : 0,
+              cashAdjusted: cashResult.adjusted,
+            },
           );
         }
 
         return ok(
-          `Updated ${ticker}: ${h.units} shares @ $${h.avg_price.toFixed(2)} (cost: $${(h.avg_price * h.units).toFixed(2)})${h.category ? ` [${h.category}]` : ''}`,
-          { ticker, holding: h },
+          `Updated ${ticker}: ${h.units} shares @ $${h.avg_price.toFixed(2)} (cost: $${(h.avg_price * h.units).toFixed(2)})${h.category ? ` [${h.category}]` : ''}${formatChannelTag(h.channel)}` +
+            (cashLine ? `\n${cashLine}` : ''),
+          {
+            ticker,
+            holding: h,
+            cash: cashResult.cash,
+            cashDelta: cashResult.adjusted ? cashResult.cashDelta : 0,
+            cashAdjusted: cashResult.adjusted,
+          },
         );
       } catch (e) {
         return failFrom(e);
@@ -639,5 +954,13 @@ export function createPortfolioTools(): AgentTool[] {
     },
   };
 
-  return [addHolding, removeHolding, getPortfolioTool, updateHolding, clearPortfolio];
+  return [
+    addHolding,
+    removeHolding,
+    getPortfolioTool,
+    updateHolding,
+    clearPortfolio,
+    setCashTool,
+    clearCashTool,
+  ];
 }

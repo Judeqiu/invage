@@ -24,6 +24,24 @@
 
 import type { Holding, OptionSpec } from './types.js';
 
+/**
+ * Optional broker/source tag for multi-broker portfolios.
+ * Empty/whitespace → unassigned (undefined). Fail-fast on non-string.
+ */
+export function normalizeOptionalChannel(
+  raw: unknown,
+  fieldLabel: string,
+): string | undefined {
+  if (raw == null) return undefined;
+  if (typeof raw !== 'string') {
+    throw new Error(
+      `${fieldLabel} must be a string when set (broker id, e.g. moomoo, ibkr, webull).`,
+    );
+  }
+  const t = raw.trim();
+  return t.length === 0 ? undefined : t;
+}
+
 export interface PositionEconomics {
   key: string;
   instrument: 'equity' | 'option';
@@ -38,6 +56,8 @@ export interface PositionEconomics {
   pl: number;
   plPct: number;
   category: string;
+  /** Broker / custody source when assigned; omit when unassigned. */
+  channel?: string;
   /** Absolute premium exchanged (options only); 0 for equity. */
   premiumAbsolute: number;
   /** Contingent cash outlay if short put assigned; 0 otherwise. Not current MTM. */
@@ -125,6 +145,8 @@ export function assertHolding(key: string, h: Holding): void {
   if (!(h.units > 0) || !Number.isFinite(h.units)) {
     throw new Error(`Holding ${key}: units must be positive.`);
   }
+  // Validate optional channel; empty is allowed (unassigned) but wrong types fail.
+  normalizeOptionalChannel(h.channel, `Holding ${key}: channel`);
   if (h.instrument === 'option') {
     if (!h.option) {
       throw new Error(`Holding ${key}: instrument=option requires option fields.`);
@@ -167,6 +189,7 @@ export function valuePosition(
     const contingentShareObligation =
       o.side === 'short' && o.right === 'call' ? sharesControlled : 0;
 
+    const channel = normalizeOptionalChannel(h.channel, `Holding ${key}: channel`);
     return {
       key,
       instrument: 'option',
@@ -179,6 +202,7 @@ export function valuePosition(
       pl,
       plPct,
       category: h.category ?? 'Options',
+      ...(channel != null ? { channel } : {}),
       premiumAbsolute,
       contingentCashObligation,
       contingentShareObligation,
@@ -192,6 +216,7 @@ export function valuePosition(
   const cost = h.avg_price * h.units;
   const value = marketPrice * h.units;
   const pl = value - cost;
+  const channel = normalizeOptionalChannel(h.channel, `Holding ${key}: channel`);
   return {
     key,
     instrument: 'equity',
@@ -204,6 +229,7 @@ export function valuePosition(
     pl,
     plPct: cost > 0 ? (pl / cost) * 100 : 0,
     category: h.category ?? 'Uncategorized',
+    ...(channel != null ? { channel } : {}),
     premiumAbsolute: 0,
     contingentCashObligation: 0,
     contingentShareObligation: 0,

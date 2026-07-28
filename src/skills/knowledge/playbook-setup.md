@@ -160,7 +160,9 @@ Value does *not* mean “buy anything that fell.” Growth does *not* mean “ch
 
 ---
 
-### Step 4 — Position size, sector cap, cash (simple numbers)
+### Step 4 — Position size, sector cap, cash target (simple numbers)
+
+**Note:** `cash_target_pct` is the **policy target** (how much cash you want to hold as a % of portfolio). The user's **actual cash balance** is recorded separately with `set_cash` (amount + currency) so the agent can compare real dry powder vs this target. After playbook setup, if they share available cash, use `set_cash`.
 
 **What it controls:** Concentration guards. I flag (or avoid) suggestions that would put too much in one stock or one sector.
 

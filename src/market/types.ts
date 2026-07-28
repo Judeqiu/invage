@@ -114,6 +114,11 @@ export interface Holding {
   avg_price: number;
   units: number;
   category?: string;
+  /**
+   * Broker / custody source for multi-broker portfolios (e.g. moomoo, ibkr, webull, tiger).
+   * Omit or empty when unassigned — no silent default.
+   */
+  channel?: string;
   /** Omit or "equity" for stocks; "option" for calls/puts. */
   instrument?: InstrumentKind;
   /** Required when instrument === "option". */

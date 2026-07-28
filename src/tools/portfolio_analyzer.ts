@@ -21,7 +21,13 @@ import {
 } from '../market/value-assess.js';
 import type { FinancialMetrics, Holding, ValueAssessment } from '../market/index.js';
 import { thresholdsForPlaybook } from '../playbook/index.js';
-import { getPlaybook, getPortfolio } from '../state/portfolio-state.js';
+import {
+  cashStrategyMetrics,
+  getCash,
+  getPlaybook,
+  getPortfolio,
+  type CashBalance,
+} from '../state/portfolio-state.js';
 import {
   channelIdParams,
   resolveInvestorFromChannel,
@@ -104,6 +110,18 @@ function formatValueSection(assessments: ValueAssessment[]): string {
   return lines.join('\n');
 }
 
+function contingentCashFromOptions(
+  rows: Awaited<ReturnType<typeof runFullAnalysis>>['fullAnalysis'],
+): number {
+  let sum = 0;
+  for (const s of rows) {
+    if ((s.contingentCashObligation ?? 0) > 0) {
+      sum += s.contingentCashObligation!;
+    }
+  }
+  return sum;
+}
+
 export function createPortfolioAnalyzerTool(): AgentTool {
   return {
     name: 'portfolio_analyzer',
@@ -132,6 +150,9 @@ export function createPortfolioAnalyzerTool(): AgentTool {
         let analysisTh = undefined as ReturnType<typeof thresholdsForPlaybook> | undefined;
         let playbookNote = '';
 
+        let channelCash: CashBalance | null = null;
+        let cashTargetPct = 5;
+
         if (params.telegram_user_id != null || params.slack_user_id) {
           const state = resolveInvestorFromChannel(params);
           holdings = getPortfolio(state);
@@ -142,10 +163,13 @@ export function createPortfolioAnalyzerTool(): AgentTool {
           const pb = getPlaybook(state);
           analysisTh = thresholdsForPlaybook(pb);
           valueTh = valueThresholdsFromPlaybook(analysisTh);
+          channelCash = getCash(state);
+          cashTargetPct = pb.allocation.cash_target_pct;
           playbookNote =
             `Playbook: ${pb.strategy} / ${pb.philosophy} / risk=${pb.risk.profile} ` +
             `(buy≥${analysisTh.buyMinUpsidePct}% strong≥${analysisTh.strongBuyUpsidePct}% | ` +
-            `max pos ${pb.risk.position_limit_pct}% sector ${pb.risk.sector_exposure_pct}%)\n\n`;
+            `max pos ${pb.risk.position_limit_pct}% sector ${pb.risk.sector_exposure_pct}% | ` +
+            `cash target ${cashTargetPct}%)\n\n`;
         } else if (params.holdings) {
           holdings = JSON.parse(params.holdings) as Record<string, Holding>;
           tickerList = equityKeys(holdings);
@@ -281,11 +305,50 @@ export function createPortfolioAnalyzerTool(): AgentTool {
             }
           }
 
+          const positionsValue = result.fullAnalysis.reduce((sum, s) => sum + s.value, 0);
+          const cashMetrics = cashStrategyMetrics(channelCash, positionsValue, cashTargetPct);
+          output += '\n── CASH & NAV (strategy) ──\n';
+          if (cashMetrics.cash == null) {
+            output +=
+              '  Cash: not recorded. Use set_cash so dry powder, cash weight, and cash_target_pct drift are known.\n';
+            output += `  Positions MTM: $${positionsValue.toFixed(2)} (NAV without cash)\n`;
+            output += `  Playbook cash target: ${cashTargetPct}%\n`;
+          } else {
+            const c = cashMetrics.cash;
+            const drift = cashMetrics.cashVsTargetPp!;
+            const driftLabel =
+              Math.abs(drift) < 0.05
+                ? 'on target'
+                : drift > 0
+                  ? `${drift.toFixed(1)} pp above target (more cash / less invested)`
+                  : `${Math.abs(drift).toFixed(1)} pp below target (more invested / less cash)`;
+            output += `  Cash: ${c.amount.toFixed(2)} ${c.currency} (updated ${c.updated_at})\n`;
+            output += `  Positions MTM: $${positionsValue.toFixed(2)}\n`;
+            output += `  Total NAV (positions + cash): $${cashMetrics.totalNav.toFixed(2)}\n`;
+            output += `  Cash weight: ${cashMetrics.cashWeightPct!.toFixed(1)}% | target ${cashTargetPct}% → ${driftLabel}\n`;
+            output +=
+              '  Sizing: suggest new buys as % of Total NAV; never invent cash — use recorded balance only.\n';
+            if (contingentCashFromOptions(result.fullAnalysis) > 0) {
+              const oblig = contingentCashFromOptions(result.fullAnalysis);
+              const cover = c.amount - oblig;
+              output +=
+                `  Short-put assignment cover: cash ${c.amount.toFixed(2)} vs obligation $${oblig.toFixed(2)} → ` +
+                (cover >= 0 ? `surplus ${cover.toFixed(2)}` : `shortfall ${Math.abs(cover).toFixed(2)}`) +
+                '\n';
+            }
+          }
+
           return ok(output, {
             ...result,
             metrics,
             valueAssessments: safeAssessments,
             optionMarks,
+            cash: cashMetrics.cash,
+            positionsValue,
+            totalNav: cashMetrics.totalNav,
+            cashWeightPct: cashMetrics.cashWeightPct,
+            cashVsTargetPp: cashMetrics.cashVsTargetPp,
+            cashTargetPct: cashMetrics.cashTargetPct,
           });
         }
 

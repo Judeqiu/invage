@@ -182,6 +182,8 @@ Every mutation appends to `log[]`. The agent never manually logs — the framewo
 
 Stored as a top-level `portfolio` key in the user state file. Keys are equity tickers **or** option position ids.
 
+**Cash** is **not** a holding. It is a separate top-level `cash` block (see below) so strategy can use dry powder, cash weight vs `cash_target_pct`, and short-put assignment cover without inventing a fake ticker.
+
 ```yaml
 user:
   id: ...
@@ -197,16 +199,19 @@ portfolio:
     avg_price: 200.00
     units: 50
     category: SL Technology S1
+    channel: ibkr               # optional broker/custody source; omit when unassigned
   MSFT:
     avg_price: 300.00
     units: 30
     category: SL Technology S1
+    # channel omitted = unassigned
   # Short put: 1 contract (controls 100 sh), $265 total premium, strike $90, expiry 2026-08-07
   SPACEX-P-90-20260807-S:
     instrument: option
     avg_price: 265              # total premium $ per contract (NOT per share)
     units: 1                    # contracts
     category: Private / Secondary
+    channel: moomoo             # optional broker/custody source
     option:
       right: put                # call | put
       side: short               # long | short
@@ -217,6 +222,13 @@ portfolio:
       settlement: physical      # physical | cash — required
       mark: 265                 # current premium $ per contract for MTM
       # underlying_mark: 50     # optional scenario mark on the underlying
+
+# optional — omit entirely when cash is unknown (never invent 0)
+cash:
+  amount: 12500.00              # available / free cash ≥ 0
+  currency: USD                 # required (e.g. USD, HKD) — no silent default
+  updated_at: "2026-07-28"      # YYYY-MM-DD when last set via set_cash
+  channel: ibkr                 # optional broker/custody source; omit when unassigned
 
 # optional — omit to use balanced defaults
 playbook:
@@ -236,6 +248,7 @@ playbook:
 | `avg_price` | number | Yes | Average cost per share in USD |
 | `units` | number | Yes | Number of shares owned |
 | `category` | string | No | Fund category (e.g. "SL Technology S1") |
+| `channel` | string | No | Broker / custody source (e.g. `moomoo`, `ibkr`, `webull`, `tiger`). **Omit or empty when unassigned** — no silent default |
 
 ### Holding Shape (option)
 
@@ -245,6 +258,7 @@ playbook:
 | `avg_price` | number | Yes | **Premium $ per contract** at trade (e.g. 265 = $265 total for one contract) |
 | `units` | number | Yes | Number of **contracts** |
 | `category` | string | No | e.g. `Private / Secondary` |
+| `channel` | string | No | Broker / custody source (same semantics as equity). Omit when unassigned |
 | `option.right` | `call` \| `put` | Yes | Option type |
 | `option.side` | `long` \| `short` | Yes | Bought or written |
 | `option.strike` | number | Yes | Strike per share |
@@ -255,6 +269,18 @@ playbook:
 | `option.mark` | number | Yes | Stored premium **$ per contract** for MTM (≥ 0); used when manual/auto-miss |
 | `option.quote_source` | `manual` \| `yahoo` | No | `manual` = always mark; `yahoo` = require Yahoo chain; omit = auto |
 | `option.underlying_mark` | number | No | Optional underlying price for scenarios |
+
+**Multi-broker:** `channel` tags which broker holds the position or cash so a single user file can mix accounts (e.g. equities at IBKR, options at moomoo). Free-form string (not a closed enum). Same ticker at two brokers still shares one portfolio key today — split keys or multi-cash blocks are a later step if needed.
+
+**Dashboard dimension:** Live WebUI and HTML dashboard reports always expose a channel dimension:
+
+| View | Meaning |
+|------|---------|
+| **All (merged)** | Full portfolio across every channel (default view) |
+| **Single channel** | Filter positions + cash to one broker tag |
+| **`default`** | Synthetic tag for holdings/cash **without** a stored `channel` (legacy data, unassigned) |
+
+Missing/empty `channel` is **not** rewritten in YAML; the dashboard maps it to `default` at read time only.
 
 **Economics (options):**
 
@@ -280,15 +306,58 @@ e.g. `SPACEX-P-90-20260807-S`.
 
 Live Yahoo option marks are applied **in memory** for analysis/dashboard/snapshot valuation; they do not rewrite YAML unless you `update_holding` mark.
 
+### Cash Balance (strategy dry powder)
+
+Top-level `cash` on the same user file. **Missing `cash` means unknown** — do not treat as zero for weight or deployable capital.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `amount` | number | Yes (when block present) | Available cash ≥ 0 |
+| `currency` | string | Yes | 3–4 letter code (`USD`, `HKD`, …). No silent default |
+| `updated_at` | `YYYY-MM-DD` | Yes | Date last set |
+| `channel` | string | No | Broker / custody source for this cash. Omit or empty when unassigned |
+
+**Semantics for strategy:**
+
+| Concept | Formula / rule |
+|---------|----------------|
+| Positions MTM | Sum of equity + option mark-to-market |
+| Total NAV | Positions MTM + cash (when cash recorded); else positions only |
+| Cash weight % | `cash / NAV × 100` (null when cash unknown) |
+| vs `playbook.allocation.cash_target_pct` | Drift in percentage points; flag rebalance when threshold mode |
+| Short-put cover | cash amount vs sum of contingent cash obligations |
+| Position sizing | Suggest buys as % of **Total NAV** when cash is known |
+
+**Cash ledger (when `cash` is recorded):** holding mutations move cash automatically:
+
+| Action | Cash impact |
+|--------|-------------|
+| Add equity / long option | **−** cost or premium (`avg_price × units`) |
+| Add short option | **+** premium credit |
+| Update units/avg_price (or side) | **±** cost/premium **delta** vs prior holding |
+| Mark-only option MTM update | no cash change |
+| Remove holding | reverse open at **cost basis** (not live sale proceeds) |
+
+- Fails fast if cash would go **negative** (insufficient dry powder).
+- Cash unknown → no ledger write (message notes to `set_cash`).
+- `adjust_cash=false` on `add_holding` / `update_holding` / `remove_holding` skips the ledger (historical import / correction only).
+- Import order: either add holdings with `adjust_cash=false` then `set_cash` to free cash, **or** `set_cash` first then add new buys (auto-deduct).
+
+Multi-currency conversion is **not** automatic: record cash in the currency the user thinks of as deployable; agent states the currency. FX conversion only if tools provide a rate.
+
+`clear_portfolio` does **not** clear cash. Use `clear_cash` (confirm) to remove the cash record.
+
 ### Portfolio Tools
 
 | Tool | Auth | Description |
 |------|------|-------------|
-| `add_holding` | channel id | Add or update equity **or** option (`instrument=option` + contract fields) |
-| `remove_holding` | channel id | Remove a position by portfolio key |
-| `get_portfolio` | channel id | List all positions (premium / obligation for options) |
-| `update_holding` | channel id | Update fields including option `mark` for MTM |
-| `clear_portfolio` | channel id | Remove all positions (requires confirm) |
+| `add_holding` | channel id | Add or update equity **or** option; optional `channel` (broker); **deducts/credits cash** when recorded (`adjust_cash=false` to skip) |
+| `remove_holding` | channel id | Remove position; credits cash at cost basis when recorded |
+| `get_portfolio` | channel id | List positions + cash section (includes channel when set) |
+| `update_holding` | channel id | Update fields including option `mark` and optional `channel`; cost changes adjust cash |
+| `clear_portfolio` | channel id | Remove all positions (requires confirm); cash kept |
+| `set_cash` | channel id | Record cash amount + currency (required); optional `channel` (broker) |
+| `clear_cash` | channel id | Remove cash record (requires confirm) |
 
 **Isolation**: Every tool resolves the user via channel id from the message context. The LLM never directly specifies which user file to access — the framework enforces it.
 
@@ -311,10 +380,13 @@ data/drive/<slug>/
 ```json
 {
   "date": "2026-07-01",
-  "totalValue": 50000.0,
+  "totalValue": 62500.0,
   "totalCost": 42000.0,
   "totalPL": 8000.0,
   "totalPLPct": 19.05,
+  "positionsValue": 50000.0,
+  "cashAmount": 12500.0,
+  "cashCurrency": "USD",
   "positions": [
     {
       "ticker": "AAPL",

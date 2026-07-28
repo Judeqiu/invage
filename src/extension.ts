@@ -20,6 +20,7 @@ import { playbookAgentGuidance } from './playbook/index.js';
 import { handleBindCommand, handleBindWebCommand } from './onboard/bind-command.js';
 import { handleOnboardCommand, handleOnboardWebCommand } from './onboard/admin-commands.js';
 import {
+  getCash,
   getPlaybook,
   getPortfolio,
   type InvestorState,
@@ -83,7 +84,7 @@ Success looks like:
 
 **Know → Analyze / Research → Recommend → Record**
 
-1. **Know** — resolve the linked user; load portfolio via \`get_portfolio\` when holdings matter. Playbook (strategy/philosophy/risk/allocation/buy-sell/rebalance/watchlists) is injected in context; use \`get_playbook\` / \`update_playbook\` when the user wants to view or change methodology. Unconfigured users get the balanced market-standard default. For a *guided* setup, load \`playbook-setup\` (patient one-question wizard) — only when the user asks.
+1. **Know** — resolve the linked user; load portfolio via \`get_portfolio\` when holdings matter (includes cash section). Cash is dry powder for strategy — use \`set_cash\` when the user states available cash; never invent 0. Playbook (strategy/philosophy/risk/allocation/buy-sell/rebalance/watchlists) is injected in context; use \`get_playbook\` / \`update_playbook\` when the user wants to view or change methodology. Unconfigured users get the balanced market-standard default. For a *guided* setup, load \`playbook-setup\` (patient one-question wizard) — only when the user asks.
 2. **Analyze** — load \`investment-analysis\`; run \`portfolio_analyzer\` (3-axis, metrics/targets, value screen; thresholds follow playbook when channel user is used). Use Part C for undervaluation; **Part D for news-driven trend/path** (with Firecrawl).
 3. **Research** — load \`firecrawl\` for news, filings, macro, thematic questions, and primary sources behind a move. Prefer finance sources; cite URLs. Prefer playbook watchlist markets/sectors/themes for discovery when the user does not name a ticker.
 4. **Recommend** — 1–3 concrete actions when the user wants portfolio moves (numbers required). Respect playbook buy/sell criteria, risk profile, and position/sector caps. For news paths: regime + horizon + gates before BUY. For themes: winners/losers, risks — not unsolicited trade spam.
@@ -187,7 +188,12 @@ When the user asks a **market theme / outlook / "how will X affect the stock mar
 function investorContextPrefix(investor: InvestorState, ctx: EnrichMessageContext): string {
   const portfolio = getPortfolio(investor);
   const n = Object.keys(portfolio).length;
+  const cash = getCash(investor);
   const playbook = getPlaybook(investor);
+  const cashHint =
+    cash != null
+      ? `Cash: ${cash.amount.toFixed(2)} ${cash.currency} (updated ${cash.updated_at}).`
+      : 'Cash: not recorded (use set_cash for dry powder / cash weight vs cash_target_pct).';
   const channelHint =
     ctx.telegramUserId != null
       ? `Use telegram_user_id=${ctx.telegramUserId} on portfolio/playbook tools.`
@@ -199,8 +205,8 @@ function investorContextPrefix(investor: InvestorState, ctx: EnrichMessageContex
   return (
     `[Investor context: You are working with user "${investor.user.slug}" ` +
     `(${investor.profile.display_name}, email=${investor.profile.contact_email}). ` +
-    `Saved holdings: ${n}. ${channelHint} ` +
-    `Load portfolio/state before mutating. Tools: get_playbook / update_playbook for methodology config.]\n` +
+    `Saved holdings: ${n}. ${cashHint} ${channelHint} ` +
+    `Load portfolio/state before mutating. Tools: get_playbook / update_playbook for methodology; set_cash for cash balance.]\n` +
     playbookAgentGuidance(playbook)
   );
 }

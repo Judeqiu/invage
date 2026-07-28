@@ -36,6 +36,7 @@ export {
   formatOptionLabel,
   assertHolding,
   assertOptionSpec,
+  normalizeOptionalChannel,
   valuePosition,
   valuePortfolio,
 } from './position-value.js';

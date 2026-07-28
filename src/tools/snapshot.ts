@@ -4,7 +4,7 @@ import { writeFileSync, mkdirSync, existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { resolveDataRoot } from 'utarus';
 import { resolvePortfolioMarket, valuePortfolio } from '../market/index.js';
-import { getPortfolio } from '../state/portfolio-state.js';
+import { getCash, getPortfolio } from '../state/portfolio-state.js';
 import {
   loadSnapshotIndex,
   loadSnapshots,
@@ -63,6 +63,7 @@ export function createSnapshotTool(): AgentTool[] {
           premiumAbsolute: e.premiumAbsolute,
           contingentCashObligation: e.contingentCashObligation,
           contingentShareObligation: e.contingentShareObligation,
+          ...(e.channel != null ? { channel: e.channel } : {}),
           ...(e.option ? { option: e.option } : {}),
           ...(optionMarks[e.key]
             ? {
@@ -72,9 +73,12 @@ export function createSnapshotTool(): AgentTool[] {
             : {}),
         }));
 
-        const totalValue = positions.reduce((s, pos) => s + pos.value, 0);
+        const positionsValue = positions.reduce((s, pos) => s + pos.value, 0);
         const totalCost = positions.reduce((s, pos) => s + pos.cost, 0);
-        const totalPL = totalValue - totalCost;
+        const cash = getCash(state);
+        const totalValue = cash != null ? positionsValue + cash.amount : positionsValue;
+        // P/L is on invested positions only; cash is dry powder, not a P/L line.
+        const totalPL = positionsValue - totalCost;
 
         let equityValue = 0;
         let equityCost = 0;
@@ -104,6 +108,14 @@ export function createSnapshotTool(): AgentTool[] {
           optionsPremiumPaid,
           equityValue,
           equityCost,
+          ...(cash != null
+            ? {
+                cashAmount: cash.amount,
+                cashCurrency: cash.currency,
+                ...(cash.channel != null ? { cashChannel: cash.channel } : {}),
+                positionsValue,
+              }
+            : {}),
         };
 
         const slug = state.user.slug;
@@ -128,19 +140,27 @@ export function createSnapshotTool(): AgentTool[] {
           contingentCashObligation > 0
             ? `\nContingent cash obligation (short puts): $${contingentCashObligation.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
             : '';
+        const cashNote =
+          cash != null
+            ? `\nCash: ${cash.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })} ${cash.currency}` +
+              `\nPositions MTM: $${positionsValue.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
+            : '\nCash: not recorded (NAV = positions only). Use set_cash to include dry powder.';
         return ok(
           `Snapshot saved as "${fileName}".\n` +
-            `Total Value: $${totalValue.toLocaleString('en-US', { minimumFractionDigits: 2 })}\n` +
-            `Total P/L: ${sign}$${totalPL.toFixed(2)} (${sign}${snapshot.totalPLPct.toFixed(1)}%)\n` +
+            `Total Value (NAV): $${totalValue.toLocaleString('en-US', { minimumFractionDigits: 2 })}\n` +
+            `Positions P/L: ${sign}$${totalPL.toFixed(2)} (${sign}${snapshot.totalPLPct.toFixed(1)}%)\n` +
             `${positions.length} positions recorded.` +
+            cashNote +
             obligationNote,
           {
             fileName,
             totalValue,
+            positionsValue,
             totalPL,
             totalPLPct: snapshot.totalPLPct,
             positions: positions.length,
             contingentCashObligation,
+            cash,
           },
         );
       } catch (e) {

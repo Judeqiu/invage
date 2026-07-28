@@ -22,6 +22,8 @@ export interface SnapshotPosition {
   /** equity (default) or option — older snapshots omit this. */
   instrument?: 'equity' | 'option';
   label?: string;
+  /** Broker / custody source when assigned at snapshot time. */
+  channel?: string;
   premiumAbsolute?: number;
   contingentCashObligation?: number;
   contingentShareObligation?: number;
@@ -53,6 +55,16 @@ export interface Snapshot {
   optionsPremiumPaid?: number;
   equityValue?: number;
   equityCost?: number;
+  /**
+   * Recorded cash at snapshot time (newer snapshots).
+   * totalValue for new snapshots = positions MTM + cash when cash was recorded.
+   */
+  cashAmount?: number;
+  cashCurrency?: string;
+  /** Broker / custody source for recorded cash when assigned. */
+  cashChannel?: string;
+  /** Sum of position MTM only (excludes cash). Present when cash was recorded. */
+  positionsValue?: number;
 }
 
 function driveDir(slug: string): string {
