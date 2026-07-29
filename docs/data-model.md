@@ -282,7 +282,17 @@ playbook:
 | `option.quote_source` | `manual` \| `yahoo` | No | `manual` = always mark; `yahoo` = require Yahoo chain; omit = auto |
 | `option.underlying_mark` | number | No | Optional underlying price for scenarios |
 
-**Multi-broker:** `channel` tags which broker holds the position or cash so a single user file can mix accounts (e.g. equities at IBKR, options at moomoo). Free-form string (not a closed enum). Same ticker at two brokers still shares one portfolio key today — split keys if needed.
+**Multi-broker:** `channel` tags which broker holds the position or cash so a single user file can mix accounts (e.g. equities at IBKR, options at moomoo). Free-form string (not a closed enum).
+
+**Same ticker, different channels:** portfolio map keys are composite when a channel is set:
+
+| Channel | Map key | Notes |
+|---------|---------|--------|
+| Unassigned | `AAPL` | Legacy-friendly bare ticker |
+| Assigned | `AAPL@moomoo` | Same equity at another broker is a separate lot |
+| Option + channel | `SPACEX-P-90-20260807-S@ibkr` | Option base key + `@channel` |
+
+`add_holding` with `channel` upserts only the lot on that channel; a different channel creates a new lot (no forced merge). Yahoo quotes still use the bare symbol (`AAPL`). Legacy rows that store channel on the holding under a bare key (`AAPL` + `channel: moomoo`) remain valid and match that channel on upsert.
 
 **Multi-channel cash:** `set_cash` **upserts by channel** — recording cash for `cmbyonglong` does **not** overwrite `jude_futu`. YAML stores a single object when one slot exists, or an array when two or more. Trades with `adjust_cash=true` debit/credit only the cash slot matching the holding's `channel`.
 
@@ -308,7 +318,7 @@ Missing/empty `channel` is **not** rewritten in YAML; the dashboard maps it to `
 
 **Position key:** if `ticker` is omitted on add, auto-built as  
 `{UNDERLYING}-{P|C}-{STRIKE}-{YYYYMMDD}-{L|S}`  
-e.g. `SPACEX-P-90-20260807-S`.
+e.g. `SPACEX-P-90-20260807-S`. When `channel` is set, the stored map key is `{base}@{channel}`.
 
 **Pricing:**
 

@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import {
+  buildHoldingKey,
   buildOptionKey,
+  equityQuoteSymbol,
+  equityQuoteSymbols,
+  holdingBaseKey,
+  resolveLookupHoldingKey,
+  resolveUpsertHoldingKey,
   valuePosition,
   valuePortfolio,
   equityKeys,
@@ -21,6 +27,62 @@ describe('buildOptionKey', () => {
         side: 'short',
       }),
     ).toBe('SPACEX-P-90-20260807-S');
+  });
+});
+
+describe('multi-channel holding keys', () => {
+  it('builds bare vs composite keys', () => {
+    expect(buildHoldingKey('aapl')).toBe('AAPL');
+    expect(buildHoldingKey('aapl', 'moomoo')).toBe('AAPL@moomoo');
+    expect(holdingBaseKey('AAPL@moomoo')).toBe('AAPL');
+    expect(equityQuoteSymbol('TSLA@cmbyonglong')).toBe('TSLA');
+  });
+
+  it('upserts same channel onto legacy bare key; different channel creates composite', () => {
+    const portfolio: Record<string, Holding> = {
+      TSLA: { avg_price: 238.75, units: 68, channel: 'cmbyonglong' },
+    };
+    expect(resolveUpsertHoldingKey(portfolio, 'TSLA', 'cmbyonglong', true)).toBe('TSLA');
+    expect(resolveUpsertHoldingKey(portfolio, 'TSLA', 'jude_futu', true)).toBe(
+      'TSLA@jude_futu',
+    );
+  });
+
+  it('allows two lots of the same equity under different channels', () => {
+    const portfolio: Record<string, Holding> = {
+      'O@cmbyonglong': { avg_price: 58.89, units: 540, channel: 'cmbyonglong' },
+      'O@screenshot': { avg_price: 57.03, units: 75, channel: 'screenshot' },
+    };
+    const rows = valuePortfolio(portfolio, { O: 60 });
+    expect(rows).toHaveLength(2);
+    expect(rows.map((r) => r.key).sort()).toEqual(['O@cmbyonglong', 'O@screenshot']);
+    expect(rows.every((r) => r.label === 'O')).toBe(true);
+    expect(equityQuoteSymbols(portfolio)).toEqual(['O']);
+  });
+
+  it('lookup requires channel or full key when ambiguous', () => {
+    const portfolio: Record<string, Holding> = {
+      'SPCX@cmbyonglong': { avg_price: 142, units: 45, channel: 'cmbyonglong' },
+      'SPCX@jude_futu': { avg_price: 135, units: 50, channel: 'jude_futu' },
+    };
+    expect(() => resolveLookupHoldingKey(portfolio, 'SPCX')).toThrow(/multiple holdings/);
+    expect(resolveLookupHoldingKey(portfolio, 'SPCX', 'jude_futu', true)).toBe(
+      'SPCX@jude_futu',
+    );
+    expect(resolveLookupHoldingKey(portfolio, 'SPCX@cmbyonglong')).toBe('SPCX@cmbyonglong');
+  });
+
+  it('values composite equity keys using bare Yahoo symbols', () => {
+    const portfolio: Record<string, Holding> = {
+      'AAPL@ibkr': { avg_price: 100, units: 10, channel: 'ibkr' },
+      'AAPL@moomoo': { avg_price: 110, units: 5, channel: 'moomoo' },
+    };
+    const live = buildLivePositions(portfolio, { AAPL: 120 });
+    expect(live.positionCount).toBe(2);
+    expect(live.equityValue).toBe(120 * 15);
+    expect(live.positions.every((p) => p.channel === 'ibkr' || p.channel === 'moomoo')).toBe(
+      true,
+    );
   });
 });
 

@@ -4,7 +4,7 @@
  */
 
 import type { Holding } from './types.js';
-import { equityKeys } from './position-value.js';
+import { equityQuoteSymbols } from './position-value.js';
 import { fetchPrices } from './fetch-prices.js';
 import {
   applyOptionMarks,
@@ -15,6 +15,7 @@ import {
 export interface ResolvedPortfolioMarket {
   /** Portfolio with option.mark updated to live marks where available. */
   portfolio: Record<string, Holding>;
+  /** Yahoo prices keyed by bare equity symbol (not composite portfolio keys). */
   equityPrices: Record<string, number>;
   optionMarks: Record<string, OptionLiveMark>;
 }
@@ -22,9 +23,11 @@ export interface ResolvedPortfolioMarket {
 export async function resolvePortfolioMarket(
   portfolio: Record<string, Holding>,
 ): Promise<ResolvedPortfolioMarket> {
-  const eqKeys = equityKeys(portfolio);
+  const symbols = equityQuoteSymbols(portfolio);
   const [equityPrices, optionMarks] = await Promise.all([
-    eqKeys.length > 0 ? fetchPrices(eqKeys) : Promise.resolve({} as Record<string, number>),
+    symbols.length > 0
+      ? fetchPrices(symbols)
+      : Promise.resolve({} as Record<string, number>),
     fetchOptionMarks(portfolio),
   ]);
   return {

@@ -31,6 +31,13 @@ export { defaultAnalysisThresholds } from './analyzer.js';
 export {
   isOptionHolding,
   equityKeys,
+  equityQuoteSymbols,
+  equityQuoteSymbol,
+  holdingBaseKey,
+  buildHoldingKey,
+  resolveUpsertHoldingKey,
+  resolveLookupHoldingKey,
+  normalizeHoldingKeyInput,
   optionKeys,
   buildOptionKey,
   formatOptionLabel,
@@ -39,6 +46,7 @@ export {
   normalizeOptionalChannel,
   valuePosition,
   valuePortfolio,
+  HOLDING_KEY_CHANNEL_SEP,
 } from './position-value.js';
 export type { PositionEconomics } from './position-value.js';
 export {

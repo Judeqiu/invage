@@ -71,15 +71,196 @@ export function isOptionHolding(h: Holding): boolean {
   return h.instrument === 'option';
 }
 
+/**
+ * Separator between base symbol (or option id) and broker channel in portfolio map keys.
+ * Same equity at two brokers: AAPL@ibkr and AAPL@moomoo are distinct holdings.
+ */
+export const HOLDING_KEY_CHANNEL_SEP = '@';
+
+/** Channel identity for holding keys ('' = unassigned). */
+function holdingChannelSlot(channel: string | undefined | null): string {
+  if (channel == null) return '';
+  const t = String(channel).trim();
+  return t.length === 0 ? '' : t;
+}
+
+/**
+ * Portfolio map key for a holding.
+ * Unassigned channel → bare base (legacy-compatible: `AAPL`, `SPACEX-P-90-…-S`).
+ * Assigned channel → `BASE@channel` so the same ticker can exist at two brokers.
+ */
+export function buildHoldingKey(baseKey: string, channel?: string | null): string {
+  const base = baseKey.trim().toUpperCase();
+  if (!base) throw new Error('Holding key base is required.');
+  if (base.includes(HOLDING_KEY_CHANNEL_SEP)) {
+    throw new Error(
+      `Holding base key must not contain "${HOLDING_KEY_CHANNEL_SEP}" (got "${baseKey}"). ` +
+        `Pass the bare ticker/option id and channel separately.`,
+    );
+  }
+  const ch = holdingChannelSlot(channel);
+  return ch.length > 0 ? `${base}${HOLDING_KEY_CHANNEL_SEP}${ch}` : base;
+}
+
+/**
+ * Strip optional @channel suffix from a portfolio map key.
+ * Equity quote symbol / option base id for market data and display.
+ */
+export function holdingBaseKey(portfolioKey: string): string {
+  const at = portfolioKey.lastIndexOf(HOLDING_KEY_CHANNEL_SEP);
+  if (at > 0) return portfolioKey.slice(0, at);
+  return portfolioKey;
+}
+
+/** Yahoo / market-data symbol for an equity portfolio key (strips @channel). */
+export function equityQuoteSymbol(portfolioKey: string): string {
+  return holdingBaseKey(portfolioKey);
+}
+
+/**
+ * Normalize a user-supplied portfolio key: uppercases the base, preserves channel casing.
+ * `aapl@moomoo` → `AAPL@moomoo`; `AAPL` → `AAPL`.
+ */
+export function normalizeHoldingKeyInput(raw: string): string {
+  const t = raw.trim();
+  if (!t) throw new Error('Holding key is required.');
+  const at = t.lastIndexOf(HOLDING_KEY_CHANNEL_SEP);
+  if (at > 0) {
+    const base = t.slice(0, at).trim().toUpperCase();
+    const ch = t.slice(at + 1).trim();
+    if (!base) throw new Error(`Invalid holding key "${raw}".`);
+    if (!ch) return base;
+    return `${base}${HOLDING_KEY_CHANNEL_SEP}${ch}`;
+  }
+  return t.toUpperCase();
+}
+
+/**
+ * Resolve map key for add/upsert.
+ *
+ * - `channelExplicit=true`: match base + channel slot only; else new lot at BASE@channel.
+ *   Same stock under different channels → distinct keys.
+ * - `channelExplicit=false`: if exactly one lot of that base exists, update it (any channel);
+ *   if several, fail-fast (pass channel); if none, create bare unassigned key.
+ * Supports legacy bare keys whose channel field still tags the broker.
+ */
+export function resolveUpsertHoldingKey(
+  portfolio: Record<string, Holding>,
+  baseKey: string,
+  channel: string | undefined,
+  channelExplicit = true,
+): string {
+  const bare = baseKey.trim().toUpperCase();
+  if (!bare) throw new Error('Holding key base is required.');
+  if (bare.includes(HOLDING_KEY_CHANNEL_SEP)) {
+    throw new Error(
+      `Holding base key must not contain "${HOLDING_KEY_CHANNEL_SEP}" (got "${baseKey}"). ` +
+        `Pass the bare ticker/option id and channel separately.`,
+    );
+  }
+
+  const byBase = Object.keys(portfolio).filter((k) => holdingBaseKey(k) === bare);
+
+  if (!channelExplicit) {
+    if (byBase.length === 1) return byBase[0];
+    if (byBase.length > 1) {
+      throw new Error(
+        `Ticker "${bare}" has multiple channel lots: ${byBase.join(', ')}. ` +
+          `Pass channel to choose which lot to update (or to add a new channel lot).`,
+      );
+    }
+    return bare;
+  }
+
+  const want = holdingChannelSlot(channel);
+  const preferred = buildHoldingKey(bare, channel);
+  const matches = byBase.filter(
+    (k) => holdingChannelSlot(portfolio[k].channel) === want,
+  );
+  if (matches.length === 1) return matches[0];
+  if (matches.length > 1) {
+    throw new Error(
+      `Corrupt portfolio: multiple holdings for ${bare} on channel "${want || '(unassigned)'}": ${matches.join(', ')}`,
+    );
+  }
+  if (Object.prototype.hasOwnProperty.call(portfolio, preferred)) {
+    throw new Error(
+      `Portfolio key "${preferred}" exists but its channel field does not match "${want || '(unassigned)'}".`,
+    );
+  }
+  return preferred;
+}
+
+/**
+ * Resolve map key for update/remove from ticker param (+ optional channel).
+ * Accepts full key (`AAPL@moomoo`), bare ticker when unique, or ticker+channel.
+ * Fail-fast when missing or ambiguous.
+ */
+export function resolveLookupHoldingKey(
+  portfolio: Record<string, Holding>,
+  tickerParam: string,
+  channel?: string | null,
+  channelProvided = false,
+): string {
+  const raw = normalizeHoldingKeyInput(tickerParam);
+  const keys = Object.keys(portfolio);
+
+  if (Object.prototype.hasOwnProperty.call(portfolio, raw)) {
+    if (channelProvided) {
+      const want = holdingChannelSlot(channel);
+      const got = holdingChannelSlot(portfolio[raw].channel);
+      if (want !== got) {
+        throw new Error(
+          `Holding "${raw}" is on channel "${got || '(unassigned)'}", not "${want || '(unassigned)'}".`,
+        );
+      }
+    }
+    return raw;
+  }
+
+  const base = holdingBaseKey(raw);
+  if (channelProvided) {
+    const preferred = buildHoldingKey(base, channel);
+    if (Object.prototype.hasOwnProperty.call(portfolio, preferred)) return preferred;
+    if (
+      Object.prototype.hasOwnProperty.call(portfolio, base) &&
+      holdingChannelSlot(portfolio[base].channel) === holdingChannelSlot(channel)
+    ) {
+      return base;
+    }
+    throw new Error(
+      `Holding "${base}" on channel "${holdingChannelSlot(channel) || '(unassigned)'}" not found. ` +
+        `Current holdings: ${keys.join(', ') || 'none'}`,
+    );
+  }
+
+  const matches = keys.filter((k) => k === base || holdingBaseKey(k) === base);
+  if (matches.length === 1) return matches[0];
+  if (matches.length === 0) {
+    throw new Error(
+      `Ticker "${base}" not found in portfolio. Current holdings: ${keys.join(', ') || 'none'}`,
+    );
+  }
+  throw new Error(
+    `Ticker "${base}" matches multiple holdings: ${matches.join(', ')}. ` +
+      `Pass the full key (e.g. ${matches[0]}) or set channel to disambiguate.`,
+  );
+}
+
 export function equityKeys(portfolio: Record<string, Holding>): string[] {
   return Object.keys(portfolio).filter((k) => !isOptionHolding(portfolio[k]));
+}
+
+/** Unique Yahoo symbols for equity holdings (composite keys collapsed). */
+export function equityQuoteSymbols(portfolio: Record<string, Holding>): string[] {
+  return [...new Set(equityKeys(portfolio).map(equityQuoteSymbol))];
 }
 
 export function optionKeys(portfolio: Record<string, Holding>): string[] {
   return Object.keys(portfolio).filter((k) => isOptionHolding(portfolio[k]));
 }
 
-/** OCC-style-ish portfolio key: UNDERLYING-P|C-STRIKE-YYYYMMDD-L|S */
+/** OCC-style-ish portfolio key: UNDERLYING-P|C-STRIKE-YYYYMMDD-L|S (channel appended separately via buildHoldingKey). */
 export function buildOptionKey(input: {
   underlying: string;
   right: 'call' | 'put';
@@ -211,7 +392,9 @@ export function valuePosition(
   }
 
   if (marketPrice == null || !Number.isFinite(marketPrice)) {
-    throw new Error(`Missing market price for ${key}. Cannot value equity position.`);
+    throw new Error(
+      `Missing market price for ${equityQuoteSymbol(key)} (key ${key}). Cannot value equity position.`,
+    );
   }
   const cost = h.avg_price * h.units;
   const value = marketPrice * h.units;
@@ -220,7 +403,7 @@ export function valuePosition(
   return {
     key,
     instrument: 'equity',
-    label: key,
+    label: equityQuoteSymbol(key),
     units: h.units,
     avgCost: h.avg_price,
     price: marketPrice,
@@ -236,7 +419,10 @@ export function valuePosition(
   };
 }
 
-/** Value full portfolio. `prices` keyed by equity portfolio keys only. */
+/**
+ * Value full portfolio.
+ * `prices` keyed by Yahoo equity symbols (bare tickers), not composite portfolio keys.
+ */
 export function valuePortfolio(
   portfolio: Record<string, Holding>,
   prices: Record<string, number>,
@@ -248,6 +434,6 @@ export function valuePortfolio(
   return keys.map((key) => {
     const h = portfolio[key];
     if (isOptionHolding(h)) return valuePosition(key, h);
-    return valuePosition(key, h, prices[key]);
+    return valuePosition(key, h, prices[equityQuoteSymbol(key)]);
   });
 }

@@ -1,7 +1,11 @@
 import { COMPANIES, THRESHOLDS } from './config.js';
 import type { PlaybookThresholds } from '../playbook/thresholds.js';
 import type { Holding, PositionAnalysis, AnalystTarget, AnalysisResult } from './types.js';
-import { isOptionHolding, valuePosition } from './position-value.js';
+import {
+  equityQuoteSymbol,
+  isOptionHolding,
+  valuePosition,
+} from './position-value.js';
 
 /** Default thresholds when no playbook is supplied (matches global THRESHOLDS). */
 export function defaultAnalysisThresholds(): Pick<
@@ -61,15 +65,18 @@ export function buildAnalysis(
       continue;
     }
 
-    const price = prices[ticker];
+    const symbol = equityQuoteSymbol(ticker);
+    const price = prices[symbol];
     if (price == null || !Number.isFinite(price)) {
-      throw new Error(`Missing market price for ${ticker}. Cannot analyze equity position.`);
+      throw new Error(
+        `Missing market price for ${symbol} (key ${ticker}). Cannot analyze equity position.`,
+      );
     }
     const e = valuePosition(ticker, h, price);
     const avg = h.avg_price;
 
-    const t = targets[ticker] ?? {
-      ticker,
+    const t = targets[symbol] ?? {
+      ticker: symbol,
       targetLowPrice: null,
       targetMedianPrice: null,
       targetMeanPrice: null,
@@ -87,7 +94,7 @@ export function buildAnalysis(
 
     analysis.push({
       ticker,
-      company: COMPANIES[ticker] ?? ticker,
+      company: COMPANIES[symbol] ?? symbol,
       category: e.category,
       price,
       avgCost: avg,

@@ -4,6 +4,7 @@ import {
   fetchPriceSnapshots,
   formatPriceSnapshot,
 } from '../market/fetch-prices.js';
+import { equityQuoteSymbol, isOptionHolding } from '../market/position-value.js';
 import { getPortfolio } from '../state/portfolio-state.js';
 import {
   channelIdParams,
@@ -113,26 +114,71 @@ export function createQuoteTool(): AgentTool {
           }
 
           let holdingPl:
-            | { cost: number; units: number; avg: number; pl: number; plPct: number }
+            | {
+                cost: number;
+                units: number;
+                avg: number;
+                pl: number;
+                plPct: number;
+                lots?: Array<{ key: string; channel?: string; units: number; avg: number; pl: number }>;
+              }
             | undefined;
-          if (portfolio && portfolio[t] && portfolio[t].instrument !== 'option') {
-            const h = portfolio[t];
-            const cost = h.avg_price * h.units;
-            const value = s.price * h.units;
-            const pl = value - cost;
-            const plPct = cost > 0 ? (pl / cost) * 100 : 0;
-            holdingPl = {
-              cost,
-              units: h.units,
-              avg: h.avg_price,
-              pl,
-              plPct,
-            };
-            lines.push(
-              `  → Your holding: ${h.units} sh @ $${h.avg_price.toFixed(2)} cost` +
-                ` | MTM $${value.toFixed(2)} | P/L ${pl >= 0 ? '+' : ''}$${pl.toFixed(2)}` +
-                ` (${plPct >= 0 ? '+' : ''}${plPct.toFixed(1)}%) vs LIVE $${s.price.toFixed(2)}`,
+          if (portfolio) {
+            const lots = Object.entries(portfolio).filter(
+              ([k, h]) => !isOptionHolding(h) && equityQuoteSymbol(k) === t,
             );
+            if (lots.length > 0) {
+              let totalUnits = 0;
+              let totalCost = 0;
+              const lotDetails: Array<{
+                key: string;
+                channel?: string;
+                units: number;
+                avg: number;
+                pl: number;
+              }> = [];
+              for (const [key, h] of lots) {
+                const cost = h.avg_price * h.units;
+                const value = s.price * h.units;
+                const pl = value - cost;
+                totalUnits += h.units;
+                totalCost += cost;
+                lotDetails.push({
+                  key,
+                  channel: h.channel,
+                  units: h.units,
+                  avg: h.avg_price,
+                  pl,
+                });
+                const ch =
+                  h.channel != null && h.channel.length > 0 ? ` [${h.channel}]` : '';
+                lines.push(
+                  `  → Your holding${ch}: ${h.units} sh @ $${h.avg_price.toFixed(2)} cost` +
+                    ` | MTM $${value.toFixed(2)} | P/L ${pl >= 0 ? '+' : ''}$${pl.toFixed(2)}` +
+                    ` vs LIVE $${s.price.toFixed(2)}` +
+                    (lots.length > 1 ? ` (${key})` : ''),
+                );
+              }
+              const totalValue = s.price * totalUnits;
+              const pl = totalValue - totalCost;
+              const plPct = totalCost > 0 ? (pl / totalCost) * 100 : 0;
+              const avg = totalUnits > 0 ? totalCost / totalUnits : 0;
+              holdingPl = {
+                cost: totalCost,
+                units: totalUnits,
+                avg,
+                pl,
+                plPct,
+                ...(lots.length > 1 ? { lots: lotDetails } : {}),
+              };
+              if (lots.length > 1) {
+                lines.push(
+                  `  → Combined ${t}: ${totalUnits} sh wavg @ $${avg.toFixed(2)}` +
+                    ` | MTM $${totalValue.toFixed(2)} | P/L ${pl >= 0 ? '+' : ''}$${pl.toFixed(2)}` +
+                    ` (${plPct >= 0 ? '+' : ''}${plPct.toFixed(1)}%)`,
+                );
+              }
+            }
           }
           lines.push('');
 

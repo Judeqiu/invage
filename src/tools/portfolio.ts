@@ -4,10 +4,14 @@ import { saveState } from 'utarus';
 import type { Holding, OptionSpec } from '../market/types.js';
 import {
   assertHolding,
+  buildHoldingKey,
   buildOptionKey,
   formatOptionLabel,
+  holdingBaseKey,
   isOptionHolding,
   normalizeOptionalChannel,
+  resolveLookupHoldingKey,
+  resolveUpsertHoldingKey,
   valuePosition,
 } from '../market/position-value.js';
 import {
@@ -334,14 +338,15 @@ export function createPortfolioTools(): AgentTool[] {
       'Option portfolio key auto-builds as UNDERLYING-P|C-STRIKE-YYYYMMDD-L|S unless ticker is provided. ' +
       'When cash is recorded, equity/long buys DECREASE cash by cost/premium; short option opens INCREASE cash by premium credit. ' +
       'Updates adjust cash by the cost delta. Fails if cash would go negative. Pass adjust_cash=false only for historical import (no ledger). ' +
-      'Optional channel tags the broker/custody source (e.g. moomoo, ibkr, webull); omit or empty when unassigned. ' +
+      'Optional channel tags the broker/custody source (e.g. moomoo, ibkr, webull, jude_futu); omit or empty when unassigned. ' +
+      'Same ticker under different channels is allowed — keys become TICKER@channel (e.g. TSLA@cmbyonglong and TSLA@jude_futu). ' +
       'Pass telegram_user_id or slack_user_id from the message context — never ask the user for it.',
     parameters: Type.Object({
       ...channelIdParams,
       ticker: Type.Optional(
         Type.String({
           description:
-            'Portfolio key. Equity: stock ticker (e.g. AAPL). Option: optional override; otherwise auto-generated from contract fields.',
+            'Bare equity ticker (e.g. AAPL) or optional option-key override. Do not embed @channel here — pass channel separately. Map key becomes TICKER@channel when channel is set.',
         }),
       ),
       avg_price: Type.Number({
@@ -455,8 +460,8 @@ export function createPortfolioTools(): AgentTool[] {
         if (instrument === 'option') {
           const option = parseOptionFromParams(p);
           if (p.quote_source) option.quote_source = p.quote_source;
-          key = p.ticker?.trim()
-            ? p.ticker.trim().toUpperCase()
+          const baseKey = p.ticker?.trim()
+            ? holdingBaseKey(p.ticker.trim().toUpperCase())
             : buildOptionKey({
                 underlying: option.underlying,
                 right: option.right,
@@ -464,7 +469,14 @@ export function createPortfolioTools(): AgentTool[] {
                 expiry: option.expiry,
                 side: option.side,
               });
-          const channel = resolveChannelParam(p.channel, portfolio[key]?.channel, channelProvided);
+          const channelParam = channelProvided
+            ? normalizeOptionalChannel(p.channel, 'channel')
+            : undefined;
+          key = resolveUpsertHoldingKey(portfolio, baseKey, channelParam, channelProvided);
+          // When channel omitted and a unique lot exists, keep its channel tag.
+          const channel = channelProvided
+            ? channelParam
+            : portfolio[key]?.channel;
           holding = {
             instrument: 'option',
             avg_price: p.avg_price,
@@ -478,8 +490,14 @@ export function createPortfolioTools(): AgentTool[] {
           if (!p.ticker?.trim()) {
             return fail('ticker is required for equity holdings.');
           }
-          key = p.ticker.trim().toUpperCase();
-          const channel = resolveChannelParam(p.channel, portfolio[key]?.channel, channelProvided);
+          const baseKey = holdingBaseKey(p.ticker.trim().toUpperCase());
+          const channelParam = channelProvided
+            ? normalizeOptionalChannel(p.channel, 'channel')
+            : undefined;
+          key = resolveUpsertHoldingKey(portfolio, baseKey, channelParam, channelProvided);
+          const channel = channelProvided
+            ? channelParam
+            : portfolio[key]?.channel;
           holding = {
             instrument: 'equity',
             avg_price: p.avg_price,
@@ -591,8 +609,15 @@ export function createPortfolioTools(): AgentTool[] {
     parameters: Type.Object({
       ...channelIdParams,
       ticker: Type.String({
-        description: 'Portfolio key to remove (equity ticker or option key, e.g. SPACEX-P-90-20260807-S).',
+        description:
+          'Portfolio key to remove: bare ticker when unique, full key (e.g. TSLA@cmbyonglong), or option key (e.g. SPACEX-P-90-20260807-S). Use channel when the same ticker exists under multiple brokers.',
       }),
+      channel: Type.Optional(
+        Type.String({
+          description:
+            'Broker channel to disambiguate when the same ticker exists under multiple brokers. Omit when ticker is already a full key or unique.',
+        }),
+      ),
       adjust_cash: Type.Optional(
         Type.Boolean({
           description:
@@ -601,18 +626,18 @@ export function createPortfolioTools(): AgentTool[] {
       ),
     }),
     async execute(_id, raw) {
-      const p = raw as ChannelIds & { ticker: string; adjust_cash?: boolean };
+      const p = raw as ChannelIds & { ticker: string; channel?: string; adjust_cash?: boolean };
       try {
         const state = resolveInvestorFromChannel(p);
-        const ticker = p.ticker.toUpperCase();
         const portfolio = getPortfolio(state);
         const adjustCash = p.adjust_cash !== false;
-
-        if (!(ticker in portfolio)) {
-          return fail(
-            `Ticker "${ticker}" not found in portfolio. Current holdings: ${Object.keys(portfolio).join(', ') || 'none'}`,
-          );
-        }
+        const channelProvided = Object.prototype.hasOwnProperty.call(raw, 'channel');
+        const ticker = resolveLookupHoldingKey(
+          portfolio,
+          p.ticker,
+          channelProvided ? normalizeOptionalChannel(p.channel, 'channel') : undefined,
+          channelProvided,
+        );
 
         const removed = portfolio[ticker];
         const today = new Date().toISOString().slice(0, 10);
@@ -866,10 +891,15 @@ export function createPortfolioTools(): AgentTool[] {
       'Update fields of an existing equity or option position (including option mark for MTM). ' +
       'When cash is recorded, changes to units/avg_price/side adjust cash by the cost/premium delta (mark-only MTM updates do not). ' +
       'Fails if cash would go negative. Pass adjust_cash=false to skip ledger. ' +
+      'Same ticker may exist under multiple channels — pass full key (TICKER@channel) or channel to disambiguate. ' +
+      'Changing channel re-keys the position (fails if the target key already exists). ' +
       'Pass telegram_user_id or slack_user_id from the message context.',
     parameters: Type.Object({
       ...channelIdParams,
-      ticker: Type.String({ description: 'Portfolio key (equity ticker or option key).' }),
+      ticker: Type.String({
+        description:
+          'Portfolio key: bare ticker when unique, full key (e.g. TSLA@cmbyonglong), or option key.',
+      }),
       avg_price: Type.Optional(
         Type.Number({
           description: 'New avg cost (equity) or trade premium $ per contract (option).',
@@ -939,24 +969,36 @@ export function createPortfolioTools(): AgentTool[] {
       };
       try {
         const state = resolveInvestorFromChannel(p);
-        const ticker = p.ticker.toUpperCase();
         const portfolio = getPortfolio(state);
         const adjustCash = p.adjust_cash !== false;
         const channelProvided = Object.prototype.hasOwnProperty.call(raw, 'channel');
+        // Lookup uses channel only when it identifies which lot to edit; re-key uses resolved next channel.
+        const oldKey = resolveLookupHoldingKey(
+          portfolio,
+          p.ticker,
+          // When channel is provided for update, it may mean "move to this channel" rather than lookup.
+          // Prefer matching by full key / unique bare first; if ticker embeds @channel, that wins.
+          undefined,
+          false,
+        );
 
-        if (!(ticker in portfolio)) {
-          return fail(`Ticker "${ticker}" not found in portfolio. Use add_holding to create it first.`);
-        }
-
-        const existing = portfolio[ticker];
+        const existing = portfolio[oldKey];
         if (p.avg_price != null && p.avg_price <= 0) return fail('avg_price must be positive.');
         if (p.units != null && p.units <= 0) return fail('units must be positive.');
 
         const channel = resolveChannelParam(p.channel, existing.channel, channelProvided);
+        const nextKey = buildHoldingKey(holdingBaseKey(oldKey), channel);
+        if (nextKey !== oldKey && nextKey in portfolio) {
+          return fail(
+            `Cannot move holding to key "${nextKey}" — that key already exists. ` +
+              `Remove or merge the target lot first.`,
+          );
+        }
+
         let next: Holding;
         if (isOptionHolding(existing)) {
           if (!existing.option) {
-            return fail(`Holding ${ticker} is instrument=option but option fields are missing.`);
+            return fail(`Holding ${oldKey} is instrument=option but option fields are missing.`);
           }
           const nextOption: OptionSpec = {
             ...existing.option,
@@ -978,7 +1020,7 @@ export function createPortfolioTools(): AgentTool[] {
             option: nextOption,
             ...(channel != null ? { channel } : {}),
           };
-          assertHolding(ticker, next);
+          assertHolding(nextKey, next);
         } else {
           if (
             p.mark != null ||
@@ -992,7 +1034,7 @@ export function createPortfolioTools(): AgentTool[] {
             p.option_right != null
           ) {
             return fail(
-              `Holding ${ticker} is equity. To convert to an option, remove it and add_holding with instrument=option.`,
+              `Holding ${oldKey} is equity. To convert to an option, remove it and add_holding with instrument=option.`,
             );
           }
           next = {
@@ -1002,7 +1044,7 @@ export function createPortfolioTools(): AgentTool[] {
             category: p.category ?? existing.category,
             ...(channel != null ? { channel } : {}),
           };
-          assertHolding(ticker, next);
+          assertHolding(nextKey, next);
         }
 
         const today = new Date().toISOString().slice(0, 10);
@@ -1018,26 +1060,31 @@ export function createPortfolioTools(): AgentTool[] {
           setCashes(state, cashResult.cashes);
         }
 
-        portfolio[ticker] = next;
+        if (nextKey !== oldKey) {
+          delete portfolio[oldKey];
+        }
+        portfolio[nextKey] = next;
         setPortfolio(state, portfolio);
         const cashAfter = totalCash(cashResult.cashes);
         state.log.push({
           ts: today,
           action: 'holding_updated',
-          ticker,
-          ...portfolio[ticker],
+          ticker: nextKey,
+          ...(nextKey !== oldKey ? { previous_ticker: oldKey } : {}),
+          ...portfolio[nextKey],
           cash_delta: cashResult.adjusted ? cashResult.cashDelta : undefined,
           cash_after: cashAfter?.amount,
           cash_channel: cashResult.adjusted ? cashResult.cash?.channel : undefined,
         });
         saveState(state);
 
-        const h = portfolio[ticker];
+        const h = portfolio[nextKey];
         const cashLine = formatCashApplyNote(cashResult);
+        const rekeyNote = nextKey !== oldKey ? ` (re-keyed from ${oldKey})` : '';
         if (isOptionHolding(h)) {
-          const e = valuePosition(ticker, h);
+          const e = valuePosition(nextKey, h);
           return ok(
-            `Updated option ${ticker}: ${e.label}\n` +
+            `Updated option ${nextKey}${rekeyNote}: ${e.label}\n` +
               `Premium basis: $${e.premiumAbsolute.toFixed(2)} | Mark: $${e.price.toFixed(2)} | ` +
               `MTM: $${e.value.toFixed(2)} | P/L: ${e.pl >= 0 ? '+' : ''}$${e.pl.toFixed(2)}` +
               (e.contingentCashObligation > 0
@@ -1045,7 +1092,8 @@ export function createPortfolioTools(): AgentTool[] {
                 : '') +
               (cashLine ? `\n${cashLine}` : ''),
             {
-              ticker,
+              ticker: nextKey,
+              previous_ticker: nextKey !== oldKey ? oldKey : undefined,
               holding: h,
               economics: e,
               cash: cashResult.cash,
@@ -1057,10 +1105,11 @@ export function createPortfolioTools(): AgentTool[] {
         }
 
         return ok(
-          `Updated ${ticker}: ${h.units} shares @ $${h.avg_price.toFixed(2)} (cost: $${(h.avg_price * h.units).toFixed(2)})${h.category ? ` [${h.category}]` : ''}${formatChannelTag(h.channel)}` +
+          `Updated ${nextKey}${rekeyNote}: ${h.units} shares @ $${h.avg_price.toFixed(2)} (cost: $${(h.avg_price * h.units).toFixed(2)})${h.category ? ` [${h.category}]` : ''}${formatChannelTag(h.channel)}` +
             (cashLine ? `\n${cashLine}` : ''),
           {
-            ticker,
+            ticker: nextKey,
+            previous_ticker: nextKey !== oldKey ? oldKey : undefined,
             holding: h,
             cash: cashResult.cash,
             cashes: cashResult.cashes,

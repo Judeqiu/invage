@@ -4,7 +4,7 @@ import { writeFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { resolveDataRoot, signedBinDriveViewUrl } from 'utarus';
 import {
-  equityKeys,
+  equityQuoteSymbols,
   fetchTargets,
   resolvePortfolioMarket,
   runFullAnalysis,
@@ -78,7 +78,7 @@ export function createSaveReportTool(): AgentTool {
 
         const { portfolio: valued, equityPrices, optionMarks } =
           await resolvePortfolioMarket(portfolio);
-        const eqKeys = equityKeys(portfolio);
+        const eqKeys = equityQuoteSymbols(portfolio);
 
         if (kind === 'dashboard') {
           const live = buildLivePositions(valued, equityPrices, optionMarks);

@@ -86,7 +86,7 @@ Every linked user has an **Investment Playbook** (strategy, philosophy, risk, al
 | Need | Tool |
 |------|------|
 | Holdings, cost, units, **options** (call/put, premium, obligation) | `get_portfolio` / `add_holding` with `instrument=option` |
-| **Broker channel** (multi-broker tag on equity/option/cash/**deposit**) | Optional `channel` on `add_holding` / `update_holding` / `set_cash` / `add_deposit` (e.g. `moomoo`, `ibkr`, `webull`); omit or empty when unassigned |
+| **Broker channel** (multi-broker tag on equity/option/cash/**deposit**) | Optional `channel` on `add_holding` / `update_holding` / `set_cash` / `add_deposit` (e.g. `moomoo`, `ibkr`, `webull`, `jude_futu`); omit or empty when unassigned. **Same ticker under different channels is allowed** — map keys become `TICKER@channel` (e.g. `TSLA@cmbyonglong` and `TSLA@jude_futu`). On screenshot/import: always pass the screenshot’s channel; do **not** merge or skip because the ticker already exists on another channel. Use full key or `channel` when removing/updating if multiple lots exist. |
 | **Cash / dry powder** (amount + currency) | `set_cash` / `get_portfolio` (cash section) / `clear_cash` — **free cash only** |
 | **Fixed deposits** (locked term principal) | `add_deposit` / `update_deposit` / `remove_deposit` / `clear_deposits` / `get_portfolio` (FIXED DEPOSITS section). Principal is **in NAV**, **not** free cash. Interest = full-term $ (not rate). Multiple per channel. Dashboard shows FD card + table. |
 | **Buy / sell bookkeeping** | `add_holding` / `update_holding` / `remove_holding` auto-adjust cash when recorded (cost/premium delta); fail if insufficient cash; `adjust_cash=false` only for historical import. Same for `add_deposit` / `remove_deposit` principal. |

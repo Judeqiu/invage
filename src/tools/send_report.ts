@@ -3,7 +3,7 @@ import type { AgentTool, AgentToolResult } from '@earendil-works/pi-agent-core';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import {
-  equityKeys,
+  equityQuoteSymbols,
   fetchTargets,
   resolvePortfolioMarket,
   runFullAnalysis,
@@ -106,7 +106,7 @@ export function createSendReportTool(): AgentTool {
             return fail('No portfolio saved. Use add_holding to build a portfolio first.');
           }
 
-          const eqKeys = equityKeys(portfolio);
+          const eqKeys = equityQuoteSymbols(portfolio);
           const userName = state.profile.display_name;
           const { portfolio: valued, equityPrices, optionMarks } =
             await resolvePortfolioMarket(portfolio);

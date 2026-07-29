@@ -10,7 +10,7 @@ import {
   assessValue,
   rankValueCandidates,
   COMPANIES,
-  equityKeys,
+  equityQuoteSymbols,
   resolvePortfolioMarket,
 } from '../market/index.js';
 import type { OptionLiveMark, YahooPriceSnapshot } from '../market/index.js';
@@ -163,7 +163,7 @@ export function createPortfolioAnalyzerTool(): AgentTool {
           if (Object.keys(holdings).length === 0) {
             return fail('No portfolio saved. Use add_holding to build a portfolio first.');
           }
-          tickerList = equityKeys(holdings);
+          tickerList = equityQuoteSymbols(holdings);
           const pb = getPlaybook(state);
           analysisTh = thresholdsForPlaybook(pb);
           valueTh = valueThresholdsFromPlaybook(analysisTh);
@@ -180,7 +180,7 @@ export function createPortfolioAnalyzerTool(): AgentTool {
             `cash target ${cashTargetPct}%)\n\n`;
         } else if (params.holdings) {
           holdings = JSON.parse(params.holdings) as Record<string, Holding>;
-          tickerList = equityKeys(holdings);
+          tickerList = equityQuoteSymbols(holdings);
         } else if (params.tickers) {
           tickerList = params.tickers.split(',').map((t) => t.trim().toUpperCase()).filter(Boolean);
           if (tickerList.length === 0) {
