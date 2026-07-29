@@ -6,12 +6,16 @@ import { createSaveReportTool } from './save_report.js';
 import { createSendReportTool } from './send_report.js';
 import { createSnapshotTool } from './snapshot.js';
 import { createQuoteTool } from './quote.js';
+import { createHouseholdTools } from './household.js';
+import { createProjectionTools } from './projection.js';
 
 /** Domain tools only — Utarus framework supplies user/invite/bindrive/firecrawl/write_report. */
 export function createInvageTools(): AgentTool[] {
   return [
     ...createPortfolioTools(),
     ...createPlaybookTools(),
+    ...createHouseholdTools(),
+    ...createProjectionTools(),
     createQuoteTool(),
     createPortfolioAnalyzerTool(),
     createSaveReportTool(),

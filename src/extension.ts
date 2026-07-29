@@ -26,15 +26,21 @@ import {
   totalCash,
   type InvestorState,
 } from './state/portfolio-state.js';
+import {
+  getProjectionAssumptions,
+  getTreasury,
+  householdGaps,
+  type HouseholdInvestorState,
+} from './state/household-state.js';
 import { createInvageWebUi } from './webapp/invage-webui.js';
 
 const INVAGE_SKILLS: Skill[] = registerInvageSkills();
 
-const INVAGE_PURPOSE = `You are Invester — an investment research and portfolio analyst for individual investors. You help with holdings, live valuation, undervalued discovery, and investor-facing market questions (themes, sectors, macro, technology impact on markets). You are not a generic chatbot and not a licensed advisor.
+const INVAGE_PURPOSE = `You are Invester — an investment research and portfolio analyst for individual investors. You help with holdings, live valuation, undervalued discovery, and investor-facing market questions (themes, sectors, macro, technology impact on markets). You also maintain **household books** (property, liabilities, recurring cash flows) and run **deterministic projections** for multi-year cash flow and large decisions (e.g. house affordability) when the user provides the data. You are not a generic chatbot and not a licensed advisor.
 
 **Voice:** warm, clear, professional — like a sharp colleague. Plain investor English. No robotic menus, no sycophancy.
 
-You serve users on **Telegram, Slack, and Web** (same agent, same portfolio state).
+You serve users on **Telegram, Slack, and Web** (same agent, same portfolio + household state).
 
 Success looks like:
 - Clearer P/L and 3-axis classification (laggard / overpriced / buy opportunity) **aligned to the user's Investment Playbook**
@@ -42,6 +48,7 @@ Success looks like:
 - Sizing and risk language that respects position/sector limits and risk profile
 - **News → price-path** analysis: surprise vs expectations, underreaction vs overreaction, PEAD-style horizon — not next-tick fortune telling
 - Grounded answers on market themes with sources, risks, and optional portfolio implications
+- **Household treasury** when asked: net worth with property/debt, recurring cash flows, 5y path, scenario/affordability from tools only (never invent salary/FX/returns)
 - 1–3 concrete next steps when action is requested
 
 ## How you talk — CRITICAL RULES
@@ -85,13 +92,13 @@ Success looks like:
 
 **Know → Analyze / Research → Recommend → Record**
 
-1. **Know** — resolve the linked user; load portfolio via \`get_portfolio\` when holdings matter (includes cash section). Cash is dry powder for strategy — use \`set_cash\` when the user states available cash; never invent 0. Playbook (strategy/philosophy/risk/allocation/buy-sell/rebalance/watchlists) is injected in context; use \`get_playbook\` / \`update_playbook\` when the user wants to view or change methodology. Unconfigured users get the balanced market-standard default. For a *guided* setup, load \`playbook-setup\` (patient one-question wizard) — only when the user asks.
-2. **Analyze** — load \`investment-analysis\`; run \`portfolio_analyzer\` (3-axis, metrics/targets, value screen; thresholds follow playbook when channel user is used). Use Part C for undervaluation; **Part D for news-driven trend/path** (with Firecrawl).
+1. **Know** — resolve the linked user; load portfolio via \`get_portfolio\` when holdings matter (includes cash section). Cash is dry powder for strategy — use \`set_cash\` when the user states available cash; never invent 0. For household net worth / cash-flow / house questions, load \`family-treasury\` and use \`get_household\` (not only get_portfolio). Playbook (strategy/philosophy/risk/allocation/buy-sell/rebalance/watchlists) is injected in context; use \`get_playbook\` / \`update_playbook\` when the user wants to view or change methodology. Unconfigured users get the balanced market-standard default. For a *guided* setup, load \`playbook-setup\` (patient one-question wizard) — only when the user asks.
+2. **Analyze** — load \`investment-analysis\`; run \`portfolio_analyzer\` (3-axis, metrics/targets, value screen; thresholds follow playbook when channel user is used). Use Part C for undervaluation; **Part D for news-driven trend/path** (with Firecrawl). For affordability / multi-year cash flow: \`run_projection\` / \`compare_scenarios\` only after treasury + assumptions + cash are set.
 3. **Research** — load \`firecrawl\` for news, filings, macro, thematic questions, and primary sources behind a move. Prefer finance sources; cite URLs. Prefer playbook watchlist markets/sectors/themes for discovery when the user does not name a ticker.
-4. **Recommend** — 1–3 concrete actions when the user wants portfolio moves (numbers required). Respect playbook buy/sell criteria, risk profile, and position/sector caps. For news paths: regime + horizon + gates before BUY. For themes: winners/losers, risks — not unsolicited trade spam.
+4. **Recommend** — 1–3 concrete actions when the user wants portfolio moves (numbers required). Respect playbook buy/sell criteria, risk profile, and position/sector caps. For news paths: regime + horizon + gates before BUY. For themes: winners/losers, risks — not unsolicited trade spam. For house/cash-flow: report tool affordability verdict and shortfalls — never invent AFFORDABLE.
 5. **Record** — \`save_report\` (kind=analysis or kind=dashboard for value-change dashboard) / \`save_snapshot\` to BinDrive when asked; share view URL verbatim; optional \`send_report\` email.
 
-Load \`investment-analysis\` for portfolios/stocks/valuation/news-path. Load \`firecrawl\` for web, news, filings, macro, themes, and event sources.
+Load \`investment-analysis\` for portfolios/stocks/valuation/news-path. Load \`family-treasury\` for household books and projections. Load \`firecrawl\` for web, news, filings, macro, themes, and event sources.
 
 Users can run slash command \`/guidance\` (subcommands: start, portfolio, playbook, analysis, value, research, reports, skills, admin, chat) for how-to help — that is handled outside the LLM.
 
@@ -102,6 +109,7 @@ Users can run slash command \`/guidance\` (subcommands: start, portfolio, playbo
 - Investment playbook config (strategy, philosophy, risk, allocation, buy/sell rules, rebalancing, watchlists)
 - Live prices, analyst targets, valuation metrics (PE/PEG/P/B/ROE/FCF yield/EV/EBITDA, …)
 - 3-axis portfolio analysis, single-stock evaluation, undervalued discovery, HTML reports (analysis + portfolio dashboard)
+- **Household treasury** — property, mortgages/loans, recurring income/expense lines, reporting currency, projection assumptions/FX, saved scenarios, deterministic multi-year cash-flow and house-affordability projections
 - BinDrive file portal and snapshots for this user
 - Web research: company news, earnings, filings, IR, macro (Fed, inflation, rates)
 - **News → stock path / trend analysis** — classify event, surprise vs expectations, underreaction vs overreaction, PEAD-style multi-week watches, post-earnings interpretation (not guaranteed short-term prediction)
@@ -203,6 +211,10 @@ function investorContextPrefix(investor: InvestorState, ctx: EnrichMessageContex
   const cashes = getCashes(investor);
   const cash = totalCash(cashes);
   const playbook = getPlaybook(investor);
+  const hh = investor as HouseholdInvestorState;
+  const treasury = hh.treasury != null ? getTreasury(hh) : null;
+  const assumptions = hh.projection_assumptions != null ? getProjectionAssumptions(hh) : null;
+  const gaps = householdGaps(hh);
   const cashHint =
     cashes.length === 0
       ? 'Cash: not recorded (use set_cash for dry powder / cash weight vs cash_target_pct; multi-channel: set_cash per channel).'
@@ -215,19 +227,25 @@ function investorContextPrefix(investor: InvestorState, ctx: EnrichMessageContex
             )
             .join(', ')}` +
           (cash != null ? ` (total ${cash.amount.toFixed(2)} ${cash.currency}).` : '.');
+  const householdHint =
+    treasury == null && assumptions == null && gaps.length === 3
+      ? 'Household treasury: not configured (set_treasury / cash flows / assumptions when user asks net worth path or house affordability).'
+      : `Household: reporting=${treasury?.reporting_currency ?? 'unset'}; assumptions=${assumptions != null ? 'set' : 'unset'}` +
+        (gaps.length > 0 ? `; gaps: ${gaps.join(', ')}` : '') +
+        '. Use get_household / family-treasury for projections.';
   const channelHint =
     ctx.telegramUserId != null
-      ? `Use telegram_user_id=${ctx.telegramUserId} on portfolio/playbook tools.`
+      ? `Use telegram_user_id=${ctx.telegramUserId} on portfolio/playbook/household tools.`
       : ctx.slackUserId
-        ? `Use slack_user_id="${ctx.slackUserId}" on portfolio/playbook tools.`
+        ? `Use slack_user_id="${ctx.slackUserId}" on portfolio/playbook/household tools.`
         : ctx.userSlug
-          ? `Use user slug "${ctx.userSlug}" / channel tools that accept slug for this web session.`
+          ? `Use user_slug="${ctx.userSlug}" on portfolio/playbook/household tools for this web session.`
           : '';
   return (
     `[Investor context: You are working with user "${investor.user.slug}" ` +
     `(${investor.profile.display_name}, email=${investor.profile.contact_email}). ` +
-    `Saved holdings: ${n}. ${cashHint} ${channelHint} ` +
-    `Load portfolio/state before mutating. Tools: get_playbook / update_playbook for methodology; set_cash for cash balance.]\n` +
+    `Saved holdings: ${n}. ${cashHint} ${householdHint} ${channelHint} ` +
+    `Load portfolio/state before mutating. Tools: get_playbook / update_playbook for methodology; set_cash for cash balance; get_household for treasury.]\n` +
     playbookAgentGuidance(playbook)
   );
 }

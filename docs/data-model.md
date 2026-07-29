@@ -484,6 +484,85 @@ deposits:
 
 ---
 
+## Layer 3c: Household Treasury (optional)
+
+Optional top-level blocks for **family books** and deterministic projections. Missing blocks mean empty/unknown — never invent zeros for affordability.
+
+See design: [plans/2026-07-29-family-treasury-accountant-design.md](./plans/2026-07-29-family-treasury-accountant-design.md).
+
+```yaml
+treasury:
+  reporting_currency: SGD
+  updated_at: "2026-07-29"
+
+properties:
+  - id: prop-home
+    label: "Home"
+    value: 1800000
+    currency: SGD
+    updated_at: "2026-07-29"
+    mortgage_id: loan-mortgage-home
+
+liabilities:
+  - id: loan-mortgage-home
+    kind: mortgage                 # mortgage | loan
+    principal: 1200000
+    annual_rate_pct: 3.2
+    currency: SGD
+    start_date: "2026-01-01"
+    term_months: 360
+    payment_amount: 5200
+    payment_frequency: monthly
+    property_id: prop-home
+    updated_at: "2026-07-29"
+
+cash_flows:
+  - id: cf-salary
+    kind: income                   # income | expense
+    amount: 12000
+    currency: SGD
+    frequency: monthly             # monthly | annual
+    start_date: "2026-01-01"
+    label: "Salary"
+    updated_at: "2026-07-29"
+
+projection_assumptions:
+  portfolio_return_annual_pct: 5.0
+  inflation_annual_pct: 2.0
+  property_appreciation_annual_pct: 0
+  fx:
+    USD: 1.35                      # units of reporting ccy per 1 USD
+  cash_buffer: 10000
+  updated_at: "2026-07-29"
+
+scenarios:
+  - id: sc-buy-house
+    label: "Buy house 2028"
+    updated_at: "2026-07-29"
+    events:
+      - type: buy_property
+        date: "2028-06-01"
+        property_value: 2000000
+        currency: SGD
+        down_payment: 500000
+        mortgage:
+          annual_rate_pct: 3.5
+          term_months: 360
+```
+
+| Tool | Role |
+|------|------|
+| `get_household` / `get_treasury` / `set_treasury` | Unified books + reporting currency |
+| `add_property` / `update_property` / `remove_property` | Real estate marks |
+| `add_liability` / `update_liability` / `remove_liability` | Amortizing mortgage/loan |
+| `add_cash_flow` / `list_cash_flows` / … | Recurring income/expense |
+| `set_projection_assumptions` | Returns, inflation, FX (required for projection) |
+| `save_scenario` / `run_projection` / `compare_scenarios` | Overlays + monthly engine |
+
+**NAV (household):** portfolio MTM (or cost basis) + free cash + deposit principal + property − liability principal, all in `reporting_currency` via explicit FX. Fail-fast if FX missing.
+
+---
+
 ## Layer 3b: Portfolio Snapshots (BinDrive)
 
 Dated point-in-time valuations live under each user's BinDrive folder (not in the user YAML):

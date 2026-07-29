@@ -47,7 +47,17 @@ describe('invage enrichMessage (domain only — access is Utarus)', () => {
     expect(text).toContain('Help me find undervalued stocks');
     expect(text).toMatch(/Investment Playbook/);
     expect(text).toMatch(/Strategy=|strategy/i);
+    expect(text).toMatch(/Household/);
     expect(text).not.toMatch(/invite code|display_name would you|Option A/i);
+  });
+
+  it('exposes chatEmptyState with treasury starters on webUi', () => {
+    const empty = invageExtension.webUi?.chatEmptyState;
+    expect(empty).toBeTruthy();
+    expect(empty!.title.length).toBeGreaterThan(0);
+    expect(empty!.body.length).toBeGreaterThan(0);
+    const labels = (empty!.starters ?? []).map((s) => s.label);
+    expect(labels.some((l) => /house|household|cash flow|portfolio/i.test(l))).toBe(true);
   });
 
   it('passes through unlinked text (framework already gated)', async () => {

@@ -39,6 +39,12 @@ const CATALOG: RawSkill[] = [
       'Patient guided setup of the Investment Playbook. Load when the user wants to configure strategy, philosophy, risk, allocation, buy/sell rules, rebalancing, or watchlists; "set up my investment style", "help me choose risk", "walk me through settings", questionnaire, or change how recommendations work. One easy question at a time with clear explanations. Uses get_playbook / update_playbook.',
   },
   {
+    id: 'family-treasury',
+    name: 'Family Treasury & Projections',
+    description:
+      'Household books and deterministic financial projections. Load for family net worth (property + mortgage + cash + portfolio), recurring income/expense cash flows, 5-year cash flow, house affordability, scenario compare, can we buy a house, projection assumptions, FX into reporting currency. Tools: get_household, set_treasury, property/liability/cash_flow CRUD, set_projection_assumptions, save_scenario, run_projection, compare_scenarios. Not for stock picking alone — use investment-analysis for that.',
+  },
+  {
     id: 'firecrawl',
     name: 'Firecrawl',
     description:

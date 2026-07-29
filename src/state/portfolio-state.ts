@@ -11,6 +11,8 @@
  *   - top-level `cash`: optional CashBalance | CashBalance[] (missing → unknown)
  *   - top-level `deposits`: optional FixedDeposit[] (fixed-term deposits; not free cash)
  *   - top-level `playbook`:  optional InvestmentPlaybook (missing → default)
+ *   - household treasury (optional): see `household-state.ts`
+ *     treasury, properties, liabilities, cash_flows, projection_assumptions, scenarios
  *
  * Cash may be stored as a single object (legacy / one channel) or an array
  * of balances (one entry per broker channel). `set_cash` upserts by channel
