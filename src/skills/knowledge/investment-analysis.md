@@ -85,7 +85,8 @@ Every linked user has an **Investment Playbook** (strategy, philosophy, risk, al
 
 | Need | Tool |
 |------|------|
-| Holdings, cost, units, **options** (call/put), **funds** (ETF / 基金) | `get_portfolio` / `add_holding` (`instrument=option` or `instrument=fund` + `fund_quote_source=yahoo\|manual`) |
+| Holdings, cost, units, **options** (call/put), **funds** (ETF / 基金 / MMF) | `get_portfolio` / `add_holding` (`instrument=option` or `instrument=fund` + `fund_quote_source=yahoo\|manual`) |
+| **Import 基金 / MMF / non-Yahoo products** | Always `instrument=fund` + `fund_quote_source=manual` + `mark` (NAV; often ≈ cost at entry for MMF). **Never** store as equity — Yahoo will fail and break the dashboard. Listed ETFs with a Yahoo ticker may use `fund_quote_source=yahoo`. |
 | **Broker channel** (multi-broker tag on equity/option/cash/**deposit**) | Optional `channel` on `add_holding` / `update_holding` / `set_cash` / `add_deposit` (e.g. `moomoo`, `ibkr`, `webull`, `jude_futu`); omit or empty when unassigned. **Same ticker under different channels is allowed** — map keys become `TICKER@channel` (e.g. `TSLA@cmbyonglong` and `TSLA@jude_futu`). On screenshot/import: always pass the screenshot’s channel; do **not** merge or skip because the ticker already exists on another channel. Use full key or `channel` when removing/updating if multiple lots exist. |
 | **Cash / dry powder** (amount + currency) | `set_cash` / `get_portfolio` (cash section) / `clear_cash` — **free cash only** |
 | **Fixed deposits** (locked term principal) | `add_deposit` / `update_deposit` / `remove_deposit` / `clear_deposits` / `get_portfolio` (FIXED DEPOSITS section). Principal is **in NAV**, **not** free cash. Interest = full-term $ (not rate). Multiple per channel. Dashboard shows FD card + table. |

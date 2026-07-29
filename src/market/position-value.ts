@@ -510,7 +510,8 @@ export function valuePosition(
 
   if (marketPrice == null || !Number.isFinite(marketPrice)) {
     throw new Error(
-      `Missing market price for ${equityQuoteSymbol(key)} (key ${key}). Cannot value equity position.`,
+      `Missing market price for ${equityQuoteSymbol(key)} (key ${key}). Cannot value equity position. ` +
+        `If this is a fund/MMF/non-Yahoo product, re-add as instrument=fund with fund_quote_source=manual and mark=NAV.`,
     );
   }
   const cost = h.avg_price * h.units;

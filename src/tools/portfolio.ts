@@ -384,8 +384,10 @@ export function createPortfolioTools(): AgentTool[] {
     label: 'Add Holding',
     description:
       "Add or update a stock, fund (基金), or option position in the user's portfolio. " +
-      'Equity: ticker + avg_price + units. ' +
-      'Fund (ETF / open-end 基金): instrument=fund + ticker (code or Yahoo symbol) + avg_price + units + fund_quote_source=yahoo|manual. ' +
+      'Equity: ticker + avg_price + units — only for stocks/ETFs with a Yahoo-tradable ticker. ' +
+      'Fund (ETF / open-end 基金 / MMF / money-market / non-Yahoo products): instrument=fund + ticker (code or symbol) + avg_price + units + fund_quote_source=yahoo|manual. ' +
+      'Money-market funds and broker fund codes (e.g. PHILLIPUSDMMF, FULLERTONSGDLIQ) MUST use instrument=fund fund_quote_source=manual + mark (NAV; use avg_price if NAV unknown). ' +
+      'Never import those as equity — Yahoo has no price and the dashboard will fail. ' +
       'manual funds require mark (NAV per unit); yahoo funds use live Yahoo on ticker. Optional fund_name. ' +
       'Option: set instrument=option with option_right (call|put), option_side (long|short), strike, expiry (YYYY-MM-DD), ' +
       'multiplier (typically 100 shares/contract — assignment size only), underlying, settlement (physical|cash). ' +
