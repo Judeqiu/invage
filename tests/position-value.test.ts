@@ -28,6 +28,18 @@ describe('looksLikeNonYahooFundProduct', () => {
     expect(looksLikeNonYahooFundProduct('SPY')).toBe(false);
     expect(looksLikeNonYahooFundProduct('0700.HK')).toBe(false);
   });
+
+  it('flags bank unit-trust / robo product codes (OCBCUT, OCBCRI, …)', () => {
+    expect(looksLikeNonYahooFundProduct('OCBCUT')).toBe(true);
+    expect(looksLikeNonYahooFundProduct('OCBCRI')).toBe(true);
+    expect(looksLikeNonYahooFundProduct('OCBCPM')).toBe(true);
+    expect(looksLikeNonYahooFundProduct('OCCYRI')).toBe(true);
+    expect(looksLikeNonYahooFundProduct('X', 'Robo / Smart Invest')).toBe(true);
+    // Listed bank stocks with exchange suffix stay equity-eligible
+    expect(looksLikeNonYahooFundProduct('D05.SI')).toBe(false);
+    expect(looksLikeNonYahooFundProduct('O39.SI')).toBe(false);
+    expect(looksLikeNonYahooFundProduct('AAPL')).toBe(false);
+  });
 });
 
 describe('buildOptionKey', () => {

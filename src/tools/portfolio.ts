@@ -421,7 +421,7 @@ export function createPortfolioTools(): AgentTool[] {
       "Add or update a stock, fund (基金), or option position in the user's portfolio. " +
       'Equity: ticker + avg_price + units — only for stocks/ETFs with a Yahoo-tradable ticker. ' +
       'Fund (ETF / open-end 基金 / MMF / money-market / non-Yahoo products): instrument=fund + ticker (code or symbol) + avg_price + units + fund_quote_source=yahoo|manual. ' +
-      'Money-market funds and broker fund codes (e.g. PHILLIPUSDMMF, FULLERTONSGDLIQ) MUST use instrument=fund fund_quote_source=manual + mark (NAV; use avg_price if NAV unknown). ' +
+      'Money-market, unit trusts, bank/robo product codes (e.g. PHILLIPUSDMMF, FULLERTONSGDLIQ, OCBCUT, OCBCRI, OCCYRI) MUST use instrument=fund fund_quote_source=manual + mark (NAV; use avg_price if NAV unknown). ' +
       'Never import those as equity — Yahoo has no price and the dashboard will fail. ' +
       'manual funds require mark (NAV per unit); yahoo funds use live Yahoo on ticker. Optional fund_name. ' +
       'Option: set instrument=option with option_right (call|put), option_side (long|short), strike, expiry (YYYY-MM-DD), ' +
@@ -478,7 +478,7 @@ export function createPortfolioTools(): AgentTool[] {
           description:
             'Fund only — REQUIRED when instrument=fund (no default). ' +
             'yahoo = listed ETF/ETN with a Yahoo quote (SPY, QQQ, 2800.HK). ' +
-            'manual = open-end 基金, MMF, liquidity funds, broker product codes (PHILLIPUSDMMF, FULLERTONSGDLIQ, 110011) — must pass mark=NAV (or avg_price if NAV unknown).',
+            'manual = open-end 基金, MMF, unit trusts, bank/robo codes (PHILLIPUSDMMF, FULLERTONSGDLIQ, OCBCUT, OCBCRI, OCCYRI, 110011) — must pass mark=NAV (or avg_price if NAV unknown).',
         }),
       ),
       fund_name: Type.Optional(

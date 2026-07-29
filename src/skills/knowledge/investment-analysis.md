@@ -99,17 +99,19 @@ When the user pastes a broker screenshot or list that includes **funds**, classi
 | Money market / MMF / cash management / liquidity fund | `fund` | **`manual`** | NAV or last price from UI; if only cost → `mark=avg_price` |
 | Open-end mutual fund / unit trust / CN 基金 code (e.g. 110011) | `fund` | **`manual`** | NAV per unit from UI |
 | Long broker product code (PHILLIPUSDMMF, FULLERTONSGDLIQ, …) | `fund` | **`manual`** | same as above |
-| Plain stock ticker (AAPL, TSLA, 0700.HK) | `equity` | n/a | n/a |
+| Bank unit trust / robo / discretionary product codes (OCBCUT, OCBCRI, OCBCPM, OCCYRI, …) | `fund` | **`manual`** | NAV or cost (`mark=avg_price` if NAV unknown); often `units=1` with total $ as avg_price |
+| Plain stock ticker (AAPL, TSLA, 0700.HK, O39.SI) | `equity` | n/a | n/a |
 
 **quote_source rule of thumb:**
 
 1. If you would call `get_quote` / Yahoo and expect a liquid exchange print → `yahoo`.
-2. If the product is valued at **NAV**, is a **MMF**, or the symbol is a **broker fund code** (not a common exchange ticker) → `manual` + `mark`.
+2. If the product is valued at **NAV**, is a **MMF**, **unit trust**, **robo**, or the symbol is a **broker/bank product code** (not a common exchange ticker) → `manual` + `mark`.
 3. **When unsure:** try `get_quote` once. Quote fails or wrong instrument → **`manual`**, never leave as equity.
 4. Always set `channel`, `adjust_cash=false` on historical import, and optional `fund_name` from the product name.
+5. SG **listed** bank equities use exchange suffixes (`O39.SI`, `D05.SI`) — bare `OCBCUT`-style codes are **not** equities.
 
-**Wrong (breaks dashboard):** `add_holding ticker=PHILLIPUSDMMF instrument=equity`  
-**Right:** `add_holding instrument=fund ticker=PHILLIPUSDMMF fund_quote_source=manual mark=<NAV or avg_price> units=… avg_price=… channel=tiger adjust_cash=false fund_name="Phillip USD MMF…"`
+**Wrong (breaks dashboard):** `add_holding ticker=PHILLIPUSDMMF instrument=equity` or `ticker=OCBCUT instrument=equity`  
+**Right:** `add_holding instrument=fund ticker=OCBCUT fund_quote_source=manual mark=<NAV or avg_price> units=… avg_price=… channel=ocbc adjust_cash=false fund_name="OCBC unit trust…"`
 | **Cash / dry powder** (amount + currency) | `set_cash` / `get_portfolio` (cash section) / `clear_cash` — **free cash only** |
 | **Fixed deposits** (locked term principal) | `add_deposit` / `update_deposit` / `remove_deposit` / `clear_deposits` / `get_portfolio` (FIXED DEPOSITS section). Principal is **in NAV**, **not** free cash. Interest = full-term $ (not rate). Multiple per channel. Dashboard shows FD card + table. |
 | **Buy / sell bookkeeping** | `add_holding` / `update_holding` / `remove_holding` auto-adjust cash when recorded (cost/premium delta); fail if insufficient cash; `adjust_cash=false` only for historical import. Same for `add_deposit` / `remove_deposit` principal. |

@@ -104,13 +104,24 @@ export function looksLikeNonYahooFundProduct(ticker: string, category?: string):
   const t = ticker.trim().toUpperCase();
   const cat = (category ?? '').toLowerCase();
   if (
-    /money\s*market|money market fund|\bmmf\b|liquidity\s*fund|cash\s*management|unit\s*trust|open-?end\s*fund|mutual\s*fund|\b基金\b/.test(
+    /money\s*market|money market fund|\bmmf\b|liquidity\s*fund|cash\s*management|unit\s*trust|open-?end\s*fund|mutual\s*fund|\b基金\b|robo|smart\s*invest|discretionary|private\s*banking|wealth\s*mgmt|portfolio\s*mgmt/.test(
       cat,
     )
   ) {
     return true;
   }
   if (/(MMF|LIQ|LIQUID|CASHFUND|USDMMF|SGDLIQ)$/.test(t) || /MMF|LIQUIDITY|CASHFUND/.test(t)) {
+    return true;
+  }
+  // Unit-trust style suffixes without exchange (OCBCUT, …)
+  if (t.length >= 4 && !t.includes('.') && /(UT|UNITTRUST)$/.test(t)) {
+    return true;
+  }
+  // SG bank / private-bank product codes (not listed .SI equities): OCBCUT, OCBCRI, OCBCPM, OCCYRI
+  if (
+    !t.includes('.') &&
+    (/^(OCBC|DBS|UOB|SCB)[A-Z0-9]{1,8}$/.test(t) || /^OCCY[A-Z0-9]{1,8}$/.test(t))
+  ) {
     return true;
   }
   // Long broker product codes without exchange suffix (e.g. PHILLIPUSDMMF, FULLERTONSGDLIQ)
