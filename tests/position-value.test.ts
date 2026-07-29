@@ -10,11 +10,25 @@ import {
   valuePosition,
   valuePortfolio,
   equityKeys,
+  looksLikeNonYahooFundProduct,
   optionKeys,
 } from '../src/market/position-value.js';
 import type { Holding } from '../src/market/types.js';
 import { buildLivePositions } from '../src/report/dashboard-model.js';
 import { buildAnalysis, runFullAnalysis } from '../src/market/analyzer.js';
+
+describe('looksLikeNonYahooFundProduct', () => {
+  it('flags MMF / long broker codes / fund categories', () => {
+    expect(looksLikeNonYahooFundProduct('PHILLIPUSDMMF')).toBe(true);
+    expect(looksLikeNonYahooFundProduct('FULLERTONSGDLIQ')).toBe(true);
+    expect(
+      looksLikeNonYahooFundProduct('XYZ', 'Money Market Fund (Phillip USD MMF)'),
+    ).toBe(true);
+    expect(looksLikeNonYahooFundProduct('AAPL')).toBe(false);
+    expect(looksLikeNonYahooFundProduct('SPY')).toBe(false);
+    expect(looksLikeNonYahooFundProduct('0700.HK')).toBe(false);
+  });
+});
 
 describe('buildOptionKey', () => {
   it('builds SPACEX short put key', () => {

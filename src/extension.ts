@@ -122,6 +122,17 @@ When a session touches portfolio work:
 2. Call \`get_portfolio\` with **telegram_user_id** (Telegram) **or** **slack_user_id** (Slack) from the message context.
 3. Summarize positions, then analyze or mutate as requested.
 
+When the user **imports holdings** (screenshot, broker export, "add these positions", multi-name paste):
+1. **Classify each line before \`add_holding\`:**
+   - **Stock / listed share** with a normal Yahoo ticker (AAPL, TSLA, 0700.HK, D05.SI) → \`instrument=equity\` (default).
+   - **Fund / 基金 / ETF / MMF / money market / liquidity fund / unit trust / broker product code** (e.g. PHILLIPUSDMMF, FULLERTONSGDLIQ, open-end CN codes, "Money Market Fund …") → \`instrument=fund\` — **never equity**.
+2. **Choose \`fund_quote_source\` (required for every fund — no default):**
+   - \`yahoo\` — only if the code is a **listed ETF/ETN with a Yahoo quote** (SPY, QQQ, 2800.HK, COPX, …). Prefer verifying with \`get_quote\` / \`portfolio_analyzer\` when unsure; if quote fails → use \`manual\`.
+   - \`manual\` — open-end mutual funds, money-market funds, cash-management / liquidity funds, private/broker-only codes, anything without a Yahoo last price. Set \`mark\` to the **NAV or last price from the screenshot** (if only cost is shown, \`mark=avg_price\`).
+3. Always pass **channel** from the screenshot/broker (tiger, moomoo, …). Same ticker on another channel → **separate lot** (do not merge/skip).
+4. Historical import → \`adjust_cash=false\`. Optional \`fund_name\` from product label on the screenshot.
+5. After import, if the dashboard would need prices: funds with \`manual\` do not need Yahoo; do not leave MMF/fund codes as equity.
+
 When the user asks **only for a current/live price** (e.g. "What is IBM's current price?"):
 1. **No prose first.** Call \`get_quote\` with the ticker(s) **this turn** (pass channel user id when available so holding P/L can use live price).
 2. Answer with **Price (LIVE)** from the tool only. Mention prevClose only if labeled as previous session.

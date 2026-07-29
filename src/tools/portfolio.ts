@@ -10,6 +10,7 @@ import {
   holdingBaseKey,
   isFundHolding,
   isOptionHolding,
+  looksLikeNonYahooFundProduct,
   normalizeOptionalChannel,
   resolveLookupHoldingKey,
   resolveUpsertHoldingKey,
@@ -432,17 +433,24 @@ export function createPortfolioTools(): AgentTool[] {
       ),
       instrument: Type.Optional(
         Type.Union([Type.Literal('equity'), Type.Literal('option'), Type.Literal('fund')], {
-          description: 'Position type. Default equity when omitted. Use fund for ETF / open-end 基金.',
+          description:
+            'equity (default) = listed stock with Yahoo ticker. ' +
+            'fund = ETF / open-end 基金 / MMF / money-market / liquidity / broker fund code. ' +
+            'option = call/put. Never use equity for MMF or non-Yahoo fund codes.',
         }),
       ),
       fund_quote_source: Type.Optional(
         Type.Union([Type.Literal('yahoo'), Type.Literal('manual')], {
           description:
-            'Fund only (required when instrument=fund): yahoo = live Yahoo on ticker; manual = use mark as NAV.',
+            'Fund only — REQUIRED when instrument=fund (no default). ' +
+            'yahoo = listed ETF/ETN with a Yahoo quote (SPY, QQQ, 2800.HK). ' +
+            'manual = open-end 基金, MMF, liquidity funds, broker product codes (PHILLIPUSDMMF, FULLERTONSGDLIQ, 110011) — must pass mark=NAV (or avg_price if NAV unknown).',
         }),
       ),
       fund_name: Type.Optional(
-        Type.String({ description: 'Fund only: optional product display name.' }),
+        Type.String({
+          description: 'Fund only: product display name from broker (e.g. "Phillip USD MMF A USDHDG Acc").',
+        }),
       ),
       option_right: Type.Optional(
         Type.Union([Type.Literal('call'), Type.Literal('put')], {
@@ -591,6 +599,15 @@ export function createPortfolioTools(): AgentTool[] {
             return fail('ticker is required for equity holdings.');
           }
           const baseKey = holdingBaseKey(p.ticker.trim().toUpperCase());
+          if (looksLikeNonYahooFundProduct(baseKey, p.category)) {
+            return fail(
+              `Ticker "${baseKey}" looks like a fund/MMF/broker product code, not a listed equity. ` +
+                `Use instrument=fund with fund_quote_source=manual and mark=<NAV or avg_price> ` +
+                `(optional fund_name). Example: instrument=fund ticker=${baseKey} ` +
+                `fund_quote_source=manual mark=${p.avg_price} avg_price=${p.avg_price} units=${p.units}. ` +
+                `Only use fund_quote_source=yahoo for listed ETFs with a Yahoo quote (SPY, QQQ, …).`,
+            );
+          }
           const channelParam = channelProvided
             ? normalizeOptionalChannel(p.channel, 'channel')
             : undefined;

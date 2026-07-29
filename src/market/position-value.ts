@@ -97,6 +97,30 @@ export function isYahooPricedHolding(h: Holding): boolean {
 }
 
 /**
+ * Heuristic for import guards: product codes / labels that must use instrument=fund
+ * with fund_quote_source=manual (Yahoo has no usable equity quote).
+ */
+export function looksLikeNonYahooFundProduct(ticker: string, category?: string): boolean {
+  const t = ticker.trim().toUpperCase();
+  const cat = (category ?? '').toLowerCase();
+  if (
+    /money\s*market|money market fund|\bmmf\b|liquidity\s*fund|cash\s*management|unit\s*trust|open-?end\s*fund|mutual\s*fund|\b基金\b/.test(
+      cat,
+    )
+  ) {
+    return true;
+  }
+  if (/(MMF|LIQ|LIQUID|CASHFUND|USDMMF|SGDLIQ)$/.test(t) || /MMF|LIQUIDITY|CASHFUND/.test(t)) {
+    return true;
+  }
+  // Long broker product codes without exchange suffix (e.g. PHILLIPUSDMMF, FULLERTONSGDLIQ)
+  if (t.length >= 10 && !t.includes('.') && !/^[A-Z]{1,5}$/.test(t)) {
+    return true;
+  }
+  return false;
+}
+
+/**
  * Separator between base symbol (or option id) and broker channel in portfolio map keys.
  * Same equity at two brokers: AAPL@ibkr and AAPL@moomoo are distinct holdings.
  */

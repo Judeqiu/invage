@@ -33,6 +33,7 @@ export {
   isFundHolding,
   isEquityHolding,
   isYahooPricedHolding,
+  looksLikeNonYahooFundProduct,
   equityKeys,
   fundKeys,
   equityQuoteSymbols,
