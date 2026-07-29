@@ -45,6 +45,7 @@ export {
   fundKeys,
   equityQuoteSymbols,
   equityQuoteSymbol,
+  CRYPTO_YAHOO_QUOTE_MAP,
   holdingBaseKey,
   buildHoldingKey,
   resolveUpsertHoldingKey,

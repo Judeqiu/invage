@@ -17,6 +17,38 @@ import type { Holding } from '../src/market/types.js';
 import { buildLivePositions } from '../src/report/dashboard-model.js';
 import { buildAnalysis, runFullAnalysis } from '../src/market/analyzer.js';
 
+describe('crypto Yahoo quote mapping', () => {
+  it('maps BTC aliases to BTC-USD (not Grayscale BTC trust)', () => {
+    expect(equityQuoteSymbol('BTC')).toBe('BTC-USD');
+    expect(equityQuoteSymbol('bitcoin')).toBe('BTC-USD');
+    expect(equityQuoteSymbol('BTCUSD')).toBe('BTC-USD');
+    expect(equityQuoteSymbol('BTC-USD')).toBe('BTC-USD');
+    expect(equityQuoteSymbol('BTC@coinbase')).toBe('BTC-USD');
+    expect(equityQuoteSymbol('ETH')).toBe('ETH-USD');
+    expect(equityQuoteSymbol('AAPL')).toBe('AAPL');
+  });
+
+  it('values BTC equity with BTC-USD price key', () => {
+    const e = valuePortfolio(
+      { BTC: { avg_price: 50000, units: 0.5 } },
+      { 'BTC-USD': 60000 },
+    );
+    expect(e).toHaveLength(1);
+    expect(e[0].value).toBe(30000);
+    expect(e[0].cost).toBe(25000);
+    expect(e[0].price).toBe(60000);
+  });
+
+  it('includes BTC-USD in equityQuoteSymbols for BTC holding', () => {
+    expect(
+      equityQuoteSymbols({
+        BTC: { avg_price: 1, units: 1 },
+        AAPL: { avg_price: 100, units: 1 },
+      }).sort(),
+    ).toEqual(['AAPL', 'BTC-USD']);
+  });
+});
+
 describe('looksLikeNonYahooFundProduct', () => {
   it('flags MMF / long broker codes / fund categories', () => {
     expect(looksLikeNonYahooFundProduct('PHILLIPUSDMMF')).toBe(true);

@@ -101,6 +101,7 @@ When the user pastes a broker screenshot or list that includes **funds**, classi
 | Long broker product code (PHILLIPUSDMMF, FULLERTONSGDLIQ, …) | `fund` | **`manual`** | same as above |
 | Bank unit trust / robo / discretionary product codes (OCBCUT, OCBCRI, OCBCPM, OCCYRI, …) | `fund` | **`manual`** | NAV or cost (`mark=avg_price` if NAV unknown); often `units=1` with total $ as avg_price |
 | Plain stock ticker (AAPL, TSLA, 0700.HK, O39.SI) | `equity` | n/a | n/a |
+| Spot crypto (Bitcoin, Ethereum) | `equity` | n/a | n/a — ticker `BTC` / `BTC-USD` or `ETH` / `ETH-USD`; live Yahoo pair `BTC-USD` / `ETH-USD` (bare Yahoo `BTC` is a trust, not spot — product maps aliases). Fractional `units` OK. |
 
 **quote_source rule of thumb:**
 
@@ -112,6 +113,10 @@ When the user pastes a broker screenshot or list that includes **funds**, classi
 
 **Wrong (breaks dashboard):** `add_holding ticker=PHILLIPUSDMMF instrument=equity` or `ticker=OCBCUT instrument=equity`  
 **Right:** `add_holding instrument=fund ticker=OCBCUT fund_quote_source=manual mark=<NAV or avg_price> units=… avg_price=… channel=ocbc adjust_cash=false fund_name="OCBC unit trust…"`
+
+**Spot Bitcoin (supported):**  
+`add_holding ticker=BTC avg_price=<USD cost per BTC> units=<fractional OK> channel=…`  
+(or `ticker=BTC-USD`). Live MTM uses Yahoo **`BTC-USD`**. Do **not** treat bare Yahoo symbol `BTC` (Grayscale mini trust) as the user’s spot Bitcoin.
 | **Cash / dry powder** (amount + currency) | `set_cash` / `get_portfolio` (cash section) / `clear_cash` — **free cash only** |
 | **Fixed deposits** (locked term principal) | `add_deposit` / `update_deposit` / `remove_deposit` / `clear_deposits` / `get_portfolio` (FIXED DEPOSITS section). Principal is **in NAV**, **not** free cash. Interest = full-term $ (not rate). Multiple per channel. Dashboard shows FD card + table. |
 | **Buy / sell bookkeeping** | `add_holding` / `update_holding` / `remove_holding` auto-adjust cash when recorded (cost/premium delta); fail if insufficient cash; `adjust_cash=false` only for historical import. Same for `add_deposit` / `remove_deposit` principal. |

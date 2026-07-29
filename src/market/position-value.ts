@@ -172,9 +172,28 @@ export function holdingBaseKey(portfolioKey: string): string {
   return portfolioKey;
 }
 
-/** Yahoo / market-data symbol for an equity portfolio key (strips @channel). */
+/**
+ * Spot crypto aliases → Yahoo Finance pair symbols.
+ * Bare `BTC` on Yahoo is Grayscale Bitcoin Mini Trust, not spot — always map.
+ * Portfolio may store `BTC`, `BITCOIN`, or `BTC-USD`; all price as `BTC-USD`.
+ */
+export const CRYPTO_YAHOO_QUOTE_MAP: Readonly<Record<string, string>> = {
+  BTC: 'BTC-USD',
+  BITCOIN: 'BTC-USD',
+  BTCUSD: 'BTC-USD',
+  XBT: 'BTC-USD',
+  ETH: 'ETH-USD',
+  ETHEREUM: 'ETH-USD',
+  ETHUSD: 'ETH-USD',
+};
+
+/**
+ * Yahoo / market-data symbol for an equity or yahoo-fund portfolio key.
+ * Strips @channel and maps spot-crypto aliases (BTC → BTC-USD).
+ */
 export function equityQuoteSymbol(portfolioKey: string): string {
-  return holdingBaseKey(portfolioKey);
+  const base = holdingBaseKey(portfolioKey).trim().toUpperCase();
+  return CRYPTO_YAHOO_QUOTE_MAP[base] ?? base;
 }
 
 /**

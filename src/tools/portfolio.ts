@@ -419,7 +419,7 @@ export function createPortfolioTools(): AgentTool[] {
     label: 'Add Holding',
     description:
       "Add or update a stock, fund (基金), or option position in the user's portfolio. " +
-      'Equity: ticker + avg_price + units — only for stocks/ETFs with a Yahoo-tradable ticker. ' +
+      'Equity: ticker + avg_price + units — stocks/ETFs with a Yahoo-tradable ticker, or spot crypto (BTC/BTC-USD, ETH/ETH-USD; fractional units OK). ' +
       'Fund (ETF / open-end 基金 / MMF / money-market / non-Yahoo products): instrument=fund + ticker (code or symbol) + avg_price + units + fund_quote_source=yahoo|manual. ' +
       'Money-market, unit trusts, bank/robo product codes (e.g. PHILLIPUSDMMF, FULLERTONSGDLIQ, OCBCUT, OCBCRI, OCCYRI) MUST use instrument=fund fund_quote_source=manual + mark (NAV; use avg_price if NAV unknown). ' +
       'Never import those as equity — Yahoo has no price and the dashboard will fail. ' +
@@ -440,7 +440,7 @@ export function createPortfolioTools(): AgentTool[] {
       ticker: Type.Optional(
         Type.String({
           description:
-            'Bare equity/fund ticker or code (e.g. AAPL, SPY, 110011) or optional option-key override. Do not embed @channel — pass channel separately.',
+            'Bare equity/fund ticker or code (e.g. AAPL, SPY, BTC, BTC-USD, 110011) or optional option-key override. Do not embed @channel — pass channel separately. Spot Bitcoin: BTC or BTC-USD (live Yahoo BTC-USD).',
         }),
       ),
       avg_price: Type.Number({

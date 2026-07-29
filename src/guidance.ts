@@ -188,6 +188,7 @@ const portfolio = (): string =>
     '*Equities*',
     '• "Add 50 AAPL at $180" / "Update MSFT to 30 shares @ $420"',
     '• "Add 100 0700.HK at HKD 350" / "Add 50 600519.SS at 1600" (use Yahoo suffixes)',
+    '• **Bitcoin / ETH (spot):** equity with ticker `BTC` or `BTC-USD` (maps to Yahoo `BTC-USD`; bare Yahoo `BTC` is *not* spot — we map it). Units may be fractional (e.g. 0.15). Same for `ETH` / `ETH-USD`.',
     '• Cost basis = avg_price × units (live value from Yahoo at analysis/dashboard time)',
     '',
     '*Funds (ETF / 基金 / MMF / bank products)*',
