@@ -33,6 +33,7 @@ const el = {
   barGrid: document.getElementById('barGrid'),
   chartGrid: document.getElementById('chartGrid'),
   insightGrid: document.getElementById('insightGrid'),
+  warningsBanner: document.getElementById('warningsBanner'),
 };
 
 let payload = null;
@@ -593,13 +594,17 @@ function renderCards(view) {
   view.positions.forEach((p) => {
     const isOpt = p.instrument === 'option';
     const isFund = p.instrument === 'fund';
+    const atCost = p.pricingMode === 'cost' || p.markSource === 'cost';
     // Options: show premium P/L % as index-style (100 + plPct); equities/funds: value/cost.
     const pIdx = isOpt
       ? 100 + (p.plPct || 0)
       : fundIndex(p.value, p.cost);
-    const pDiff = isOpt || view.benchmarkIndex == null ? null : pIdx - view.benchmarkIndex;
+    const pDiff = isOpt || view.benchmarkIndex == null || atCost ? null : pIdx - view.benchmarkIndex;
     const title = isOpt || isFund ? p.label || p.ticker : p.ticker;
     const ch = resolveDashboardChannel(p.channel);
+    const costBadge = atCost
+      ? `<span class="card-badge badge-cost">BOOK COST</span>`
+      : '';
     const footer = isOpt
       ? `${p.units} ct @ ${fmtUsd2(p.avgCost)}/ct prem | MTM ${fmtUsd0(p.value)} | P/L ${fmtSignedUsd0(p.pl)}` +
         (p.contingentCashObligation > 0
@@ -607,14 +612,55 @@ function renderCards(view) {
           : '') +
         ` | ${ch}`
       : isFund
-        ? `FUND ${p.units} u @ ${fmtUsd2(p.avgCost)} | Cost: ${fmtUsd0(p.cost)} | ${ch}`
-        : `${p.units} units @ ${fmtUsd2(p.avgCost)} | Cost: ${fmtUsd0(p.cost)} | ${ch}`;
+        ? `FUND ${p.units} u @ ${fmtUsd2(p.avgCost)} | Cost: ${fmtUsd0(p.cost)} | ${ch}` +
+          (atCost ? ' | no live quote — book cost' : '')
+        : `${p.units} units @ ${fmtUsd2(p.avgCost)} | Cost: ${fmtUsd0(p.cost)} | ${ch}` +
+          (atCost ? ' | no live quote — book cost' : '');
     cards.push(
-      cardHtml(title, pIdx, isOpt ? null : view.benchmarkIndex, pDiff, footer, channelBadgeHtml(ch)),
+      cardHtml(
+        title,
+        pIdx,
+        isOpt || atCost ? null : view.benchmarkIndex,
+        pDiff,
+        footer,
+        costBadge + channelBadgeHtml(ch),
+      ),
     );
   });
 
   el.summaryCards.innerHTML = cards.join('');
+}
+
+function renderWarnings() {
+  const banner = el.warningsBanner;
+  if (!banner) return;
+  const list = [
+    ...(Array.isArray(payload?.warnings) ? payload.warnings : []),
+    ...(Array.isArray(payload?.model?.live?.issues) ? payload.model.live.issues : []),
+  ];
+  // Dedupe by message
+  const seen = new Set();
+  const unique = list.filter((w) => {
+    const m = w && w.message ? String(w.message) : '';
+    if (!m || seen.has(m)) return false;
+    seen.add(m);
+    return true;
+  });
+  if (unique.length === 0) {
+    banner.classList.remove('visible');
+    banner.innerHTML = '';
+    return;
+  }
+  banner.classList.add('visible');
+  banner.innerHTML =
+    `<strong>Data notes (${unique.length}) — dashboard still loaded</strong><ul>` +
+    unique
+      .map((w) => {
+        const key = w.key ? `<code>${escapeHtml(w.key)}</code>: ` : '';
+        return `<li>${key}${escapeHtml(w.message)}</li>`;
+      })
+      .join('') +
+    '</ul>';
 }
 
 function renderAllocation(view) {
@@ -1144,6 +1190,7 @@ function renderDate(dateKey, channelKey = selectedChannel) {
   el.statusBadge.textContent = view.isLive ? 'LIVE' : 'ARCHIVE';
 
   destroyCharts();
+  renderWarnings();
   renderCards(view);
   renderAllocation(view);
   renderDepositsTable(view);

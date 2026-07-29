@@ -69,6 +69,28 @@
     .auto-label { display: flex; align-items: center; gap: 0.375rem; font-size: 0.8125rem; color: #6b7280; }
     .status { font-size: 0.75rem; color: #6b7280; text-align: center; padding: 0.5rem 1rem 0; min-height: 1.2em; }
     .status.error { color: #ef4444; }
+    .warnings-banner {
+      display: none;
+      margin: 0 0 1.25rem;
+      padding: 0.9rem 1.1rem;
+      border-radius: 10px;
+      border: 1px solid #fcd34d;
+      background: #fffbeb;
+      color: #92400e;
+      font-size: 0.875rem;
+    }
+    .warnings-banner.visible { display: block; }
+    .warnings-banner strong { display: block; margin-bottom: 0.4rem; color: #b45309; }
+    .warnings-banner ul { margin: 0; padding-left: 1.15rem; }
+    .warnings-banner li { margin: 0.25rem 0; }
+    .badge-cost {
+      background: #fef3c7;
+      color: #b45309;
+      font-size: 0.7rem;
+      padding: 0.2rem 0.45rem;
+      border-radius: 4px;
+      font-weight: 600;
+    }
     .container { max-width: 1400px; margin: 0 auto; padding: 1.5rem; }
     .summary-cards {
       display: grid;
@@ -326,6 +348,7 @@
     <div id="loading" class="loading">Loading portfolio data…</div>
     <div id="error" class="error-box hidden">Failed to load data.</div>
     <div id="dashboard" class="hidden">
+      <div id="warningsBanner" class="warnings-banner" role="status"></div>
       <div class="summary-cards" id="summaryCards"></div>
 
       <div class="allocation-section">

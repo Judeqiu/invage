@@ -610,6 +610,7 @@ export function valuePosition(
  * Value full portfolio.
  * `prices` keyed by Yahoo symbols (bare tickers) for equities and yahoo-priced funds.
  * Manual funds and options use stored marks.
+ * Fail-fast: any missing live price throws (use {@link valuePortfolioLenient} for dashboard).
  */
 export function valuePortfolio(
   portfolio: Record<string, Holding>,
@@ -627,4 +628,100 @@ export function valuePortfolio(
     }
     return valuePosition(key, h, prices[equityQuoteSymbol(key)]);
   });
+}
+
+export type PortfolioValuationIssueCode =
+  | 'missing_price'
+  | 'invalid_holding'
+  | 'valuation_error';
+
+export interface PortfolioValuationIssue {
+  key: string;
+  code: PortfolioValuationIssueCode;
+  message: string;
+  /** cost = MTM at book cost (not a market invent); skipped = row omitted from NAV */
+  recovery: 'cost' | 'skipped';
+}
+
+export interface LenientPositionEconomics extends PositionEconomics {
+  /** How the mark was obtained for this row. */
+  pricingMode: 'live' | 'cost' | 'manual' | 'option';
+  pricingNote?: string;
+}
+
+/**
+ * Value portfolio for dashboard display.
+ * Never invents a market price: missing Yahoo quote → value at **book cost** (P/L = 0)
+ * with an explicit issue. Corrupt holdings are skipped with an issue.
+ * Empty portfolio → empty economics (no throw).
+ */
+export function valuePortfolioLenient(
+  portfolio: Record<string, Holding>,
+  prices: Record<string, number>,
+): { economics: LenientPositionEconomics[]; issues: PortfolioValuationIssue[] } {
+  const issues: PortfolioValuationIssue[] = [];
+  const economics: LenientPositionEconomics[] = [];
+  const keys = Object.keys(portfolio);
+
+  for (const key of keys) {
+    const h = portfolio[key];
+    try {
+      if (isOptionHolding(h)) {
+        const e = valuePosition(key, h);
+        economics.push({ ...e, pricingMode: 'option' });
+        continue;
+      }
+      if (isFundHolding(h) && h.fund?.quote_source === 'manual') {
+        const e = valuePosition(key, h);
+        economics.push({
+          ...e,
+          pricingMode: 'manual',
+          pricingNote: 'Manual fund mark',
+        });
+        continue;
+      }
+      const quoteSym = equityQuoteSymbol(key);
+      const marketPrice = prices[quoteSym];
+      if (marketPrice == null || !Number.isFinite(marketPrice)) {
+        // Book-cost MTM — not a market invent. P/L forced to 0 at cost.
+        const e = valuePosition(key, h, h.avg_price);
+        const note =
+          `No live Yahoo price for ${quoteSym} (key ${key}). ` +
+          `Shown at book cost $${h.avg_price.toFixed(4)}. ` +
+          (isFundHolding(h)
+            ? 'Set fund_quote_source=manual with mark=NAV, or fix the Yahoo symbol.'
+            : 'If this is a fund/platform product, re-add as instrument=fund fund_quote_source=manual mark=NAV.');
+        issues.push({
+          key,
+          code: 'missing_price',
+          message: note,
+          recovery: 'cost',
+        });
+        economics.push({
+          ...e,
+          price: h.avg_price,
+          value: e.cost,
+          pl: 0,
+          plPct: 0,
+          pricingMode: 'cost',
+          pricingNote: note,
+        });
+        continue;
+      }
+      const e = valuePosition(key, h, marketPrice);
+      economics.push({ ...e, pricingMode: 'live' });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      issues.push({
+        key,
+        code: /avg_price|units|instrument|option|fund/.test(message)
+          ? 'invalid_holding'
+          : 'valuation_error',
+        message,
+        recovery: 'skipped',
+      });
+    }
+  }
+
+  return { economics, issues };
 }

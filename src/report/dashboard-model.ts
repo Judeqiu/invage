@@ -1,7 +1,22 @@
 import type { FundSpec, Holding, InstrumentKind, OptionSpec } from '../market/types.js';
 import type { OptionLiveMark } from '../market/fetch-option-marks.js';
-import { valuePortfolio, type PositionEconomics } from '../market/position-value.js';
+import {
+  valuePortfolio,
+  valuePortfolioLenient,
+  type LenientPositionEconomics,
+  type PortfolioValuationIssue,
+  type PositionEconomics,
+} from '../market/position-value.js';
 import type { Snapshot, SnapshotPosition } from '../state/snapshot.js';
+
+/** Non-fatal dashboard problem — page still renders. */
+export interface DashboardIssue {
+  /** Optional holding / deposit id */
+  key?: string;
+  code: string;
+  message: string;
+  severity: 'warning' | 'error';
+}
 
 /**
  * Channel used when a holding or cash has no broker tag.
@@ -47,9 +62,14 @@ export interface LivePosition {
    */
   channel: string;
   /** Option / fund: where the mark came from. */
-  markSource?: 'manual' | 'yahoo';
+  markSource?: 'manual' | 'yahoo' | 'cost';
   markNote?: string;
   contractSymbol?: string;
+  /**
+   * live = Yahoo/manual mark; cost = book cost fallback (no live quote);
+   * manual = fund.manual; option = option mark.
+   */
+  pricingMode?: 'live' | 'cost' | 'manual' | 'option';
 }
 
 /** Fixed deposit row on the live dashboard (principal in NAV; interest display-only). */
@@ -168,6 +188,11 @@ export interface LiveDashboardSlice {
   fxRates?: Record<string, number>;
   /** True when multi-currency totals were converted with live FX. */
   fxApplied?: boolean;
+  /**
+   * Non-fatal problems (missing quotes, mixed FX without rates, skipped rows).
+   * Empty when clean. Dashboard always returns a model when resilient.
+   */
+  issues: DashboardIssue[];
 }
 
 export interface DashboardModel {
@@ -179,12 +204,26 @@ export interface DashboardModel {
 }
 
 function economicsToLive(
-  e: PositionEconomics,
+  e: PositionEconomics | LenientPositionEconomics,
   weightPct: number,
   markMeta?: OptionLiveMark,
 ): LivePosition {
   const fundMarkSource =
     e.instrument === 'fund' && e.fund != null ? e.fund.quote_source : undefined;
+  const pricingMode =
+    'pricingMode' in e && e.pricingMode != null
+      ? e.pricingMode
+      : e.instrument === 'option'
+        ? 'option'
+        : fundMarkSource === 'manual'
+          ? 'manual'
+          : 'live';
+  const markSource: LivePosition['markSource'] =
+    pricingMode === 'cost'
+      ? 'cost'
+      : (markMeta?.source ?? (fundMarkSource === 'manual' || fundMarkSource === 'yahoo' ? fundMarkSource : undefined));
+  const pricingNote =
+    'pricingNote' in e && typeof e.pricingNote === 'string' ? e.pricingNote : undefined;
   return {
     ticker: e.key,
     label: e.label,
@@ -204,10 +243,20 @@ function economicsToLive(
     contingentShareObligation: e.contingentShareObligation,
     category: e.category,
     channel: resolveDashboardChannel(e.channel),
-    markSource: markMeta?.source ?? fundMarkSource,
-    markNote: markMeta?.note,
+    markSource,
+    markNote: pricingNote ?? markMeta?.note,
     contractSymbol: markMeta?.contractSymbol,
+    pricingMode,
   };
+}
+
+function issuesFromValuation(raw: PortfolioValuationIssue[]): DashboardIssue[] {
+  return raw.map((i) => ({
+    key: i.key,
+    code: i.code,
+    message: i.message,
+    severity: i.recovery === 'skipped' ? 'error' : 'warning',
+  }));
 }
 
 /** Unique sorted channel ids from positions + cash + deposit channel(s). */
@@ -315,6 +364,8 @@ function convertDashboardAmount(
 function depositsPrincipalSum(
   deposits: DepositRow[],
   opts?: DashboardFxOptions,
+  resilient = false,
+  issues?: DashboardIssue[],
 ): { amount: number; currency: string } | null {
   if (deposits.length === 0) return null;
   const currencies = [...new Set(deposits.map((d) => d.currency.trim().toUpperCase()))];
@@ -325,10 +376,18 @@ function depositsPrincipalSum(
     };
   }
   if (opts == null && currencies.length > 1) {
-    throw new Error(
+    const msg =
       `Cannot sum dashboard deposits across currencies (${deposits.map((x) => x.currency).join(', ')}). ` +
-        'Set treasury.reporting_currency for live FX conversion.',
-    );
+      'Set treasury.reporting_currency for live FX conversion.';
+    if (resilient) {
+      issues?.push({
+        code: 'mixed_deposit_currency',
+        message: msg + ' Deposit principal excluded from NAV totals until FX is available.',
+        severity: 'warning',
+      });
+      return null;
+    }
+    throw new Error(msg);
   }
   let amount = 0;
   let currency = opts!.reportingCurrency.trim().toUpperCase();
@@ -361,6 +420,8 @@ function cashForChannelSlice(
   cashes: Array<{ amount: number; currency: string; channel: string }>,
   channel: string | null,
   opts?: DashboardFxOptions,
+  resilient = false,
+  issues?: DashboardIssue[],
 ): { amount: number; currency: string } | null {
   const subset =
     channel == null ? cashes : cashes.filter((c) => c.channel === channel);
@@ -373,10 +434,22 @@ function cashForChannelSlice(
     };
   }
   if (opts == null && currencies.length > 1) {
-    throw new Error(
+    const msg =
       `Cannot sum dashboard cash across currencies (${subset.map((x) => x.currency).join(', ')}). ` +
-        'Set treasury.reporting_currency for live FX conversion.',
-    );
+      'Set treasury.reporting_currency for live FX conversion.';
+    if (resilient) {
+      issues?.push({
+        code: 'mixed_cash_currency',
+        message:
+          msg +
+          (channel == null
+            ? ' Free cash excluded from merged NAV until FX is available (per-channel may still show single-ccy cash).'
+            : ` Free cash for channel "${channel}" excluded from NAV until FX is available.`),
+        severity: 'warning',
+      });
+      return null;
+    }
+    throw new Error(msg);
   }
   let amount = 0;
   let currency = opts
@@ -407,6 +480,8 @@ export function buildChannelTotals(
   includeCash: boolean,
   deposits: DepositRow[] = [],
   fx?: DashboardFxOptions,
+  resilient = false,
+  issues?: DashboardIssue[],
 ): ChannelTotals {
   let positionsValue = 0;
   let totalCost = 0;
@@ -444,7 +519,7 @@ export function buildChannelTotals(
   const totalPL = positionsValue - totalCost;
   const cashAmount = includeCash && cash != null ? cash.amount : null;
   const cashCurrency = includeCash && cash != null ? cash.currency : null;
-  const depSum = depositsPrincipalSum(deposits, fx);
+  const depSum = depositsPrincipalSum(deposits, fx, resilient, issues);
   const depositsAmount = depSum?.amount ?? 0;
   const depositsCurrency = depSum?.currency ?? null;
   let totalValue = positionsValue;
@@ -558,6 +633,7 @@ export function filterLiveByChannel(
       reportingCurrency: live.reportingCurrency,
       fxRates: live.fxRates,
       fxApplied: live.fxApplied,
+      issues: live.issues ?? [],
     };
   }
 
@@ -598,14 +674,25 @@ export function filterLiveByChannel(
     reportingCurrency: live.reportingCurrency,
     fxRates: live.fxRates,
     fxApplied: live.fxApplied,
+    issues: live.issues ?? [],
   };
+}
+
+export interface BuildLivePositionsOptions {
+  /**
+   * Dashboard mode: missing prices → book-cost MTM + issues; mixed FX without rates
+   * excludes cash/deposits from NAV instead of throwing. Tools keep default strict.
+   */
+  resilient?: boolean;
 }
 
 /**
  * Build live positions from portfolio + equity prices.
  * Option positions use option.mark on the holding (apply Yahoo marks before calling).
  * Pass optionMarks to annotate source on LivePosition.
- * Fails if portfolio empty (and no deposits) or any equity ticker lacks a price.
+ *
+ * Strict (default): empty portfolio without deposits throws; missing prices throw.
+ * Resilient: always returns a slice with `issues` for data problems (no invented market prices).
  *
  * Missing holding/cash/deposit `channel` is normalized to {@link DEFAULT_CHANNEL}.
  * Cash may be a single balance or an array (one per broker channel).
@@ -633,15 +720,44 @@ export function buildLivePositions(
     | null,
   today?: string,
   fx?: DashboardFxOptions,
+  opts?: BuildLivePositionsOptions,
 ): LiveDashboardSlice {
-  const depositRows = toDepositRows(deposits ?? null, today);
+  const resilient = opts?.resilient === true;
+  const issues: DashboardIssue[] = [];
+
+  let depositRows: DepositRow[] = [];
+  try {
+    depositRows = toDepositRows(deposits ?? null, today);
+  } catch (e) {
+    if (!resilient) throw e;
+    issues.push({
+      code: 'deposit_parse',
+      message: e instanceof Error ? e.message : String(e),
+      severity: 'error',
+    });
+    depositRows = [];
+  }
+
   const hasPositions = Object.keys(portfolio).length > 0;
   if (!hasPositions && depositRows.length === 0) {
+    if (resilient) {
+      return emptyLiveSlice(issues);
+    }
     // Preserve fail-fast from valuePortfolio for empty book with nothing to show.
     valuePortfolio(portfolio, prices);
   }
 
-  const economics = hasPositions ? valuePortfolio(portfolio, prices) : [];
+  let economics: Array<PositionEconomics | LenientPositionEconomics> = [];
+  if (hasPositions) {
+    if (resilient) {
+      const lenient = valuePortfolioLenient(portfolio, prices);
+      economics = lenient.economics;
+      issues.push(...issuesFromValuation(lenient.issues));
+    } else {
+      economics = valuePortfolio(portfolio, prices);
+    }
+  }
+
   const cashes = normalizeDashboardCashes(cash ?? null);
 
   const moneyCurrencies = [
@@ -652,22 +768,29 @@ export function buildLivePositions(
   ];
   const needsFx = moneyCurrencies.length > 1;
   if (needsFx && fx == null) {
-    throw new Error(
+    const msg =
       `Cannot sum dashboard money across currencies (${moneyCurrencies.join(', ')}). ` +
-        'Set treasury.reporting_currency so totals convert with live FX.',
-    );
+      'Set treasury.reporting_currency so totals convert with live FX.';
+    if (!resilient) throw new Error(msg);
+    issues.push({
+      code: 'mixed_currency_no_fx',
+      message:
+        msg +
+        ' Positions still shown; free cash / deposit principals may be excluded from NAV until FX is available.',
+      severity: 'warning',
+    });
   }
-  const fxOpts = needsFx ? fx : undefined;
+  const fxOpts = needsFx && fx != null ? fx : undefined;
   const fxApplied = needsFx && fx != null;
 
-  const mergedCash = cashForChannelSlice(cashes, null, fxOpts);
+  const mergedCash = cashForChannelSlice(cashes, null, fxOpts, resilient, issues);
   const cashAmount = mergedCash?.amount ?? null;
   const cashCurrency = mergedCash?.currency ?? null;
   // Single cash channel is exposed on the slice; multi → null (see byChannel).
   const cashChannel =
     cashes.length === 1 ? cashes[0].channel : cashes.length > 1 ? null : null;
 
-  const depSum = depositsPrincipalSum(depositRows, fxOpts);
+  const depSum = depositsPrincipalSum(depositRows, fxOpts, resilient, issues);
   const depositsAmount = depSum?.amount ?? 0;
 
   const absPositions = economics.reduce((s, p) => s + Math.abs(p.value), 0);
@@ -690,9 +813,10 @@ export function buildLivePositions(
     depositRows.map((d) => d.channel),
   );
 
+  // Channel cash: avoid duplicate mixed-ccy warnings per channel — only record once at merged.
   const byChannel: ChannelTotals[] = channels.map((ch) => {
     const chPositions = positions.filter((p) => p.channel === ch);
-    const chCash = cashForChannelSlice(cashes, ch, fxOpts);
+    const chCash = cashForChannelSlice(cashes, ch, fxOpts, resilient, undefined);
     const chDeposits = depositRows.filter((d) => d.channel === ch);
     return buildChannelTotals(
       ch,
@@ -701,6 +825,8 @@ export function buildLivePositions(
       chCash != null,
       chDeposits,
       fxOpts,
+      resilient,
+      undefined,
     );
   });
 
@@ -711,6 +837,8 @@ export function buildLivePositions(
     mergedCash != null,
     depositRows,
     fxOpts,
+    resilient,
+    issues,
   );
 
   const reportingCurrency = fxApplied
@@ -718,6 +846,15 @@ export function buildLivePositions(
     : moneyCurrencies.length === 1
       ? moneyCurrencies[0]
       : cashCurrency ?? depSum?.currency ?? null;
+
+  // Dedupe issue messages (cash/deposit mixed can fire twice)
+  const seen = new Set<string>();
+  const dedupedIssues = issues.filter((i) => {
+    const k = `${i.code}|${i.key ?? ''}|${i.message}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
 
   return {
     positions,
@@ -749,6 +886,39 @@ export function buildLivePositions(
     reportingCurrency,
     fxRates: fxApplied ? { ...fx!.fxRates } : undefined,
     fxApplied: fxApplied || false,
+    issues: dedupedIssues,
+  };
+}
+
+function emptyLiveSlice(issues: DashboardIssue[] = []): LiveDashboardSlice {
+  return {
+    positions: [],
+    totalValue: 0,
+    totalCost: 0,
+    totalPL: 0,
+    totalPLPct: 0,
+    positionCount: 0,
+    equityValue: 0,
+    equityCost: 0,
+    optionsPremiumCollected: 0,
+    optionsPremiumPaid: 0,
+    contingentCashObligation: 0,
+    contingentShareObligation: 0,
+    optionCount: 0,
+    equityCount: 0,
+    fundCount: 0,
+    cashAmount: null,
+    cashCurrency: null,
+    cashChannel: null,
+    positionsValue: 0,
+    cashWeightPct: null,
+    deposits: [],
+    depositsAmount: 0,
+    depositsCurrency: null,
+    depositCount: 0,
+    channels: [],
+    byChannel: [],
+    issues,
   };
 }
 

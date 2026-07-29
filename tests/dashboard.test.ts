@@ -317,6 +317,52 @@ describe('buildLivePositions', () => {
       ),
     ).toThrow(/reporting_currency|currencies/);
   });
+
+  it('resilient mode values missing prices at book cost and keeps loading', () => {
+    const live = buildLivePositions(
+      {
+        AAPL: { avg_price: 100, units: 10 },
+        ENDOWUS: { avg_price: 1, units: 1000, channel: 'endowus' },
+      },
+      { AAPL: 110 }, // ENDOWUS missing
+      undefined,
+      null,
+      null,
+      undefined,
+      undefined,
+      { resilient: true },
+    );
+    expect(live.positions).toHaveLength(2);
+    const endow = live.positions.find((p) => p.ticker === 'ENDOWUS');
+    expect(endow?.pricingMode).toBe('cost');
+    expect(endow?.value).toBe(1000);
+    expect(endow?.pl).toBe(0);
+    expect(live.totalValue).toBe(1100 + 1000);
+    expect(live.issues.some((i) => i.code === 'missing_price' && i.key === 'ENDOWUS')).toBe(
+      true,
+    );
+  });
+
+  it('resilient mode excludes mixed-currency cash without FX instead of throwing', () => {
+    const live = buildLivePositions(
+      { AAPL: { avg_price: 100, units: 10 } },
+      { AAPL: 110 },
+      undefined,
+      [
+        { amount: 1000, currency: 'USD', channel: 'us' },
+        { amount: 1000, currency: 'SGD', channel: 'sg' },
+      ],
+      null,
+      undefined,
+      undefined,
+      { resilient: true },
+    );
+    expect(live.totalValue).toBe(1100); // positions only
+    expect(live.cashAmount).toBeNull();
+    expect(live.issues.some((i) => i.code === 'mixed_currency_no_fx' || i.code === 'mixed_cash_currency')).toBe(
+      true,
+    );
+  });
 });
 
 describe('buildDashboardModel', () => {

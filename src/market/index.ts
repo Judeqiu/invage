@@ -60,9 +60,15 @@ export {
   normalizeOptionalChannel,
   valuePosition,
   valuePortfolio,
+  valuePortfolioLenient,
   HOLDING_KEY_CHANNEL_SEP,
 } from './position-value.js';
-export type { PositionEconomics } from './position-value.js';
+export type {
+  PositionEconomics,
+  LenientPositionEconomics,
+  PortfolioValuationIssue,
+  PortfolioValuationIssueCode,
+} from './position-value.js';
 export {
   fetchOptionMarks,
   applyOptionMarks,

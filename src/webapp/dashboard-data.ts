@@ -1,10 +1,15 @@
 /**
  * Load a live portfolio dashboard model for a user slug.
  * Used by the WebUI domain API (dynamic tab) — same math as the HTML report.
+ *
+ * Dashboard loads are **resilient**: data issues become `warnings` / model.live.issues
+ * rather than a hard 500. Market prices are never invented — unpriced equities use
+ * book cost with an explicit warning.
  */
 
 import { loadState } from 'utarus';
 import {
+  equityQuoteSymbols,
   fetchFxRates,
   fetchHistoricalCloses,
   fetchPrices,
@@ -25,9 +30,11 @@ import {
   buildDashboardModel,
   buildLivePositions,
   type DashboardFxOptions,
+  type DashboardIssue,
   type DashboardModel,
 } from '../report/dashboard-model.js';
 import type { Holding } from '../market/types.js';
+import type { OptionLiveMark } from '../market/fetch-option-marks.js';
 
 export const BENCHMARK_TICKER = 'SPY';
 
@@ -49,6 +56,11 @@ export interface DashboardPayload {
   model: DashboardModel | null;
   /** Null when there are no snapshots to anchor a base date, or SPY fetch failed. */
   benchmark: BenchmarkData | null;
+  /**
+   * Non-fatal load issues (also mirrored on model.live.issues when model present).
+   * UI shows a banner; NAV may exclude unpriced cash or use book cost for marks.
+   */
+  warnings?: DashboardIssue[];
 }
 
 /** Fetch SPY adjusted closes at snapshot dates + current price. Soft-fails to null. */
@@ -72,21 +84,108 @@ async function loadBenchmark(snapshots: Snapshot[]): Promise<BenchmarkData | nul
   }
 }
 
+async function resolveMarketResilient(
+  portfolio: Record<string, Holding>,
+  priceOverride?: Record<string, number>,
+): Promise<{
+  valuedPortfolio: Record<string, Holding>;
+  prices: Record<string, number>;
+  optionMarks: Record<string, OptionLiveMark>;
+  issues: DashboardIssue[];
+}> {
+  const issues: DashboardIssue[] = [];
+  if (Object.keys(portfolio).length === 0) {
+    return { valuedPortfolio: {}, prices: {}, optionMarks: {}, issues };
+  }
+
+  if (priceOverride) {
+    try {
+      const resolved = await resolvePortfolioMarket(portfolio);
+      return {
+        valuedPortfolio: resolved.portfolio,
+        prices: priceOverride,
+        optionMarks: resolved.optionMarks,
+        issues,
+      };
+    } catch (e) {
+      issues.push({
+        code: 'option_mark_failed',
+        message: e instanceof Error ? e.message : String(e),
+        severity: 'warning',
+      });
+      return {
+        valuedPortfolio: portfolio,
+        prices: priceOverride,
+        optionMarks: {},
+        issues,
+      };
+    }
+  }
+
+  try {
+    const resolved = await resolvePortfolioMarket(portfolio);
+    return {
+      valuedPortfolio: resolved.portfolio,
+      prices: resolved.equityPrices,
+      optionMarks: resolved.optionMarks,
+      issues,
+    };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    issues.push({
+      code: 'market_resolve_failed',
+      message: `${msg} Falling back to equity quotes only (option marks use stored values).`,
+      severity: 'warning',
+    });
+    try {
+      const symbols = equityQuoteSymbols(portfolio);
+      const prices =
+        symbols.length > 0 ? await fetchPrices(symbols) : ({} as Record<string, number>);
+      return {
+        valuedPortfolio: portfolio,
+        prices,
+        optionMarks: {},
+        issues,
+      };
+    } catch (e2) {
+      issues.push({
+        code: 'price_fetch_failed',
+        message: e2 instanceof Error ? e2.message : String(e2),
+        severity: 'error',
+      });
+      return {
+        valuedPortfolio: portfolio,
+        prices: {},
+        optionMarks: {},
+        issues,
+      };
+    }
+  }
+}
+
 /**
  * Build dashboard JSON for a user.
- * Empty portfolio → empty:true (no invented holdings).
- * Missing price for a held ticker → throws (fail-fast).
+ * Empty portfolio → empty:true.
+ * Data problems → warnings + partial model (never invent market prices).
  */
 export async function loadDashboardForSlug(
   slug: string,
   priceOverride?: Record<string, number>,
   benchmarkOverride?: BenchmarkData | null,
 ): Promise<DashboardPayload> {
-  const state = loadState(slug) as InvestorState;
+  const warnings: DashboardIssue[] = [];
+  const generatedAt = new Date().toISOString();
+
+  let state: InvestorState;
+  try {
+    state = loadState(slug) as InvestorState;
+  } catch (e) {
+    throw e; // auth / missing user still hard-fails
+  }
+
   const portfolio = getPortfolio(state);
   const deposits = getDeposits(state);
   const displayName = state.profile.display_name;
-  const generatedAt = new Date().toISOString();
   const tickers = Object.keys(portfolio);
 
   if (tickers.length === 0 && deposits.length === 0) {
@@ -99,29 +198,12 @@ export async function loadDashboardForSlug(
         'No holdings or fixed deposits yet. Add positions or deposits in chat, then refresh this dashboard.',
       model: null,
       benchmark: null,
+      warnings: [],
     };
   }
 
-  let valuedPortfolio: Record<string, Holding>;
-  let prices: Record<string, number>;
-  let optionMarks: Awaited<ReturnType<typeof resolvePortfolioMarket>>['optionMarks'];
-
-  if (tickers.length === 0) {
-    valuedPortfolio = {};
-    prices = {};
-    optionMarks = {};
-  } else if (priceOverride) {
-    // Tests / overrides: equity prices forced; still resolve option marks unless empty options
-    const resolved = await resolvePortfolioMarket(portfolio);
-    valuedPortfolio = resolved.portfolio;
-    prices = priceOverride;
-    optionMarks = resolved.optionMarks;
-  } else {
-    const resolved = await resolvePortfolioMarket(portfolio);
-    valuedPortfolio = resolved.portfolio;
-    prices = resolved.equityPrices;
-    optionMarks = resolved.optionMarks;
-  }
+  const market = await resolveMarketResilient(portfolio, priceOverride);
+  warnings.push(...market.issues);
 
   const cashes = getCashes(state);
   const moneyCurrencies = [
@@ -137,46 +219,101 @@ export async function loadDashboardForSlug(
     const hh = state as HouseholdInvestorState;
     const treasury = getTreasury(hh);
     if (treasury == null) {
-      throw new Error(
-        `Cannot sum dashboard money across currencies (${moneyCurrencies.join(', ')}). ` +
-          'Set treasury.reporting_currency (set_treasury) so totals convert with live FX.',
-      );
+      warnings.push({
+        code: 'mixed_currency_no_reporting',
+        message:
+          `Multiple currencies (${moneyCurrencies.join(', ')}) without treasury.reporting_currency. ` +
+          'Set set_treasury reporting_currency so cash/deposits convert with live FX. ' +
+          'Positions still shown; multi-ccy cash/deposits may be excluded from NAV.',
+        severity: 'warning',
+      });
+    } else {
+      try {
+        const rep = treasury.reporting_currency;
+        const rates = await fetchFxRates(moneyCurrencies, rep);
+        fx = { reportingCurrency: rep, fxRates: rates };
+      } catch (e) {
+        warnings.push({
+          code: 'fx_fetch_failed',
+          message:
+            (e instanceof Error ? e.message : String(e)) +
+            ' Multi-currency cash/deposits excluded from NAV until FX succeeds.',
+          severity: 'warning',
+        });
+      }
     }
-    const rep = treasury.reporting_currency;
-    const rates = await fetchFxRates(moneyCurrencies, rep);
-    fx = { reportingCurrency: rep, fxRates: rates };
   }
 
-  const live = buildLivePositions(
-    valuedPortfolio,
-    prices,
-    optionMarks,
-    cashes.length > 0
-      ? cashes.map((c) => ({
-          amount: c.amount,
-          currency: c.currency,
-          channel: c.channel,
-        }))
-      : null,
-    deposits.length > 0
-      ? deposits.map((d) => ({
-          id: d.id,
-          amount: d.amount,
-          interest: d.interest,
-          currency: d.currency,
-          start_date: d.start_date,
-          end_date: d.end_date,
-          channel: d.channel,
-          label: d.label,
-        }))
-      : null,
-    undefined,
-    fx,
-  );
-  const snapshots = loadSnapshots(slug);
+  let live;
+  try {
+    live = buildLivePositions(
+      market.valuedPortfolio,
+      market.prices,
+      market.optionMarks,
+      cashes.length > 0
+        ? cashes.map((c) => ({
+            amount: c.amount,
+            currency: c.currency,
+            channel: c.channel,
+          }))
+        : null,
+      deposits.length > 0
+        ? deposits.map((d) => ({
+            id: d.id,
+            amount: d.amount,
+            interest: d.interest,
+            currency: d.currency,
+            start_date: d.start_date,
+            end_date: d.end_date,
+            channel: d.channel,
+            label: d.label,
+          }))
+        : null,
+      undefined,
+      fx,
+      { resilient: true },
+    );
+  } catch (e) {
+    // Last-resort: still return something usable
+    warnings.push({
+      code: 'live_build_failed',
+      message: e instanceof Error ? e.message : String(e),
+      severity: 'error',
+    });
+    live = buildLivePositions({}, {}, {}, null, null, undefined, undefined, {
+      resilient: true,
+    });
+    live.issues = [...warnings];
+  }
+
+  // Merge outer warnings into live issues
+  const mergedIssues = [...(live.issues ?? [])];
+  for (const w of warnings) {
+    if (!mergedIssues.some((i) => i.code === w.code && i.message === w.message)) {
+      mergedIssues.push(w);
+    }
+  }
+  live.issues = mergedIssues;
+
+  let snapshots: Snapshot[] = [];
+  try {
+    snapshots = loadSnapshots(slug);
+  } catch (e) {
+    live.issues.push({
+      code: 'snapshot_load_failed',
+      message: e instanceof Error ? e.message : String(e),
+      severity: 'warning',
+    });
+  }
+
   const model = buildDashboardModel(live, snapshots);
-  const benchmark =
-    benchmarkOverride !== undefined ? benchmarkOverride : await loadBenchmark(snapshots);
+  let benchmark: BenchmarkData | null = null;
+  try {
+    benchmark =
+      benchmarkOverride !== undefined ? benchmarkOverride : await loadBenchmark(snapshots);
+  } catch {
+    benchmark = null;
+  }
 
   return {
     slug,
@@ -185,5 +322,6 @@ export async function loadDashboardForSlug(
     empty: false,
     model,
     benchmark,
+    warnings: model.live.issues,
   };
 }

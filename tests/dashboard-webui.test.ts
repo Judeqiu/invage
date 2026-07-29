@@ -129,8 +129,13 @@ describe('loadDashboardForSlug', () => {
     expect(payload.benchmark).toBeNull();
   });
 
-  it('fails when a price is missing', async () => {
-    await expect(loadDashboardForSlug('alice', {})).rejects.toThrow(/Missing market price for AAPL/);
+  it('loads at book cost with warnings when a price is missing (resilient)', async () => {
+    const payload = await loadDashboardForSlug('alice', {});
+    expect(payload.empty).toBe(false);
+    expect(payload.model).not.toBeNull();
+    expect(payload.model!.live.totalValue).toBe(1000); // AAPL 10×100 at cost
+    expect(payload.warnings?.some((w) => w.code === 'missing_price')).toBe(true);
+    expect(payload.model!.live.issues.some((i) => i.key === 'AAPL')).toBe(true);
   });
 });
 
