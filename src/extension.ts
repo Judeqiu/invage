@@ -20,9 +20,10 @@ import { playbookAgentGuidance } from './playbook/index.js';
 import { handleBindCommand, handleBindWebCommand } from './onboard/bind-command.js';
 import { handleOnboardCommand, handleOnboardWebCommand } from './onboard/admin-commands.js';
 import {
-  getCash,
+  getCashes,
   getPlaybook,
   getPortfolio,
+  totalCash,
   type InvestorState,
 } from './state/portfolio-state.js';
 import { createInvageWebUi } from './webapp/invage-webui.js';
@@ -188,12 +189,21 @@ When the user asks a **market theme / outlook / "how will X affect the stock mar
 function investorContextPrefix(investor: InvestorState, ctx: EnrichMessageContext): string {
   const portfolio = getPortfolio(investor);
   const n = Object.keys(portfolio).length;
-  const cash = getCash(investor);
+  const cashes = getCashes(investor);
+  const cash = totalCash(cashes);
   const playbook = getPlaybook(investor);
   const cashHint =
-    cash != null
-      ? `Cash: ${cash.amount.toFixed(2)} ${cash.currency} (updated ${cash.updated_at}).`
-      : 'Cash: not recorded (use set_cash for dry powder / cash weight vs cash_target_pct).';
+    cashes.length === 0
+      ? 'Cash: not recorded (use set_cash for dry powder / cash weight vs cash_target_pct; multi-channel: set_cash per channel).'
+      : cashes.length === 1
+        ? `Cash: ${cashes[0].amount.toFixed(2)} ${cashes[0].currency} (updated ${cashes[0].updated_at})${cashes[0].channel ? ` channel=${cashes[0].channel}` : ''}.`
+        : `Cash by channel: ${cashes
+            .map(
+              (c) =>
+                `${c.channel ?? 'unassigned'}=${c.amount.toFixed(2)} ${c.currency}`,
+            )
+            .join(', ')}` +
+          (cash != null ? ` (total ${cash.amount.toFixed(2)} ${cash.currency}).` : '.');
   const channelHint =
     ctx.telegramUserId != null
       ? `Use telegram_user_id=${ctx.telegramUserId} on portfolio/playbook tools.`

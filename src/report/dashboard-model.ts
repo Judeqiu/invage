@@ -174,23 +174,66 @@ function economicsToLive(
   };
 }
 
-/** Unique sorted channel ids from positions + optional cash channel. */
+/** Unique sorted channel ids from positions + cash channel(s). */
 export function collectDashboardChannels(
   positions: Array<{ channel?: string | null }>,
-  cashChannel: string | null,
+  cashChannels: Array<string | null | undefined> | string | null,
 ): string[] {
   const set = new Set<string>();
   for (const p of positions) {
     set.add(resolveDashboardChannel(p.channel));
   }
-  if (cashChannel != null) {
-    set.add(resolveDashboardChannel(cashChannel));
+  const list = Array.isArray(cashChannels)
+    ? cashChannels
+    : cashChannels != null
+      ? [cashChannels]
+      : [];
+  for (const ch of list) {
+    if (ch != null) set.add(resolveDashboardChannel(ch));
   }
   return [...set].sort((a, b) => {
     if (a === DEFAULT_CHANNEL) return -1;
     if (b === DEFAULT_CHANNEL) return 1;
     return a.localeCompare(b);
   });
+}
+
+/** Normalize cash arg (single | multi | null) → list of balances. */
+function normalizeDashboardCashes(
+  cash?:
+    | { amount: number; currency: string; channel?: string }
+    | Array<{ amount: number; currency: string; channel?: string }>
+    | null,
+): Array<{ amount: number; currency: string; channel: string }> {
+  if (cash == null) return [];
+  const list = Array.isArray(cash) ? cash : [cash];
+  return list.map((c) => ({
+    amount: c.amount,
+    currency: c.currency,
+    channel: resolveDashboardChannel(c.channel),
+  }));
+}
+
+/** Sum cash for a channel (or all when channel is null = merged). Same currency only. */
+function cashForChannelSlice(
+  cashes: Array<{ amount: number; currency: string; channel: string }>,
+  channel: string | null,
+): { amount: number; currency: string } | null {
+  const subset =
+    channel == null ? cashes : cashes.filter((c) => c.channel === channel);
+  if (subset.length === 0) return null;
+  const currency = subset[0].currency;
+  for (const c of subset) {
+    if (c.currency !== currency) {
+      throw new Error(
+        `Cannot sum dashboard cash across currencies (${subset.map((x) => x.currency).join(', ')}).`,
+      );
+    }
+  }
+  return {
+    amount: subset.reduce((s, c) => s + c.amount, 0),
+    currency,
+  };
 }
 
 /**
@@ -281,6 +324,7 @@ function withRecalculatedWeights(
  * Filter a live dashboard slice to one channel, or return merged (all) when
  * `channel` is {@link MERGED_CHANNEL_VIEW}.
  * Weights are recomputed within the filtered set.
+ * Per-channel cash comes from {@link LiveDashboardSlice.byChannel}.
  */
 export function filterLiveByChannel(
   live: LiveDashboardSlice,
@@ -291,11 +335,10 @@ export function filterLiveByChannel(
   }
 
   const filtered = live.positions.filter((p) => p.channel === channel);
-  const cashBelongs =
-    live.cashAmount != null && live.cashChannel != null && live.cashChannel === channel;
+  const chRow = live.byChannel.find((c) => c.channel === channel);
   const cash =
-    cashBelongs && live.cashAmount != null && live.cashCurrency != null
-      ? { amount: live.cashAmount, currency: live.cashCurrency }
+    chRow != null && chRow.cashAmount != null && chRow.cashCurrency != null
+      ? { amount: chRow.cashAmount, currency: chRow.cashCurrency }
       : null;
 
   const totals = buildChannelTotals(channel, filtered, cash, cash != null);
@@ -318,7 +361,7 @@ export function filterLiveByChannel(
     equityCount: totals.equityCount,
     cashAmount: totals.cashAmount,
     cashCurrency: totals.cashCurrency,
-    cashChannel: cashBelongs ? channel : null,
+    cashChannel: cash != null ? channel : null,
     positionsValue: totals.positionsValue,
     cashWeightPct: totals.cashWeightPct,
     channels: live.channels,
@@ -333,18 +376,25 @@ export function filterLiveByChannel(
  * Fails if portfolio empty or any equity ticker lacks a price.
  *
  * Missing holding/cash `channel` is normalized to {@link DEFAULT_CHANNEL}.
+ * Cash may be a single balance or an array (one per broker channel).
  */
 export function buildLivePositions(
   portfolio: Record<string, Holding>,
   prices: Record<string, number>,
   optionMarks?: Record<string, OptionLiveMark>,
-  cash?: { amount: number; currency: string; channel?: string } | null,
+  cash?:
+    | { amount: number; currency: string; channel?: string }
+    | Array<{ amount: number; currency: string; channel?: string }>
+    | null,
 ): LiveDashboardSlice {
   const economics = valuePortfolio(portfolio, prices);
-
-  const cashAmount = cash != null ? cash.amount : null;
-  const cashCurrency = cash != null ? cash.currency : null;
-  const cashChannel = cash != null ? resolveDashboardChannel(cash.channel) : null;
+  const cashes = normalizeDashboardCashes(cash ?? null);
+  const mergedCash = cashForChannelSlice(cashes, null);
+  const cashAmount = mergedCash?.amount ?? null;
+  const cashCurrency = mergedCash?.currency ?? null;
+  // Single cash channel is exposed on the slice; multi → null (see byChannel).
+  const cashChannel =
+    cashes.length === 1 ? cashes[0].channel : cashes.length > 1 ? null : null;
 
   const absPositions = economics.reduce((s, p) => s + Math.abs(p.value), 0);
   const absSum = absPositions + (cashAmount != null ? cashAmount : 0);
@@ -359,19 +409,23 @@ export function buildLivePositions(
     )
     .sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
 
-  const channels = collectDashboardChannels(positions, cashChannel);
-  const cashForTotals =
-    cashAmount != null && cashCurrency != null
-      ? { amount: cashAmount, currency: cashCurrency }
-      : null;
+  const channels = collectDashboardChannels(
+    positions,
+    cashes.map((c) => c.channel),
+  );
 
   const byChannel: ChannelTotals[] = channels.map((ch) => {
     const chPositions = positions.filter((p) => p.channel === ch);
-    const includeCash = cashChannel != null && cashChannel === ch;
-    return buildChannelTotals(ch, chPositions, cashForTotals, includeCash);
+    const chCash = cashForChannelSlice(cashes, ch);
+    return buildChannelTotals(ch, chPositions, chCash, chCash != null);
   });
 
-  const merged = buildChannelTotals(MERGED_CHANNEL_VIEW, positions, cashForTotals, cashForTotals != null);
+  const merged = buildChannelTotals(
+    MERGED_CHANNEL_VIEW,
+    positions,
+    mergedCash,
+    mergedCash != null,
+  );
 
   return {
     positions,

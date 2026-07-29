@@ -13,12 +13,15 @@ import {
 import {
   applyCashDelta,
   cashDeltaForHoldingChange,
+  cashSlotKey,
   clearCash,
-  getCash,
+  getCashes,
   getPlaybook,
   getPortfolio,
   setCash,
+  setCashes,
   setPortfolio,
+  totalCash,
   type CashApplyResult,
   type CashBalance,
 } from '../state/portfolio-state.js';
@@ -48,17 +51,36 @@ function formatChannelTag(channel: string | undefined): string {
   return channel != null && channel.length > 0 ? ` | channel: ${channel}` : '';
 }
 
-function formatCashSection(cash: CashBalance | null, cashTargetPct: number): string {
+function formatCashSection(cashes: CashBalance[], cashTargetPct: number): string {
   const lines = ['── CASH ──'];
-  if (cash == null) {
+  if (cashes.length === 0) {
     lines.push(
       '  Cash: not recorded. Use set_cash so strategy can size vs dry powder and cash_target_pct.',
       `  Playbook cash target: ${cashTargetPct}% (unknown actual weight until cash is set).`,
     );
     return lines.join('\n');
   }
+  if (cashes.length === 1) {
+    const cash = cashes[0];
+    lines.push(
+      `  Cash: ${cash.amount.toFixed(2)} ${cash.currency} (updated ${cash.updated_at})${formatChannelTag(cash.channel)}`,
+    );
+  } else {
+    lines.push('  Cash by channel:');
+    for (const c of cashes) {
+      const ch = cashSlotKey(c.channel) || '(unassigned)';
+      lines.push(
+        `    ${ch}: ${c.amount.toFixed(2)} ${c.currency} (updated ${c.updated_at})`,
+      );
+    }
+    const total = totalCash(cashes);
+    if (total != null) {
+      lines.push(
+        `  Total cash: ${total.amount.toFixed(2)} ${total.currency}`,
+      );
+    }
+  }
   lines.push(
-    `  Cash: ${cash.amount.toFixed(2)} ${cash.currency} (updated ${cash.updated_at})${formatChannelTag(cash.channel)}`,
     `  Playbook cash target: ${cashTargetPct}% — compare after live NAV (portfolio_analyzer / save_snapshot).`,
   );
   return lines.join('\n');
@@ -76,7 +98,7 @@ function resolveChannelParam(
 
 function formatPortfolio(
   portfolio: Record<string, Holding>,
-  cash: CashBalance | null,
+  cashes: CashBalance[],
   cashTargetPct: number,
 ): string {
   const keys = Object.keys(portfolio);
@@ -84,7 +106,7 @@ function formatPortfolio(
     return [
       'Portfolio is empty. Use add_holding to add positions.',
       '',
-      formatCashSection(cash, cashTargetPct),
+      formatCashSection(cashes, cashTargetPct),
     ].join('\n');
   }
 
@@ -168,11 +190,12 @@ function formatPortfolio(
     }
   }
   lines.push('');
-  lines.push(formatCashSection(cash, cashTargetPct));
-  if (cash != null && contingentCash > 0) {
-    const cover = cash.amount - contingentCash;
+  lines.push(formatCashSection(cashes, cashTargetPct));
+  const total = totalCash(cashes);
+  if (total != null && contingentCash > 0) {
+    const cover = total.amount - contingentCash;
     lines.push(
-      `  Short-put assignment cover: cash ${cash.amount.toFixed(2)} ${cash.currency} vs obligation $${contingentCash.toFixed(2)} → ` +
+      `  Short-put assignment cover: cash ${total.amount.toFixed(2)} ${total.currency} vs obligation $${contingentCash.toFixed(2)} → ` +
         (cover >= 0 ? `surplus ${cover.toFixed(2)}` : `shortfall ${Math.abs(cover).toFixed(2)}`),
     );
   }
@@ -414,19 +437,22 @@ export function createPortfolioTools(): AgentTool[] {
         const isUpdate = key in portfolio;
         const before = isUpdate ? portfolio[key] : null;
         const today = new Date().toISOString().slice(0, 10);
+        // Ledger against the holding's channel so multi-broker cash stays isolated.
         const cashResult = applyCashDelta(
-          getCash(state),
+          getCashes(state),
           cashDeltaForHoldingChange(before, holding),
           today,
           adjustCash,
+          holding.channel,
         );
-        if (cashResult.adjusted && cashResult.cash != null) {
-          setCash(state, cashResult.cash);
+        if (cashResult.adjusted) {
+          setCashes(state, cashResult.cashes);
         }
 
         portfolio[key] = holding;
         setPortfolio(state, portfolio);
 
+        const cashAfter = totalCash(cashResult.cashes);
         state.log.push({
           ts: today,
           action: isUpdate ? 'holding_updated' : 'holding_added',
@@ -437,7 +463,8 @@ export function createPortfolioTools(): AgentTool[] {
           category: p.category,
           channel: holding.channel,
           cash_delta: cashResult.adjusted ? cashResult.cashDelta : undefined,
-          cash_after: cashResult.cash?.amount,
+          cash_after: cashAfter?.amount,
+          cash_channel: cashResult.adjusted ? cashResult.cash?.channel : undefined,
           ...(instrument === 'option' ? { option: holding.option } : {}),
         });
         saveState(state);
@@ -467,6 +494,7 @@ export function createPortfolioTools(): AgentTool[] {
               isUpdate,
               economics: e,
               cash: cashResult.cash,
+              cashes: cashResult.cashes,
               cashDelta: cashResult.adjusted ? cashResult.cashDelta : 0,
               cashAdjusted: cashResult.adjusted,
             },
@@ -485,6 +513,7 @@ export function createPortfolioTools(): AgentTool[] {
             channel: holding.channel,
             isUpdate,
             cash: cashResult.cash,
+            cashes: cashResult.cashes,
             cashDelta: cashResult.adjusted ? cashResult.cashDelta : 0,
             cashAdjusted: cashResult.adjusted,
           },
@@ -532,17 +561,19 @@ export function createPortfolioTools(): AgentTool[] {
         const removed = portfolio[ticker];
         const today = new Date().toISOString().slice(0, 10);
         const cashResult = applyCashDelta(
-          getCash(state),
+          getCashes(state),
           cashDeltaForHoldingChange(removed, null),
           today,
           adjustCash,
+          removed.channel,
         );
-        if (cashResult.adjusted && cashResult.cash != null) {
-          setCash(state, cashResult.cash);
+        if (cashResult.adjusted) {
+          setCashes(state, cashResult.cashes);
         }
 
         delete portfolio[ticker];
         setPortfolio(state, portfolio);
+        const cashAfter = totalCash(cashResult.cashes);
         state.log.push({
           ts: today,
           action: 'holding_removed',
@@ -550,8 +581,10 @@ export function createPortfolioTools(): AgentTool[] {
           avg_price: removed.avg_price,
           units: removed.units,
           instrument: removed.instrument ?? 'equity',
+          channel: removed.channel,
           cash_delta: cashResult.adjusted ? cashResult.cashDelta : undefined,
-          cash_after: cashResult.cash?.amount,
+          cash_after: cashAfter?.amount,
+          cash_channel: cashResult.adjusted ? cashResult.cash?.channel : undefined,
         });
         saveState(state);
 
@@ -564,6 +597,7 @@ export function createPortfolioTools(): AgentTool[] {
             ticker,
             removed,
             cash: cashResult.cash,
+            cashes: cashResult.cashes,
             cashDelta: cashResult.adjusted ? cashResult.cashDelta : 0,
             cashAdjusted: cashResult.adjusted,
           },
@@ -578,18 +612,21 @@ export function createPortfolioTools(): AgentTool[] {
     name: 'get_portfolio',
     label: 'Get Portfolio',
     description:
-      "Retrieve the user's saved portfolio (equities + options + cash). Pass telegram_user_id or slack_user_id from the message context.",
+      "Retrieve the user's saved portfolio (equities + options + cash by channel). " +
+      'Cash may list multiple broker channels. Pass telegram_user_id or slack_user_id from the message context.',
     parameters: Type.Object({ ...channelIdParams }),
     async execute(_id, raw) {
       const p = raw as ChannelIds;
       try {
         const state = resolveInvestorFromChannel(p);
         const portfolio = getPortfolio(state);
-        const cash = getCash(state);
+        const cashes = getCashes(state);
+        const cash = totalCash(cashes);
         const cashTargetPct = getPlaybook(state).allocation.cash_target_pct;
-        return ok(formatPortfolio(portfolio, cash, cashTargetPct), {
+        return ok(formatPortfolio(portfolio, cashes, cashTargetPct), {
           portfolio,
           cash,
+          cashes,
           count: Object.keys(portfolio).length,
         });
       } catch (e) {
@@ -602,9 +639,11 @@ export function createPortfolioTools(): AgentTool[] {
     name: 'set_cash',
     label: 'Set Cash',
     description:
-      "Record the user's available cash balance for strategy (dry powder, cash weight vs cash_target_pct, short-put cover). " +
+      "Record available cash for strategy (dry powder, cash weight vs cash_target_pct, short-put cover). " +
       'amount ≥ 0; currency required (e.g. USD, HKD) — no silent default. ' +
-      'Optional channel tags the broker holding this cash (e.g. moomoo, ibkr); omit or empty when unassigned. ' +
+      'Optional channel tags the broker holding this cash (e.g. jude_futu, cmbyonglong, moomoo, ibkr). ' +
+      'Multi-channel: set_cash UPSERTS by channel — other channels keep their balances (does not overwrite). ' +
+      'Omit or empty channel when unassigned (only one unassigned cash slot). ' +
       'Pass telegram_user_id or slack_user_id from the message context. Does not clear holdings.',
     parameters: Type.Object({
       ...channelIdParams,
@@ -617,7 +656,8 @@ export function createPortfolioTools(): AgentTool[] {
       channel: Type.Optional(
         Type.String({
           description:
-            'Broker / custody source for this cash (e.g. moomoo, ibkr). Omit or empty when unassigned.',
+            'Broker / custody source for this cash (e.g. jude_futu, cmbyonglong, moomoo). ' +
+            'Upserts this channel only; other channel cash is preserved. Omit or empty when unassigned.',
         }),
       ),
     }),
@@ -634,9 +674,12 @@ export function createPortfolioTools(): AgentTool[] {
 
         const state = resolveInvestorFromChannel(p);
         const today = new Date().toISOString().slice(0, 10);
-        const prev = getCash(state);
+        // set_cash always writes the channel from this call (or unassigned if omitted).
+        // Do NOT inherit previous single-slot channel — that overwrote multi-channel cash.
         const channelProvided = Object.prototype.hasOwnProperty.call(raw, 'channel');
-        const channel = resolveChannelParam(p.channel, prev?.channel, channelProvided);
+        const channel = channelProvided
+          ? normalizeOptionalChannel(p.channel, 'channel')
+          : undefined;
         const cash: CashBalance = {
           amount: p.amount,
           currency: p.currency.trim().toUpperCase(),
@@ -644,20 +687,28 @@ export function createPortfolioTools(): AgentTool[] {
           ...(channel != null ? { channel } : {}),
         };
         setCash(state, cash);
+        const cashes = getCashes(state);
         state.log.push({
           ts: today,
           action: 'cash_set',
           amount: cash.amount,
           currency: cash.currency,
           channel: cash.channel,
+          cash_slots: cashes.length,
         });
         saveState(state);
 
         const target = getPlaybook(state).allocation.cash_target_pct;
+        const total = totalCash(cashes);
+        const multiNote =
+          cashes.length > 1 && total != null
+            ? `\nAll cash channels (${cashes.length}): total ${total.amount.toFixed(2)} ${total.currency}.`
+            : '';
         return ok(
-          `Cash set to ${cash.amount.toFixed(2)} ${cash.currency} (as of ${cash.updated_at})${formatChannelTag(cash.channel)}.\n` +
-            `Playbook cash target: ${target}%. Use get_portfolio / portfolio_analyzer for weight vs target after live marks.`,
-          { cash, cash_target_pct: target },
+          `Cash set to ${cash.amount.toFixed(2)} ${cash.currency} (as of ${cash.updated_at})${formatChannelTag(cash.channel)}.` +
+            multiNote +
+            `\nPlaybook cash target: ${target}%. Use get_portfolio / portfolio_analyzer for weight vs target after live marks.`,
+          { cash, cashes, cash_target_pct: target },
         );
       } catch (e) {
         return failFrom(e);
@@ -669,36 +720,78 @@ export function createPortfolioTools(): AgentTool[] {
     name: 'clear_cash',
     label: 'Clear Cash',
     description:
-      'Remove the recorded cash balance (cash becomes unknown). Requires confirm=true. ' +
+      'Remove recorded cash. With no channel: clears ALL cash (becomes unknown). ' +
+      'With channel: clears only that channel slot (other channels kept). Requires confirm=true. ' +
       'Does not clear holdings. Pass telegram_user_id or slack_user_id from the message context.',
     parameters: Type.Object({
       ...channelIdParams,
       confirm: Type.Boolean({
         description: 'Must be true to proceed. Confirm with the user first.',
       }),
+      channel: Type.Optional(
+        Type.String({
+          description:
+            'If set, clear only this channel\'s cash. Omit to clear all cash records.',
+        }),
+      ),
     }),
     async execute(_id, raw) {
-      const p = raw as ChannelIds & { confirm: boolean };
+      const p = raw as ChannelIds & { confirm: boolean; channel?: string };
       try {
         if (!p.confirm) {
           return fail('Set confirm=true to clear recorded cash. Confirm with the user first.');
         }
         const state = resolveInvestorFromChannel(p);
-        const prev = getCash(state);
-        if (prev == null) {
+        const before = getCashes(state);
+        if (before.length === 0) {
           return fail('No cash is recorded. Nothing to clear.');
         }
+        const channelProvided = Object.prototype.hasOwnProperty.call(raw, 'channel');
+        if (channelProvided) {
+          const ch = normalizeOptionalChannel(p.channel, 'channel');
+          const key = cashSlotKey(ch);
+          const target = before.find((c) => cashSlotKey(c.channel) === key);
+          if (target == null) {
+            const labels = before.map((c) => cashSlotKey(c.channel) || '(unassigned)').join(', ');
+            return fail(
+              `No cash for channel "${key || '(unassigned)'}". Recorded: ${labels}.`,
+            );
+          }
+          clearCash(state, ch ?? '');
+          state.log.push({
+            ts: new Date().toISOString().slice(0, 10),
+            action: 'cash_cleared',
+            amount: target.amount,
+            currency: target.currency,
+            channel: target.channel,
+          });
+          saveState(state);
+          const remaining = getCashes(state);
+          return ok(
+            `Cleared cash for channel "${key || '(unassigned)'}" ` +
+              `(was ${target.amount.toFixed(2)} ${target.currency}). ` +
+              (remaining.length > 0
+                ? `${remaining.length} other cash channel(s) remain.`
+                : 'Cash is now unknown.'),
+            { cleared: target, cashes: remaining },
+          );
+        }
+
+        const total = totalCash(before);
         clearCash(state);
         state.log.push({
           ts: new Date().toISOString().slice(0, 10),
           action: 'cash_cleared',
-          amount: prev.amount,
-          currency: prev.currency,
+          amount: total?.amount,
+          currency: total?.currency,
+          cash_slots: before.length,
         });
         saveState(state);
         return ok(
-          `Cleared cash record (was ${prev.amount.toFixed(2)} ${prev.currency}). Cash is now unknown.`,
-          { cleared: prev },
+          `Cleared all cash records (${before.length} slot${before.length === 1 ? '' : 's'}` +
+            (total != null ? `, total was ${total.amount.toFixed(2)} ${total.currency}` : '') +
+            '). Cash is now unknown.',
+          { cleared: before },
         );
       } catch (e) {
         return failFrom(e);
@@ -853,25 +946,29 @@ export function createPortfolioTools(): AgentTool[] {
         }
 
         const today = new Date().toISOString().slice(0, 10);
+        // Debit/credit the channel on the *resulting* holding (channel moves with the position).
         const cashResult = applyCashDelta(
-          getCash(state),
+          getCashes(state),
           cashDeltaForHoldingChange(existing, next),
           today,
           adjustCash,
+          next.channel,
         );
-        if (cashResult.adjusted && cashResult.cash != null) {
-          setCash(state, cashResult.cash);
+        if (cashResult.adjusted) {
+          setCashes(state, cashResult.cashes);
         }
 
         portfolio[ticker] = next;
         setPortfolio(state, portfolio);
+        const cashAfter = totalCash(cashResult.cashes);
         state.log.push({
           ts: today,
           action: 'holding_updated',
           ticker,
           ...portfolio[ticker],
           cash_delta: cashResult.adjusted ? cashResult.cashDelta : undefined,
-          cash_after: cashResult.cash?.amount,
+          cash_after: cashAfter?.amount,
+          cash_channel: cashResult.adjusted ? cashResult.cash?.channel : undefined,
         });
         saveState(state);
 
@@ -892,6 +989,7 @@ export function createPortfolioTools(): AgentTool[] {
               holding: h,
               economics: e,
               cash: cashResult.cash,
+              cashes: cashResult.cashes,
               cashDelta: cashResult.adjusted ? cashResult.cashDelta : 0,
               cashAdjusted: cashResult.adjusted,
             },
@@ -905,6 +1003,7 @@ export function createPortfolioTools(): AgentTool[] {
             ticker,
             holding: h,
             cash: cashResult.cash,
+            cashes: cashResult.cashes,
             cashDelta: cashResult.adjusted ? cashResult.cashDelta : 0,
             cashAdjusted: cashResult.adjusted,
           },

@@ -21,8 +21,12 @@ const {
   getPortfolio,
   getPlaybook,
   getCash,
+  getCashes,
   setCash,
+  setCashes,
   clearCash,
+  totalCash,
+  findCashForChannel,
   cashStrategyMetrics,
   cashDeployedForHolding,
   cashDeltaForHoldingChange,
@@ -30,6 +34,7 @@ const {
   setPortfolio,
   updatePlaybook,
   assertCashBalance,
+  normalizeCashes,
   normalizeOptionalChannel,
 } = await import('../src/state/portfolio-state.js');
 
@@ -197,8 +202,8 @@ describe('portfolio-state', () => {
     expect(getCash(reloaded)?.channel).toBe('moomoo');
     expect(getPortfolio(reloaded).TSLA?.channel).toBe('webull');
 
-    // Cash ledger updates must preserve channel
-    const afterDelta = applyCashDelta(getCash(reloaded), -50, '2026-07-29', true);
+    // Cash ledger updates must preserve channel (debit the matching slot)
+    const afterDelta = applyCashDelta(getCashes(reloaded), -50, '2026-07-29', true, 'moomoo');
     expect(afterDelta.adjusted).toBe(true);
     expect(afterDelta.cash?.channel).toBe('moomoo');
     expect(afterDelta.cash?.amount).toBe(150);
@@ -272,5 +277,103 @@ describe('portfolio-state', () => {
     const unknown = applyCashDelta(null, -100, '2026-07-28', true);
     expect(unknown.adjusted).toBe(false);
     expect(unknown.cash).toBeNull();
+  });
+
+  it('set_cash upserts by channel without overwriting other channels', () => {
+    const state = loadState('alice');
+    clearCash(state);
+    setCash(state, {
+      amount: 12448.47,
+      currency: 'USD',
+      updated_at: '2026-07-29',
+      channel: 'jude_futu',
+    });
+    setCash(state, {
+      amount: 38758.91,
+      currency: 'USD',
+      updated_at: '2026-07-29',
+      channel: 'cmbyonglong',
+    });
+    saveState(state);
+
+    const reloaded = loadState('alice');
+    const cashes = getCashes(reloaded);
+    expect(cashes).toHaveLength(2);
+    expect(findCashForChannel(cashes, 'jude_futu')?.amount).toBe(12448.47);
+    expect(findCashForChannel(cashes, 'cmbyonglong')?.amount).toBe(38758.91);
+    expect(totalCash(cashes)?.amount).toBeCloseTo(51207.38, 2);
+    // getCash returns combined total for NAV
+    expect(getCash(reloaded)?.amount).toBeCloseTo(51207.38, 2);
+    // YAML stores array when multi
+    expect(Array.isArray(reloaded.cash)).toBe(true);
+
+    // Upsert one channel only
+    setCash(reloaded, {
+      amount: 10000,
+      currency: 'USD',
+      updated_at: '2026-07-30',
+      channel: 'jude_futu',
+    });
+    expect(findCashForChannel(getCashes(reloaded), 'jude_futu')?.amount).toBe(10000);
+    expect(findCashForChannel(getCashes(reloaded), 'cmbyonglong')?.amount).toBe(38758.91);
+  });
+
+  it('normalizeCashes accepts legacy single object and rejects duplicate channels', () => {
+    expect(normalizeCashes(null)).toEqual([]);
+    expect(
+      normalizeCashes({ amount: 1, currency: 'USD', updated_at: '2026-07-29', channel: 'a' }),
+    ).toHaveLength(1);
+    expect(() =>
+      normalizeCashes([
+        { amount: 1, currency: 'USD', updated_at: '2026-07-29', channel: 'a' },
+        { amount: 2, currency: 'USD', updated_at: '2026-07-29', channel: 'a' },
+      ]),
+    ).toThrow(/Duplicate cash/);
+  });
+
+  it('applyCashDelta only touches the matching channel slot', () => {
+    const cashes = [
+      { amount: 1000, currency: 'USD', updated_at: '2026-07-29', channel: 'jude_futu' },
+      { amount: 5000, currency: 'USD', updated_at: '2026-07-29', channel: 'cmbyonglong' },
+    ];
+    const result = applyCashDelta(cashes, -200, '2026-07-29', true, 'cmbyonglong');
+    expect(result.adjusted).toBe(true);
+    expect(result.cash?.amount).toBe(4800);
+    expect(result.cash?.channel).toBe('cmbyonglong');
+    expect(findCashForChannel(result.cashes, 'jude_futu')?.amount).toBe(1000);
+    expect(findCashForChannel(result.cashes, 'cmbyonglong')?.amount).toBe(4800);
+
+    expect(() => applyCashDelta(cashes, -100, '2026-07-29', true, 'ibkr')).toThrow(
+      /No cash recorded for channel/,
+    );
+  });
+
+  it('clearCash can clear one channel or all', () => {
+    const state = loadState('alice');
+    setCashes(state, [
+      { amount: 10, currency: 'USD', updated_at: '2026-07-29', channel: 'a' },
+      { amount: 20, currency: 'USD', updated_at: '2026-07-29', channel: 'b' },
+    ]);
+    clearCash(state, 'a');
+    expect(getCashes(state)).toHaveLength(1);
+    expect(getCashes(state)[0].channel).toBe('b');
+    clearCash(state);
+    expect(getCashes(state)).toHaveLength(0);
+    expect(getCash(state)).toBeNull();
+  });
+
+  it('cashStrategyMetrics sums multi-channel cash', () => {
+    const m = cashStrategyMetrics(
+      [
+        { amount: 100, currency: 'USD', updated_at: '2026-07-29', channel: 'a' },
+        { amount: 400, currency: 'USD', updated_at: '2026-07-29', channel: 'b' },
+      ],
+      500,
+      10,
+    );
+    expect(m.cash?.amount).toBe(500);
+    expect(m.totalNav).toBe(1000);
+    expect(m.cashWeightPct).toBeCloseTo(50, 5);
+    expect(m.cashes).toHaveLength(2);
   });
 });

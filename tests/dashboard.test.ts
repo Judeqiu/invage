@@ -175,6 +175,37 @@ describe('buildLivePositions', () => {
     expect(moo.cashAmount).toBeNull();
     expect(moo.totalValue).toBe(900);
   });
+
+  it('multi-channel cash appears on each channel and sums in merged view', () => {
+    const live = buildLivePositions(
+      {
+        AAPL: { avg_price: 100, units: 10, channel: 'jude_futu' },
+        TSLA: { avg_price: 200, units: 5, channel: 'cmbyonglong' },
+      },
+      { AAPL: 110, TSLA: 300 },
+      undefined,
+      [
+        { amount: 12448.47, currency: 'USD', channel: 'jude_futu' },
+        { amount: 38758.91, currency: 'USD', channel: 'cmbyonglong' },
+      ],
+    );
+
+    expect(live.cashAmount).toBeCloseTo(51207.38, 2);
+    expect(live.cashChannel).toBeNull(); // multi → no single channel on merged
+    expect(live.totalValue).toBeCloseTo(1100 + 1500 + 51207.38, 2);
+
+    const futu = live.byChannel.find((c) => c.channel === 'jude_futu');
+    const cmb = live.byChannel.find((c) => c.channel === 'cmbyonglong');
+    expect(futu?.cashAmount).toBeCloseTo(12448.47, 2);
+    expect(futu?.totalValue).toBeCloseTo(1100 + 12448.47, 2);
+    expect(cmb?.cashAmount).toBeCloseTo(38758.91, 2);
+    expect(cmb?.totalValue).toBeCloseTo(1500 + 38758.91, 2);
+
+    const filteredFutu = filterLiveByChannel(live, 'jude_futu');
+    expect(filteredFutu.cashAmount).toBeCloseTo(12448.47, 2);
+    expect(filteredFutu.cashChannel).toBe('jude_futu');
+    expect(filteredFutu.positionCount).toBe(1);
+  });
 });
 
 describe('buildDashboardModel', () => {

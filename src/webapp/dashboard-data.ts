@@ -9,7 +9,7 @@ import {
   fetchPrices,
   resolvePortfolioMarket,
 } from '../market/index.js';
-import { getCash, getPortfolio, type InvestorState } from '../state/portfolio-state.js';
+import { getCashes, getPortfolio, type InvestorState } from '../state/portfolio-state.js';
 import { loadSnapshots, type Snapshot } from '../state/snapshot.js';
 import {
   buildDashboardModel,
@@ -106,13 +106,17 @@ export async function loadDashboardForSlug(
     optionMarks = resolved.optionMarks;
   }
 
-  const cash = getCash(state);
+  const cashes = getCashes(state);
   const live = buildLivePositions(
     valuedPortfolio,
     prices,
     optionMarks,
-    cash != null
-      ? { amount: cash.amount, currency: cash.currency, channel: cash.channel }
+    cashes.length > 0
+      ? cashes.map((c) => ({
+          amount: c.amount,
+          currency: c.currency,
+          channel: c.channel,
+        }))
       : null,
   );
   const snapshots = loadSnapshots(slug);

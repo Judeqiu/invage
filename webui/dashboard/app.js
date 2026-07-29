@@ -144,14 +144,16 @@ function reweightPositions(positions, cashAmount) {
 /**
  * Apply channel filter to a base view (merged or single channel).
  * Missing channel tags become DEFAULT_CHANNEL.
+ * Multi-channel cash: prefer byChannel row for the selected channel.
  */
 function applyChannelFilter(base, channelKey) {
   const allPositions = (base.positions || []).map((p) => ({
     ...p,
     channel: resolveDashboardChannel(p.channel),
   }));
+  const byChannel = base.byChannel || [];
   const cashChannel =
-    base.cashAmount != null
+    base.cashAmount != null && base.cashChannel != null
       ? resolveDashboardChannel(base.cashChannel)
       : null;
 
@@ -159,6 +161,7 @@ function applyChannelFilter(base, channelKey) {
     ? [...base.channels]
     : [...new Set([
         ...allPositions.map((p) => p.channel),
+        ...byChannel.map((c) => resolveDashboardChannel(c.channel)),
         ...(cashChannel != null ? [cashChannel] : []),
       ])].sort((a, b) => {
         if (a === DEFAULT_CHANNEL) return -1;
@@ -175,13 +178,22 @@ function applyChannelFilter(base, channelKey) {
       channelLabel: 'All (merged)',
       channels,
       cashChannel,
+      byChannel,
     };
   }
 
   const filtered = allPositions.filter((p) => p.channel === channelKey);
-  const cashBelongs = cashChannel != null && cashChannel === channelKey;
-  const cashAmount = cashBelongs ? base.cashAmount : null;
-  const cashCurrency = cashBelongs ? base.cashCurrency : null;
+  const chRow = byChannel.find((c) => resolveDashboardChannel(c.channel) === channelKey);
+  // Prefer per-channel cash from byChannel (multi-cash); fall back to single cashChannel match.
+  let cashAmount = null;
+  let cashCurrency = null;
+  if (chRow != null && chRow.cashAmount != null) {
+    cashAmount = chRow.cashAmount;
+    cashCurrency = chRow.cashCurrency ?? null;
+  } else if (cashChannel != null && cashChannel === channelKey) {
+    cashAmount = base.cashAmount;
+    cashCurrency = base.cashCurrency;
+  }
 
   let positionsValue = 0;
   let totalCost = 0;
@@ -237,12 +249,13 @@ function applyChannelFilter(base, channelKey) {
     equityCount,
     cashAmount,
     cashCurrency,
-    cashChannel: cashBelongs ? channelKey : null,
+    cashChannel: cashAmount != null ? channelKey : null,
     positionsValue,
     cashWeightPct,
     channelView: channelKey,
     channelLabel: channelKey,
     channels,
+    byChannel,
   };
 }
 

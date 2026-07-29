@@ -224,11 +224,23 @@ portfolio:
       # underlying_mark: 50     # optional scenario mark on the underlying
 
 # optional — omit entirely when cash is unknown (never invent 0)
+# Single channel (legacy-friendly object form):
 cash:
   amount: 12500.00              # available / free cash ≥ 0
   currency: USD                 # required (e.g. USD, HKD) — no silent default
   updated_at: "2026-07-28"      # YYYY-MM-DD when last set via set_cash
   channel: ibkr                 # optional broker/custody source; omit when unassigned
+
+# Multi-channel (array form — one entry per broker; set_cash upserts by channel):
+# cash:
+#   - amount: 12448.47
+#     currency: USD
+#     updated_at: "2026-07-29"
+#     channel: jude_futu
+#   - amount: 38758.91
+#     currency: USD
+#     updated_at: "2026-07-29"
+#     channel: cmbyonglong
 
 # optional — omit to use balanced defaults
 playbook:
@@ -270,7 +282,9 @@ playbook:
 | `option.quote_source` | `manual` \| `yahoo` | No | `manual` = always mark; `yahoo` = require Yahoo chain; omit = auto |
 | `option.underlying_mark` | number | No | Optional underlying price for scenarios |
 
-**Multi-broker:** `channel` tags which broker holds the position or cash so a single user file can mix accounts (e.g. equities at IBKR, options at moomoo). Free-form string (not a closed enum). Same ticker at two brokers still shares one portfolio key today — split keys or multi-cash blocks are a later step if needed.
+**Multi-broker:** `channel` tags which broker holds the position or cash so a single user file can mix accounts (e.g. equities at IBKR, options at moomoo). Free-form string (not a closed enum). Same ticker at two brokers still shares one portfolio key today — split keys if needed.
+
+**Multi-channel cash:** `set_cash` **upserts by channel** — recording cash for `cmbyonglong` does **not** overwrite `jude_futu`. YAML stores a single object when one slot exists, or an array when two or more. Trades with `adjust_cash=true` debit/credit only the cash slot matching the holding's `channel`.
 
 **Dashboard dimension:** Live WebUI and HTML dashboard reports always expose a channel dimension:
 
@@ -310,12 +324,23 @@ Live Yahoo option marks are applied **in memory** for analysis/dashboard/snapsho
 
 Top-level `cash` on the same user file. **Missing `cash` means unknown** — do not treat as zero for weight or deployable capital.
 
+Storage shape:
+
+| Form | When |
+|------|------|
+| Object | One cash slot (legacy / single channel) |
+| Array of objects | Two or more channel slots |
+
+Each entry:
+
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `amount` | number | Yes (when block present) | Available cash ≥ 0 |
 | `currency` | string | Yes | 3–4 letter code (`USD`, `HKD`, …). No silent default |
 | `updated_at` | `YYYY-MM-DD` | Yes | Date last set |
 | `channel` | string | No | Broker / custody source for this cash. Omit or empty when unassigned |
+
+**Rules:** at most one entry per channel key (including one unassigned). NAV sums all slots only when they share the same currency (no silent FX). Dashboard **All (merged)** shows total cash; each channel view shows that channel's cash only.
 
 **Semantics for strategy:**
 
@@ -356,8 +381,8 @@ Multi-currency conversion is **not** automatic: record cash in the currency the 
 | `get_portfolio` | channel id | List positions + cash section (includes channel when set) |
 | `update_holding` | channel id | Update fields including option `mark` and optional `channel`; cost changes adjust cash |
 | `clear_portfolio` | channel id | Remove all positions (requires confirm); cash kept |
-| `set_cash` | channel id | Record cash amount + currency (required); optional `channel` (broker) |
-| `clear_cash` | channel id | Remove cash record (requires confirm) |
+| `set_cash` | channel id | Upsert cash amount + currency (required); optional `channel` (broker). **Does not overwrite other channels** |
+| `clear_cash` | channel id | Remove all cash, or one channel when `channel` is set (requires confirm) |
 
 **Isolation**: Every tool resolves the user via channel id from the message context. The LLM never directly specifies which user file to access — the framework enforces it.
 

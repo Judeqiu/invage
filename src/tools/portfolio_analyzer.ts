@@ -23,7 +23,7 @@ import type { FinancialMetrics, Holding, ValueAssessment } from '../market/index
 import { thresholdsForPlaybook } from '../playbook/index.js';
 import {
   cashStrategyMetrics,
-  getCash,
+  getCashes,
   getPlaybook,
   getPortfolio,
   type CashBalance,
@@ -150,7 +150,7 @@ export function createPortfolioAnalyzerTool(): AgentTool {
         let analysisTh = undefined as ReturnType<typeof thresholdsForPlaybook> | undefined;
         let playbookNote = '';
 
-        let channelCash: CashBalance | null = null;
+        let channelCashes: CashBalance[] = [];
         let cashTargetPct = 5;
 
         if (params.telegram_user_id != null || params.slack_user_id) {
@@ -163,7 +163,7 @@ export function createPortfolioAnalyzerTool(): AgentTool {
           const pb = getPlaybook(state);
           analysisTh = thresholdsForPlaybook(pb);
           valueTh = valueThresholdsFromPlaybook(analysisTh);
-          channelCash = getCash(state);
+          channelCashes = getCashes(state);
           cashTargetPct = pb.allocation.cash_target_pct;
           playbookNote =
             `Playbook: ${pb.strategy} / ${pb.philosophy} / risk=${pb.risk.profile} ` +
@@ -306,7 +306,7 @@ export function createPortfolioAnalyzerTool(): AgentTool {
           }
 
           const positionsValue = result.fullAnalysis.reduce((sum, s) => sum + s.value, 0);
-          const cashMetrics = cashStrategyMetrics(channelCash, positionsValue, cashTargetPct);
+          const cashMetrics = cashStrategyMetrics(channelCashes, positionsValue, cashTargetPct);
           output += '\n── CASH & NAV (strategy) ──\n';
           if (cashMetrics.cash == null) {
             output +=
@@ -322,7 +322,18 @@ export function createPortfolioAnalyzerTool(): AgentTool {
                 : drift > 0
                   ? `${drift.toFixed(1)} pp above target (more cash / less invested)`
                   : `${Math.abs(drift).toFixed(1)} pp below target (more invested / less cash)`;
-            output += `  Cash: ${c.amount.toFixed(2)} ${c.currency} (updated ${c.updated_at})\n`;
+            if (cashMetrics.cashes.length > 1) {
+              output += '  Cash by channel:\n';
+              for (const row of cashMetrics.cashes) {
+                const ch = row.channel ?? '(unassigned)';
+                output += `    ${ch}: ${row.amount.toFixed(2)} ${row.currency} (updated ${row.updated_at})\n`;
+              }
+              output += `  Total cash: ${c.amount.toFixed(2)} ${c.currency}\n`;
+            } else {
+              output += `  Cash: ${c.amount.toFixed(2)} ${c.currency} (updated ${c.updated_at})`;
+              if (c.channel) output += ` [${c.channel}]`;
+              output += '\n';
+            }
             output += `  Positions MTM: $${positionsValue.toFixed(2)}\n`;
             output += `  Total NAV (positions + cash): $${cashMetrics.totalNav.toFixed(2)}\n`;
             output += `  Cash weight: ${cashMetrics.cashWeightPct!.toFixed(1)}% | target ${cashTargetPct}% → ${driftLabel}\n`;
@@ -344,6 +355,7 @@ export function createPortfolioAnalyzerTool(): AgentTool {
             valueAssessments: safeAssessments,
             optionMarks,
             cash: cashMetrics.cash,
+            cashes: cashMetrics.cashes,
             positionsValue,
             totalNav: cashMetrics.totalNav,
             cashWeightPct: cashMetrics.cashWeightPct,

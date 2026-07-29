@@ -8,8 +8,12 @@
  *
  * Domain fields:
  *   - top-level `portfolio`: map of ticker → Holding
- *   - top-level `cash`: optional CashBalance (missing → cash not recorded)
+ *   - top-level `cash`: optional CashBalance | CashBalance[] (missing → unknown)
  *   - top-level `playbook`:  optional InvestmentPlaybook (missing → default)
+ *
+ * Cash may be stored as a single object (legacy / one channel) or an array
+ * of balances (one entry per broker channel). `set_cash` upserts by channel
+ * key so multi-broker dry powder is preserved.
  */
 
 import type { UserState } from 'utarus';
@@ -30,6 +34,10 @@ export { normalizeOptionalChannel };
 /**
  * Settled / free cash available for deployment (not a holding).
  * Missing top-level `cash` means cash is unknown — never invent 0.
+ *
+ * Multi-broker: one CashBalance per channel key (see {@link cashSlotKey}).
+ * Unassigned cash (no channel) occupies the empty-string slot; only one
+ * unassigned entry is allowed.
  */
 export interface CashBalance {
   /** Available cash amount. Must be finite and ≥ 0. */
@@ -50,10 +58,13 @@ export interface CashBalance {
   channel?: string;
 }
 
+/** YAML may store one object (legacy) or an array (multi-channel). */
+export type CashStorage = CashBalance | CashBalance[];
+
 export interface InvestorState extends UserState {
   portfolio?: Record<string, Holding>;
-  /** Optional recorded cash; omit entirely when unknown. */
-  cash?: CashBalance;
+  /** Optional recorded cash; omit entirely when unknown. Single or multi-channel. */
+  cash?: CashStorage;
   /** Optional per-user investment playbook; missing → DEFAULT_PLAYBOOK via getPlaybook. */
   playbook?: Partial<InvestmentPlaybook> | InvestmentPlaybook;
 }
@@ -67,27 +78,18 @@ export function setPortfolio(state: InvestorState, portfolio: Record<string, Hol
 }
 
 /**
- * Returns recorded cash or null when the user has never set it.
- * Does not invent a zero balance.
+ * Identity key for a cash slot: normalized channel name, or '' for unassigned.
+ * Used to upsert / match multi-channel cash without inventing broker names.
  */
-export function getCash(state: InvestorState): CashBalance | null {
-  if (state.cash == null) return null;
-  return assertCashBalance(state.cash);
-}
-
-/** Persist a validated cash balance (overwrites previous). */
-export function setCash(state: InvestorState, cash: CashBalance): void {
-  state.cash = assertCashBalance(cash);
-}
-
-/** Remove recorded cash (cash becomes unknown again). */
-export function clearCash(state: InvestorState): void {
-  delete state.cash;
+export function cashSlotKey(channel: string | undefined | null): string {
+  if (channel == null) return '';
+  const t = String(channel).trim();
+  return t.length === 0 ? '' : t;
 }
 
 /** Fail-fast validation for a cash balance object. */
 export function assertCashBalance(raw: unknown): CashBalance {
-  if (raw == null || typeof raw !== 'object') {
+  if (raw == null || typeof raw !== 'object' || Array.isArray(raw)) {
     throw new Error('cash must be an object with amount, currency, updated_at.');
   }
   const c = raw as Record<string, unknown>;
@@ -115,6 +117,125 @@ export function assertCashBalance(raw: unknown): CashBalance {
   };
   if (channel != null) result.channel = channel;
   return result;
+}
+
+/**
+ * Normalize YAML cash (object | array | missing) → validated CashBalance[].
+ * Empty array means cash unknown. Fails fast on duplicate channel slots.
+ */
+export function normalizeCashes(raw: unknown): CashBalance[] {
+  if (raw == null) return [];
+  const list: unknown[] = Array.isArray(raw) ? raw : [raw];
+  const cashes = list.map((item, i) => {
+    try {
+      return assertCashBalance(item);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      throw new Error(`cash[${i}]: ${msg}`);
+    }
+  });
+  const seen = new Set<string>();
+  for (const c of cashes) {
+    const key = cashSlotKey(c.channel);
+    if (seen.has(key)) {
+      const label = key.length > 0 ? key : '(unassigned)';
+      throw new Error(
+        `Duplicate cash entry for channel "${label}". Each channel may have only one cash balance.`,
+      );
+    }
+    seen.add(key);
+  }
+  return cashes;
+}
+
+/** All recorded cash balances (empty when cash unknown). */
+export function getCashes(state: InvestorState): CashBalance[] {
+  return normalizeCashes(state.cash ?? null);
+}
+
+/**
+ * Sum multi-channel cash into one balance for NAV / strategy totals.
+ * Returns null when no cash is recorded.
+ * Fail-fast if entries use different currencies (no silent FX conversion).
+ * Multi-channel totals omit `channel` (per-channel detail is in getCashes).
+ */
+export function totalCash(cashes: CashBalance[]): CashBalance | null {
+  if (cashes.length === 0) return null;
+  if (cashes.length === 1) return cashes[0];
+  const currency = cashes[0].currency;
+  for (const c of cashes) {
+    if (c.currency !== currency) {
+      throw new Error(
+        `Cannot sum cash across currencies (${cashes.map((x) => x.currency).join(', ')}). ` +
+          'Record cash in one currency or convert explicitly before combining.',
+      );
+    }
+  }
+  let amount = 0;
+  let updated_at = cashes[0].updated_at;
+  for (const c of cashes) {
+    amount += c.amount;
+    if (c.updated_at > updated_at) updated_at = c.updated_at;
+  }
+  return { amount, currency, updated_at };
+}
+
+/**
+ * Aggregate cash for strategy / NAV.
+ * Multi-channel → summed total (same currency only). Single → that entry.
+ * Does not invent a zero balance.
+ */
+export function getCash(state: InvestorState): CashBalance | null {
+  return totalCash(getCashes(state));
+}
+
+/** Cash entry matching a channel slot, or null. */
+export function findCashForChannel(
+  cashes: CashBalance[],
+  channel: string | undefined | null,
+): CashBalance | null {
+  const key = cashSlotKey(channel);
+  return cashes.find((c) => cashSlotKey(c.channel) === key) ?? null;
+}
+
+/**
+ * Persist cash list. Writes a single object when length === 1 (legacy-friendly YAML),
+ * an array when length ≥ 2, and deletes the key when empty.
+ */
+export function setCashes(state: InvestorState, cashes: CashBalance[]): void {
+  const validated = normalizeCashes(cashes);
+  if (validated.length === 0) {
+    delete state.cash;
+  } else if (validated.length === 1) {
+    state.cash = validated[0];
+  } else {
+    state.cash = validated;
+  }
+}
+
+/**
+ * Upsert one cash balance by channel slot. Other channel balances are preserved.
+ * This is the multi-channel-safe replacement for overwriting a single cash object.
+ */
+export function setCash(state: InvestorState, cash: CashBalance): void {
+  const entry = assertCashBalance(cash);
+  const key = cashSlotKey(entry.channel);
+  const rest = getCashes(state).filter((c) => cashSlotKey(c.channel) !== key);
+  setCashes(state, [...rest, entry]);
+}
+
+/**
+ * Remove cash. With no channel arg, clears all recorded cash (unknown again).
+ * With channel (including empty string for unassigned), clears that slot only.
+ */
+export function clearCash(state: InvestorState, channel?: string | null): void {
+  if (channel === undefined) {
+    delete state.cash;
+    return;
+  }
+  const key = cashSlotKey(channel);
+  const rest = getCashes(state).filter((c) => cashSlotKey(c.channel) !== key);
+  setCashes(state, rest);
 }
 
 /**
@@ -161,41 +282,65 @@ export function cashDeltaForHoldingChange(
 }
 
 export interface CashApplyResult {
-  /** Null when cash was unknown — no ledger write. */
+  /**
+   * Updated list of all cash balances after the delta (empty = unknown).
+   * Prefer this for multi-channel persistence.
+   */
+  cashes: CashBalance[];
+  /**
+   * The cash slot that was adjusted, or total when no slot change, or null
+   * when cash remains unknown / unadjusted without a target slot.
+   */
   cash: CashBalance | null;
   /** Applied cash delta (0 when skipped or unknown). */
   cashDelta: number;
   /** Whether cash ledger was updated. */
   adjusted: boolean;
-  /** Human reason when not adjusted. */
+  /** Human reason when not adjusted, or success note. */
   note: string;
 }
 
+function asCashList(cashOrCashes: CashBalance | CashBalance[] | null): CashBalance[] {
+  if (cashOrCashes == null) return [];
+  if (Array.isArray(cashOrCashes)) return normalizeCashes(cashOrCashes);
+  return [assertCashBalance(cashOrCashes)];
+}
+
 /**
- * Apply a cash delta to recorded cash. Fail-fast if result would be negative.
- * When cash is unknown (null), does not invent a balance — returns adjusted=false.
+ * Apply a cash delta to the cash slot for `channel` (holding's broker tag).
+ * Fail-fast if the matched slot would go negative.
  *
- * @param adjustCash When false, skip ledger even if cash is recorded (import/correction).
+ * When cash is unknown (empty list), does not invent a balance — adjusted=false.
+ * When cash exists but not on the requested channel, fails fast (do not silently
+ * debit another broker's dry powder).
+ *
+ * @param cashOrCashes Single balance, multi list, or null (unknown).
+ * @param channel Holding / trade channel; omit/empty = unassigned slot.
+ * @param adjustCash When false, skip ledger even if cash is recorded.
  */
 export function applyCashDelta(
-  cash: CashBalance | null,
+  cashOrCashes: CashBalance | CashBalance[] | null,
   cashDelta: number,
   updatedAt: string,
   adjustCash: boolean,
+  channel?: string | null,
 ): CashApplyResult {
   if (!Number.isFinite(cashDelta)) {
     throw new Error('cashDelta must be a finite number.');
   }
+  const cashes = asCashList(cashOrCashes);
   if (!adjustCash) {
     return {
-      cash,
+      cashes,
+      cash: totalCash(cashes),
       cashDelta: 0,
       adjusted: false,
       note: 'adjust_cash=false — cash ledger not changed.',
     };
   }
-  if (cash == null) {
+  if (cashes.length === 0) {
     return {
+      cashes: [],
       cash: null,
       cashDelta: 0,
       adjusted: false,
@@ -204,37 +349,65 @@ export function applyCashDelta(
   }
   if (cashDelta === 0) {
     return {
-      cash,
+      cashes,
+      cash: totalCash(cashes),
       cashDelta: 0,
       adjusted: false,
       note: 'No cash impact (cost/premium unchanged).',
     };
   }
-  const nextAmount = cash.amount + cashDelta;
-  if (nextAmount < 0) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(updatedAt)) {
+    throw new Error('updatedAt must be YYYY-MM-DD.');
+  }
+
+  const key = cashSlotKey(channel);
+  let target = findCashForChannel(cashes, channel);
+
+  // Single un-tagged cash + trade with a channel: only allow when the sole
+  // entry is also unassigned; otherwise require an explicit matching slot.
+  if (target == null) {
+    const labels = cashes.map((c) => cashSlotKey(c.channel) || '(unassigned)').join(', ');
+    const want = key.length > 0 ? key : '(unassigned)';
     throw new Error(
-      `Insufficient cash: have ${cash.amount.toFixed(2)} ${cash.currency}, ` +
+      `No cash recorded for channel "${want}". Recorded cash channels: ${labels}. ` +
+        `Use set_cash with channel matching the trade, or pass adjust_cash=false for import.`,
+    );
+  }
+
+  const nextAmount = target.amount + cashDelta;
+  if (nextAmount < 0) {
+    const label = key.length > 0 ? key : 'unassigned';
+    throw new Error(
+      `Insufficient cash on channel "${label}": have ${target.amount.toFixed(2)} ${target.currency}, ` +
         `need ${(-cashDelta).toFixed(2)} more for this trade ` +
         `(delta ${cashDelta.toFixed(2)}). Top up with set_cash or reduce size.`,
     );
   }
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(updatedAt)) {
-    throw new Error('updatedAt must be YYYY-MM-DD.');
-  }
-  const next: CashBalance = {
+
+  const nextEntry: CashBalance = {
     amount: nextAmount,
-    currency: cash.currency,
+    currency: target.currency,
     updated_at: updatedAt,
   };
-  if (cash.channel != null) next.channel = cash.channel;
+  if (target.channel != null) nextEntry.channel = target.channel;
+
+  const nextCashes = cashes.map((c) =>
+    cashSlotKey(c.channel) === key ? nextEntry : c,
+  );
+
   return {
-    cash: next,
+    cashes: nextCashes,
+    cash: nextEntry,
     cashDelta,
     adjusted: true,
     note:
       cashDelta < 0
-        ? `Cash −${(-cashDelta).toFixed(2)} ${cash.currency} → ${next.amount.toFixed(2)} ${cash.currency}`
-        : `Cash +${cashDelta.toFixed(2)} ${cash.currency} → ${next.amount.toFixed(2)} ${cash.currency}`,
+        ? `Cash −${(-cashDelta).toFixed(2)} ${nextEntry.currency}` +
+          (key ? ` [${key}]` : '') +
+          ` → ${nextEntry.amount.toFixed(2)} ${nextEntry.currency}`
+        : `Cash +${cashDelta.toFixed(2)} ${nextEntry.currency}` +
+          (key ? ` [${key}]` : '') +
+          ` → ${nextEntry.amount.toFixed(2)} ${nextEntry.currency}`,
   };
 }
 
@@ -242,13 +415,16 @@ export function applyCashDelta(
  * Strategy helpers when cash is recorded.
  * positionsValue = sum of position MTM; cash is added only when recorded.
  * Returns null cash fields when cash is unknown (never invent 0 for weight).
+ *
+ * Accepts a single CashBalance, multi list, or null. Multi is summed (same currency).
  */
 export function cashStrategyMetrics(
-  cash: CashBalance | null,
+  cashOrCashes: CashBalance | CashBalance[] | null,
   positionsValue: number,
   cashTargetPct: number,
 ): {
   cash: CashBalance | null;
+  cashes: CashBalance[];
   positionsValue: number;
   /** NAV = positions + cash when cash known; else positions only. */
   totalNav: number;
@@ -264,9 +440,12 @@ export function cashStrategyMetrics(
   if (!(typeof cashTargetPct === 'number') || !Number.isFinite(cashTargetPct)) {
     throw new Error('cashTargetPct must be a finite number.');
   }
+  const cashes = asCashList(cashOrCashes);
+  const cash = totalCash(cashes);
   if (cash == null) {
     return {
       cash: null,
+      cashes: [],
       positionsValue,
       totalNav: positionsValue,
       cashWeightPct: null,
@@ -278,6 +457,7 @@ export function cashStrategyMetrics(
   const cashWeightPct = totalNav !== 0 ? (cash.amount / totalNav) * 100 : 0;
   return {
     cash,
+    cashes,
     positionsValue,
     totalNav,
     cashWeightPct,

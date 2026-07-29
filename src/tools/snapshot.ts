@@ -4,7 +4,7 @@ import { writeFileSync, mkdirSync, existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { resolveDataRoot } from 'utarus';
 import { resolvePortfolioMarket, valuePortfolio } from '../market/index.js';
-import { getCash, getPortfolio } from '../state/portfolio-state.js';
+import { getCashes, getPortfolio, totalCash } from '../state/portfolio-state.js';
 import {
   loadSnapshotIndex,
   loadSnapshots,
@@ -75,7 +75,8 @@ export function createSnapshotTool(): AgentTool[] {
 
         const positionsValue = positions.reduce((s, pos) => s + pos.value, 0);
         const totalCost = positions.reduce((s, pos) => s + pos.cost, 0);
-        const cash = getCash(state);
+        const cashes = getCashes(state);
+        const cash = totalCash(cashes);
         const totalValue = cash != null ? positionsValue + cash.amount : positionsValue;
         // P/L is on invested positions only; cash is dry powder, not a P/L line.
         const totalPL = positionsValue - totalCost;
@@ -112,7 +113,11 @@ export function createSnapshotTool(): AgentTool[] {
             ? {
                 cashAmount: cash.amount,
                 cashCurrency: cash.currency,
-                ...(cash.channel != null ? { cashChannel: cash.channel } : {}),
+                // Single channel only; multi-channel total omits cashChannel
+                // (per-channel cash is on live dashboard byChannel, not snapshot).
+                ...(cashes.length === 1 && cashes[0].channel != null
+                  ? { cashChannel: cashes[0].channel }
+                  : {}),
                 positionsValue,
               }
             : {}),
