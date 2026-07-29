@@ -51,8 +51,8 @@ export interface FinancialMetrics {
   fetchError?: string;
 }
 
-/** Equity share position or option contract position. */
-export type InstrumentKind = 'equity' | 'option';
+/** Equity share, option contract, or fund (ETF / open-end 基金) position. */
+export type InstrumentKind = 'equity' | 'option' | 'fund';
 export type OptionRight = 'call' | 'put';
 export type OptionSide = 'long' | 'short';
 export type OptionSettlement = 'physical' | 'cash';
@@ -63,6 +63,29 @@ export type OptionSettlement = 'physical' | 'cash';
  * - omit: auto — Yahoo when chain matches; otherwise stored mark (private)
  */
 export type OptionQuoteSource = 'manual' | 'yahoo';
+
+/**
+ * Where fund MTM comes from (required on fund holdings — no silent default).
+ * - yahoo: live Yahoo quote on portfolio base key (listed ETF / Yahoo-mapped fund)
+ * - manual: stored NAV/price in fund.mark (open-end mutual funds, non-Yahoo codes)
+ */
+export type FundQuoteSource = 'manual' | 'yahoo';
+
+/**
+ * Fund (基金) fields — ETF or open-end mutual fund.
+ * Economics match equity: avg_price / mark per unit; units = shares or fund units.
+ */
+export interface FundSpec {
+  /** Required. yahoo = live quote; manual = fund.mark only. */
+  quote_source: FundQuoteSource;
+  /**
+   * Current NAV / price per unit for MTM.
+   * Required when quote_source is manual. Optional seed when yahoo (not used for live MTM).
+   */
+  mark?: number;
+  /** Optional human name (e.g. open-end fund product name). */
+  name?: string;
+}
 
 /**
  * Option contract fields.
@@ -109,6 +132,7 @@ export interface OptionSpec {
  * Portfolio holding.
  * - Equity (default when instrument omitted): avg_price = cost/share, units = shares.
  * - Option: avg_price = premium $ per contract at trade, units = contracts; option fields required.
+ * - Fund: avg_price = cost per unit, units = fund units/shares; fund fields required.
  */
 export interface Holding {
   avg_price: number;
@@ -119,10 +143,12 @@ export interface Holding {
    * Omit or empty when unassigned — no silent default.
    */
   channel?: string;
-  /** Omit or "equity" for stocks; "option" for calls/puts. */
+  /** Omit or "equity" for stocks; "option" for calls/puts; "fund" for ETF/open-end 基金. */
   instrument?: InstrumentKind;
   /** Required when instrument === "option". */
   option?: OptionSpec;
+  /** Required when instrument === "fund". */
+  fund?: FundSpec;
 }
 
 export interface PositionAnalysis {

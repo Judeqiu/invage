@@ -31,14 +31,18 @@ function holdingRows(positions: LivePosition[]): string {
   }
   return positions
     .map((p) => {
-      const kind = p.instrument === 'option' ? 'OPT' : 'EQ';
-      const name = p.instrument === 'option' ? p.label : p.ticker;
+      const kind =
+        p.instrument === 'option' ? 'OPT' : p.instrument === 'fund' ? 'FUND' : 'EQ';
+      const name =
+        p.instrument === 'option' || p.instrument === 'fund' ? p.label : p.ticker;
       const unitsLabel =
         p.instrument === 'option'
           ? `${p.units} ct` + (p.option ? ` ×${p.option.multiplier}` : '')
-          : String(p.units);
+          : p.instrument === 'fund'
+            ? `${p.units} u`
+            : String(p.units);
       const markSrc =
-        p.instrument === 'option'
+        p.instrument === 'option' || p.instrument === 'fund'
           ? p.markSource === 'yahoo'
             ? `<div style="font-size:10px;color:#8b949e">yahoo${p.contractSymbol ? ' · ' + escapeHtml(p.contractSymbol) : ''}</div>`
             : `<div style="font-size:10px;color:#8b949e">manual mark</div>`
@@ -158,7 +162,7 @@ export function buildDashboardReport(model: DashboardModel, userName: string): s
   <div style="flex:1;min-width:140px;background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px;text-align:center">
     <div style="color:#8b949e;font-size:12px;margin-bottom:4px">OPTIONS</div>
     <div style="font-size:28px;font-weight:700">${live.optionCount}</div>
-    <div style="color:#8b949e;font-size:11px;margin-top:4px">${live.equityCount} equity · ${live.optionCount} option</div>
+    <div style="color:#8b949e;font-size:11px;margin-top:4px">${live.equityCount} equity · ${live.fundCount} fund · ${live.optionCount} option</div>
   </div>
   <div style="flex:1;min-width:140px;background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px;text-align:center">
     <div style="color:#8b949e;font-size:12px;margin-bottom:4px">PREMIUM COLLECTED</div>

@@ -180,7 +180,7 @@ Every mutation appends to `log[]`. The agent never manually logs — the framewo
 
 ## Layer 3: Portfolio Holdings
 
-Stored as a top-level `portfolio` key in the user state file. Keys are equity tickers **or** option position ids.
+Stored as a top-level `portfolio` key in the user state file. Keys are equity tickers, **fund codes/tickers**, or option position ids.
 
 **Cash** is **not** a holding. It is a separate top-level `cash` block (see below) so strategy can use dry powder, cash weight vs `cash_target_pct`, and short-put assignment cover without inventing a fake ticker.
 
@@ -205,6 +205,23 @@ portfolio:
     units: 30
     category: SL Technology S1
     # channel omitted = unassigned
+  # ETF / open-end 基金
+  SPY:
+    instrument: fund
+    avg_price: 480.00
+    units: 20
+    channel: ibkr
+    fund:
+      quote_source: yahoo          # live Yahoo on base key
+  "110011":
+    instrument: fund
+    avg_price: 1.2345
+    units: 10000
+    channel: jude_futu
+    fund:
+      quote_source: manual         # required: no silent default
+      mark: 1.3012                 # NAV per unit (required when manual)
+      name: "易方达中证500联接A"   # optional
   # Short put: 1 contract (controls 100 sh), $265 total premium, strike $90, expiry 2026-08-07
   SPACEX-P-90-20260807-S:
     instrument: option
@@ -261,6 +278,21 @@ playbook:
 | `units` | number | Yes | Number of shares owned |
 | `category` | string | No | Fund category (e.g. "SL Technology S1") |
 | `channel` | string | No | Broker / custody source (e.g. `moomoo`, `ibkr`, `webull`, `tiger`). **Omit or empty when unassigned** — no silent default |
+
+### Holding Shape (fund — ETF / open-end 基金)
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `instrument` | `"fund"` | Yes | Must be `fund` |
+| `avg_price` | number | Yes | Average cost per unit |
+| `units` | number | Yes | Fund units / shares |
+| `category` | string | No | e.g. Bond, Equity fund |
+| `channel` | string | No | Broker / custody source |
+| `fund.quote_source` | `yahoo` \| `manual` | Yes | **No silent default.** yahoo = live Yahoo on map base key; manual = stored NAV |
+| `fund.mark` | number | If manual | Current NAV/price per unit ≥ 0 |
+| `fund.name` | string | No | Product display name |
+
+**Economics:** same as equity (cost = avg × units; value = mark × units). Cash ledger same as equity buys. Multi-channel keys: `SPY@ibkr`, `110011@jude_futu`. Street 3-axis analyzer buckets remain **equity-only** in v1; funds still count in NAV / dashboard / snapshot.
 
 ### Holding Shape (option)
 
@@ -436,7 +468,7 @@ deposits:
 
 | Tool | Auth | Description |
 |------|------|-------------|
-| `add_holding` | channel id | Add or update equity **or** option; optional `channel` (broker); **deducts/credits cash** when recorded (`adjust_cash=false` to skip) |
+| `add_holding` | channel id | Add or update equity, **fund** (`instrument=fund` + `fund_quote_source`), or option; optional `channel`; **deducts/credits cash** when recorded (`adjust_cash=false` to skip) |
 | `remove_holding` | channel id | Remove position; credits cash at cost basis when recorded |
 | `get_portfolio` | channel id | List positions + cash + **fixed deposits** section |
 | `update_holding` | channel id | Update fields including option `mark` and optional `channel`; cost changes adjust cash |

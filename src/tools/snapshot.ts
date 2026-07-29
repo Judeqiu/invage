@@ -65,6 +65,16 @@ export function createSnapshotTool(): AgentTool[] {
           contingentShareObligation: e.contingentShareObligation,
           ...(e.channel != null ? { channel: e.channel } : {}),
           ...(e.option ? { option: e.option } : {}),
+          ...(e.fund
+            ? {
+                fund: {
+                  quote_source: e.fund.quote_source,
+                  ...(e.fund.mark != null ? { mark: e.fund.mark } : {}),
+                  ...(e.fund.name != null ? { name: e.fund.name } : {}),
+                },
+                markSource: e.fund.quote_source,
+              }
+            : {}),
           ...(optionMarks[e.key]
             ? {
                 markSource: optionMarks[e.key].source,
@@ -87,13 +97,14 @@ export function createSnapshotTool(): AgentTool[] {
         let optionsPremiumCollected = 0;
         let optionsPremiumPaid = 0;
         for (const e of economics) {
-          if (e.instrument === 'equity') {
-            equityValue += e.value;
-            equityCost += e.cost;
-          } else {
+          if (e.instrument === 'option') {
             contingentCashObligation += e.contingentCashObligation;
             if (e.option?.side === 'short') optionsPremiumCollected += e.premiumAbsolute;
             else optionsPremiumPaid += e.premiumAbsolute;
+          } else {
+            // Equity + fund MTM in non-option asset totals.
+            equityValue += e.value;
+            equityCost += e.cost;
           }
         }
 

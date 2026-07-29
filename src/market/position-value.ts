@@ -22,7 +22,7 @@
  * Short call delivery if assigned = multiplier × units shares.
  */
 
-import type { Holding, OptionSpec } from './types.js';
+import type { FundSpec, Holding, OptionSpec } from './types.js';
 
 /**
  * Optional broker/source tag for multi-broker portfolios.
@@ -44,8 +44,8 @@ export function normalizeOptionalChannel(
 
 export interface PositionEconomics {
   key: string;
-  instrument: 'equity' | 'option';
-  /** Display label (ticker or option description). */
+  instrument: 'equity' | 'option' | 'fund';
+  /** Display label (ticker, fund name, or option description). */
   label: string;
   units: number;
   avgCost: number;
@@ -65,10 +65,35 @@ export interface PositionEconomics {
   /** Shares deliverable if short call assigned; 0 otherwise. */
   contingentShareObligation: number;
   option?: OptionSpec;
+  fund?: FundSpec;
 }
 
 export function isOptionHolding(h: Holding): boolean {
   return h.instrument === 'option';
+}
+
+export function isFundHolding(h: Holding): boolean {
+  return h.instrument === 'fund';
+}
+
+/** Stocks (instrument omitted or equity). */
+export function isEquityHolding(h: Holding): boolean {
+  return h.instrument == null || h.instrument === 'equity';
+}
+
+/**
+ * Positions that need a Yahoo equity-style quote for MTM:
+ * equities + funds with quote_source=yahoo. Options and manual funds excluded.
+ */
+export function isYahooPricedHolding(h: Holding): boolean {
+  if (isOptionHolding(h)) return false;
+  if (isFundHolding(h)) {
+    if (!h.fund) {
+      throw new Error('Fund holding missing fund fields.');
+    }
+    return h.fund.quote_source === 'yahoo';
+  }
+  return true;
 }
 
 /**
@@ -247,13 +272,28 @@ export function resolveLookupHoldingKey(
   );
 }
 
+/** Equity (stock) portfolio keys only — excludes options and funds. */
 export function equityKeys(portfolio: Record<string, Holding>): string[] {
-  return Object.keys(portfolio).filter((k) => !isOptionHolding(portfolio[k]));
+  return Object.keys(portfolio).filter((k) => isEquityHolding(portfolio[k]));
 }
 
-/** Unique Yahoo symbols for equity holdings (composite keys collapsed). */
+/** Fund portfolio keys. */
+export function fundKeys(portfolio: Record<string, Holding>): string[] {
+  return Object.keys(portfolio).filter((k) => isFundHolding(portfolio[k]));
+}
+
+/**
+ * Unique Yahoo symbols for live-priced holdings (equities + yahoo funds).
+ * Composite keys collapsed to bare symbols.
+ */
 export function equityQuoteSymbols(portfolio: Record<string, Holding>): string[] {
-  return [...new Set(equityKeys(portfolio).map(equityQuoteSymbol))];
+  return [
+    ...new Set(
+      Object.keys(portfolio)
+        .filter((k) => isYahooPricedHolding(portfolio[k]))
+        .map(equityQuoteSymbol),
+    ),
+  ];
 }
 
 export function optionKeys(portfolio: Record<string, Holding>): string[] {
@@ -319,6 +359,28 @@ export function assertOptionSpec(o: OptionSpec, key: string): void {
   }
 }
 
+export function assertFundSpec(f: FundSpec, key: string): void {
+  if (f.quote_source !== 'yahoo' && f.quote_source !== 'manual') {
+    throw new Error(
+      `Fund ${key}: fund.quote_source must be "yahoo" or "manual" (no silent default).`,
+    );
+  }
+  if (f.quote_source === 'manual') {
+    if (f.mark == null || !(f.mark >= 0) || !Number.isFinite(f.mark)) {
+      throw new Error(
+        `Fund ${key}: fund.mark (NAV/price per unit) is required when quote_source=manual and must be ≥ 0.`,
+      );
+    }
+  } else if (f.mark != null && (!(f.mark >= 0) || !Number.isFinite(f.mark))) {
+    throw new Error(`Fund ${key}: fund.mark must be ≥ 0 when set.`);
+  }
+  if (f.name != null) {
+    if (typeof f.name !== 'string' || f.name.trim().length === 0) {
+      throw new Error(`Fund ${key}: fund.name must be a non-empty string when set.`);
+    }
+  }
+}
+
 export function assertHolding(key: string, h: Holding): void {
   if (!(h.avg_price > 0) || !Number.isFinite(h.avg_price)) {
     throw new Error(`Holding ${key}: avg_price must be positive.`);
@@ -332,17 +394,33 @@ export function assertHolding(key: string, h: Holding): void {
     if (!h.option) {
       throw new Error(`Holding ${key}: instrument=option requires option fields.`);
     }
+    if (h.fund != null) {
+      throw new Error(`Holding ${key}: fund fields not allowed on option holdings.`);
+    }
     assertOptionSpec(h.option, key);
+  } else if (h.instrument === 'fund') {
+    if (!h.fund) {
+      throw new Error(`Holding ${key}: instrument=fund requires fund fields (quote_source, …).`);
+    }
+    if (h.option != null) {
+      throw new Error(`Holding ${key}: option fields not allowed on fund holdings.`);
+    }
+    assertFundSpec(h.fund, key);
   } else if (h.instrument != null && h.instrument !== 'equity') {
-    throw new Error(`Holding ${key}: instrument must be "equity" or "option".`);
-  } else if (h.option != null) {
-    throw new Error(`Holding ${key}: option fields present but instrument is not "option".`);
+    throw new Error(`Holding ${key}: instrument must be "equity", "option", or "fund".`);
+  } else {
+    if (h.option != null) {
+      throw new Error(`Holding ${key}: option fields present but instrument is not "option".`);
+    }
+    if (h.fund != null) {
+      throw new Error(`Holding ${key}: fund fields present but instrument is not "fund".`);
+    }
   }
 }
 
 /**
  * Value one position.
- * @param marketPrice Required for equity (Yahoo or override). Ignored for options (uses option.mark).
+ * @param marketPrice Required for equity and yahoo-priced funds. Ignored for options and manual funds.
  */
 export function valuePosition(
   key: string,
@@ -391,6 +469,45 @@ export function valuePosition(
     };
   }
 
+  if (isFundHolding(h)) {
+    const f = h.fund!;
+    let price: number;
+    if (f.quote_source === 'manual') {
+      price = f.mark!;
+    } else {
+      if (marketPrice == null || !Number.isFinite(marketPrice)) {
+        throw new Error(
+          `Missing market price for fund ${equityQuoteSymbol(key)} (key ${key}, quote_source=yahoo). ` +
+            `Cannot value fund position.`,
+        );
+      }
+      price = marketPrice;
+    }
+    const cost = h.avg_price * h.units;
+    const value = price * h.units;
+    const pl = value - cost;
+    const channel = normalizeOptionalChannel(h.channel, `Holding ${key}: channel`);
+    const name = f.name?.trim();
+    return {
+      key,
+      instrument: 'fund',
+      label: name && name.length > 0 ? name : equityQuoteSymbol(key),
+      units: h.units,
+      avgCost: h.avg_price,
+      price,
+      cost,
+      value,
+      pl,
+      plPct: cost > 0 ? (pl / cost) * 100 : 0,
+      category: h.category ?? 'Funds',
+      ...(channel != null ? { channel } : {}),
+      premiumAbsolute: 0,
+      contingentCashObligation: 0,
+      contingentShareObligation: 0,
+      fund: f,
+    };
+  }
+
   if (marketPrice == null || !Number.isFinite(marketPrice)) {
     throw new Error(
       `Missing market price for ${equityQuoteSymbol(key)} (key ${key}). Cannot value equity position.`,
@@ -421,7 +538,8 @@ export function valuePosition(
 
 /**
  * Value full portfolio.
- * `prices` keyed by Yahoo equity symbols (bare tickers), not composite portfolio keys.
+ * `prices` keyed by Yahoo symbols (bare tickers) for equities and yahoo-priced funds.
+ * Manual funds and options use stored marks.
  */
 export function valuePortfolio(
   portfolio: Record<string, Holding>,
@@ -434,6 +552,9 @@ export function valuePortfolio(
   return keys.map((key) => {
     const h = portfolio[key];
     if (isOptionHolding(h)) return valuePosition(key, h);
+    if (isFundHolding(h) && h.fund?.quote_source === 'manual') {
+      return valuePosition(key, h);
+    }
     return valuePosition(key, h, prices[equityQuoteSymbol(key)]);
   });
 }

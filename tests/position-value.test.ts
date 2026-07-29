@@ -30,6 +30,71 @@ describe('buildOptionKey', () => {
   });
 });
 
+describe('fund holdings', () => {
+  it('values manual fund from fund.mark without Yahoo price', () => {
+    const h: Holding = {
+      instrument: 'fund',
+      avg_price: 1.2,
+      units: 1000,
+      fund: { quote_source: 'manual', mark: 1.5, name: 'Test Fund' },
+    };
+    const e = valuePosition('110011', h);
+    expect(e.instrument).toBe('fund');
+    expect(e.label).toBe('Test Fund');
+    expect(e.price).toBe(1.5);
+    expect(e.cost).toBe(1200);
+    expect(e.value).toBe(1500);
+    expect(e.pl).toBe(300);
+  });
+
+  it('fails manual fund without mark', () => {
+    const h: Holding = {
+      instrument: 'fund',
+      avg_price: 1,
+      units: 10,
+      fund: { quote_source: 'manual' },
+    };
+    expect(() => valuePosition('X', h)).toThrow(/mark/);
+  });
+
+  it('yahoo fund uses prices map; equityKeys excludes funds', () => {
+    const portfolio: Record<string, Holding> = {
+      SPY: {
+        instrument: 'fund',
+        avg_price: 400,
+        units: 10,
+        fund: { quote_source: 'yahoo' },
+      },
+      AAPL: { avg_price: 100, units: 5, instrument: 'equity' },
+    };
+    expect(equityKeys(portfolio)).toEqual(['AAPL']);
+    expect(equityQuoteSymbols(portfolio).sort()).toEqual(['AAPL', 'SPY']);
+    const rows = valuePortfolio(portfolio, { SPY: 500, AAPL: 110 });
+    const fund = rows.find((r) => r.instrument === 'fund')!;
+    expect(fund.value).toBe(5000);
+    expect(fund.pl).toBe(1000);
+  });
+
+  it('buildLivePositions counts funds separately', () => {
+    const live = buildLivePositions(
+      {
+        SPY: {
+          instrument: 'fund',
+          avg_price: 400,
+          units: 10,
+          fund: { quote_source: 'yahoo' },
+        },
+        AAPL: { avg_price: 100, units: 5 },
+      },
+      { SPY: 500, AAPL: 110 },
+    );
+    expect(live.fundCount).toBe(1);
+    expect(live.equityCount).toBe(1);
+    expect(live.positionCount).toBe(2);
+    expect(live.equityValue).toBe(5000 + 550);
+  });
+});
+
 describe('multi-channel holding keys', () => {
   it('builds bare vs composite keys', () => {
     expect(buildHoldingKey('aapl')).toBe('AAPL');

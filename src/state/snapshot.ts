@@ -19,8 +19,8 @@ export interface SnapshotPosition {
   value: number;
   pl: number;
   plPct: number;
-  /** equity (default) or option — older snapshots omit this. */
-  instrument?: 'equity' | 'option';
+  /** equity (default), option, or fund — older snapshots omit this. */
+  instrument?: 'equity' | 'option' | 'fund';
   label?: string;
   /** Broker / custody source when assigned at snapshot time. */
   channel?: string;
@@ -39,6 +39,11 @@ export interface SnapshotPosition {
     settlement: 'physical' | 'cash';
     mark: number;
     underlying_mark?: number;
+  };
+  fund?: {
+    quote_source: 'manual' | 'yahoo';
+    mark?: number;
+    name?: string;
   };
 }
 

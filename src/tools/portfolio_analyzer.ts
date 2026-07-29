@@ -303,7 +303,8 @@ export function createPortfolioAnalyzerTool(): AgentTool {
           output += '── FULL PORTFOLIO (by P/L) ──\n';
           const sorted = [...result.fullAnalysis].sort((a, b) => b.plPct - a.plPct);
           for (const s of sorted) {
-            const tag = s.instrument === 'option' ? 'OPT' : 'EQ ';
+            const tag =
+              s.instrument === 'option' ? 'OPT' : s.instrument === 'fund' ? 'FND' : 'EQ ';
             output += `  [${tag}] ${s.ticker.padEnd(22)} ${s.company.padEnd(36)} ${s.plPct >= 0 ? '+' : ''}${s.plPct.toFixed(1)}% (mark $${s.price.toFixed(2)})\n`;
             if (s.instrument !== 'option') {
               const m = metrics[s.ticker];

@@ -1,13 +1,14 @@
 import { Type } from 'typebox';
 import type { AgentTool, AgentToolResult } from '@earendil-works/pi-agent-core';
 import { saveState } from 'utarus';
-import type { Holding, OptionSpec } from '../market/types.js';
+import type { FundSpec, Holding, OptionSpec } from '../market/types.js';
 import {
   assertHolding,
   buildHoldingKey,
   buildOptionKey,
   formatOptionLabel,
   holdingBaseKey,
+  isFundHolding,
   isOptionHolding,
   normalizeOptionalChannel,
   resolveLookupHoldingKey,
@@ -169,11 +170,13 @@ function formatPortfolio(
   }
 
   let equityCost = 0;
+  let fundCost = 0;
   let optionPremiumCollected = 0;
   let optionPremiumPaid = 0;
   let contingentCash = 0;
   let contingentShares = 0;
   let equityCount = 0;
+  let fundCount = 0;
   let optionCount = 0;
 
   const lines = [`Portfolio — ${keys.length} position${keys.length === 1 ? '' : 's'}:`, ''];
@@ -192,7 +195,6 @@ function formatPortfolio(
       const e = valuePosition(key, h);
       const o = h.option!;
       const side = o.side.toUpperCase();
-      const right = o.right.toUpperCase();
       lines.push(
         `  ${key}`,
         `    ${formatOptionLabel(o, h.units)} | ${o.settlement} settle | ${o.multiplier} sh/ct`,
@@ -220,6 +222,20 @@ function formatPortfolio(
       else optionPremiumPaid += e.premiumAbsolute;
       contingentCash += e.contingentCashObligation;
       contingentShares += e.contingentShareObligation;
+    } else if (isFundHolding(h)) {
+      fundCount += 1;
+      const f = h.fund!;
+      const cost = h.avg_price * h.units;
+      fundCost += cost;
+      const name = f.name?.trim();
+      const markNote =
+        f.quote_source === 'manual' && f.mark != null
+          ? ` | mark $${f.mark.toFixed(4)}`
+          : ` | quote:yahoo`;
+      lines.push(
+        `  ${key.padEnd(8)} | FUND ${h.units} u @ $${h.avg_price.toFixed(4)} | Cost: $${cost.toFixed(2)} | ${h.category ?? 'Funds'}${formatChannelTag(h.channel)}${markNote}` +
+          (name ? ` | ${name}` : ''),
+      );
     } else {
       equityCount += 1;
       const cost = h.avg_price * h.units;
@@ -232,6 +248,9 @@ function formatPortfolio(
 
   lines.push('');
   lines.push(`Equities: ${equityCount} · cost basis $${equityCost.toFixed(2)}`);
+  if (fundCount > 0) {
+    lines.push(`Funds: ${fundCount} · cost basis $${fundCost.toFixed(2)}`);
+  }
   if (optionCount > 0) {
     lines.push(`Options: ${optionCount}`);
     if (optionPremiumCollected > 0) {
@@ -323,20 +342,58 @@ function parseOptionFromParams(p: {
   return spec;
 }
 
+function parseFundFromParams(p: {
+  fund_quote_source?: string;
+  mark?: number;
+  fund_name?: string;
+  avg_price: number;
+}): FundSpec {
+  const qs = p.fund_quote_source?.trim().toLowerCase();
+  if (qs !== 'yahoo' && qs !== 'manual') {
+    throw new Error(
+      'Fund positions require fund_quote_source=yahoo|manual (no silent default). ' +
+        'ETF/listed: yahoo (ticker is Yahoo symbol). Open-end 基金: manual + mark=NAV per unit.',
+    );
+  }
+  const fund: FundSpec = { quote_source: qs };
+  if (qs === 'manual') {
+    const mark = p.mark != null ? p.mark : p.avg_price;
+    if (!(mark >= 0) || !Number.isFinite(mark)) {
+      throw new Error('Fund mark (NAV per unit) is required for quote_source=manual and must be ≥ 0.');
+    }
+    fund.mark = mark;
+  } else if (p.mark != null) {
+    if (!(p.mark >= 0) || !Number.isFinite(p.mark)) {
+      throw new Error('Fund mark must be ≥ 0 when set.');
+    }
+    fund.mark = p.mark;
+  }
+  if (p.fund_name != null) {
+    const name = p.fund_name.trim();
+    if (name.length === 0) {
+      throw new Error('fund_name must be non-empty when set.');
+    }
+    fund.name = name;
+  }
+  return fund;
+}
+
 export function createPortfolioTools(): AgentTool[] {
   const addHolding: AgentTool = {
     name: 'add_holding',
     label: 'Add Holding',
     description:
-      "Add or update a stock or option position in the user's portfolio. " +
+      "Add or update a stock, fund (基金), or option position in the user's portfolio. " +
       'Equity: ticker + avg_price + units. ' +
+      'Fund (ETF / open-end 基金): instrument=fund + ticker (code or Yahoo symbol) + avg_price + units + fund_quote_source=yahoo|manual. ' +
+      'manual funds require mark (NAV per unit); yahoo funds use live Yahoo on ticker. Optional fund_name. ' +
       'Option: set instrument=option with option_right (call|put), option_side (long|short), strike, expiry (YYYY-MM-DD), ' +
       'multiplier (typically 100 shares/contract — assignment size only), underlying, settlement (physical|cash). ' +
       'avg_price = total premium dollars PER CONTRACT (e.g. $265 credit for one put covering 100 shares — do NOT enter per-share ×100). ' +
       'units = contracts. mark = stored premium $ per contract. Live MTM: Yahoo chain for listed underlyings (auto), manual mark for private. ' +
-      'quote_source=manual|yahoo optional. Contingent obligation (strike×mult×cts) is separate from MTM. ' +
+      'quote_source=manual|yahoo optional for options. Contingent obligation (strike×mult×cts) is separate from MTM. ' +
       'Option portfolio key auto-builds as UNDERLYING-P|C-STRIKE-YYYYMMDD-L|S unless ticker is provided. ' +
-      'When cash is recorded, equity/long buys DECREASE cash by cost/premium; short option opens INCREASE cash by premium credit. ' +
+      'When cash is recorded, equity/fund/long buys DECREASE cash by cost/premium; short option opens INCREASE cash by premium credit. ' +
       'Updates adjust cash by the cost delta. Fails if cash would go negative. Pass adjust_cash=false only for historical import (no ledger). ' +
       'Optional channel tags the broker/custody source (e.g. moomoo, ibkr, webull, jude_futu); omit or empty when unassigned. ' +
       'Same ticker under different channels is allowed — keys become TICKER@channel (e.g. TSLA@cmbyonglong and TSLA@jude_futu). ' +
@@ -346,18 +403,18 @@ export function createPortfolioTools(): AgentTool[] {
       ticker: Type.Optional(
         Type.String({
           description:
-            'Bare equity ticker (e.g. AAPL) or optional option-key override. Do not embed @channel here — pass channel separately. Map key becomes TICKER@channel when channel is set.',
+            'Bare equity/fund ticker or code (e.g. AAPL, SPY, 110011) or optional option-key override. Do not embed @channel — pass channel separately.',
         }),
       ),
       avg_price: Type.Number({
         description:
-          'Equity: average cost per share. Option: total premium dollars per contract at trade (e.g. 265 means $265 for one contract).',
+          'Equity/fund: average cost per share or unit. Option: total premium dollars per contract at trade.',
       }),
       units: Type.Number({
-        description: 'Equity: number of shares. Option: number of contracts.',
+        description: 'Equity: shares. Fund: fund units. Option: contracts.',
       }),
       category: Type.Optional(
-        Type.String({ description: 'Fund category (e.g. "SL Technology S1", "Private / Secondary").' }),
+        Type.String({ description: 'Category (e.g. "SL Technology S1", "Bond", "Private / Secondary").' }),
       ),
       channel: Type.Optional(
         Type.String({
@@ -372,9 +429,18 @@ export function createPortfolioTools(): AgentTool[] {
         }),
       ),
       instrument: Type.Optional(
-        Type.Union([Type.Literal('equity'), Type.Literal('option')], {
-          description: 'Position type. Default equity when omitted.',
+        Type.Union([Type.Literal('equity'), Type.Literal('option'), Type.Literal('fund')], {
+          description: 'Position type. Default equity when omitted. Use fund for ETF / open-end 基金.',
         }),
+      ),
+      fund_quote_source: Type.Optional(
+        Type.Union([Type.Literal('yahoo'), Type.Literal('manual')], {
+          description:
+            'Fund only (required when instrument=fund): yahoo = live Yahoo on ticker; manual = use mark as NAV.',
+        }),
+      ),
+      fund_name: Type.Optional(
+        Type.String({ description: 'Fund only: optional product display name.' }),
       ),
       option_right: Type.Optional(
         Type.Union([Type.Literal('call'), Type.Literal('put')], {
@@ -432,7 +498,9 @@ export function createPortfolioTools(): AgentTool[] {
         category?: string;
         channel?: string;
         adjust_cash?: boolean;
-        instrument?: 'equity' | 'option';
+        instrument?: 'equity' | 'option' | 'fund';
+        fund_quote_source?: 'yahoo' | 'manual';
+        fund_name?: string;
         option_right?: 'call' | 'put';
         option_side?: 'long' | 'short';
         strike?: number;
@@ -483,6 +551,36 @@ export function createPortfolioTools(): AgentTool[] {
             units: p.units,
             category: p.category ?? portfolio[key]?.category,
             option,
+            ...(channel != null ? { channel } : {}),
+          };
+          assertHolding(key, holding);
+        } else if (instrument === 'fund') {
+          if (!p.ticker?.trim()) {
+            return fail('ticker is required for fund holdings (Yahoo symbol or fund code).');
+          }
+          const fund = parseFundFromParams(p);
+          const baseKey = holdingBaseKey(p.ticker.trim().toUpperCase());
+          const channelParam = channelProvided
+            ? normalizeOptionalChannel(p.channel, 'channel')
+            : undefined;
+          key = resolveUpsertHoldingKey(portfolio, baseKey, channelParam, channelProvided);
+          const channel = channelProvided
+            ? channelParam
+            : portfolio[key]?.channel;
+          // Preserve prior fund name/mark when not re-specified on upsert of same lot.
+          const prior = portfolio[key];
+          if (isFundHolding(prior) && prior.fund) {
+            if (fund.name == null && prior.fund.name != null) fund.name = prior.fund.name;
+            if (fund.quote_source === 'yahoo' && fund.mark == null && prior.fund.mark != null) {
+              fund.mark = prior.fund.mark;
+            }
+          }
+          holding = {
+            instrument: 'fund',
+            avg_price: p.avg_price,
+            units: p.units,
+            category: p.category ?? portfolio[key]?.category,
+            fund,
             ...(channel != null ? { channel } : {}),
           };
           assertHolding(key, holding);
@@ -540,12 +638,38 @@ export function createPortfolioTools(): AgentTool[] {
           cash_after: cashAfter?.amount,
           cash_channel: cashResult.adjusted ? cashResult.cash?.channel : undefined,
           ...(instrument === 'option' ? { option: holding.option } : {}),
+          ...(instrument === 'fund' ? { fund: holding.fund } : {}),
         });
         saveState(state);
 
         const action = isUpdate ? 'Updated' : 'Added';
         const cashLine = formatCashApplyNote(cashResult);
         const channelLine = holding.channel ? `Channel: ${holding.channel}\n` : '';
+        if (instrument === 'fund') {
+          const f = holding.fund!;
+          const cost = p.avg_price * p.units;
+          const name = f.name ? ` (${f.name})` : '';
+          const markLine =
+            f.quote_source === 'manual' && f.mark != null
+              ? `Mark/NAV: $${f.mark.toFixed(4)}/u`
+              : 'Mark: live Yahoo';
+          return ok(
+            `${action} fund ${key}${name}: ${p.units} units @ $${p.avg_price.toFixed(4)} (cost: $${cost.toFixed(2)})\n` +
+              `quote_source: ${f.quote_source} | ${markLine}\n` +
+              (p.category ? `Category: ${p.category}\n` : '') +
+              channelLine +
+              (cashLine ? cashLine : ''),
+            {
+              ticker: key,
+              holding,
+              isUpdate,
+              cash: cashResult.cash,
+              cashes: cashResult.cashes,
+              cashDelta: cashResult.adjusted ? cashResult.cashDelta : 0,
+              cashAdjusted: cashResult.adjusted,
+            },
+          );
+        }
         if (instrument === 'option') {
           const e = valuePosition(key, holding);
           const o = holding.option!;
@@ -888,7 +1012,7 @@ export function createPortfolioTools(): AgentTool[] {
     name: 'update_holding',
     label: 'Update Holding',
     description:
-      'Update fields of an existing equity or option position (including option mark for MTM). ' +
+      'Update fields of an existing equity, fund, or option position (including option/fund mark for MTM). ' +
       'When cash is recorded, changes to units/avg_price/side adjust cash by the cost/premium delta (mark-only MTM updates do not). ' +
       'Fails if cash would go negative. Pass adjust_cash=false to skip ledger. ' +
       'Same ticker may exist under multiple channels — pass full key (TICKER@channel) or channel to disambiguate. ' +
@@ -898,15 +1022,17 @@ export function createPortfolioTools(): AgentTool[] {
       ...channelIdParams,
       ticker: Type.String({
         description:
-          'Portfolio key: bare ticker when unique, full key (e.g. TSLA@cmbyonglong), or option key.',
+          'Portfolio key: bare ticker when unique, full key (e.g. TSLA@cmbyonglong), fund code, or option key.',
       }),
       avg_price: Type.Optional(
         Type.Number({
-          description: 'New avg cost (equity) or trade premium $ per contract (option).',
+          description: 'New avg cost (equity/fund) or trade premium $ per contract (option).',
         }),
       ),
-      units: Type.Optional(Type.Number({ description: 'New shares (equity) or contracts (option).' })),
-      category: Type.Optional(Type.String({ description: 'New fund category.' })),
+      units: Type.Optional(
+        Type.Number({ description: 'New shares (equity), fund units, or contracts (option).' }),
+      ),
+      category: Type.Optional(Type.String({ description: 'New category.' })),
       channel: Type.Optional(
         Type.String({
           description:
@@ -920,7 +1046,18 @@ export function createPortfolioTools(): AgentTool[] {
         }),
       ),
       mark: Type.Optional(
-        Type.Number({ description: 'Option only: new premium mark in $ per contract for MTM.' }),
+        Type.Number({
+          description:
+            'Option: premium mark $ per contract. Fund: NAV/price per unit (manual funds).',
+        }),
+      ),
+      fund_quote_source: Type.Optional(
+        Type.Union([Type.Literal('manual'), Type.Literal('yahoo')], {
+          description: 'Fund only: switch MTM source.',
+        }),
+      ),
+      fund_name: Type.Optional(
+        Type.String({ description: 'Fund only: product display name. Empty string clears.' }),
       ),
       quote_source: Type.Optional(
         Type.Union([Type.Literal('manual'), Type.Literal('yahoo')], {
@@ -958,6 +1095,8 @@ export function createPortfolioTools(): AgentTool[] {
         channel?: string;
         adjust_cash?: boolean;
         mark?: number;
+        fund_quote_source?: 'manual' | 'yahoo';
+        fund_name?: string;
         quote_source?: 'manual' | 'yahoo';
         underlying_mark?: number;
         strike?: number;
@@ -1000,6 +1139,9 @@ export function createPortfolioTools(): AgentTool[] {
           if (!existing.option) {
             return fail(`Holding ${oldKey} is instrument=option but option fields are missing.`);
           }
+          if (p.fund_quote_source != null || p.fund_name != null) {
+            return fail(`Holding ${oldKey} is an option — fund_* fields do not apply.`);
+          }
           const nextOption: OptionSpec = {
             ...existing.option,
             ...(p.mark != null ? { mark: p.mark } : {}),
@@ -1021,9 +1163,11 @@ export function createPortfolioTools(): AgentTool[] {
             ...(channel != null ? { channel } : {}),
           };
           assertHolding(nextKey, next);
-        } else {
+        } else if (isFundHolding(existing)) {
+          if (!existing.fund) {
+            return fail(`Holding ${oldKey} is instrument=fund but fund fields are missing.`);
+          }
           if (
-            p.mark != null ||
             p.quote_source != null ||
             p.underlying_mark != null ||
             p.strike != null ||
@@ -1034,7 +1178,47 @@ export function createPortfolioTools(): AgentTool[] {
             p.option_right != null
           ) {
             return fail(
-              `Holding ${oldKey} is equity. To convert to an option, remove it and add_holding with instrument=option.`,
+              `Holding ${oldKey} is a fund. Option-only fields are not allowed. Use mark / fund_quote_source / fund_name.`,
+            );
+          }
+          const nextFund: FundSpec = {
+            ...existing.fund,
+            ...(p.fund_quote_source != null ? { quote_source: p.fund_quote_source } : {}),
+            ...(p.mark != null ? { mark: p.mark } : {}),
+          };
+          if (Object.prototype.hasOwnProperty.call(raw, 'fund_name')) {
+            const n = p.fund_name?.trim() ?? '';
+            if (n.length === 0) {
+              delete nextFund.name;
+            } else {
+              nextFund.name = n;
+            }
+          }
+          next = {
+            instrument: 'fund',
+            avg_price: p.avg_price ?? existing.avg_price,
+            units: p.units ?? existing.units,
+            category: p.category ?? existing.category,
+            fund: nextFund,
+            ...(channel != null ? { channel } : {}),
+          };
+          assertHolding(nextKey, next);
+        } else {
+          if (
+            p.mark != null ||
+            p.quote_source != null ||
+            p.fund_quote_source != null ||
+            p.fund_name != null ||
+            p.underlying_mark != null ||
+            p.strike != null ||
+            p.expiry != null ||
+            p.multiplier != null ||
+            p.settlement != null ||
+            p.option_side != null ||
+            p.option_right != null
+          ) {
+            return fail(
+              `Holding ${oldKey} is equity. To convert to a fund or option, remove it and add_holding with the new instrument.`,
             );
           }
           next = {
@@ -1096,6 +1280,30 @@ export function createPortfolioTools(): AgentTool[] {
               previous_ticker: nextKey !== oldKey ? oldKey : undefined,
               holding: h,
               economics: e,
+              cash: cashResult.cash,
+              cashes: cashResult.cashes,
+              cashDelta: cashResult.adjusted ? cashResult.cashDelta : 0,
+              cashAdjusted: cashResult.adjusted,
+            },
+          );
+        }
+
+        if (isFundHolding(h)) {
+          const f = h.fund!;
+          const cost = h.avg_price * h.units;
+          const markInfo =
+            f.quote_source === 'manual' && f.mark != null
+              ? `mark $${f.mark.toFixed(4)}`
+              : 'quote:yahoo (live MTM on analyze/dashboard)';
+          return ok(
+            `Updated fund ${nextKey}${rekeyNote}: ${h.units} u @ $${h.avg_price.toFixed(4)} (cost: $${cost.toFixed(2)})` +
+              `${f.name ? ` (${f.name})` : ''} | ${f.quote_source} | ${markInfo}` +
+              `${h.category ? ` [${h.category}]` : ''}${formatChannelTag(h.channel)}` +
+              (cashLine ? `\n${cashLine}` : ''),
+            {
+              ticker: nextKey,
+              previous_ticker: nextKey !== oldKey ? oldKey : undefined,
+              holding: h,
               cash: cashResult.cash,
               cashes: cashResult.cashes,
               cashDelta: cashResult.adjusted ? cashResult.cashDelta : 0,

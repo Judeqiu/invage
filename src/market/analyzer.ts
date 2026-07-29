@@ -3,6 +3,7 @@ import type { PlaybookThresholds } from '../playbook/thresholds.js';
 import type { Holding, PositionAnalysis, AnalystTarget, AnalysisResult } from './types.js';
 import {
   equityQuoteSymbol,
+  isFundHolding,
   isOptionHolding,
   valuePosition,
 } from './position-value.js';
@@ -61,6 +62,37 @@ export function buildAnalysis(
         contingentCashObligation: e.contingentCashObligation,
         contingentShareObligation: e.contingentShareObligation,
         premiumAbsolute: e.premiumAbsolute,
+      });
+      continue;
+    }
+
+    // Funds: MTM only in full analysis — no Street target buckets in v1.
+    if (isFundHolding(h)) {
+      const symbol = equityQuoteSymbol(ticker);
+      const e =
+        h.fund?.quote_source === 'manual'
+          ? valuePosition(ticker, h)
+          : valuePosition(ticker, h, prices[symbol]);
+      analysis.push({
+        ticker,
+        company: e.label,
+        category: e.category,
+        price: e.price,
+        avgCost: e.avgCost,
+        units: e.units,
+        cost: e.cost,
+        value: e.value,
+        pl: e.pl,
+        plPct: e.plPct,
+        targetLow: null,
+        targetMedian: null,
+        targetMean: null,
+        targetHigh: null,
+        upsideToMedian: null,
+        upsideToMean: null,
+        costVsHigh: null,
+        currentVsCost: e.avgCost > 0 ? ((e.price - e.avgCost) / e.avgCost) * 100 : null,
+        instrument: 'fund',
       });
       continue;
     }
@@ -158,8 +190,9 @@ function classifyOpportunity(
   return `WATCH — Interesting, ≥${t.buyMinUpsidePct}% upside`;
 }
 
+/** Street 3-axis buckets: equities only (omit options and funds). */
 function isEquityRow(s: PositionAnalysis): boolean {
-  return s.instrument !== 'option';
+  return s.instrument == null || s.instrument === 'equity';
 }
 
 export function analyzeLaggards(

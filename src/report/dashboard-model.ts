@@ -1,4 +1,4 @@
-import type { Holding, InstrumentKind, OptionSpec } from '../market/types.js';
+import type { FundSpec, Holding, InstrumentKind, OptionSpec } from '../market/types.js';
 import type { OptionLiveMark } from '../market/fetch-option-marks.js';
 import { valuePortfolio, type PositionEconomics } from '../market/position-value.js';
 import type { Snapshot, SnapshotPosition } from '../state/snapshot.js';
@@ -36,6 +36,7 @@ export interface LivePosition {
   weightPct: number;
   instrument: InstrumentKind;
   option?: OptionSpec;
+  fund?: FundSpec;
   premiumAbsolute: number;
   contingentCashObligation: number;
   contingentShareObligation: number;
@@ -45,7 +46,7 @@ export interface LivePosition {
    * unassigned storage values become {@link DEFAULT_CHANNEL}.
    */
   channel: string;
-  /** Option only: where the mark came from. */
+  /** Option / fund: where the mark came from. */
   markSource?: 'manual' | 'yahoo';
   markNote?: string;
   contractSymbol?: string;
@@ -72,6 +73,7 @@ export interface ChannelTotals {
   positionCount: number;
   equityCount: number;
   optionCount: number;
+  fundCount: number;
   positionsValue: number;
   totalCost: number;
   totalPL: number;
@@ -138,6 +140,7 @@ export interface LiveDashboardSlice {
   contingentShareObligation: number;
   optionCount: number;
   equityCount: number;
+  fundCount: number;
   cashAmount: number | null;
   cashCurrency: string | null;
   /**
@@ -174,6 +177,8 @@ function economicsToLive(
   weightPct: number,
   markMeta?: OptionLiveMark,
 ): LivePosition {
+  const fundMarkSource =
+    e.instrument === 'fund' && e.fund != null ? e.fund.quote_source : undefined;
   return {
     ticker: e.key,
     label: e.label,
@@ -187,12 +192,13 @@ function economicsToLive(
     weightPct,
     instrument: e.instrument,
     option: e.option,
+    fund: e.fund,
     premiumAbsolute: e.premiumAbsolute,
     contingentCashObligation: e.contingentCashObligation,
     contingentShareObligation: e.contingentShareObligation,
     category: e.category,
     channel: resolveDashboardChannel(e.channel),
-    markSource: markMeta?.source,
+    markSource: markMeta?.source ?? fundMarkSource,
     markNote: markMeta?.note,
     contractSymbol: markMeta?.contractSymbol,
   };
@@ -350,6 +356,7 @@ export function buildChannelTotals(
   let contingentShareObligation = 0;
   let optionCount = 0;
   let equityCount = 0;
+  let fundCount = 0;
 
   for (const p of positions) {
     positionsValue += p.value;
@@ -360,6 +367,11 @@ export function buildChannelTotals(
       contingentShareObligation += p.contingentShareObligation;
       if (p.option?.side === 'short') optionsPremiumCollected += p.premiumAbsolute;
       else optionsPremiumPaid += p.premiumAbsolute;
+    } else if (p.instrument === 'fund') {
+      fundCount += 1;
+      // Fund MTM counts in non-option asset value (NAV equity leg).
+      equityValue += p.value;
+      equityCost += p.cost;
     } else {
       equityCount += 1;
       equityValue += p.value;
@@ -388,6 +400,7 @@ export function buildChannelTotals(
     positionCount: positions.length,
     equityCount,
     optionCount,
+    fundCount,
     positionsValue,
     totalCost,
     totalPL,
@@ -468,6 +481,7 @@ export function filterLiveByChannel(
     contingentShareObligation: totals.contingentShareObligation,
     optionCount: totals.optionCount,
     equityCount: totals.equityCount,
+    fundCount: totals.fundCount,
     cashAmount: totals.cashAmount,
     cashCurrency: totals.cashCurrency,
     cashChannel: cash != null ? channel : null,
@@ -583,6 +597,7 @@ export function buildLivePositions(
     contingentShareObligation: merged.contingentShareObligation,
     optionCount: merged.optionCount,
     equityCount: merged.equityCount,
+    fundCount: merged.fundCount,
     cashAmount: merged.cashAmount,
     cashCurrency: merged.cashCurrency,
     cashChannel,

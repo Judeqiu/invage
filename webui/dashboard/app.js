@@ -237,6 +237,7 @@ function applyChannelFilter(base, channelKey) {
   let contingentShareObligation = 0;
   let optionCount = 0;
   let equityCount = 0;
+  let fundCount = 0;
 
   for (const p of filtered) {
     positionsValue += p.value;
@@ -247,6 +248,10 @@ function applyChannelFilter(base, channelKey) {
       contingentShareObligation += p.contingentShareObligation || 0;
       if (p.option?.side === 'short') optionsPremiumCollected += p.premiumAbsolute || 0;
       else optionsPremiumPaid += p.premiumAbsolute || 0;
+    } else if (p.instrument === 'fund') {
+      fundCount += 1;
+      equityValue += p.value;
+      equityCost += p.cost;
     } else {
       equityCount += 1;
       equityValue += p.value;
@@ -281,6 +286,7 @@ function applyChannelFilter(base, channelKey) {
     contingentShareObligation,
     optionCount,
     equityCount,
+    fundCount,
     cashAmount,
     cashCurrency,
     cashChannel: cashAmount != null ? channelKey : null,
@@ -318,6 +324,7 @@ function buildView(dateKey, channelKey = selectedChannel) {
       contingentShareObligation: live.contingentShareObligation ?? 0,
       optionCount: live.optionCount ?? 0,
       equityCount: live.equityCount ?? live.positions.length,
+      fundCount: live.fundCount ?? 0,
       cashAmount: live.cashAmount ?? null,
       cashCurrency: live.cashCurrency ?? null,
       cashChannel: live.cashChannel ?? null,
@@ -363,7 +370,9 @@ function buildView(dateKey, channelKey = selectedChannel) {
     contingentCashObligation: row.contingentCashObligation ?? 0,
     contingentShareObligation: 0,
     optionCount: rawPositions.filter((p) => p.instrument === 'option').length,
-    equityCount: rawPositions.filter((p) => p.instrument !== 'option').length,
+    equityCount: rawPositions.filter((p) => p.instrument !== 'option' && p.instrument !== 'fund')
+      .length,
+    fundCount: rawPositions.filter((p) => p.instrument === 'fund').length,
     cashAmount: row.cashAmount ?? null,
     cashCurrency: row.cashCurrency ?? null,
     cashChannel: row.cashAmount != null ? resolveDashboardChannel(row.cashChannel) : null,
@@ -558,12 +567,13 @@ function renderCards(view) {
 
   view.positions.forEach((p) => {
     const isOpt = p.instrument === 'option';
-    // Options: show premium P/L % as index-style (100 + plPct); equities: value/cost.
+    const isFund = p.instrument === 'fund';
+    // Options: show premium P/L % as index-style (100 + plPct); equities/funds: value/cost.
     const pIdx = isOpt
       ? 100 + (p.plPct || 0)
       : fundIndex(p.value, p.cost);
     const pDiff = isOpt || view.benchmarkIndex == null ? null : pIdx - view.benchmarkIndex;
-    const title = isOpt ? p.label || p.ticker : p.ticker;
+    const title = isOpt || isFund ? p.label || p.ticker : p.ticker;
     const ch = resolveDashboardChannel(p.channel);
     const footer = isOpt
       ? `${p.units} ct @ ${fmtUsd2(p.avgCost)}/ct prem | MTM ${fmtUsd0(p.value)} | P/L ${fmtSignedUsd0(p.pl)}` +
@@ -571,7 +581,9 @@ function renderCards(view) {
           ? ` | If assigned ${fmtUsd0(p.contingentCashObligation)}`
           : '') +
         ` | ${ch}`
-      : `${p.units} units @ ${fmtUsd2(p.avgCost)} | Cost: ${fmtUsd0(p.cost)} | ${ch}`;
+      : isFund
+        ? `FUND ${p.units} u @ ${fmtUsd2(p.avgCost)} | Cost: ${fmtUsd0(p.cost)} | ${ch}`
+        : `${p.units} units @ ${fmtUsd2(p.avgCost)} | Cost: ${fmtUsd0(p.cost)} | ${ch}`;
     cards.push(
       cardHtml(title, pIdx, isOpt ? null : view.benchmarkIndex, pDiff, footer, channelBadgeHtml(ch)),
     );
