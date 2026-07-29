@@ -99,14 +99,29 @@ export function isYahooPricedHolding(h: Holding): boolean {
 /**
  * Heuristic for import guards: product codes / labels that must use instrument=fund
  * with fund_quote_source=manual (Yahoo has no usable equity quote).
+ *
+ * @param channel Optional broker/custody tag (e.g. endowus, syfe) — platform channels
+ *                almost never have Yahoo equity quotes for synthetic portfolio codes.
  */
-export function looksLikeNonYahooFundProduct(ticker: string, category?: string): boolean {
+export function looksLikeNonYahooFundProduct(
+  ticker: string,
+  category?: string,
+  channel?: string | null,
+): boolean {
   const t = ticker.trim().toUpperCase();
   const cat = (category ?? '').toLowerCase();
+  const ch = (channel ?? '').trim().toLowerCase();
   if (
-    /money\s*market|money market fund|\bmmf\b|liquidity\s*fund|cash\s*management|unit\s*trust|open-?end\s*fund|mutual\s*fund|\b基金\b|robo|smart\s*invest|discretionary|private\s*banking|wealth\s*mgmt|portfolio\s*mgmt/.test(
+    /money\s*market|money market fund|\bmmf\b|liquidity\s*fund|cash\s*management|unit\s*trust|open-?end\s*fund|mutual\s*fund|\b基金\b|robo|smart\s*invest|discretionary|private\s*banking|wealth\s*mgmt|portfolio\s*mgmt|endowus|syfe|stashaway/.test(
       cat,
     )
+  ) {
+    return true;
+  }
+  // Digital wealth / robo platforms: portfolio codes are not Yahoo equities
+  if (
+    /^(endowus|syfe|stashaway|autowealth|fsmone|dollarsandsense)$/.test(ch) ||
+    /^(ENDOWUS|ENDOW|SYFE|STASHAWAY|AUTOWEALTH)/.test(t)
   ) {
     return true;
   }

@@ -100,6 +100,7 @@ When the user pastes a broker screenshot or list that includes **funds**, classi
 | Open-end mutual fund / unit trust / CN 基金 code (e.g. 110011) | `fund` | **`manual`** | NAV per unit from UI |
 | Long broker product code (PHILLIPUSDMMF, FULLERTONSGDLIQ, …) | `fund` | **`manual`** | same as above |
 | Bank unit trust / robo / discretionary product codes (OCBCUT, OCBCRI, OCBCPM, OCCYRI, …) | `fund` | **`manual`** | NAV or cost (`mark=avg_price` if NAV unknown); often `units=1` with total $ as avg_price |
+| Digital wealth platforms (Endowus, Syfe, StashAway, …) | `fund` | **`manual`** | Portfolio NAV: `mark` = NAV/unit (often 1), `units` = units; channel=`endowus`/`syfe`/… — **never** equity |
 | Plain stock ticker (AAPL, TSLA, 0700.HK, O39.SI) | `equity` | n/a | n/a |
 | Spot crypto (Bitcoin, Ethereum) | `equity` | n/a | n/a — ticker `BTC` / `BTC-USD` or `ETH` / `ETH-USD`; live Yahoo pair `BTC-USD` / `ETH-USD` (bare Yahoo `BTC` is a trust, not spot — product maps aliases). Fractional `units` OK. |
 
@@ -111,8 +112,8 @@ When the user pastes a broker screenshot or list that includes **funds**, classi
 4. Always set `channel`, `adjust_cash=false` on historical import, and optional `fund_name` from the product name.
 5. SG **listed** bank equities use exchange suffixes (`O39.SI`, `D05.SI`) — bare `OCBCUT`-style codes are **not** equities.
 
-**Wrong (breaks dashboard):** `add_holding ticker=PHILLIPUSDMMF instrument=equity` or `ticker=OCBCUT instrument=equity`  
-**Right:** `add_holding instrument=fund ticker=OCBCUT fund_quote_source=manual mark=<NAV or avg_price> units=… avg_price=… channel=ocbc adjust_cash=false fund_name="OCBC unit trust…"`
+**Wrong (breaks dashboard):** `add_holding ticker=PHILLIPUSDMMF instrument=equity` or `ticker=OCBCUT instrument=equity` or `ticker=ENDOWUS instrument=equity`  
+**Right:** `add_holding instrument=fund ticker=ENDOWUS fund_quote_source=manual mark=1 units=<units> avg_price=1 channel=endowus adjust_cash=false fund_name="Endowus portfolio"`
 
 **Spot Bitcoin (supported):**  
 `add_holding ticker=BTC avg_price=<USD cost per BTC> units=<fractional OK> channel=…`  

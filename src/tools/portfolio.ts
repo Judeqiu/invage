@@ -633,18 +633,20 @@ export function createPortfolioTools(): AgentTool[] {
             return fail('ticker is required for equity holdings.');
           }
           const baseKey = holdingBaseKey(p.ticker.trim().toUpperCase());
-          if (looksLikeNonYahooFundProduct(baseKey, p.category)) {
-            return fail(
-              `Ticker "${baseKey}" looks like a fund/MMF/broker product code, not a listed equity. ` +
-                `Use instrument=fund with fund_quote_source=manual and mark=<NAV or avg_price> ` +
-                `(optional fund_name). Example: instrument=fund ticker=${baseKey} ` +
-                `fund_quote_source=manual mark=${p.avg_price} avg_price=${p.avg_price} units=${p.units}. ` +
-                `Only use fund_quote_source=yahoo for listed ETFs with a Yahoo quote (SPY, QQQ, …).`,
-            );
-          }
           const channelParam = channelProvided
             ? normalizeOptionalChannel(p.channel, 'channel')
             : undefined;
+          if (looksLikeNonYahooFundProduct(baseKey, p.category, channelParam ?? p.channel)) {
+            return fail(
+              `Ticker "${baseKey}" looks like a fund/MMF/broker/platform product code, not a listed equity` +
+                (p.channel ? ` (channel=${p.channel})` : '') +
+                `. Use instrument=fund with fund_quote_source=manual and mark=<NAV or avg_price> ` +
+                `(optional fund_name). Example: instrument=fund ticker=${baseKey} ` +
+                `fund_quote_source=manual mark=${p.avg_price} avg_price=${p.avg_price} units=${p.units}` +
+                (p.channel ? ` channel=${p.channel}` : '') +
+                `. Platforms like Endowus/Syfe/StashAway and bank unit trusts never use instrument=equity.`,
+            );
+          }
           key = resolveUpsertHoldingKey(portfolio, baseKey, channelParam, channelProvided);
           const channel = channelProvided
             ? channelParam

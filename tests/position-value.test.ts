@@ -72,6 +72,15 @@ describe('looksLikeNonYahooFundProduct', () => {
     expect(looksLikeNonYahooFundProduct('O39.SI')).toBe(false);
     expect(looksLikeNonYahooFundProduct('AAPL')).toBe(false);
   });
+
+  it('flags Endowus / Syfe / digital wealth platform codes', () => {
+    expect(looksLikeNonYahooFundProduct('ENDOWUS')).toBe(true);
+    expect(looksLikeNonYahooFundProduct('ENDOWUS', undefined, 'endowus')).toBe(true);
+    expect(looksLikeNonYahooFundProduct('CORE', undefined, 'endowus')).toBe(true);
+    expect(looksLikeNonYahooFundProduct('PORTFOLIO', undefined, 'syfe')).toBe(true);
+    expect(looksLikeNonYahooFundProduct('AAPL', undefined, 'endowus')).toBe(true);
+    expect(looksLikeNonYahooFundProduct('AAPL')).toBe(false);
+  });
 });
 
 describe('buildOptionKey', () => {

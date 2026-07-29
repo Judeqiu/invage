@@ -195,6 +195,7 @@ const portfolio = (): string =>
     '• Listed ETF with Yahoo ticker → `instrument=fund` + `fund_quote_source=yahoo` (e.g. SPY, QQQ)',
     '• Open-end 基金 / money-market / liquidity / broker codes → `instrument=fund` + `fund_quote_source=manual` + `mark` (NAV)',
     '• Bank unit trusts / robo / discretionary codes (OCBCUT, OCBCRI, OCBCPM, OCCYRI, PHILLIPUSDMMF, …) — **never** equity (breaks dashboard)',
+    '• Digital wealth platforms (Endowus, Syfe, StashAway, …): portfolio NAV as `instrument=fund` + `fund_quote_source=manual` + `mark` — **never** equity (ENDOWUS@… breaks dashboard)',
     '• SG listed bank stocks use exchange tickers (e.g. O39.SI, D05.SI) — not bare OCBCUT-style product codes',
     '• If NAV unknown at import, set mark = avg_price; update mark later when you have NAV',
     '',
