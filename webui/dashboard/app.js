@@ -127,9 +127,12 @@ function benchIndexAt(dateKey) {
 
 /* ---------- view model ---------- */
 
-function reweightPositions(positions, cashAmount) {
+function reweightPositions(positions, cashAmount, depositsAmount = 0) {
   const absPositions = positions.reduce((s, p) => s + Math.abs(p.value), 0);
-  const absSum = absPositions + (cashAmount != null ? Number(cashAmount) : 0);
+  const absSum =
+    absPositions +
+    (cashAmount != null ? Number(cashAmount) : 0) +
+    (depositsAmount != null ? Number(depositsAmount) : 0);
   return positions
     .map((p) => ({
       ...p,
@@ -139,6 +142,13 @@ function reweightPositions(positions, cashAmount) {
       weightPct: absSum > 0 ? (Math.abs(p.value) / absSum) * 100 : 0,
     }))
     .sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
+}
+
+function normalizeDeposits(list) {
+  return (list || []).map((d) => ({
+    ...d,
+    channel: resolveDashboardChannel(d.channel),
+  }));
 }
 
 /**
@@ -151,6 +161,7 @@ function applyChannelFilter(base, channelKey) {
     ...p,
     channel: resolveDashboardChannel(p.channel),
   }));
+  const allDeposits = normalizeDeposits(base.deposits);
   const byChannel = base.byChannel || [];
   const cashChannel =
     base.cashAmount != null && base.cashChannel != null
@@ -162,6 +173,7 @@ function applyChannelFilter(base, channelKey) {
     : [...new Set([
         ...allPositions.map((p) => p.channel),
         ...byChannel.map((c) => resolveDashboardChannel(c.channel)),
+        ...allDeposits.map((d) => d.channel),
         ...(cashChannel != null ? [cashChannel] : []),
       ])].sort((a, b) => {
         if (a === DEFAULT_CHANNEL) return -1;
@@ -170,10 +182,19 @@ function applyChannelFilter(base, channelKey) {
       });
 
   if (channelKey === MERGED_CHANNEL_VIEW) {
-    const positions = reweightPositions(allPositions, base.cashAmount ?? null);
+    const depositsAmount = Number(base.depositsAmount || 0);
+    const positions = reweightPositions(
+      allPositions,
+      base.cashAmount ?? null,
+      depositsAmount,
+    );
     return {
       ...base,
       positions,
+      deposits: allDeposits,
+      depositsAmount,
+      depositsCurrency: base.depositsCurrency ?? null,
+      depositCount: allDeposits.length,
       channelView: MERGED_CHANNEL_VIEW,
       channelLabel: 'All (merged)',
       channels,
@@ -183,6 +204,7 @@ function applyChannelFilter(base, channelKey) {
   }
 
   const filtered = allPositions.filter((p) => p.channel === channelKey);
+  const deposits = allDeposits.filter((d) => d.channel === channelKey);
   const chRow = byChannel.find((c) => resolveDashboardChannel(c.channel) === channelKey);
   // Prefer per-channel cash from byChannel (multi-cash); fall back to single cashChannel match.
   let cashAmount = null;
@@ -193,6 +215,16 @@ function applyChannelFilter(base, channelKey) {
   } else if (cashChannel != null && cashChannel === channelKey) {
     cashAmount = base.cashAmount;
     cashCurrency = base.cashCurrency;
+  }
+
+  let depositsAmount = 0;
+  let depositsCurrency = null;
+  if (chRow != null && chRow.depositsAmount != null && chRow.depositsAmount > 0) {
+    depositsAmount = chRow.depositsAmount;
+    depositsCurrency = chRow.depositsCurrency ?? null;
+  } else if (deposits.length > 0) {
+    depositsAmount = deposits.reduce((s, d) => s + Number(d.amount), 0);
+    depositsCurrency = deposits[0].currency;
   }
 
   let positionsValue = 0;
@@ -223,14 +255,16 @@ function applyChannelFilter(base, channelKey) {
   }
 
   const totalPL = positionsValue - totalCost;
-  const totalValue = cashAmount != null ? positionsValue + cashAmount : positionsValue;
+  let totalValue = positionsValue;
+  if (cashAmount != null) totalValue += cashAmount;
+  totalValue += depositsAmount;
   const cashWeightPct =
     cashAmount != null && totalValue !== 0
       ? (cashAmount / totalValue) * 100
       : cashAmount != null
         ? 0
         : null;
-  const positions = reweightPositions(filtered, cashAmount);
+  const positions = reweightPositions(filtered, cashAmount, depositsAmount);
 
   return {
     ...base,
@@ -252,6 +286,10 @@ function applyChannelFilter(base, channelKey) {
     cashChannel: cashAmount != null ? channelKey : null,
     positionsValue,
     cashWeightPct,
+    deposits,
+    depositsAmount,
+    depositsCurrency,
+    depositCount: deposits.length,
     channelView: channelKey,
     channelLabel: channelKey,
     channels,
@@ -285,6 +323,10 @@ function buildView(dateKey, channelKey = selectedChannel) {
       cashChannel: live.cashChannel ?? null,
       positionsValue: live.positionsValue ?? live.totalValue,
       cashWeightPct: live.cashWeightPct ?? null,
+      deposits: live.deposits ?? [],
+      depositsAmount: live.depositsAmount ?? 0,
+      depositsCurrency: live.depositsCurrency ?? null,
+      depositCount: live.depositCount ?? (live.deposits ? live.deposits.length : 0),
       channels: live.channels ?? [],
       byChannel: live.byChannel ?? [],
     };
@@ -436,6 +478,13 @@ function renderCards(view) {
         (view.cashWeightPct != null ? ` (${view.cashWeightPct.toFixed(1)}%)` : '') +
         (view.cashChannel ? ` · ch ${view.cashChannel}` : '')
       : '';
+  const depAmount = Number(view.depositsAmount || 0);
+  const depositNote =
+    depAmount > 0 || (view.depositCount || 0) > 0
+      ? ` | FD principal ${fmtUsd0(depAmount)}` +
+        (view.depositsCurrency ? ' ' + view.depositsCurrency : '') +
+        ` · ${view.depositCount || 0} term${(view.depositCount || 0) === 1 ? '' : 's'}`
+      : '';
   const channelNote =
     view.channelView === MERGED_CHANNEL_VIEW
       ? ` | Channels: ${(view.channels || []).join(', ') || DEFAULT_CHANNEL}`
@@ -449,9 +498,31 @@ function renderCards(view) {
       view.fundIndex,
       view.benchmarkIndex,
       view.diff,
-      `Base: ${escapeHtml(baseDate)} | ${view.positions.length} holdings | Cost: ${fmtUsd0(view.totalCost)}${optionNote}${cashNote}${channelNote}`,
+      `Base: ${escapeHtml(baseDate)} | ${view.positions.length} holdings | Cost: ${fmtUsd0(view.totalCost)}${optionNote}${cashNote}${depositNote}${channelNote}`,
     ),
   );
+
+  if ((view.deposits || []).length > 0) {
+    const interestTotal = view.deposits.reduce((s, d) => s + Number(d.interest || 0), 0);
+    const maturedN = view.deposits.filter((d) => d.matured).length;
+    cards.push(`
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Fixed deposits</div>
+          <span class="card-badge badge-channel">FD</span>
+        </div>
+        <div class="card-values">
+          <div class="fund-value">${fmtUsd0(depAmount)}</div>
+          <div class="bench-value">principal</div>
+        </div>
+        <div class="diff-indicator" style="background:#f3e8ff;color:#7c3aed">
+          ${view.deposits.length} term${view.deposits.length === 1 ? '' : 's'} · interest at maturity ${fmtUsd0(interestTotal)}${
+            maturedN > 0 ? ` · ${maturedN} matured` : ''
+          }
+        </div>
+        <div class="card-footer">Locked capital · not free cash · in NAV</div>
+      </div>`);
+  }
 
   // When merged and multi-channel, surface per-channel summary cards.
   if (
@@ -476,6 +547,9 @@ function renderCards(view) {
           `${c.positionCount} holdings | NAV ${fmtUsd0(c.totalValue)} | P/L ${fmtSignedUsd0(c.totalPL)}` +
             (c.cashAmount != null
               ? ` | Cash ${fmtUsd0(c.cashAmount)}${c.cashCurrency ? ' ' + c.cashCurrency : ''}`
+              : '') +
+            (c.depositsAmount != null && c.depositsAmount > 0
+              ? ` | FD ${fmtUsd0(c.depositsAmount)}`
               : ''),
         ),
       );
@@ -601,6 +675,14 @@ function renderAllocation(view) {
       color: COLORS[sectors.length % COLORS.length],
     });
   }
+  if (Number(view.depositsAmount || 0) > 0) {
+    sectors.push({
+      label: `Fixed deposits${view.depositsCurrency ? ' (' + view.depositsCurrency + ')' : ''}`,
+      value: Number(view.depositsAmount),
+      signed: Number(view.depositsAmount),
+      color: COLORS[sectors.length % COLORS.length],
+    });
+  }
   const absTotal = sectors.reduce((s, x) => s + x.value, 0);
 
   const scope =
@@ -608,22 +690,29 @@ function renderAllocation(view) {
       ? 'by Position (merged)'
       : `by Position · ${view.channelLabel || view.channelView}`;
 
+  const posMtm = view.positionsValue ?? 0;
+  const navBreakdown =
+    view.cashAmount != null || Number(view.depositsAmount || 0) > 0
+      ? `<div style="font-size:0.8rem;color:#6b7280;margin:4px 0 4px">
+            Positions MTM: ${fmtUsd0(posMtm)}` +
+        (view.cashAmount != null
+          ? ` · Cash: ${fmtUsd0(view.cashAmount)}${view.cashCurrency ? ' ' + escapeHtml(view.cashCurrency) : ''}` +
+            (view.cashWeightPct != null ? ` (${view.cashWeightPct.toFixed(1)}%)` : '') +
+            (view.cashChannel ? ` · ch ${escapeHtml(view.cashChannel)}` : '')
+          : '') +
+        (Number(view.depositsAmount || 0) > 0
+          ? ` · FD principal: ${fmtUsd0(view.depositsAmount)}${view.depositsCurrency ? ' ' + escapeHtml(view.depositsCurrency) : ''}`
+          : '') +
+        `</div>`
+      : '';
+
   const wrapper = document.createElement('div');
   wrapper.className = 'allocation-card';
   wrapper.innerHTML = `
     <h3>Allocation ${escapeHtml(scope)}</h3>
-    <div class="total-label">${view.isLive ? 'Current NAV (positions + cash)' : 'NAV · ' + escapeHtml(view.label)}</div>
+    <div class="total-label">${view.isLive ? 'Current NAV (positions + cash + deposits)' : 'NAV · ' + escapeHtml(view.label)}</div>
     <div class="total-value">${fmtUsd0(view.totalValue)}</div>
-    ${
-      view.cashAmount != null
-        ? `<div style="font-size:0.8rem;color:#6b7280;margin:4px 0 4px">
-            Positions MTM: ${fmtUsd0(view.positionsValue ?? view.totalValue - view.cashAmount)} ·
-            Cash: ${fmtUsd0(view.cashAmount)}${view.cashCurrency ? ' ' + escapeHtml(view.cashCurrency) : ''}
-            ${view.cashWeightPct != null ? `(${view.cashWeightPct.toFixed(1)}%)` : ''}
-            ${view.cashChannel ? ` · ch ${escapeHtml(view.cashChannel)}` : ''}
-          </div>`
-        : ''
-    }
+    ${navBreakdown}
     ${
       (view.optionCount || 0) > 0
         ? `<div style="font-size:0.8rem;color:#6b7280;margin:4px 0 8px">
@@ -873,9 +962,53 @@ function renderCharts(view) {
   });
 }
 
+function renderDepositsTable(view) {
+  const section = document.getElementById('depositsSection');
+  const body = document.getElementById('depositsTableBody');
+  if (!section || !body) return;
+  const deposits = view.deposits || [];
+  if (deposits.length === 0 || !view.isLive) {
+    section.classList.add('hidden');
+    body.innerHTML = '';
+    return;
+  }
+  section.classList.remove('hidden');
+  body.innerHTML = deposits
+    .map((d) => {
+      const label = d.label ? escapeHtml(d.label) : escapeHtml(d.id);
+      const days = d.matured
+        ? '<span class="badge-matured">matured</span>'
+        : `${d.daysRemaining}d left`;
+      return `<tr>
+        <td>${label}<div class="muted">${escapeHtml(d.id)}</div></td>
+        <td>${channelBadgeHtml(d.channel)}</td>
+        <td class="num">${fmtUsd2(d.amount)}</td>
+        <td class="num">${fmtUsd2(d.interest)}</td>
+        <td>${escapeHtml(d.start_date)} → ${escapeHtml(d.end_date)}</td>
+        <td>${days}</td>
+      </tr>`;
+    })
+    .join('');
+}
+
 function renderInsights(view) {
   const benchTicker = payload.benchmark?.ticker || 'SPY';
   const insights = [];
+
+  if ((view.deposits || []).length > 0) {
+    const amt = Number(view.depositsAmount || 0);
+    const matured = view.deposits.filter((d) => d.matured).length;
+    insights.push({
+      title: 'Fixed deposits',
+      text:
+        `${view.deposits.length} term deposit${view.deposits.length === 1 ? '' : 's'} ` +
+        `with ${fmtUsd0(amt)} principal in NAV (not free cash).` +
+        (matured > 0
+          ? ` ${matured} matured — consider remove_deposit / roll to cash.`
+          : ' Principal is locked until end date.'),
+      color: '#7c3aed',
+    });
+  }
 
   if (view.positions.length > 0) {
     const best = view.positions.reduce((a, b) => (a.plPct >= b.plPct ? a : b));
@@ -959,6 +1092,7 @@ function renderInsights(view) {
 /* ---------- orchestration ---------- */
 
 function renderDate(dateKey, channelKey = selectedChannel) {
+  // deposits table rendered inside after view is built
   if (!payload?.model) return;
   const view = buildView(dateKey, channelKey);
   if (!view) return;
@@ -975,6 +1109,7 @@ function renderDate(dateKey, channelKey = selectedChannel) {
   destroyCharts();
   renderCards(view);
   renderAllocation(view);
+  renderDepositsTable(view);
   renderBar(view);
   renderCharts(view);
   renderInsights(view);

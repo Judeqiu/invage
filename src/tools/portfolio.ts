@@ -12,18 +12,28 @@ import {
 } from '../market/position-value.js';
 import {
   applyCashDelta,
+  assertFixedDeposit,
   cashDeltaForHoldingChange,
   cashSlotKey,
   clearCash,
+  clearDeposits,
+  findCashForChannel,
+  findDepositById,
+  generateDepositId,
   getCashes,
+  getDeposits,
   getPlaybook,
   getPortfolio,
+  removeDeposit,
   setCash,
   setCashes,
   setPortfolio,
   totalCash,
+  totalDepositsPrincipal,
+  upsertDeposit,
   type CashApplyResult,
   type CashBalance,
+  type FixedDeposit,
 } from '../state/portfolio-state.js';
 import {
   channelIdParams,
@@ -86,6 +96,47 @@ function formatCashSection(cashes: CashBalance[], cashTargetPct: number): string
   return lines.join('\n');
 }
 
+function daysRemaining(endDate: string, today: string): number {
+  const end = Date.parse(`${endDate}T00:00:00Z`);
+  const now = Date.parse(`${today}T00:00:00Z`);
+  if (!Number.isFinite(end) || !Number.isFinite(now)) {
+    throw new Error(`Invalid date for days remaining: end=${endDate} today=${today}`);
+  }
+  return Math.max(0, Math.round((end - now) / 86_400_000));
+}
+
+function formatDepositsSection(deposits: FixedDeposit[]): string {
+  const lines = ['── FIXED DEPOSITS ──'];
+  if (deposits.length === 0) {
+    lines.push(
+      '  None. Use add_deposit to record locked term deposits (principal in NAV, not free cash).',
+    );
+    return lines.join('\n');
+  }
+  const today = new Date().toISOString().slice(0, 10);
+  for (const d of deposits) {
+    const days = daysRemaining(d.end_date, today);
+    const matured = d.end_date < today;
+    const label = d.label ? ` "${d.label}"` : '';
+    lines.push(
+      `  ${d.id}${label}${formatChannelTag(d.channel)}`,
+      `    Principal: ${d.amount.toFixed(2)} ${d.currency} | Interest (full term): ${d.interest.toFixed(2)} ${d.currency}`,
+      `    Term: ${d.start_date} → ${d.end_date}` +
+        (matured ? ' · MATURED' : ` · ${days} day${days === 1 ? '' : 's'} remaining`),
+    );
+  }
+  const total = totalDepositsPrincipal(deposits);
+  if (total != null) {
+    const interestSum = deposits.reduce((s, d) => s + d.interest, 0);
+    lines.push(
+      `  Total principal (in NAV): ${total.amount.toFixed(2)} ${total.currency}`,
+      `  Total interest at maturity (not in NAV v1): ${interestSum.toFixed(2)} ${total.currency}`,
+      '  Note: deposits are locked — not deployable dry powder; free cash is under CASH.',
+    );
+  }
+  return lines.join('\n');
+}
+
 /** Resolve optional channel for add/update: omit param keeps prior; empty clears. */
 function resolveChannelParam(
   raw: string | undefined,
@@ -100,6 +151,7 @@ function formatPortfolio(
   portfolio: Record<string, Holding>,
   cashes: CashBalance[],
   cashTargetPct: number,
+  deposits: FixedDeposit[] = [],
 ): string {
   const keys = Object.keys(portfolio);
   if (keys.length === 0) {
@@ -107,6 +159,8 @@ function formatPortfolio(
       'Portfolio is empty. Use add_holding to add positions.',
       '',
       formatCashSection(cashes, cashTargetPct),
+      '',
+      formatDepositsSection(deposits),
     ].join('\n');
   }
 
@@ -199,6 +253,8 @@ function formatPortfolio(
         (cover >= 0 ? `surplus ${cover.toFixed(2)}` : `shortfall ${Math.abs(cover).toFixed(2)}`),
     );
   }
+  lines.push('');
+  lines.push(formatDepositsSection(deposits));
   return lines.join('\n');
 }
 
@@ -612,8 +668,9 @@ export function createPortfolioTools(): AgentTool[] {
     name: 'get_portfolio',
     label: 'Get Portfolio',
     description:
-      "Retrieve the user's saved portfolio (equities + options + cash by channel). " +
-      'Cash may list multiple broker channels. Pass telegram_user_id or slack_user_id from the message context.',
+      "Retrieve the user's saved portfolio (equities + options + cash by channel + fixed deposits). " +
+      'Cash may list multiple broker channels. Fixed deposits are locked principal (in NAV, not free cash). ' +
+      'Pass telegram_user_id or slack_user_id from the message context.',
     parameters: Type.Object({ ...channelIdParams }),
     async execute(_id, raw) {
       const p = raw as ChannelIds;
@@ -621,13 +678,16 @@ export function createPortfolioTools(): AgentTool[] {
         const state = resolveInvestorFromChannel(p);
         const portfolio = getPortfolio(state);
         const cashes = getCashes(state);
+        const deposits = getDeposits(state);
         const cash = totalCash(cashes);
         const cashTargetPct = getPlaybook(state).allocation.cash_target_pct;
-        return ok(formatPortfolio(portfolio, cashes, cashTargetPct), {
+        return ok(formatPortfolio(portfolio, cashes, cashTargetPct, deposits), {
           portfolio,
           cash,
           cashes,
+          deposits,
           count: Object.keys(portfolio).length,
+          deposit_count: deposits.length,
         });
       } catch (e) {
         return failFrom(e);
@@ -1053,6 +1113,443 @@ export function createPortfolioTools(): AgentTool[] {
     },
   };
 
+  const addDepositTool: AgentTool = {
+    name: 'add_deposit',
+    label: 'Add Fixed Deposit',
+    description:
+      'Record a fixed-term deposit under a broker channel. Principal counts in NAV but is NOT free cash. ' +
+      'Interest is the full-term total amount (not a rate). Multiple deposits per channel allowed. ' +
+      'When adjust_cash=true (default) and cash is recorded, deducts principal from matching channel cash. ' +
+      'Pass adjust_cash=false for historical import. Pass telegram_user_id or slack_user_id from the message context.',
+    parameters: Type.Object({
+      ...channelIdParams,
+      amount: Type.Number({ description: 'Principal amount (≥ 0).' }),
+      interest: Type.Number({ description: 'Full-term interest amount (≥ 0), not annual rate.' }),
+      currency: Type.String({ description: 'Currency code (e.g. USD, HKD). Required — no default.' }),
+      start_date: Type.String({ description: 'Term start date YYYY-MM-DD.' }),
+      end_date: Type.String({ description: 'Term end date YYYY-MM-DD (≥ start_date).' }),
+      channel: Type.Optional(
+        Type.String({
+          description:
+            'Broker / custody source (e.g. jude_futu, moomoo). Omit or empty when unassigned.',
+        }),
+      ),
+      id: Type.Optional(
+        Type.String({
+          description:
+            'Stable deposit id. Omit to auto-generate fd-{channel|default}-{YYYYMMDD}[-n].',
+        }),
+      ),
+      label: Type.Optional(Type.String({ description: 'Optional human label (product name).' })),
+      adjust_cash: Type.Optional(
+        Type.Boolean({
+          description:
+            'When cash is recorded: true (default) deducts principal from channel cash; false skips ledger.',
+        }),
+      ),
+    }),
+    async execute(_id, raw) {
+      const p = raw as ChannelIds & {
+        amount: number;
+        interest: number;
+        currency: string;
+        start_date: string;
+        end_date: string;
+        channel?: string;
+        id?: string;
+        label?: string;
+        adjust_cash?: boolean;
+      };
+      try {
+        const state = resolveInvestorFromChannel(p);
+        const today = new Date().toISOString().slice(0, 10);
+        const channelProvided = Object.prototype.hasOwnProperty.call(raw, 'channel');
+        const channel = channelProvided
+          ? normalizeOptionalChannel(p.channel, 'channel')
+          : undefined;
+        const existing = getDeposits(state);
+        let id: string;
+        if (p.id != null && String(p.id).trim().length > 0) {
+          id = String(p.id).trim();
+          if (findDepositById(existing, id) != null) {
+            return fail(
+              `Deposit id "${id}" already exists. Use update_deposit to change it, or pick a new id.`,
+            );
+          }
+        } else {
+          id = generateDepositId(channel, p.start_date, existing);
+        }
+
+        const deposit = assertFixedDeposit({
+          id,
+          amount: p.amount,
+          interest: p.interest,
+          currency: p.currency,
+          start_date: p.start_date,
+          end_date: p.end_date,
+          updated_at: today,
+          ...(channel != null ? { channel } : {}),
+          ...(p.label != null ? { label: p.label } : {}),
+        });
+
+        const adjustCash = p.adjust_cash !== false;
+        const cashesBefore = getCashes(state);
+        if (adjustCash && cashesBefore.length > 0) {
+          const slot = findCashForChannel(cashesBefore, deposit.channel);
+          if (slot != null && slot.currency !== deposit.currency) {
+            throw new Error(
+              `Deposit currency ${deposit.currency} does not match cash currency ${slot.currency} on channel. ` +
+                'No silent FX conversion.',
+            );
+          }
+        }
+        const cashResult = applyCashDelta(
+          cashesBefore,
+          -deposit.amount,
+          today,
+          adjustCash,
+          deposit.channel,
+        );
+        if (cashResult.adjusted) {
+          setCashes(state, cashResult.cashes);
+        }
+
+        upsertDeposit(state, deposit);
+        state.log.push({
+          ts: today,
+          action: 'deposit_added',
+          deposit_id: deposit.id,
+          amount: deposit.amount,
+          interest: deposit.interest,
+          currency: deposit.currency,
+          channel: deposit.channel,
+          start_date: deposit.start_date,
+          end_date: deposit.end_date,
+          cash_adjusted: cashResult.adjusted,
+          cash_delta: cashResult.adjusted ? cashResult.cashDelta : 0,
+        });
+        saveState(state);
+
+        const cashNote = formatCashApplyNote(cashResult);
+        return ok(
+          `Added fixed deposit ${deposit.id}: principal ${deposit.amount.toFixed(2)} ${deposit.currency}, ` +
+            `interest ${deposit.interest.toFixed(2)} ${deposit.currency}, ` +
+            `${deposit.start_date} → ${deposit.end_date}` +
+            formatChannelTag(deposit.channel) +
+            (deposit.label ? ` (${deposit.label})` : '') +
+            '.\nPrincipal is in NAV but not free cash.' +
+            (cashNote ? `\n${cashNote}` : ''),
+          {
+            deposit,
+            deposits: getDeposits(state),
+            cashes: cashResult.cashes,
+            cashAdjusted: cashResult.adjusted,
+            cashDelta: cashResult.adjusted ? cashResult.cashDelta : 0,
+          },
+        );
+      } catch (e) {
+        return failFrom(e);
+      }
+    },
+  };
+
+  const updateDepositTool: AgentTool = {
+    name: 'update_deposit',
+    label: 'Update Fixed Deposit',
+    description:
+      'Update an existing fixed deposit by id (amount, interest, currency, dates, channel, label). ' +
+      'When amount changes and adjust_cash=true (default), applies principal delta to matching channel cash. ' +
+      'Pass telegram_user_id or slack_user_id from the message context.',
+    parameters: Type.Object({
+      ...channelIdParams,
+      id: Type.String({ description: 'Deposit id to update.' }),
+      amount: Type.Optional(Type.Number({ description: 'New principal (≥ 0).' })),
+      interest: Type.Optional(Type.Number({ description: 'New full-term interest (≥ 0).' })),
+      currency: Type.Optional(Type.String({ description: 'New currency code.' })),
+      start_date: Type.Optional(Type.String({ description: 'New start date YYYY-MM-DD.' })),
+      end_date: Type.Optional(Type.String({ description: 'New end date YYYY-MM-DD.' })),
+      channel: Type.Optional(
+        Type.String({
+          description:
+            'Broker channel. Pass empty string to clear. Omit to leave unchanged.',
+        }),
+      ),
+      label: Type.Optional(
+        Type.String({
+          description: 'Label. Pass empty string to clear. Omit to leave unchanged.',
+        }),
+      ),
+      adjust_cash: Type.Optional(
+        Type.Boolean({
+          description:
+            'When cash is recorded: true (default) applies principal delta; false skips ledger.',
+        }),
+      ),
+    }),
+    async execute(_id, raw) {
+      const p = raw as ChannelIds & {
+        id: string;
+        amount?: number;
+        interest?: number;
+        currency?: string;
+        start_date?: string;
+        end_date?: string;
+        channel?: string;
+        label?: string;
+        adjust_cash?: boolean;
+      };
+      try {
+        if (!p.id?.trim()) return fail('id is required.');
+        const state = resolveInvestorFromChannel(p);
+        const existing = findDepositById(getDeposits(state), p.id);
+        if (existing == null) {
+          return fail(`Deposit id "${p.id.trim()}" not found.`);
+        }
+        const today = new Date().toISOString().slice(0, 10);
+        const channelProvided = Object.prototype.hasOwnProperty.call(raw, 'channel');
+        const labelProvided = Object.prototype.hasOwnProperty.call(raw, 'label');
+        const nextChannel = channelProvided
+          ? normalizeOptionalChannel(p.channel, 'channel')
+          : existing.channel;
+        let nextLabel = existing.label;
+        if (labelProvided) {
+          if (p.label == null || String(p.label).trim().length === 0) {
+            nextLabel = undefined;
+          } else {
+            nextLabel = String(p.label).trim();
+          }
+        }
+
+        const next = assertFixedDeposit({
+          id: existing.id,
+          amount: p.amount ?? existing.amount,
+          interest: p.interest ?? existing.interest,
+          currency: p.currency ?? existing.currency,
+          start_date: p.start_date ?? existing.start_date,
+          end_date: p.end_date ?? existing.end_date,
+          updated_at: today,
+          ...(nextChannel != null ? { channel: nextChannel } : {}),
+          ...(nextLabel != null ? { label: nextLabel } : {}),
+        });
+
+        const amountDelta = existing.amount - next.amount; // +cash when principal shrinks
+        const adjustCash = p.adjust_cash !== false;
+        // Ledger on the NEW channel for amount change.
+        const cashChannel = next.channel ?? existing.channel;
+        let cashResult: CashApplyResult = {
+          cashes: getCashes(state),
+          cash: totalCash(getCashes(state)),
+          cashDelta: 0,
+          adjusted: false,
+          note: 'No cash impact (principal unchanged).',
+        };
+        if (amountDelta !== 0) {
+          const cashesBefore = getCashes(state);
+          if (adjustCash && cashesBefore.length > 0) {
+            const slot = findCashForChannel(cashesBefore, cashChannel);
+            if (slot != null && slot.currency !== next.currency) {
+              throw new Error(
+                `Deposit currency ${next.currency} does not match cash currency ${slot.currency}. ` +
+                  'No silent FX conversion.',
+              );
+            }
+          }
+          cashResult = applyCashDelta(
+            cashesBefore,
+            amountDelta,
+            today,
+            adjustCash,
+            cashChannel,
+          );
+          if (cashResult.adjusted) {
+            setCashes(state, cashResult.cashes);
+          }
+        }
+
+        upsertDeposit(state, next);
+        state.log.push({
+          ts: today,
+          action: 'deposit_updated',
+          deposit_id: next.id,
+          amount: next.amount,
+          interest: next.interest,
+          currency: next.currency,
+          channel: next.channel,
+          cash_adjusted: cashResult.adjusted,
+          cash_delta: cashResult.adjusted ? cashResult.cashDelta : 0,
+        });
+        saveState(state);
+
+        const cashNote = formatCashApplyNote(cashResult);
+        return ok(
+          `Updated deposit ${next.id}: principal ${next.amount.toFixed(2)} ${next.currency}, ` +
+            `interest ${next.interest.toFixed(2)}, ${next.start_date} → ${next.end_date}` +
+            formatChannelTag(next.channel) +
+            '.' +
+            (cashNote ? `\n${cashNote}` : ''),
+          {
+            deposit: next,
+            deposits: getDeposits(state),
+            cashes: cashResult.cashes,
+            cashAdjusted: cashResult.adjusted,
+            cashDelta: cashResult.adjusted ? cashResult.cashDelta : 0,
+          },
+        );
+      } catch (e) {
+        return failFrom(e);
+      }
+    },
+  };
+
+  const removeDepositTool: AgentTool = {
+    name: 'remove_deposit',
+    label: 'Remove Fixed Deposit',
+    description:
+      'Remove a fixed deposit by id. When adjust_cash=true (default) and cash is recorded, ' +
+      'credits principal back to the deposit channel cash (interest is NOT auto-credited in v1). ' +
+      'Pass telegram_user_id or slack_user_id from the message context.',
+    parameters: Type.Object({
+      ...channelIdParams,
+      id: Type.String({ description: 'Deposit id to remove.' }),
+      adjust_cash: Type.Optional(
+        Type.Boolean({
+          description:
+            'When cash is recorded: true (default) credits principal to channel cash; false skips ledger.',
+        }),
+      ),
+    }),
+    async execute(_id, raw) {
+      const p = raw as ChannelIds & { id: string; adjust_cash?: boolean };
+      try {
+        if (!p.id?.trim()) return fail('id is required.');
+        const state = resolveInvestorFromChannel(p);
+        const existing = findDepositById(getDeposits(state), p.id);
+        if (existing == null) {
+          return fail(`Deposit id "${p.id.trim()}" not found.`);
+        }
+        const today = new Date().toISOString().slice(0, 10);
+        const adjustCash = p.adjust_cash !== false;
+        const cashResult = applyCashDelta(
+          getCashes(state),
+          existing.amount,
+          today,
+          adjustCash,
+          existing.channel,
+        );
+        if (cashResult.adjusted) {
+          setCashes(state, cashResult.cashes);
+        }
+        removeDeposit(state, existing.id);
+        state.log.push({
+          ts: today,
+          action: 'deposit_removed',
+          deposit_id: existing.id,
+          amount: existing.amount,
+          interest: existing.interest,
+          currency: existing.currency,
+          channel: existing.channel,
+          cash_adjusted: cashResult.adjusted,
+          cash_delta: cashResult.adjusted ? cashResult.cashDelta : 0,
+        });
+        saveState(state);
+        const cashNote = formatCashApplyNote(cashResult);
+        return ok(
+          `Removed deposit ${existing.id} (principal ${existing.amount.toFixed(2)} ${existing.currency}).` +
+            ' Interest was not auto-credited — record separately if received.' +
+            (cashNote ? `\n${cashNote}` : ''),
+          {
+            removed: existing,
+            deposits: getDeposits(state),
+            cashes: cashResult.cashes,
+            cashAdjusted: cashResult.adjusted,
+            cashDelta: cashResult.adjusted ? cashResult.cashDelta : 0,
+          },
+        );
+      } catch (e) {
+        return failFrom(e);
+      }
+    },
+  };
+
+  const clearDepositsTool: AgentTool = {
+    name: 'clear_deposits',
+    label: 'Clear Fixed Deposits',
+    description:
+      'Remove fixed deposits. With no channel: clears ALL deposits. ' +
+      'With channel: clears only that channel\'s deposits. Requires confirm=true. ' +
+      'Does not adjust cash (use remove_deposit for ledgered single removes). ' +
+      'Pass telegram_user_id or slack_user_id from the message context.',
+    parameters: Type.Object({
+      ...channelIdParams,
+      confirm: Type.Boolean({
+        description: 'Must be true to proceed. Confirm with the user first.',
+      }),
+      channel: Type.Optional(
+        Type.String({
+          description:
+            "If set, clear only this channel's deposits. Omit to clear all deposits.",
+        }),
+      ),
+    }),
+    async execute(_id, raw) {
+      const p = raw as ChannelIds & { confirm: boolean; channel?: string };
+      try {
+        if (!p.confirm) {
+          return fail('Set confirm=true to clear fixed deposits. Confirm with the user first.');
+        }
+        const state = resolveInvestorFromChannel(p);
+        const before = getDeposits(state);
+        if (before.length === 0) {
+          return fail('No fixed deposits recorded. Nothing to clear.');
+        }
+        const channelProvided = Object.prototype.hasOwnProperty.call(raw, 'channel');
+        if (channelProvided) {
+          const ch = normalizeOptionalChannel(p.channel, 'channel');
+          const key = cashSlotKey(ch);
+          const targets = before.filter((d) => cashSlotKey(d.channel) === key);
+          if (targets.length === 0) {
+            const labels = [
+              ...new Set(before.map((d) => cashSlotKey(d.channel) || '(unassigned)')),
+            ].join(', ');
+            return fail(
+              `No deposits for channel "${key || '(unassigned)'}". Recorded channels: ${labels}.`,
+            );
+          }
+          clearDeposits(state, ch ?? '');
+          state.log.push({
+            ts: new Date().toISOString().slice(0, 10),
+            action: 'deposits_cleared',
+            channel: ch,
+            count: targets.length,
+          });
+          saveState(state);
+          const remaining = getDeposits(state);
+          return ok(
+            `Cleared ${targets.length} deposit(s) for channel "${key || '(unassigned)'}". ` +
+              (remaining.length > 0
+                ? `${remaining.length} other deposit(s) remain.`
+                : 'No deposits left.'),
+            { cleared: targets, deposits: remaining },
+          );
+        }
+
+        clearDeposits(state);
+        state.log.push({
+          ts: new Date().toISOString().slice(0, 10),
+          action: 'deposits_cleared',
+          count: before.length,
+        });
+        saveState(state);
+        return ok(
+          `Cleared all fixed deposits (${before.length}).`,
+          { cleared: before },
+        );
+      } catch (e) {
+        return failFrom(e);
+      }
+    },
+  };
+
   return [
     addHolding,
     removeHolding,
@@ -1061,5 +1558,9 @@ export function createPortfolioTools(): AgentTool[] {
     clearPortfolio,
     setCashTool,
     clearCashTool,
+    addDepositTool,
+    updateDepositTool,
+    removeDepositTool,
+    clearDepositsTool,
   ];
 }

@@ -372,17 +372,71 @@ Multi-currency conversion is **not** automatic: record cash in the currency the 
 
 `clear_portfolio` does **not** clear cash. Use `clear_cash` (confirm) to remove the cash record.
 
+### Fixed Deposits (locked principal)
+
+Top-level `deposits` array on the same user file. **Missing `deposits` means none.** Fixed deposits are **not free cash**: principal counts in **NAV** but is **not deployable** dry powder until maturity / `remove_deposit`.
+
+```yaml
+deposits:
+  - id: fd-jude_futu-20260701
+    channel: jude_futu             # optional; omit = unassigned → dashboard "default"
+    amount: 50000                  # principal ≥ 0
+    interest: 875                  # full-term interest amount ≥ 0 (not annual rate)
+    currency: USD                  # required; no silent default
+    start_date: "2026-07-01"       # YYYY-MM-DD
+    end_date: "2027-01-01"         # ≥ start_date
+    label: "6M bank TD"            # optional
+    updated_at: "2026-07-29"
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | string | Yes | Unique across all deposits for the user |
+| `amount` | number | Yes | Principal ≥ 0 (in NAV) |
+| `interest` | number | Yes | Full-term interest $ ≥ 0 (display only in v1 — not accrued into NAV) |
+| `currency` | string | Yes | 3–4 letter code. No silent default |
+| `start_date` / `end_date` | `YYYY-MM-DD` | Yes | Fail if end &lt; start |
+| `updated_at` | `YYYY-MM-DD` | Yes | Last mutation |
+| `channel` | string | No | Broker / custody source. Omit when unassigned |
+| `label` | string | No | Product name / note |
+
+**Rules:** multiple deposits per channel allowed; unique `id`. NAV sums principals only when same currency (no silent FX). Dashboard shows FD card + table; channel filter applies.
+
+**NAV (v1):**
+
+| Concept | Formula / rule |
+|---------|----------------|
+| Total NAV | Positions MTM + free cash (if recorded) + **sum(deposit principal)** |
+| Free cash / dry powder | `cash` only — **excludes** deposits |
+| Cash weight % | free cash / Total NAV (deposits in denominator, not numerator) |
+| Short-put cover | free cash only |
+| Interest in NAV | **Not** included in v1 (metadata / maturity display only) |
+
+**Cash ledger** (`adjust_cash`, default true when cash is recorded):
+
+| Action | Cash impact |
+|--------|-------------|
+| `add_deposit` | **−** principal on matching channel |
+| `update_deposit` amount change | **±** principal delta |
+| `remove_deposit` | **+** principal (interest **not** auto-credited) |
+| `adjust_cash=false` | Skip ledger (import / correction) |
+| `clear_deposits` | No cash ledger (bulk clear only) |
+
 ### Portfolio Tools
 
 | Tool | Auth | Description |
 |------|------|-------------|
 | `add_holding` | channel id | Add or update equity **or** option; optional `channel` (broker); **deducts/credits cash** when recorded (`adjust_cash=false` to skip) |
 | `remove_holding` | channel id | Remove position; credits cash at cost basis when recorded |
-| `get_portfolio` | channel id | List positions + cash section (includes channel when set) |
+| `get_portfolio` | channel id | List positions + cash + **fixed deposits** section |
 | `update_holding` | channel id | Update fields including option `mark` and optional `channel`; cost changes adjust cash |
 | `clear_portfolio` | channel id | Remove all positions (requires confirm); cash kept |
 | `set_cash` | channel id | Upsert cash amount + currency (required); optional `channel` (broker). **Does not overwrite other channels** |
 | `clear_cash` | channel id | Remove all cash, or one channel when `channel` is set (requires confirm) |
+| `add_deposit` | channel id | Record fixed deposit (principal, interest, currency, start/end, optional channel/label/id); deducts cash when recorded |
+| `update_deposit` | channel id | Patch deposit by `id`; amount changes adjust cash |
+| `remove_deposit` | channel id | Remove by `id`; credits principal to cash when recorded |
+| `clear_deposits` | channel id | Remove all deposits, or one channel when `channel` is set (requires confirm); no cash ledger |
 
 **Isolation**: Every tool resolves the user via channel id from the message context. The LLM never directly specifies which user file to access — the framework enforces it.
 

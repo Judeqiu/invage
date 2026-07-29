@@ -9,7 +9,12 @@ import {
   fetchPrices,
   resolvePortfolioMarket,
 } from '../market/index.js';
-import { getCashes, getPortfolio, type InvestorState } from '../state/portfolio-state.js';
+import {
+  getCashes,
+  getDeposits,
+  getPortfolio,
+  type InvestorState,
+} from '../state/portfolio-state.js';
 import { loadSnapshots, type Snapshot } from '../state/snapshot.js';
 import {
   buildDashboardModel,
@@ -73,17 +78,19 @@ export async function loadDashboardForSlug(
 ): Promise<DashboardPayload> {
   const state = loadState(slug) as InvestorState;
   const portfolio = getPortfolio(state);
+  const deposits = getDeposits(state);
   const displayName = state.profile.display_name;
   const generatedAt = new Date().toISOString();
   const tickers = Object.keys(portfolio);
 
-  if (tickers.length === 0) {
+  if (tickers.length === 0 && deposits.length === 0) {
     return {
       slug,
       displayName,
       generatedAt,
       empty: true,
-      message: 'No holdings yet. Add positions in chat, then refresh this dashboard.',
+      message:
+        'No holdings or fixed deposits yet. Add positions or deposits in chat, then refresh this dashboard.',
       model: null,
       benchmark: null,
     };
@@ -93,7 +100,11 @@ export async function loadDashboardForSlug(
   let prices: Record<string, number>;
   let optionMarks: Awaited<ReturnType<typeof resolvePortfolioMarket>>['optionMarks'];
 
-  if (priceOverride) {
+  if (tickers.length === 0) {
+    valuedPortfolio = {};
+    prices = {};
+    optionMarks = {};
+  } else if (priceOverride) {
     // Tests / overrides: equity prices forced; still resolve option marks unless empty options
     const resolved = await resolvePortfolioMarket(portfolio);
     valuedPortfolio = resolved.portfolio;
@@ -116,6 +127,18 @@ export async function loadDashboardForSlug(
           amount: c.amount,
           currency: c.currency,
           channel: c.channel,
+        }))
+      : null,
+    deposits.length > 0
+      ? deposits.map((d) => ({
+          id: d.id,
+          amount: d.amount,
+          interest: d.interest,
+          currency: d.currency,
+          start_date: d.start_date,
+          end_date: d.end_date,
+          channel: d.channel,
+          label: d.label,
         }))
       : null,
   );

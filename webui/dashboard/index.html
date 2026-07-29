@@ -109,6 +109,43 @@
     .badge-benchmark { background: #e0e7ff; color: #4338ca; }
     .badge-channel { background: #f3e8ff; color: #7c3aed; }
     .badge-channel-default { background: #f3f4f6; color: #4b5563; }
+    .badge-matured {
+      display: inline-block;
+      padding: 0.15rem 0.45rem;
+      border-radius: 999px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      background: #fef3c7;
+      color: #b45309;
+    }
+    .deposits-section { margin: 1.5rem 0 2rem; }
+    .deposits-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.875rem;
+      background: #fff;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    .deposits-table th,
+    .deposits-table td {
+      padding: 0.75rem 1rem;
+      text-align: left;
+      border-bottom: 1px solid #f3f4f6;
+    }
+    .deposits-table th {
+      background: #faf5ff;
+      color: #5b21b6;
+      font-weight: 600;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+    .deposits-table td.num { font-variant-numeric: tabular-nums; text-align: right; }
+    .deposits-table th.num { text-align: right; }
+    .deposits-table .muted { font-size: 0.7rem; color: #9ca3af; margin-top: 0.15rem; }
+    .deposits-table tr:last-child td { border-bottom: none; }
     .card-values { display: flex; align-items: baseline; gap: 1rem; margin-bottom: 0.5rem; }
     .fund-value { font-size: 1.75rem; font-weight: 700; }
     .bench-value { font-size: 1rem; color: #6b7280; }
@@ -296,6 +333,23 @@
         <div class="allocation-grid" id="allocationGrid"></div>
       </div>
 
+      <div class="deposits-section hidden" id="depositsSection">
+        <div class="section-title"><span>Fixed Deposits</span></div>
+        <table class="deposits-table">
+          <thead>
+            <tr>
+              <th>Deposit</th>
+              <th>Channel</th>
+              <th class="num">Principal</th>
+              <th class="num">Interest</th>
+              <th>Term</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="depositsTableBody"></tbody>
+        </table>
+      </div>
+
       <div class="bar-section">
         <div class="section-title"><span>Portfolio Performance by Position</span></div>
         <div class="bar-grid" id="barGrid"></div>
@@ -317,6 +371,8 @@
           <strong>Fund Index</strong> = (Current Portfolio Value / Base Portfolio Value) × 100<br>
           <strong>Base Portfolio Value</strong> = Σ(Units × Actual Purchase Price) = Total Cost Basis<br>
           <strong>Current Portfolio Value</strong> = Σ(Units × Current Stock Price)<br>
+          <strong>NAV</strong> = Positions MTM + free cash + fixed-deposit principal (interest not in NAV v1)<br>
+          <strong>Fixed deposits</strong> count in NAV but are <strong>not free cash</strong> (not deployable until maturity/remove)<br>
           <strong>Benchmark Index</strong> = (Current ETF Price / ETF Price on Base Date) × 100<br><br>
           Benchmark prices are <strong>Adjusted Close</strong> (accounts for dividends and splits).<br>
           Fund and Benchmark are both rebased to 100 at the first snapshot date for direct comparison.

@@ -24,8 +24,10 @@ import { thresholdsForPlaybook } from '../playbook/index.js';
 import {
   cashStrategyMetrics,
   getCashes,
+  getDeposits,
   getPlaybook,
   getPortfolio,
+  totalDepositsPrincipal,
   type CashBalance,
 } from '../state/portfolio-state.js';
 import {
@@ -152,8 +154,10 @@ export function createPortfolioAnalyzerTool(): AgentTool {
 
         let channelCashes: CashBalance[] = [];
         let cashTargetPct = 5;
+        let depositsPrincipal = 0;
+        let depositCount = 0;
 
-        if (params.telegram_user_id != null || params.slack_user_id) {
+        if (params.telegram_user_id != null || params.slack_user_id || params.user_slug) {
           const state = resolveInvestorFromChannel(params);
           holdings = getPortfolio(state);
           if (Object.keys(holdings).length === 0) {
@@ -165,6 +169,10 @@ export function createPortfolioAnalyzerTool(): AgentTool {
           valueTh = valueThresholdsFromPlaybook(analysisTh);
           channelCashes = getCashes(state);
           cashTargetPct = pb.allocation.cash_target_pct;
+          const deposits = getDeposits(state);
+          depositCount = deposits.length;
+          const depTotal = totalDepositsPrincipal(deposits);
+          depositsPrincipal = depTotal?.amount ?? 0;
           playbookNote =
             `Playbook: ${pb.strategy} / ${pb.philosophy} / risk=${pb.risk.profile} ` +
             `(buy≥${analysisTh.buyMinUpsidePct}% strong≥${analysisTh.strongBuyUpsidePct}% | ` +
@@ -306,12 +314,23 @@ export function createPortfolioAnalyzerTool(): AgentTool {
           }
 
           const positionsValue = result.fullAnalysis.reduce((sum, s) => sum + s.value, 0);
-          const cashMetrics = cashStrategyMetrics(channelCashes, positionsValue, cashTargetPct);
+          const cashMetrics = cashStrategyMetrics(
+            channelCashes,
+            positionsValue,
+            cashTargetPct,
+            depositsPrincipal,
+          );
           output += '\n── CASH & NAV (strategy) ──\n';
           if (cashMetrics.cash == null) {
             output +=
-              '  Cash: not recorded. Use set_cash so dry powder, cash weight, and cash_target_pct drift are known.\n';
-            output += `  Positions MTM: $${positionsValue.toFixed(2)} (NAV without cash)\n`;
+              '  Free cash: not recorded. Use set_cash so dry powder, cash weight, and cash_target_pct drift are known.\n';
+            output += `  Positions MTM: $${positionsValue.toFixed(2)}\n`;
+            if (depositsPrincipal > 0) {
+              output += `  Fixed deposits principal: $${depositsPrincipal.toFixed(2)} (${depositCount} term${depositCount === 1 ? '' : 's'}; not free cash)\n`;
+              output += `  Total NAV (positions + deposits): $${cashMetrics.totalNav.toFixed(2)}\n`;
+            } else {
+              output += `  NAV (positions only): $${cashMetrics.totalNav.toFixed(2)}\n`;
+            }
             output += `  Playbook cash target: ${cashTargetPct}%\n`;
           } else {
             const c = cashMetrics.cash;
@@ -320,30 +339,33 @@ export function createPortfolioAnalyzerTool(): AgentTool {
               Math.abs(drift) < 0.05
                 ? 'on target'
                 : drift > 0
-                  ? `${drift.toFixed(1)} pp above target (more cash / less invested)`
-                  : `${Math.abs(drift).toFixed(1)} pp below target (more invested / less cash)`;
+                  ? `${drift.toFixed(1)} pp above target (more free cash / less invested)`
+                  : `${Math.abs(drift).toFixed(1)} pp below target (more invested / less free cash)`;
             if (cashMetrics.cashes.length > 1) {
-              output += '  Cash by channel:\n';
+              output += '  Free cash by channel:\n';
               for (const row of cashMetrics.cashes) {
                 const ch = row.channel ?? '(unassigned)';
                 output += `    ${ch}: ${row.amount.toFixed(2)} ${row.currency} (updated ${row.updated_at})\n`;
               }
-              output += `  Total cash: ${c.amount.toFixed(2)} ${c.currency}\n`;
+              output += `  Total free cash: ${c.amount.toFixed(2)} ${c.currency}\n`;
             } else {
-              output += `  Cash: ${c.amount.toFixed(2)} ${c.currency} (updated ${c.updated_at})`;
+              output += `  Free cash: ${c.amount.toFixed(2)} ${c.currency} (updated ${c.updated_at})`;
               if (c.channel) output += ` [${c.channel}]`;
               output += '\n';
             }
             output += `  Positions MTM: $${positionsValue.toFixed(2)}\n`;
-            output += `  Total NAV (positions + cash): $${cashMetrics.totalNav.toFixed(2)}\n`;
-            output += `  Cash weight: ${cashMetrics.cashWeightPct!.toFixed(1)}% | target ${cashTargetPct}% → ${driftLabel}\n`;
+            if (depositsPrincipal > 0) {
+              output += `  Fixed deposits principal: $${depositsPrincipal.toFixed(2)} (${depositCount} term${depositCount === 1 ? '' : 's'}; locked, not dry powder)\n`;
+            }
+            output += `  Total NAV (positions + free cash + deposits): $${cashMetrics.totalNav.toFixed(2)}\n`;
+            output += `  Free cash weight: ${cashMetrics.cashWeightPct!.toFixed(1)}% | target ${cashTargetPct}% → ${driftLabel}\n`;
             output +=
-              '  Sizing: suggest new buys as % of Total NAV; never invent cash — use recorded balance only.\n';
+              '  Sizing: suggest new buys as % of Total NAV; fund from free cash only — never invent cash or spend deposits.\n';
             if (contingentCashFromOptions(result.fullAnalysis) > 0) {
               const oblig = contingentCashFromOptions(result.fullAnalysis);
               const cover = c.amount - oblig;
               output +=
-                `  Short-put assignment cover: cash ${c.amount.toFixed(2)} vs obligation $${oblig.toFixed(2)} → ` +
+                `  Short-put assignment cover: free cash ${c.amount.toFixed(2)} vs obligation $${oblig.toFixed(2)} → ` +
                 (cover >= 0 ? `surplus ${cover.toFixed(2)}` : `shortfall ${Math.abs(cover).toFixed(2)}`) +
                 '\n';
             }
@@ -357,6 +379,8 @@ export function createPortfolioAnalyzerTool(): AgentTool {
             cash: cashMetrics.cash,
             cashes: cashMetrics.cashes,
             positionsValue,
+            depositsPrincipal: cashMetrics.depositsPrincipal,
+            depositCount,
             totalNav: cashMetrics.totalNav,
             cashWeightPct: cashMetrics.cashWeightPct,
             cashVsTargetPp: cashMetrics.cashVsTargetPp,

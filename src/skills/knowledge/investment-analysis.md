@@ -39,7 +39,7 @@ Every linked user has an **Investment Playbook** (strategy, philosophy, risk, al
 ### Playbook → recommendation rules
 
 1. **Always filter trade language through buy_criteria / sell_criteria** and risk profile before saying BUY/SELL/accumulate.
-2. **Size suggestions** as % of **Total NAV** (positions MTM + recorded cash) when cash is known; if cash is not recorded, size vs positions only and say cash is unknown. Never invent cash. Never propose a single name above `position_limit_pct` or a sector above `sector_exposure_pct` without explicitly flagging the breach.
+2. **Size suggestions** as % of **Total NAV** (positions MTM + free cash + **fixed-deposit principal** when recorded). **Deployable dry powder = free cash only** — never treat fixed deposits as spendable. If cash is not recorded, size vs positions (+ deposits if any) and say free cash is unknown. Never invent cash. Never propose a single name above `position_limit_pct` or a sector above `sector_exposure_pct` without explicitly flagging the breach.
 3. **Philosophy tilt:**
    - *value* — cheapness yardstick + trap gate required; Street upside alone is not BUY
    - *growth* — PEG/growth/margins can justify higher multiples; trap gate still required
@@ -86,9 +86,10 @@ Every linked user has an **Investment Playbook** (strategy, philosophy, risk, al
 | Need | Tool |
 |------|------|
 | Holdings, cost, units, **options** (call/put, premium, obligation) | `get_portfolio` / `add_holding` with `instrument=option` |
-| **Broker channel** (multi-broker tag on equity/option/cash) | Optional `channel` on `add_holding` / `update_holding` / `set_cash` (e.g. `moomoo`, `ibkr`, `webull`); omit or empty when unassigned |
-| **Cash / dry powder** (amount + currency) | `set_cash` / `get_portfolio` (cash section) / `clear_cash` |
-| **Buy / sell bookkeeping** | `add_holding` / `update_holding` / `remove_holding` auto-adjust cash when recorded (cost/premium delta); fail if insufficient cash; `adjust_cash=false` only for historical import |
+| **Broker channel** (multi-broker tag on equity/option/cash/**deposit**) | Optional `channel` on `add_holding` / `update_holding` / `set_cash` / `add_deposit` (e.g. `moomoo`, `ibkr`, `webull`); omit or empty when unassigned |
+| **Cash / dry powder** (amount + currency) | `set_cash` / `get_portfolio` (cash section) / `clear_cash` — **free cash only** |
+| **Fixed deposits** (locked term principal) | `add_deposit` / `update_deposit` / `remove_deposit` / `clear_deposits` / `get_portfolio` (FIXED DEPOSITS section). Principal is **in NAV**, **not** free cash. Interest = full-term $ (not rate). Multiple per channel. Dashboard shows FD card + table. |
+| **Buy / sell bookkeeping** | `add_holding` / `update_holding` / `remove_holding` auto-adjust cash when recorded (cost/premium delta); fail if insufficient cash; `adjust_cash=false` only for historical import. Same for `add_deposit` / `remove_deposit` principal. |
 | Strategy / risk / buy-sell methodology | `get_playbook` / `update_playbook` |
 | Live price, P/L, PE/PEG/ROE/P/B, analyst targets | `portfolio_analyzer` (Yahoo Finance; uses playbook thresholds for channel users) |
 | EV/EBIT, FCF, enterprise value, detailed stats | Load **`firecrawl`** → Yahoo `/key-statistics`, Finviz quote |
@@ -184,19 +185,20 @@ Always provide for each position discussed:
 6. When undervalued or accumulate: **why cheap / what closes gap / kill criteria** (Part C thesis gate)
 7. When depth requested: Part B stock workflow on that ticker
 
-### Cash & strategy (when discussing portfolio-level action)
+### Cash, fixed deposits & strategy (when discussing portfolio-level action)
 
 When cash is recorded (`get_portfolio` / analyzer CASH & NAV):
 
 | Use cash for | How |
 |--------------|-----|
-| Deployable capital | Recorded amount is the max dry powder to size new buys (before margin; this product does not invent margin) |
-| Cash weight vs target | Compare cash weight % to playbook `cash_target_pct`; flag if drift exceeds rebalance threshold when mode is threshold |
-| Position sizing | New buy $ ≈ NAV × suggested weight %; cap at `position_limit_pct` of NAV |
-| Short put / CSP | Cash vs contingent cash obligation — flag shortfall if cash < obligation |
+| Deployable capital | **Free cash** only is dry powder to size new buys (before margin; this product does not invent margin). Fixed deposits are **locked**. |
+| Cash weight vs target | Compare **free cash** weight % to playbook `cash_target_pct` (NAV includes deposits in the denominator when present) |
+| Position sizing | New buy $ ≈ NAV × suggested weight %; cap at `position_limit_pct` of NAV; fund from free cash |
+| Short put / CSP | Free cash vs contingent cash obligation — flag shortfall if cash < obligation (deposits do not cover) |
 | Income strategy | Prefer not deploying below cash target when strategy is income / capital_preservation unless user overrides |
+| Fixed deposits | Record with `add_deposit` (principal, interest total, start/end, channel). Show term + maturity on portfolio/dashboard. Do not treat as dry powder. Interest not auto-credited on remove (v1). |
 
-When cash is **not** recorded: say cash unknown; size only vs positions MTM; do **not** assume full investment or 0 cash.
+When cash is **not** recorded: say free cash unknown; size only vs positions MTM (+ deposit principal if any); do **not** assume full investment or 0 cash.
 
 ### Sector benchmarks (this product’s funds)
 

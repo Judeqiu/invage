@@ -51,6 +51,21 @@ export interface LivePosition {
   contractSymbol?: string;
 }
 
+/** Fixed deposit row on the live dashboard (principal in NAV; interest display-only). */
+export interface DepositRow {
+  id: string;
+  label?: string;
+  /** Resolved channel; unassigned → {@link DEFAULT_CHANNEL}. */
+  channel: string;
+  amount: number;
+  interest: number;
+  currency: string;
+  start_date: string;
+  end_date: string;
+  daysRemaining: number;
+  matured: boolean;
+}
+
 /** Aggregates for one broker channel (or for the full merged set). */
 export interface ChannelTotals {
   channel: string;
@@ -64,7 +79,11 @@ export interface ChannelTotals {
   /** Cash included only when it belongs to this channel (or in merged totals). */
   cashAmount: number | null;
   cashCurrency: string | null;
-  /** positionsValue + cash when cash is in this slice; else positions only. */
+  /** Sum of deposit principals in this slice; 0 when none. */
+  depositsAmount: number;
+  depositsCurrency: string | null;
+  depositCount: number;
+  /** positionsValue + cash? + depositsAmount. */
   totalValue: number;
   cashWeightPct: number | null;
   equityValue: number;
@@ -128,8 +147,13 @@ export interface LiveDashboardSlice {
   cashChannel: string | null;
   positionsValue: number;
   cashWeightPct: number | null;
+  /** Fixed deposits in this slice (principal in NAV). */
+  deposits: DepositRow[];
+  depositsAmount: number;
+  depositsCurrency: string | null;
+  depositCount: number;
   /**
-   * Distinct channels present in this portfolio (positions + cash), sorted.
+   * Distinct channels present in this portfolio (positions + cash + deposits), sorted.
    * Unassigned items appear as {@link DEFAULT_CHANNEL}.
    */
   channels: string[];
@@ -174,10 +198,11 @@ function economicsToLive(
   };
 }
 
-/** Unique sorted channel ids from positions + cash channel(s). */
+/** Unique sorted channel ids from positions + cash + deposit channel(s). */
 export function collectDashboardChannels(
   positions: Array<{ channel?: string | null }>,
   cashChannels: Array<string | null | undefined> | string | null,
+  depositChannels: Array<string | null | undefined> = [],
 ): string[] {
   const set = new Set<string>();
   for (const p of positions) {
@@ -191,11 +216,78 @@ export function collectDashboardChannels(
   for (const ch of list) {
     if (ch != null) set.add(resolveDashboardChannel(ch));
   }
+  for (const ch of depositChannels) {
+    if (ch != null) set.add(resolveDashboardChannel(ch));
+  }
   return [...set].sort((a, b) => {
     if (a === DEFAULT_CHANNEL) return -1;
     if (b === DEFAULT_CHANNEL) return 1;
     return a.localeCompare(b);
   });
+}
+
+function depositDaysRemaining(endDate: string, today: string): number {
+  const end = Date.parse(`${endDate}T00:00:00Z`);
+  const now = Date.parse(`${today}T00:00:00Z`);
+  if (!Number.isFinite(end) || !Number.isFinite(now)) {
+    throw new Error(`Invalid deposit date: end=${endDate} today=${today}`);
+  }
+  return Math.max(0, Math.round((end - now) / 86_400_000));
+}
+
+/** Map storage deposits → dashboard DepositRow[] (channel resolved). */
+export function toDepositRows(
+  deposits:
+    | Array<{
+        id: string;
+        amount: number;
+        interest: number;
+        currency: string;
+        start_date: string;
+        end_date: string;
+        channel?: string;
+        label?: string;
+      }>
+    | null
+    | undefined,
+  today: string = new Date().toISOString().slice(0, 10),
+): DepositRow[] {
+  if (deposits == null || deposits.length === 0) return [];
+  return deposits.map((d) => {
+    const channel = resolveDashboardChannel(d.channel);
+    const matured = d.end_date < today;
+    return {
+      id: d.id,
+      ...(d.label != null && d.label.length > 0 ? { label: d.label } : {}),
+      channel,
+      amount: d.amount,
+      interest: d.interest,
+      currency: d.currency,
+      start_date: d.start_date,
+      end_date: d.end_date,
+      daysRemaining: depositDaysRemaining(d.end_date, today),
+      matured,
+    };
+  });
+}
+
+/** Sum deposit principals (same currency only). */
+function depositsPrincipalSum(
+  deposits: DepositRow[],
+): { amount: number; currency: string } | null {
+  if (deposits.length === 0) return null;
+  const currency = deposits[0].currency;
+  for (const d of deposits) {
+    if (d.currency !== currency) {
+      throw new Error(
+        `Cannot sum dashboard deposits across currencies (${deposits.map((x) => x.currency).join(', ')}).`,
+      );
+    }
+  }
+  return {
+    amount: deposits.reduce((s, d) => s + d.amount, 0),
+    currency,
+  };
 }
 
 /** Normalize cash arg (single | multi | null) → list of balances. */
@@ -237,14 +329,16 @@ function cashForChannelSlice(
 }
 
 /**
- * Aggregate positions (already channel-resolved) plus optional cash into totals.
+ * Aggregate positions (already channel-resolved) plus optional cash + deposits into totals.
  * Cash is included only when `includeCash` is true.
+ * Deposit principal always counts in totalValue when present.
  */
 export function buildChannelTotals(
   channel: string,
   positions: LivePosition[],
   cash: { amount: number; currency: string } | null,
   includeCash: boolean,
+  deposits: DepositRow[] = [],
 ): ChannelTotals {
   let positionsValue = 0;
   let totalCost = 0;
@@ -276,7 +370,12 @@ export function buildChannelTotals(
   const totalPL = positionsValue - totalCost;
   const cashAmount = includeCash && cash != null ? cash.amount : null;
   const cashCurrency = includeCash && cash != null ? cash.currency : null;
-  const totalValue = cashAmount != null ? positionsValue + cashAmount : positionsValue;
+  const depSum = depositsPrincipalSum(deposits);
+  const depositsAmount = depSum?.amount ?? 0;
+  const depositsCurrency = depSum?.currency ?? null;
+  let totalValue = positionsValue;
+  if (cashAmount != null) totalValue += cashAmount;
+  totalValue += depositsAmount;
   const cashWeightPct =
     cashAmount != null && totalValue !== 0
       ? (cashAmount / totalValue) * 100
@@ -295,6 +394,9 @@ export function buildChannelTotals(
     totalPLPct: totalCost !== 0 ? (totalPL / Math.abs(totalCost)) * 100 : 0,
     cashAmount,
     cashCurrency,
+    depositsAmount,
+    depositsCurrency,
+    depositCount: deposits.length,
     totalValue,
     cashWeightPct,
     equityValue,
@@ -309,9 +411,11 @@ export function buildChannelTotals(
 function withRecalculatedWeights(
   positions: LivePosition[],
   cashAmount: number | null,
+  depositsAmount: number = 0,
 ): LivePosition[] {
   const absPositions = positions.reduce((s, p) => s + Math.abs(p.value), 0);
-  const absSum = absPositions + (cashAmount != null ? cashAmount : 0);
+  const absSum =
+    absPositions + (cashAmount != null ? cashAmount : 0) + depositsAmount;
   return positions
     .map((p) => ({
       ...p,
@@ -335,14 +439,19 @@ export function filterLiveByChannel(
   }
 
   const filtered = live.positions.filter((p) => p.channel === channel);
+  const deposits = (live.deposits ?? []).filter((d) => d.channel === channel);
   const chRow = live.byChannel.find((c) => c.channel === channel);
   const cash =
     chRow != null && chRow.cashAmount != null && chRow.cashCurrency != null
       ? { amount: chRow.cashAmount, currency: chRow.cashCurrency }
       : null;
 
-  const totals = buildChannelTotals(channel, filtered, cash, cash != null);
-  const positions = withRecalculatedWeights(filtered, totals.cashAmount);
+  const totals = buildChannelTotals(channel, filtered, cash, cash != null, deposits);
+  const positions = withRecalculatedWeights(
+    filtered,
+    totals.cashAmount,
+    totals.depositsAmount,
+  );
 
   return {
     positions,
@@ -364,6 +473,10 @@ export function filterLiveByChannel(
     cashChannel: cash != null ? channel : null,
     positionsValue: totals.positionsValue,
     cashWeightPct: totals.cashWeightPct,
+    deposits,
+    depositsAmount: totals.depositsAmount,
+    depositsCurrency: totals.depositsCurrency,
+    depositCount: totals.depositCount,
     channels: live.channels,
     byChannel: live.byChannel,
   };
@@ -373,10 +486,11 @@ export function filterLiveByChannel(
  * Build live positions from portfolio + equity prices.
  * Option positions use option.mark on the holding (apply Yahoo marks before calling).
  * Pass optionMarks to annotate source on LivePosition.
- * Fails if portfolio empty or any equity ticker lacks a price.
+ * Fails if portfolio empty (and no deposits) or any equity ticker lacks a price.
  *
- * Missing holding/cash `channel` is normalized to {@link DEFAULT_CHANNEL}.
+ * Missing holding/cash/deposit `channel` is normalized to {@link DEFAULT_CHANNEL}.
  * Cash may be a single balance or an array (one per broker channel).
+ * Fixed deposits: principal in totalValue; not free cash.
  */
 export function buildLivePositions(
   portfolio: Record<string, Holding>,
@@ -386,8 +500,28 @@ export function buildLivePositions(
     | { amount: number; currency: string; channel?: string }
     | Array<{ amount: number; currency: string; channel?: string }>
     | null,
+  deposits?:
+    | Array<{
+        id: string;
+        amount: number;
+        interest: number;
+        currency: string;
+        start_date: string;
+        end_date: string;
+        channel?: string;
+        label?: string;
+      }>
+    | null,
+  today?: string,
 ): LiveDashboardSlice {
-  const economics = valuePortfolio(portfolio, prices);
+  const depositRows = toDepositRows(deposits ?? null, today);
+  const hasPositions = Object.keys(portfolio).length > 0;
+  if (!hasPositions && depositRows.length === 0) {
+    // Preserve fail-fast from valuePortfolio for empty book with nothing to show.
+    valuePortfolio(portfolio, prices);
+  }
+
+  const economics = hasPositions ? valuePortfolio(portfolio, prices) : [];
   const cashes = normalizeDashboardCashes(cash ?? null);
   const mergedCash = cashForChannelSlice(cashes, null);
   const cashAmount = mergedCash?.amount ?? null;
@@ -396,8 +530,12 @@ export function buildLivePositions(
   const cashChannel =
     cashes.length === 1 ? cashes[0].channel : cashes.length > 1 ? null : null;
 
+  const depSum = depositsPrincipalSum(depositRows);
+  const depositsAmount = depSum?.amount ?? 0;
+
   const absPositions = economics.reduce((s, p) => s + Math.abs(p.value), 0);
-  const absSum = absPositions + (cashAmount != null ? cashAmount : 0);
+  const absSum =
+    absPositions + (cashAmount != null ? cashAmount : 0) + depositsAmount;
 
   const positions: LivePosition[] = economics
     .map((e) =>
@@ -412,12 +550,14 @@ export function buildLivePositions(
   const channels = collectDashboardChannels(
     positions,
     cashes.map((c) => c.channel),
+    depositRows.map((d) => d.channel),
   );
 
   const byChannel: ChannelTotals[] = channels.map((ch) => {
     const chPositions = positions.filter((p) => p.channel === ch);
     const chCash = cashForChannelSlice(cashes, ch);
-    return buildChannelTotals(ch, chPositions, chCash, chCash != null);
+    const chDeposits = depositRows.filter((d) => d.channel === ch);
+    return buildChannelTotals(ch, chPositions, chCash, chCash != null, chDeposits);
   });
 
   const merged = buildChannelTotals(
@@ -425,6 +565,7 @@ export function buildLivePositions(
     positions,
     mergedCash,
     mergedCash != null,
+    depositRows,
   );
 
   return {
@@ -447,6 +588,10 @@ export function buildLivePositions(
     cashChannel,
     positionsValue: merged.positionsValue,
     cashWeightPct: merged.cashWeightPct,
+    deposits: depositRows,
+    depositsAmount: merged.depositsAmount,
+    depositsCurrency: merged.depositsCurrency,
+    depositCount: merged.depositCount,
     channels,
     byChannel,
   };

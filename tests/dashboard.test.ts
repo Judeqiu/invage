@@ -78,6 +78,77 @@ describe('buildLivePositions', () => {
     expect(live.totalPL).toBe(100);
   });
 
+  it('includes fixed deposit principal in NAV but not free cash weight numerator alone', () => {
+    const live = buildLivePositions(
+      {
+        AAPL: { avg_price: 100, units: 10 },
+      },
+      { AAPL: 110 },
+      undefined,
+      { amount: 400, currency: 'USD', channel: 'jude_futu' },
+      [
+        {
+          id: 'fd-1',
+          amount: 5000,
+          interest: 80,
+          currency: 'USD',
+          start_date: '2026-01-01',
+          end_date: '2026-12-31',
+          channel: 'jude_futu',
+          label: '1Y TD',
+        },
+      ],
+      '2026-07-29',
+    );
+    // positions 1100 + cash 400 + FD 5000
+    expect(live.positionsValue).toBe(1100);
+    expect(live.cashAmount).toBe(400);
+    expect(live.depositsAmount).toBe(5000);
+    expect(live.depositCount).toBe(1);
+    expect(live.totalValue).toBe(6500);
+    // free cash weight uses free cash only over full NAV
+    expect(live.cashWeightPct).toBeCloseTo((400 / 6500) * 100, 5);
+    expect(live.deposits[0].id).toBe('fd-1');
+    expect(live.deposits[0].channel).toBe('jude_futu');
+    expect(live.deposits[0].daysRemaining).toBeGreaterThan(0);
+    expect(live.deposits[0].matured).toBe(false);
+    // channel list includes deposit channel
+    expect(live.channels).toContain('jude_futu');
+    // AAPL has no channel → default; cash+FD on jude_futu
+    const ch = live.byChannel.find((c) => c.channel === 'jude_futu');
+    expect(ch?.depositsAmount).toBe(5000);
+    expect(ch?.cashAmount).toBe(400);
+    expect(ch?.totalValue).toBe(5400); // cash 400 + FD 5000 (no positions on this channel)
+    const def = live.byChannel.find((c) => c.channel === DEFAULT_CHANNEL);
+    expect(def?.totalValue).toBe(1100);
+  });
+
+  it('allows deposits-only portfolio (no holdings)', () => {
+    const live = buildLivePositions(
+      {},
+      {},
+      undefined,
+      null,
+      [
+        {
+          id: 'fd-only',
+          amount: 10000,
+          interest: 100,
+          currency: 'USD',
+          start_date: '2026-01-01',
+          end_date: '2026-06-01',
+          channel: 'ibkr',
+        },
+      ],
+      '2026-07-29',
+    );
+    expect(live.positionCount).toBe(0);
+    expect(live.depositsAmount).toBe(10000);
+    expect(live.totalValue).toBe(10000);
+    expect(live.deposits[0].matured).toBe(true);
+    expect(live.channels).toEqual(['ibkr']);
+  });
+
   it('includes short put without Yahoo price on the option key', () => {
     const live = buildLivePositions(
       {

@@ -34,8 +34,18 @@ const {
   setPortfolio,
   updatePlaybook,
   assertCashBalance,
+  assertFixedDeposit,
   normalizeCashes,
+  normalizeDeposits,
   normalizeOptionalChannel,
+  getDeposits,
+  setDeposits,
+  upsertDeposit,
+  removeDeposit,
+  clearDeposits,
+  findDepositById,
+  totalDepositsPrincipal,
+  generateDepositId,
 } = await import('../src/state/portfolio-state.js');
 
 describe('portfolio-state', () => {
@@ -375,5 +385,115 @@ describe('portfolio-state', () => {
     expect(m.totalNav).toBe(1000);
     expect(m.cashWeightPct).toBeCloseTo(50, 5);
     expect(m.cashes).toHaveLength(2);
+  });
+
+  it('assertFixedDeposit validates required fields fail-fast', () => {
+    const valid = {
+      id: 'fd-1',
+      amount: 50000,
+      interest: 875,
+      currency: 'USD',
+      start_date: '2026-07-01',
+      end_date: '2027-01-01',
+      updated_at: '2026-07-29',
+      channel: 'jude_futu',
+      label: '6M bank TD',
+    };
+    const d = assertFixedDeposit(valid);
+    expect(d.id).toBe('fd-1');
+    expect(d.amount).toBe(50000);
+    expect(d.interest).toBe(875);
+    expect(d.currency).toBe('USD');
+    expect(d.channel).toBe('jude_futu');
+    expect(d.label).toBe('6M bank TD');
+
+    expect(() => assertFixedDeposit({ ...valid, amount: -1 })).toThrow(/amount/);
+    expect(() => assertFixedDeposit({ ...valid, interest: -1 })).toThrow(/interest/);
+    expect(() => assertFixedDeposit({ ...valid, currency: '' })).toThrow(/currency/);
+    expect(() => assertFixedDeposit({ ...valid, start_date: 'bad' })).toThrow(/start_date/);
+    expect(() =>
+      assertFixedDeposit({ ...valid, start_date: '2027-01-02', end_date: '2027-01-01' }),
+    ).toThrow(/end_date/);
+    expect(() => assertFixedDeposit({ ...valid, id: '' })).toThrow(/id/);
+    expect(() => assertFixedDeposit({ ...valid, channel: 1 })).toThrow(/channel/);
+  });
+
+  it('normalizeDeposits rejects duplicate ids; allows multi per channel', () => {
+    expect(normalizeDeposits(null)).toEqual([]);
+    const a = {
+      id: 'fd-a',
+      amount: 1000,
+      interest: 10,
+      currency: 'USD',
+      start_date: '2026-01-01',
+      end_date: '2026-07-01',
+      updated_at: '2026-07-29',
+      channel: 'jude_futu',
+    };
+    const b = {
+      id: 'fd-b',
+      amount: 2000,
+      interest: 20,
+      currency: 'USD',
+      start_date: '2026-02-01',
+      end_date: '2026-08-01',
+      updated_at: '2026-07-29',
+      channel: 'jude_futu',
+    };
+    expect(normalizeDeposits([a, b])).toHaveLength(2);
+    expect(() => normalizeDeposits([a, { ...b, id: 'fd-a' }])).toThrow(/Duplicate deposit id/);
+  });
+
+  it('upsert/remove/clear deposits persist multi per channel', () => {
+    const state = loadState('alice');
+    const d1 = assertFixedDeposit({
+      id: 'fd-1',
+      amount: 10000,
+      interest: 100,
+      currency: 'USD',
+      start_date: '2026-07-01',
+      end_date: '2027-01-01',
+      updated_at: '2026-07-29',
+      channel: 'jude_futu',
+    });
+    const d2 = assertFixedDeposit({
+      id: 'fd-2',
+      amount: 20000,
+      interest: 200,
+      currency: 'USD',
+      start_date: '2026-07-15',
+      end_date: '2026-10-15',
+      updated_at: '2026-07-29',
+      channel: 'jude_futu',
+    });
+    upsertDeposit(state, d1);
+    upsertDeposit(state, d2);
+    expect(getDeposits(state)).toHaveLength(2);
+    expect(totalDepositsPrincipal(getDeposits(state))?.amount).toBe(30000);
+    expect(findDepositById(getDeposits(state), 'fd-1')?.amount).toBe(10000);
+
+    upsertDeposit(state, { ...d1, amount: 12000, updated_at: '2026-07-30' });
+    expect(findDepositById(getDeposits(state), 'fd-1')?.amount).toBe(12000);
+    expect(getDeposits(state)).toHaveLength(2);
+
+    removeDeposit(state, 'fd-2');
+    expect(getDeposits(state)).toHaveLength(1);
+    expect(() => removeDeposit(state, 'missing')).toThrow(/not found/);
+
+    clearDeposits(state, 'jude_futu');
+    expect(getDeposits(state)).toHaveLength(0);
+
+    setDeposits(state, [d1, d2]);
+    clearDeposits(state);
+    expect(getDeposits(state)).toHaveLength(0);
+  });
+
+  it('generateDepositId is unique and includes channel/date', () => {
+    const id = generateDepositId('jude_futu', '2026-07-01', []);
+    expect(id).toMatch(/^fd-jude_futu-20260701/);
+    const id2 = generateDepositId('jude_futu', '2026-07-01', [{ id } as never]);
+    expect(id2).not.toBe(id);
+    const unassigned = generateDepositId(undefined, '2026-07-01', []);
+    expect(unassigned).toMatch(/^fd-default-20260701/);
   });
 });
