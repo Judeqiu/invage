@@ -372,6 +372,28 @@ describe('portfolio-state', () => {
     expect(getCash(state)).toBeNull();
   });
 
+  it('totalCash converts multi-currency with FX rates', () => {
+    const total = totalCash(
+      [
+        { amount: 100, currency: 'USD', updated_at: '2026-07-29', channel: 'a' },
+        { amount: 100, currency: 'SGD', updated_at: '2026-07-29', channel: 'b' },
+      ],
+      { reportingCurrency: 'USD', fxRates: { SGD: 0.74 } },
+    );
+    expect(total).not.toBeNull();
+    expect(total!.currency).toBe('USD');
+    expect(total!.amount).toBeCloseTo(100 + 74, 10);
+  });
+
+  it('totalCash fails multi-currency without FX', () => {
+    expect(() =>
+      totalCash([
+        { amount: 100, currency: 'USD', updated_at: '2026-07-29', channel: 'a' },
+        { amount: 100, currency: 'SGD', updated_at: '2026-07-29', channel: 'b' },
+      ]),
+    ).toThrow(/reporting_currency|live FX|currencies/);
+  });
+
   it('cashStrategyMetrics sums multi-channel cash', () => {
     const m = cashStrategyMetrics(
       [

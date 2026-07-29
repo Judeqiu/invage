@@ -162,6 +162,12 @@ export interface LiveDashboardSlice {
   channels: string[];
   /** Per-channel aggregates (one entry per id in `channels`). */
   byChannel: ChannelTotals[];
+  /** Currency of aggregated totals when FX applied; single-book ccy otherwise. */
+  reportingCurrency?: string | null;
+  /** Live FX rates applied (foreign → reporting); omit/empty when not converted. */
+  fxRates?: Record<string, number>;
+  /** True when multi-currency totals were converted with live FX. */
+  fxApplied?: boolean;
 }
 
 export interface DashboardModel {
@@ -277,23 +283,61 @@ export function toDepositRows(
   });
 }
 
-/** Sum deposit principals (same currency only). */
+export interface DashboardFxOptions {
+  reportingCurrency: string;
+  /** Units of reporting per 1 unit of foreign currency. */
+  fxRates: Record<string, number>;
+}
+
+function convertDashboardAmount(
+  amount: number,
+  currency: string,
+  opts: DashboardFxOptions | undefined,
+  context: string,
+): { amount: number; currency: string } {
+  const ccy = currency.trim().toUpperCase();
+  if (opts == null) return { amount, currency: ccy };
+  const rep = opts.reportingCurrency.trim().toUpperCase();
+  if (ccy === rep) return { amount, currency: rep };
+  const rate = opts.fxRates[ccy];
+  if (rate == null) {
+    throw new Error(
+      `Missing FX rate for ${ccy}→${rep} (${context}). Provide live rate units of ${rep} per 1 ${ccy}.`,
+    );
+  }
+  if (!(rate > 0) || !Number.isFinite(rate)) {
+    throw new Error(`Invalid FX rate for ${ccy}→${rep}: ${rate}`);
+  }
+  return { amount: amount * rate, currency: rep };
+}
+
+/** Sum deposit principals (same currency, or converted when opts provided). */
 function depositsPrincipalSum(
   deposits: DepositRow[],
+  opts?: DashboardFxOptions,
 ): { amount: number; currency: string } | null {
   if (deposits.length === 0) return null;
-  const currency = deposits[0].currency;
-  for (const d of deposits) {
-    if (d.currency !== currency) {
-      throw new Error(
-        `Cannot sum dashboard deposits across currencies (${deposits.map((x) => x.currency).join(', ')}).`,
-      );
-    }
+  const currencies = [...new Set(deposits.map((d) => d.currency.trim().toUpperCase()))];
+  if (currencies.length === 1 && opts == null) {
+    return {
+      amount: deposits.reduce((s, d) => s + d.amount, 0),
+      currency: currencies[0],
+    };
   }
-  return {
-    amount: deposits.reduce((s, d) => s + d.amount, 0),
-    currency,
-  };
+  if (opts == null && currencies.length > 1) {
+    throw new Error(
+      `Cannot sum dashboard deposits across currencies (${deposits.map((x) => x.currency).join(', ')}). ` +
+        'Set treasury.reporting_currency for live FX conversion.',
+    );
+  }
+  let amount = 0;
+  let currency = opts!.reportingCurrency.trim().toUpperCase();
+  for (const d of deposits) {
+    const conv = convertDashboardAmount(d.amount, d.currency, opts, `deposit ${d.id}`);
+    amount += conv.amount;
+    currency = conv.currency;
+  }
+  return { amount, currency };
 }
 
 /** Normalize cash arg (single | multi | null) → list of balances. */
@@ -312,26 +356,43 @@ function normalizeDashboardCashes(
   }));
 }
 
-/** Sum cash for a channel (or all when channel is null = merged). Same currency only. */
+/** Sum cash for a channel (or all when channel is null = merged). Mixed ccy needs opts. */
 function cashForChannelSlice(
   cashes: Array<{ amount: number; currency: string; channel: string }>,
   channel: string | null,
+  opts?: DashboardFxOptions,
 ): { amount: number; currency: string } | null {
   const subset =
     channel == null ? cashes : cashes.filter((c) => c.channel === channel);
   if (subset.length === 0) return null;
-  const currency = subset[0].currency;
-  for (const c of subset) {
-    if (c.currency !== currency) {
-      throw new Error(
-        `Cannot sum dashboard cash across currencies (${subset.map((x) => x.currency).join(', ')}).`,
-      );
-    }
+  const currencies = [...new Set(subset.map((c) => c.currency.trim().toUpperCase()))];
+  if (currencies.length === 1 && opts == null) {
+    return {
+      amount: subset.reduce((s, c) => s + c.amount, 0),
+      currency: currencies[0],
+    };
   }
-  return {
-    amount: subset.reduce((s, c) => s + c.amount, 0),
-    currency,
-  };
+  if (opts == null && currencies.length > 1) {
+    throw new Error(
+      `Cannot sum dashboard cash across currencies (${subset.map((x) => x.currency).join(', ')}). ` +
+        'Set treasury.reporting_currency for live FX conversion.',
+    );
+  }
+  let amount = 0;
+  let currency = opts
+    ? opts.reportingCurrency.trim().toUpperCase()
+    : currencies[0];
+  for (const c of subset) {
+    const conv = convertDashboardAmount(
+      c.amount,
+      c.currency,
+      opts,
+      `cash ${c.channel}`,
+    );
+    amount += conv.amount;
+    currency = conv.currency;
+  }
+  return { amount, currency };
 }
 
 /**
@@ -345,6 +406,7 @@ export function buildChannelTotals(
   cash: { amount: number; currency: string } | null,
   includeCash: boolean,
   deposits: DepositRow[] = [],
+  fx?: DashboardFxOptions,
 ): ChannelTotals {
   let positionsValue = 0;
   let totalCost = 0;
@@ -382,7 +444,7 @@ export function buildChannelTotals(
   const totalPL = positionsValue - totalCost;
   const cashAmount = includeCash && cash != null ? cash.amount : null;
   const cashCurrency = includeCash && cash != null ? cash.currency : null;
-  const depSum = depositsPrincipalSum(deposits);
+  const depSum = depositsPrincipalSum(deposits, fx);
   const depositsAmount = depSum?.amount ?? 0;
   const depositsCurrency = depSum?.currency ?? null;
   let totalValue = positionsValue;
@@ -459,6 +521,46 @@ export function filterLiveByChannel(
       ? { amount: chRow.cashAmount, currency: chRow.cashCurrency }
       : null;
 
+  // Prefer precomputed channel totals when FX was applied (cash/deposits already converted).
+  if (live.fxApplied && chRow != null) {
+    const positions = withRecalculatedWeights(
+      filtered,
+      chRow.cashAmount,
+      chRow.depositsAmount,
+    );
+    return {
+      positions,
+      totalValue: chRow.totalValue,
+      totalCost: chRow.totalCost,
+      totalPL: chRow.totalPL,
+      totalPLPct: chRow.totalPLPct,
+      positionCount: chRow.positionCount,
+      equityValue: chRow.equityValue,
+      equityCost: chRow.equityCost,
+      optionsPremiumCollected: chRow.optionsPremiumCollected,
+      optionsPremiumPaid: chRow.optionsPremiumPaid,
+      contingentCashObligation: chRow.contingentCashObligation,
+      contingentShareObligation: chRow.contingentShareObligation,
+      optionCount: chRow.optionCount,
+      equityCount: chRow.equityCount,
+      fundCount: chRow.fundCount,
+      cashAmount: chRow.cashAmount,
+      cashCurrency: chRow.cashCurrency,
+      cashChannel: cash != null ? channel : null,
+      positionsValue: chRow.positionsValue,
+      cashWeightPct: chRow.cashWeightPct,
+      deposits,
+      depositsAmount: chRow.depositsAmount,
+      depositsCurrency: chRow.depositsCurrency,
+      depositCount: chRow.depositCount,
+      channels: live.channels,
+      byChannel: live.byChannel,
+      reportingCurrency: live.reportingCurrency,
+      fxRates: live.fxRates,
+      fxApplied: live.fxApplied,
+    };
+  }
+
   const totals = buildChannelTotals(channel, filtered, cash, cash != null, deposits);
   const positions = withRecalculatedWeights(
     filtered,
@@ -493,6 +595,9 @@ export function filterLiveByChannel(
     depositCount: totals.depositCount,
     channels: live.channels,
     byChannel: live.byChannel,
+    reportingCurrency: live.reportingCurrency,
+    fxRates: live.fxRates,
+    fxApplied: live.fxApplied,
   };
 }
 
@@ -527,6 +632,7 @@ export function buildLivePositions(
       }>
     | null,
   today?: string,
+  fx?: DashboardFxOptions,
 ): LiveDashboardSlice {
   const depositRows = toDepositRows(deposits ?? null, today);
   const hasPositions = Object.keys(portfolio).length > 0;
@@ -537,14 +643,31 @@ export function buildLivePositions(
 
   const economics = hasPositions ? valuePortfolio(portfolio, prices) : [];
   const cashes = normalizeDashboardCashes(cash ?? null);
-  const mergedCash = cashForChannelSlice(cashes, null);
+
+  const moneyCurrencies = [
+    ...new Set([
+      ...cashes.map((c) => c.currency.trim().toUpperCase()),
+      ...depositRows.map((d) => d.currency.trim().toUpperCase()),
+    ]),
+  ];
+  const needsFx = moneyCurrencies.length > 1;
+  if (needsFx && fx == null) {
+    throw new Error(
+      `Cannot sum dashboard money across currencies (${moneyCurrencies.join(', ')}). ` +
+        'Set treasury.reporting_currency so totals convert with live FX.',
+    );
+  }
+  const fxOpts = needsFx ? fx : undefined;
+  const fxApplied = needsFx && fx != null;
+
+  const mergedCash = cashForChannelSlice(cashes, null, fxOpts);
   const cashAmount = mergedCash?.amount ?? null;
   const cashCurrency = mergedCash?.currency ?? null;
   // Single cash channel is exposed on the slice; multi → null (see byChannel).
   const cashChannel =
     cashes.length === 1 ? cashes[0].channel : cashes.length > 1 ? null : null;
 
-  const depSum = depositsPrincipalSum(depositRows);
+  const depSum = depositsPrincipalSum(depositRows, fxOpts);
   const depositsAmount = depSum?.amount ?? 0;
 
   const absPositions = economics.reduce((s, p) => s + Math.abs(p.value), 0);
@@ -569,9 +692,16 @@ export function buildLivePositions(
 
   const byChannel: ChannelTotals[] = channels.map((ch) => {
     const chPositions = positions.filter((p) => p.channel === ch);
-    const chCash = cashForChannelSlice(cashes, ch);
+    const chCash = cashForChannelSlice(cashes, ch, fxOpts);
     const chDeposits = depositRows.filter((d) => d.channel === ch);
-    return buildChannelTotals(ch, chPositions, chCash, chCash != null, chDeposits);
+    return buildChannelTotals(
+      ch,
+      chPositions,
+      chCash,
+      chCash != null,
+      chDeposits,
+      fxOpts,
+    );
   });
 
   const merged = buildChannelTotals(
@@ -580,7 +710,14 @@ export function buildLivePositions(
     mergedCash,
     mergedCash != null,
     depositRows,
+    fxOpts,
   );
+
+  const reportingCurrency = fxApplied
+    ? fx!.reportingCurrency.trim().toUpperCase()
+    : moneyCurrencies.length === 1
+      ? moneyCurrencies[0]
+      : cashCurrency ?? depSum?.currency ?? null;
 
   return {
     positions,
@@ -609,6 +746,9 @@ export function buildLivePositions(
     depositCount: merged.depositCount,
     channels,
     byChannel,
+    reportingCurrency,
+    fxRates: fxApplied ? { ...fx!.fxRates } : undefined,
+    fxApplied: fxApplied || false,
   };
 }
 

@@ -50,9 +50,9 @@ export interface CashBalance {
   amount: number;
   /**
    * Currency code (e.g. USD, HKD). Required when cash is recorded —
-   * no silent default. NAV math treats amount in the same unit as
-   * position marks when the agent combines them; multi-currency
-   * conversion is not automatic.
+   * no silent default. Multi-channel cash may use different currencies;
+   * aggregated totals require explicit FX rates into a reporting currency
+   * (see {@link totalCash} options / live FX on dashboard).
    */
   currency: string;
   /** Date last set, YYYY-MM-DD. */
@@ -189,40 +189,126 @@ export function getCashes(state: InvestorState): CashBalance[] {
   return normalizeCashes(state.cash ?? null);
 }
 
-/**
- * Sum multi-channel cash into one balance for NAV / strategy totals.
- * Returns null when no cash is recorded.
- * Fail-fast if entries use different currencies (no silent FX conversion).
- * Multi-channel totals omit `channel` (per-channel detail is in getCashes).
- */
-export function totalCash(cashes: CashBalance[]): CashBalance | null {
-  if (cashes.length === 0) return null;
-  if (cashes.length === 1) return cashes[0];
-  const currency = cashes[0].currency;
-  for (const c of cashes) {
-    if (c.currency !== currency) {
-      throw new Error(
-        `Cannot sum cash across currencies (${cashes.map((x) => x.currency).join(', ')}). ` +
-          'Record cash in one currency or convert explicitly before combining.',
-      );
-    }
+/** Distinct uppercase currency codes present in cash balances. */
+export function cashCurrencies(cashes: CashBalance[]): string[] {
+  return [...new Set(cashes.map((c) => c.currency.trim().toUpperCase()))].sort();
+}
+
+export interface MultiCurrencySumOptions {
+  /** Target currency for the sum (e.g. treasury.reporting_currency). */
+  reportingCurrency: string;
+  /**
+   * Units of reporting currency per 1 unit of each foreign currency.
+   * Same-currency entries need not appear (treated as 1).
+   */
+  fxRates: Record<string, number>;
+}
+
+function convertAmount(
+  amount: number,
+  currency: string,
+  reportingCurrency: string,
+  fxRates: Record<string, number>,
+  context: string,
+): number {
+  const ccy = currency.trim().toUpperCase();
+  const rep = reportingCurrency.trim().toUpperCase();
+  if (ccy === rep) return amount;
+  const rate = fxRates[ccy];
+  if (rate == null) {
+    throw new Error(
+      `Missing FX rate for ${ccy}→${rep} (${context}). ` +
+        `Provide units of ${rep} per 1 ${ccy}.`,
+    );
   }
-  let amount = 0;
-  let updated_at = cashes[0].updated_at;
-  for (const c of cashes) {
-    amount += c.amount;
-    if (c.updated_at > updated_at) updated_at = c.updated_at;
+  if (!(rate > 0) || !Number.isFinite(rate)) {
+    throw new Error(`Invalid FX rate for ${ccy}→${rep}: ${rate}`);
   }
-  return { amount, currency, updated_at };
+  return amount * rate;
 }
 
 /**
- * Aggregate cash for strategy / NAV.
- * Multi-channel → summed total (same currency only). Single → that entry.
+ * Sum multi-channel cash into one balance for NAV / strategy totals.
+ * Returns null when no cash is recorded.
+ *
+ * Same currency → sum native amounts (no FX).
+ * Mixed currencies → requires `opts` with reportingCurrency + fxRates
+ * (units of reporting per 1 foreign). No silent 1:1 conversion.
+ * Multi-channel totals omit `channel` (per-channel detail is in getCashes).
+ */
+export function totalCash(
+  cashes: CashBalance[],
+  opts?: MultiCurrencySumOptions,
+): CashBalance | null {
+  if (cashes.length === 0) return null;
+  if (cashes.length === 1) {
+    const only = cashes[0];
+    if (opts == null) return only;
+    const rep = opts.reportingCurrency.trim().toUpperCase();
+    const amount = convertAmount(
+      only.amount,
+      only.currency,
+      rep,
+      opts.fxRates,
+      `cash ${only.channel ?? 'unassigned'}`,
+    );
+    return {
+      amount,
+      currency: rep,
+      updated_at: only.updated_at,
+    };
+  }
+
+  const currencies = cashCurrencies(cashes);
+  if (currencies.length === 1) {
+    let amount = 0;
+    let updated_at = cashes[0].updated_at;
+    for (const c of cashes) {
+      amount += c.amount;
+      if (c.updated_at > updated_at) updated_at = c.updated_at;
+    }
+    if (opts == null) {
+      return { amount, currency: currencies[0], updated_at };
+    }
+    const rep = opts.reportingCurrency.trim().toUpperCase();
+    const converted = convertAmount(amount, currencies[0], rep, opts.fxRates, 'cash total');
+    return { amount: converted, currency: rep, updated_at };
+  }
+
+  if (opts == null) {
+    throw new Error(
+      `Cannot sum cash across currencies (${cashes.map((x) => x.currency).join(', ')}). ` +
+        'Set treasury.reporting_currency and convert with live FX, ' +
+        'or record cash in one currency.',
+    );
+  }
+
+  const rep = opts.reportingCurrency.trim().toUpperCase();
+  let amount = 0;
+  let updated_at = cashes[0].updated_at;
+  for (const c of cashes) {
+    amount += convertAmount(
+      c.amount,
+      c.currency,
+      rep,
+      opts.fxRates,
+      `cash ${c.channel ?? 'unassigned'}`,
+    );
+    if (c.updated_at > updated_at) updated_at = c.updated_at;
+  }
+  return { amount, currency: rep, updated_at };
+}
+
+/**
+ * Aggregate cash for strategy / NAV (same-currency only unless caller converts).
+ * Multi-channel same ccy → summed. Mixed ccy without opts → throws.
  * Does not invent a zero balance.
  */
-export function getCash(state: InvestorState): CashBalance | null {
-  return totalCash(getCashes(state));
+export function getCash(
+  state: InvestorState,
+  opts?: MultiCurrencySumOptions,
+): CashBalance | null {
+  return totalCash(getCashes(state), opts);
 }
 
 /** Cash entry matching a channel slot, or null. */
@@ -400,25 +486,43 @@ export function clearDeposits(state: InvestorState, channel?: string | null): vo
   setDeposits(state, rest);
 }
 
+/** Distinct uppercase currency codes present in deposits. */
+export function depositCurrencies(deposits: FixedDeposit[]): string[] {
+  return [...new Set(deposits.map((d) => d.currency.trim().toUpperCase()))].sort();
+}
+
 /**
  * Sum deposit principals for NAV. Returns null when no deposits.
- * Fail-fast if entries use different currencies (no silent FX).
+ * Same currency → native sum. Mixed currencies require `opts` (reporting + FX).
  */
 export function totalDepositsPrincipal(
   deposits: FixedDeposit[],
+  opts?: MultiCurrencySumOptions,
 ): { amount: number; currency: string } | null {
   if (deposits.length === 0) return null;
-  const currency = deposits[0].currency;
-  for (const d of deposits) {
-    if (d.currency !== currency) {
-      throw new Error(
-        `Cannot sum deposits across currencies (${deposits.map((x) => x.currency).join(', ')}). ` +
-          'Record deposits in one currency or convert explicitly before combining.',
-      );
-    }
+  const currencies = depositCurrencies(deposits);
+  if (currencies.length === 1) {
+    const amount = deposits.reduce((s, d) => s + d.amount, 0);
+    if (opts == null) return { amount, currency: currencies[0] };
+    const rep = opts.reportingCurrency.trim().toUpperCase();
+    return {
+      amount: convertAmount(amount, currencies[0], rep, opts.fxRates, 'deposits total'),
+      currency: rep,
+    };
   }
-  const amount = deposits.reduce((s, d) => s + d.amount, 0);
-  return { amount, currency };
+  if (opts == null) {
+    throw new Error(
+      `Cannot sum deposits across currencies (${deposits.map((x) => x.currency).join(', ')}). ` +
+        'Set treasury.reporting_currency and convert with live FX, ' +
+        'or record deposits in one currency.',
+    );
+  }
+  const rep = opts.reportingCurrency.trim().toUpperCase();
+  let amount = 0;
+  for (const d of deposits) {
+    amount += convertAmount(d.amount, d.currency, rep, opts.fxRates, `deposit ${d.id}`);
+  }
+  return { amount, currency: rep };
 }
 
 /**
@@ -574,10 +678,14 @@ export function applyCashDelta(
     throw new Error('cashDelta must be a finite number.');
   }
   const cashes = asCashList(cashOrCashes);
+  /** Prefer the trade channel slot; never force multi-ccy sum here. */
+  const resultCash = (): CashBalance | null =>
+    findCashForChannel(cashes, channel) ?? (cashes.length === 1 ? cashes[0] : null);
+
   if (!adjustCash) {
     return {
       cashes,
-      cash: totalCash(cashes),
+      cash: resultCash(),
       cashDelta: 0,
       adjusted: false,
       note: 'adjust_cash=false — cash ledger not changed.',
@@ -595,7 +703,7 @@ export function applyCashDelta(
   if (cashDelta === 0) {
     return {
       cashes,
-      cash: totalCash(cashes),
+      cash: resultCash(),
       cashDelta: 0,
       adjusted: false,
       note: 'No cash impact (cost/premium unchanged).',
@@ -662,13 +770,15 @@ export function applyCashDelta(
  * depositsPrincipal (optional) = sum of fixed-deposit principals (in NAV, not free cash).
  * Returns null cash fields when cash is unknown (never invent 0 for weight).
  *
- * Accepts a single CashBalance, multi list, or null. Multi is summed (same currency).
+ * Accepts a single CashBalance, multi list, or null.
+ * Multi same-currency → sum. Multi mixed → pass opts with reporting + FX rates.
  */
 export function cashStrategyMetrics(
   cashOrCashes: CashBalance | CashBalance[] | null,
   positionsValue: number,
   cashTargetPct: number,
   depositsPrincipal: number = 0,
+  opts?: MultiCurrencySumOptions,
 ): {
   cash: CashBalance | null;
   cashes: CashBalance[];
@@ -695,7 +805,7 @@ export function cashStrategyMetrics(
     throw new Error('depositsPrincipal must be ≥ 0.');
   }
   const cashes = asCashList(cashOrCashes);
-  const cash = totalCash(cashes);
+  const cash = totalCash(cashes, opts);
   const base = positionsValue + depositsPrincipal;
   if (cash == null) {
     return {

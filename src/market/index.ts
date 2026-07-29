@@ -7,6 +7,13 @@ export {
   formatPriceSnapshot,
 } from './fetch-prices.js';
 export type { YahooPriceSnapshot } from './fetch-prices.js';
+export { fetchFxRates, toReportingLive, fxPairSymbol } from './fetch-fx.js';
+export {
+  totalCashLive,
+  totalDepositsLive,
+  collectMoneyCurrencies,
+} from './sum-to-reporting.js';
+export type { LiveSumResult } from './sum-to-reporting.js';
 export { fetchHistoricalCloses } from './fetch-history.js';
 export { fetchTargets } from './fetch-targets.js';
 export { fetchMetrics } from './fetch-metrics.js';

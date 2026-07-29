@@ -23,7 +23,6 @@ import {
   getCashes,
   getPlaybook,
   getPortfolio,
-  totalCash,
   type InvestorState,
 } from './state/portfolio-state.js';
 import {
@@ -209,7 +208,7 @@ function investorContextPrefix(investor: InvestorState, ctx: EnrichMessageContex
   const portfolio = getPortfolio(investor);
   const n = Object.keys(portfolio).length;
   const cashes = getCashes(investor);
-  const cash = totalCash(cashes);
+  // Do not call totalCash here — multi-currency books need live FX (async); list channels only.
   const playbook = getPlaybook(investor);
   const hh = investor as HouseholdInvestorState;
   const treasury = hh.treasury != null ? getTreasury(hh) : null;
@@ -217,7 +216,7 @@ function investorContextPrefix(investor: InvestorState, ctx: EnrichMessageContex
   const gaps = householdGaps(hh);
   const cashHint =
     cashes.length === 0
-      ? 'Cash: not recorded (use set_cash for dry powder / cash weight vs cash_target_pct; multi-channel: set_cash per channel).'
+      ? 'Cash: not recorded (use set_cash for dry powder / cash weight vs cash_target_pct; multi-channel: set_cash per channel; mixed ccy totals need treasury.reporting_currency + live FX).'
       : cashes.length === 1
         ? `Cash: ${cashes[0].amount.toFixed(2)} ${cashes[0].currency} (updated ${cashes[0].updated_at})${cashes[0].channel ? ` channel=${cashes[0].channel}` : ''}.`
         : `Cash by channel: ${cashes
@@ -226,7 +225,9 @@ function investorContextPrefix(investor: InvestorState, ctx: EnrichMessageContex
                 `${c.channel ?? 'unassigned'}=${c.amount.toFixed(2)} ${c.currency}`,
             )
             .join(', ')}` +
-          (cash != null ? ` (total ${cash.amount.toFixed(2)} ${cash.currency}).` : '.');
+          (treasury != null
+            ? ` (mixed ccy → sum in ${treasury.reporting_currency} via live FX on get_portfolio / dashboard).`
+            : ' (mixed ccy — set_treasury reporting_currency to sum with live FX).');
   const householdHint =
     treasury == null && assumptions == null && gaps.length === 3
       ? 'Household treasury: not configured (set_treasury / cash flows / assumptions when user asks net worth path or house affordability).'

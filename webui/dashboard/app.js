@@ -44,8 +44,21 @@ let loading = false;
 
 /* ---------- formatting ---------- */
 
+function reportingCcyCode(view) {
+  if (view && view.fxApplied && view.reportingCurrency) return view.reportingCurrency;
+  if (view && view.reportingCurrency) return view.reportingCurrency;
+  if (view && view.cashCurrency) return view.cashCurrency;
+  return null;
+}
+
+function fmtMoney0(n, ccy) {
+  const abs = Number(n).toLocaleString('en-US', { maximumFractionDigits: 0 });
+  if (ccy && ccy !== 'USD') return `${abs} ${ccy}`;
+  return '$' + abs;
+}
+
 function fmtUsd0(n) {
-  return '$' + Number(n).toLocaleString('en-US', { maximumFractionDigits: 0 });
+  return fmtMoney0(n, null);
 }
 
 function fmtUsd2(n) {
@@ -63,6 +76,15 @@ function fmtSignedUsd0(n) {
   const v = Number(n);
   const abs = Math.abs(v).toLocaleString('en-US', { maximumFractionDigits: 0 });
   return (v < 0 ? '-$' : '+$') + abs;
+}
+
+function fxFootnote(view) {
+  if (!view || !view.fxApplied || !view.fxRates || !view.reportingCurrency) return '';
+  const parts = Object.entries(view.fxRates)
+    .filter(([c]) => c !== view.reportingCurrency)
+    .map(([c, r]) => `${c} ${Number(r).toPrecision(4)}`);
+  if (parts.length === 0) return '';
+  return ` · Totals in ${view.reportingCurrency} (live FX: ${parts.join(', ')})`;
 }
 
 function escapeHtml(s) {
@@ -336,6 +358,9 @@ function buildView(dateKey, channelKey = selectedChannel) {
       depositCount: live.depositCount ?? (live.deposits ? live.deposits.length : 0),
       channels: live.channels ?? [],
       byChannel: live.byChannel ?? [],
+      reportingCurrency: live.reportingCurrency ?? null,
+      fxRates: live.fxRates ?? null,
+      fxApplied: live.fxApplied === true,
     };
     const filtered = applyChannelFilter(viewBase, channelKey);
     const fIdx = portfolioFundIndex(filtered);
@@ -507,7 +532,7 @@ function renderCards(view) {
       view.fundIndex,
       view.benchmarkIndex,
       view.diff,
-      `Base: ${escapeHtml(baseDate)} | ${view.positions.length} holdings | Cost: ${fmtUsd0(view.totalCost)}${optionNote}${cashNote}${depositNote}${channelNote}`,
+      `Base: ${escapeHtml(baseDate)} | ${view.positions.length} holdings | Cost: ${fmtUsd0(view.totalCost)}${optionNote}${cashNote}${depositNote}${channelNote}${fxFootnote(view)}`,
     ),
   );
 

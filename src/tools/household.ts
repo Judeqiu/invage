@@ -32,8 +32,6 @@ import {
   getCashes,
   getDeposits,
   getPortfolio,
-  totalCash,
-  totalDepositsPrincipal,
   type InvestorState,
 } from '../state/portfolio-state.js';
 import { cashDeployedForHolding } from '../state/portfolio-state.js';
@@ -93,11 +91,11 @@ function formatHouseholdSummary(state: HouseholdInvestorState): string {
   const cfs = getCashFlows(state);
   const scenarios = getScenarios(state);
   const cashes = getCashes(state);
-  const cash = totalCash(cashes);
   const deposits = getDeposits(state);
-  const depTotal = totalDepositsPrincipal(deposits);
   const portCost = portfolioCostBasis(state);
   const gaps = householdGaps(state);
+  const fx = assumptions?.fx;
+  const rep = treasury?.reporting_currency;
 
   lines.push(
     treasury
@@ -105,14 +103,32 @@ function formatHouseholdSummary(state: HouseholdInvestorState): string {
       : 'Reporting currency: NOT SET (set_treasury)',
   );
 
-  if (cash != null) {
-    lines.push(`Free cash: ${cash.amount.toFixed(2)} ${cash.currency}`);
-  } else {
+  if (cashes.length === 0) {
     lines.push('Free cash: not recorded');
+  } else if (cashes.length === 1) {
+    const cash = cashes[0];
+    lines.push(
+      `Free cash: ${cash.amount.toFixed(2)} ${cash.currency}` +
+        (cash.channel ? ` [${cash.channel}]` : ''),
+    );
+  } else {
+    lines.push('Free cash by channel:');
+    for (const c of cashes) {
+      lines.push(
+        `  ${c.channel ?? '(unassigned)'}: ${c.amount.toFixed(2)} ${c.currency}`,
+      );
+    }
   }
   lines.push(`Portfolio (cost basis): ${portCost.toFixed(2)} (pass portfolio_value for live MTM in projections)`);
-  if (depTotal != null) {
-    lines.push(`Deposits principal: ${depTotal.amount.toFixed(2)} ${depTotal.currency}`);
+  if (deposits.length === 1) {
+    lines.push(
+      `Deposits principal: ${deposits[0].amount.toFixed(2)} ${deposits[0].currency}`,
+    );
+  } else if (deposits.length > 1) {
+    lines.push('Deposits:');
+    for (const d of deposits) {
+      lines.push(`  ${d.id}: ${d.amount.toFixed(2)} ${d.currency}`);
+    }
   }
 
   lines.push('', '── PROPERTIES ──');
@@ -172,31 +188,30 @@ function formatHouseholdSummary(state: HouseholdInvestorState): string {
     lines.push(`  ${s.id}: ${s.label} (${s.events.length} event(s))`);
   }
 
-  // Net worth if reporting set and single-currency or FX available
-  if (treasury != null) {
+  // Net worth if reporting set and FX available for every foreign ccy
+  if (treasury != null && rep != null) {
     try {
-      const fx = assumptions?.fx;
       let free = 0;
-      if (cash != null) {
-        free = toReporting(cash.amount, cash.currency, treasury.reporting_currency, fx, 'cash');
-      }
-      let dep = 0;
-      if (depTotal != null) {
-        dep = toReporting(
-          depTotal.amount,
-          depTotal.currency,
-          treasury.reporting_currency,
+      for (const c of cashes) {
+        free += toReporting(
+          c.amount,
+          c.currency,
+          rep,
           fx,
-          'deposits',
+          `cash ${c.channel ?? 'unassigned'}`,
         );
       }
-      const prop = sumPropertiesReporting(props, treasury.reporting_currency, fx);
-      const debt = sumLiabilitiesReporting(liabilities, treasury.reporting_currency, fx);
+      let dep = 0;
+      for (const d of deposits) {
+        dep += toReporting(d.amount, d.currency, rep, fx, `deposit ${d.id}`);
+      }
+      const prop = sumPropertiesReporting(props, rep, fx);
+      const debt = sumLiabilitiesReporting(liabilities, rep, fx);
       // Portfolio cost assumed same unit as free cash / reporting when no multi-ccy portfolio marks
       const nw = free + portCost + dep + prop - debt;
       lines.push(
         '',
-        `Net worth (approx, portfolio at cost): ${nw.toFixed(2)} ${treasury.reporting_currency}`,
+        `Net worth (approx, portfolio at cost): ${nw.toFixed(2)} ${rep}`,
       );
     } catch (e) {
       lines.push(

@@ -5,6 +5,7 @@
 
 import { loadState } from 'utarus';
 import {
+  fetchFxRates,
   fetchHistoricalCloses,
   fetchPrices,
   resolvePortfolioMarket,
@@ -15,10 +16,15 @@ import {
   getPortfolio,
   type InvestorState,
 } from '../state/portfolio-state.js';
+import {
+  getTreasury,
+  type HouseholdInvestorState,
+} from '../state/household-state.js';
 import { loadSnapshots, type Snapshot } from '../state/snapshot.js';
 import {
   buildDashboardModel,
   buildLivePositions,
+  type DashboardFxOptions,
   type DashboardModel,
 } from '../report/dashboard-model.js';
 import type { Holding } from '../market/types.js';
@@ -118,6 +124,29 @@ export async function loadDashboardForSlug(
   }
 
   const cashes = getCashes(state);
+  const moneyCurrencies = [
+    ...new Set(
+      [
+        ...cashes.map((c) => c.currency.trim().toUpperCase()),
+        ...deposits.map((d) => d.currency.trim().toUpperCase()),
+      ].filter(Boolean),
+    ),
+  ];
+  let fx: DashboardFxOptions | undefined;
+  if (moneyCurrencies.length > 1) {
+    const hh = state as HouseholdInvestorState;
+    const treasury = getTreasury(hh);
+    if (treasury == null) {
+      throw new Error(
+        `Cannot sum dashboard money across currencies (${moneyCurrencies.join(', ')}). ` +
+          'Set treasury.reporting_currency (set_treasury) so totals convert with live FX.',
+      );
+    }
+    const rep = treasury.reporting_currency;
+    const rates = await fetchFxRates(moneyCurrencies, rep);
+    fx = { reportingCurrency: rep, fxRates: rates };
+  }
+
   const live = buildLivePositions(
     valuedPortfolio,
     prices,
@@ -141,6 +170,8 @@ export async function loadDashboardForSlug(
           label: d.label,
         }))
       : null,
+    undefined,
+    fx,
   );
   const snapshots = loadSnapshots(slug);
   const model = buildDashboardModel(live, snapshots);

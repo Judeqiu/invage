@@ -4,7 +4,12 @@ import { writeFileSync, mkdirSync, existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { resolveDataRoot } from 'utarus';
 import { resolvePortfolioMarket, valuePortfolio } from '../market/index.js';
-import { getCashes, getPortfolio, totalCash } from '../state/portfolio-state.js';
+import { totalCashLive } from '../market/sum-to-reporting.js';
+import { getCashes, getPortfolio } from '../state/portfolio-state.js';
+import {
+  getTreasury,
+  type HouseholdInvestorState,
+} from '../state/household-state.js';
 import {
   loadSnapshotIndex,
   loadSnapshots,
@@ -86,7 +91,10 @@ export function createSnapshotTool(): AgentTool[] {
         const positionsValue = positions.reduce((s, pos) => s + pos.value, 0);
         const totalCost = positions.reduce((s, pos) => s + pos.cost, 0);
         const cashes = getCashes(state);
-        const cash = totalCash(cashes);
+        const hh = state as HouseholdInvestorState;
+        const rep = getTreasury(hh)?.reporting_currency ?? null;
+        const cashLive = await totalCashLive(cashes, rep);
+        const cash = cashLive.total;
         const totalValue = cash != null ? positionsValue + cash.amount : positionsValue;
         // P/L is on invested positions only; cash is dry powder, not a P/L line.
         const totalPL = positionsValue - totalCost;

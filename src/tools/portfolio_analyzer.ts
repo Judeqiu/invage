@@ -21,15 +21,19 @@ import {
 } from '../market/value-assess.js';
 import type { FinancialMetrics, Holding, ValueAssessment } from '../market/index.js';
 import { thresholdsForPlaybook } from '../playbook/index.js';
+import { totalCashLive, totalDepositsLive } from '../market/sum-to-reporting.js';
 import {
   cashStrategyMetrics,
   getCashes,
   getDeposits,
   getPlaybook,
   getPortfolio,
-  totalDepositsPrincipal,
   type CashBalance,
 } from '../state/portfolio-state.js';
+import {
+  getTreasury,
+  type HouseholdInvestorState,
+} from '../state/household-state.js';
 import {
   channelIdParams,
   resolveInvestorFromChannel,
@@ -156,6 +160,10 @@ export function createPortfolioAnalyzerTool(): AgentTool {
         let cashTargetPct = 5;
         let depositsPrincipal = 0;
         let depositCount = 0;
+        let cashFxOpts:
+          | { reportingCurrency: string; fxRates: Record<string, number> }
+          | undefined;
+        let cashFxNote = '';
 
         if (params.telegram_user_id != null || params.slack_user_id || params.user_slug) {
           const state = resolveInvestorFromChannel(params);
@@ -171,8 +179,20 @@ export function createPortfolioAnalyzerTool(): AgentTool {
           cashTargetPct = pb.allocation.cash_target_pct;
           const deposits = getDeposits(state);
           depositCount = deposits.length;
-          const depTotal = totalDepositsPrincipal(deposits);
-          depositsPrincipal = depTotal?.amount ?? 0;
+          const hh = state as HouseholdInvestorState;
+          const rep = getTreasury(hh)?.reporting_currency ?? null;
+          const cashLive = await totalCashLive(channelCashes, rep);
+          const depLive = await totalDepositsLive(deposits, rep);
+          depositsPrincipal = depLive.total?.amount ?? 0;
+          if (cashLive.fxApplied || depLive.fxApplied) {
+            cashFxOpts = {
+              reportingCurrency: cashLive.fxApplied
+                ? cashLive.reportingCurrency
+                : depLive.reportingCurrency,
+              fxRates: { ...depLive.fxRates, ...cashLive.fxRates },
+            };
+            cashFxNote = ` (live FX → ${cashFxOpts.reportingCurrency})`;
+          }
           playbookNote =
             `Playbook: ${pb.strategy} / ${pb.philosophy} / risk=${pb.risk.profile} ` +
             `(buy≥${analysisTh.buyMinUpsidePct}% strong≥${analysisTh.strongBuyUpsidePct}% | ` +
@@ -320,6 +340,7 @@ export function createPortfolioAnalyzerTool(): AgentTool {
             positionsValue,
             cashTargetPct,
             depositsPrincipal,
+            cashFxOpts,
           );
           output += '\n── CASH & NAV (strategy) ──\n';
           if (cashMetrics.cash == null) {
@@ -327,7 +348,7 @@ export function createPortfolioAnalyzerTool(): AgentTool {
               '  Free cash: not recorded. Use set_cash so dry powder, cash weight, and cash_target_pct drift are known.\n';
             output += `  Positions MTM: $${positionsValue.toFixed(2)}\n`;
             if (depositsPrincipal > 0) {
-              output += `  Fixed deposits principal: $${depositsPrincipal.toFixed(2)} (${depositCount} term${depositCount === 1 ? '' : 's'}; not free cash)\n`;
+              output += `  Fixed deposits principal: $${depositsPrincipal.toFixed(2)}${cashFxNote} (${depositCount} term${depositCount === 1 ? '' : 's'}; not free cash)\n`;
               output += `  Total NAV (positions + deposits): $${cashMetrics.totalNav.toFixed(2)}\n`;
             } else {
               output += `  NAV (positions only): $${cashMetrics.totalNav.toFixed(2)}\n`;
@@ -348,7 +369,7 @@ export function createPortfolioAnalyzerTool(): AgentTool {
                 const ch = row.channel ?? '(unassigned)';
                 output += `    ${ch}: ${row.amount.toFixed(2)} ${row.currency} (updated ${row.updated_at})\n`;
               }
-              output += `  Total free cash: ${c.amount.toFixed(2)} ${c.currency}\n`;
+              output += `  Total free cash: ${c.amount.toFixed(2)} ${c.currency}${cashFxNote}\n`;
             } else {
               output += `  Free cash: ${c.amount.toFixed(2)} ${c.currency} (updated ${c.updated_at})`;
               if (c.channel) output += ` [${c.channel}]`;

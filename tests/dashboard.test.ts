@@ -277,6 +277,46 @@ describe('buildLivePositions', () => {
     expect(filteredFutu.cashChannel).toBe('jude_futu');
     expect(filteredFutu.positionCount).toBe(1);
   });
+
+  it('multi-currency cash converts with live FX rates into reporting currency', () => {
+    const live = buildLivePositions(
+      {
+        AAPL: { avg_price: 100, units: 10, channel: 'us' },
+      },
+      { AAPL: 110 },
+      undefined,
+      [
+        { amount: 1000, currency: 'USD', channel: 'us' },
+        { amount: 1000, currency: 'SGD', channel: 'sg' },
+      ],
+      null,
+      undefined,
+      { reportingCurrency: 'USD', fxRates: { SGD: 0.74, USD: 1 } },
+    );
+    // cash: 1000 USD + 740 USD + positions 1100
+    expect(live.fxApplied).toBe(true);
+    expect(live.reportingCurrency).toBe('USD');
+    expect(live.cashAmount).toBeCloseTo(1740, 5);
+    expect(live.cashCurrency).toBe('USD');
+    expect(live.totalValue).toBeCloseTo(1100 + 1740, 5);
+    const sg = live.byChannel.find((c) => c.channel === 'sg');
+    expect(sg?.cashAmount).toBeCloseTo(740, 5);
+    expect(sg?.cashCurrency).toBe('USD');
+  });
+
+  it('multi-currency cash without FX fails fast', () => {
+    expect(() =>
+      buildLivePositions(
+        { AAPL: { avg_price: 100, units: 10 } },
+        { AAPL: 110 },
+        undefined,
+        [
+          { amount: 1000, currency: 'USD', channel: 'us' },
+          { amount: 1000, currency: 'SGD', channel: 'sg' },
+        ],
+      ),
+    ).toThrow(/reporting_currency|currencies/);
+  });
 });
 
 describe('buildDashboardModel', () => {

@@ -16,6 +16,7 @@ import {
   resolveUpsertHoldingKey,
   valuePosition,
 } from '../market/position-value.js';
+import { totalCashLive, totalDepositsLive } from '../market/sum-to-reporting.js';
 import {
   applyCashDelta,
   assertFixedDeposit,
@@ -42,10 +43,20 @@ import {
   type FixedDeposit,
 } from '../state/portfolio-state.js';
 import {
+  getTreasury,
+  type HouseholdInvestorState,
+} from '../state/household-state.js';
+import {
   channelIdParams,
   resolveInvestorFromChannel,
   type ChannelIds,
 } from './channel.js';
+
+function reportingCurrencyOf(state: unknown): string | null {
+  const hh = state as HouseholdInvestorState;
+  const treasury = getTreasury(hh);
+  return treasury?.reporting_currency ?? null;
+}
 
 function ok<T>(text: string, details: T): AgentToolResult<T> {
   return { content: [{ type: 'text' as const, text }], details };
@@ -67,7 +78,12 @@ function formatChannelTag(channel: string | undefined): string {
   return channel != null && channel.length > 0 ? ` | channel: ${channel}` : '';
 }
 
-function formatCashSection(cashes: CashBalance[], cashTargetPct: number): string {
+function formatCashSection(
+  cashes: CashBalance[],
+  cashTargetPct: number,
+  totalOverride?: CashBalance | null,
+  fxNote?: string,
+): string {
   const lines = ['── CASH ──'];
   if (cashes.length === 0) {
     lines.push(
@@ -89,10 +105,11 @@ function formatCashSection(cashes: CashBalance[], cashTargetPct: number): string
         `    ${ch}: ${c.amount.toFixed(2)} ${c.currency} (updated ${c.updated_at})`,
       );
     }
-    const total = totalCash(cashes);
+    const total = totalOverride !== undefined ? totalOverride : totalCash(cashes);
     if (total != null) {
       lines.push(
-        `  Total cash: ${total.amount.toFixed(2)} ${total.currency}`,
+        `  Total cash: ${total.amount.toFixed(2)} ${total.currency}` +
+          (fxNote ? ` (${fxNote})` : ''),
       );
     }
   }
@@ -111,7 +128,11 @@ function daysRemaining(endDate: string, today: string): number {
   return Math.max(0, Math.round((end - now) / 86_400_000));
 }
 
-function formatDepositsSection(deposits: FixedDeposit[]): string {
+function formatDepositsSection(
+  deposits: FixedDeposit[],
+  totalOverride?: { amount: number; currency: string } | null,
+  fxNote?: string,
+): string {
   const lines = ['── FIXED DEPOSITS ──'];
   if (deposits.length === 0) {
     lines.push(
@@ -131,12 +152,14 @@ function formatDepositsSection(deposits: FixedDeposit[]): string {
         (matured ? ' · MATURED' : ` · ${days} day${days === 1 ? '' : 's'} remaining`),
     );
   }
-  const total = totalDepositsPrincipal(deposits);
+  const total =
+    totalOverride !== undefined ? totalOverride : totalDepositsPrincipal(deposits);
   if (total != null) {
     const interestSum = deposits.reduce((s, d) => s + d.interest, 0);
     lines.push(
-      `  Total principal (in NAV): ${total.amount.toFixed(2)} ${total.currency}`,
-      `  Total interest at maturity (not in NAV v1): ${interestSum.toFixed(2)} ${total.currency}`,
+      `  Total principal (in NAV): ${total.amount.toFixed(2)} ${total.currency}` +
+        (fxNote ? ` (${fxNote})` : ''),
+      `  Total interest at maturity (not in NAV v1): ${interestSum.toFixed(2)} (native per row)`,
       '  Note: deposits are locked — not deployable dry powder; free cash is under CASH.',
     );
   }
@@ -153,20 +176,30 @@ function resolveChannelParam(
   return normalizeOptionalChannel(raw, 'channel');
 }
 
-function formatPortfolio(
+async function formatPortfolio(
   portfolio: Record<string, Holding>,
   cashes: CashBalance[],
   cashTargetPct: number,
   deposits: FixedDeposit[] = [],
-): string {
+  reportingCurrency: string | null = null,
+): Promise<string> {
+  const cashLive = await totalCashLive(cashes, reportingCurrency);
+  const depLive = await totalDepositsLive(deposits, reportingCurrency);
+  const cashFxNote = cashLive.fxApplied
+    ? `live FX → ${cashLive.reportingCurrency}`
+    : undefined;
+  const depFxNote = depLive.fxApplied
+    ? `live FX → ${depLive.reportingCurrency}`
+    : undefined;
+
   const keys = Object.keys(portfolio);
   if (keys.length === 0) {
     return [
       'Portfolio is empty. Use add_holding to add positions.',
       '',
-      formatCashSection(cashes, cashTargetPct),
+      formatCashSection(cashes, cashTargetPct, cashLive.total, cashFxNote),
       '',
-      formatDepositsSection(deposits),
+      formatDepositsSection(deposits, depLive.total, depFxNote),
     ].join('\n');
   }
 
@@ -268,17 +301,18 @@ function formatPortfolio(
     }
   }
   lines.push('');
-  lines.push(formatCashSection(cashes, cashTargetPct));
-  const total = totalCash(cashes);
+  lines.push(formatCashSection(cashes, cashTargetPct, cashLive.total, cashFxNote));
+  const total = cashLive.total;
   if (total != null && contingentCash > 0) {
     const cover = total.amount - contingentCash;
     lines.push(
       `  Short-put assignment cover: cash ${total.amount.toFixed(2)} ${total.currency} vs obligation $${contingentCash.toFixed(2)} → ` +
-        (cover >= 0 ? `surplus ${cover.toFixed(2)}` : `shortfall ${Math.abs(cover).toFixed(2)}`),
+        (cover >= 0 ? `surplus ${cover.toFixed(2)}` : `shortfall ${Math.abs(cover).toFixed(2)}`) +
+        (cashLive.fxApplied ? ' (cash in reporting ccy; obligation in quote ccy — compare carefully)' : ''),
     );
   }
   lines.push('');
-  lines.push(formatDepositsSection(deposits));
+  lines.push(formatDepositsSection(deposits, depLive.total, depFxNote));
   return lines.join('\n');
 }
 
@@ -643,7 +677,11 @@ export function createPortfolioTools(): AgentTool[] {
         portfolio[key] = holding;
         setPortfolio(state, portfolio);
 
-        const cashAfter = totalCash(cashResult.cashes);
+        const cashAfterLive = await totalCashLive(
+          cashResult.cashes,
+          reportingCurrencyOf(state),
+        );
+        const cashAfter = cashAfterLive.total;
         state.log.push({
           ts: today,
           action: isUpdate ? 'holding_updated' : 'holding_added',
@@ -797,7 +835,8 @@ export function createPortfolioTools(): AgentTool[] {
 
         delete portfolio[ticker];
         setPortfolio(state, portfolio);
-        const cashAfter = totalCash(cashResult.cashes);
+        const cashAfter = (await totalCashLive(cashResult.cashes, reportingCurrencyOf(state)))
+          .total;
         state.log.push({
           ts: today,
           action: 'holding_removed',
@@ -847,16 +886,23 @@ export function createPortfolioTools(): AgentTool[] {
         const portfolio = getPortfolio(state);
         const cashes = getCashes(state);
         const deposits = getDeposits(state);
-        const cash = totalCash(cashes);
+        const rep = reportingCurrencyOf(state);
+        const cashLive = await totalCashLive(cashes, rep);
         const cashTargetPct = getPlaybook(state).allocation.cash_target_pct;
-        return ok(formatPortfolio(portfolio, cashes, cashTargetPct, deposits), {
-          portfolio,
-          cash,
-          cashes,
-          deposits,
-          count: Object.keys(portfolio).length,
-          deposit_count: deposits.length,
-        });
+        return ok(
+          await formatPortfolio(portfolio, cashes, cashTargetPct, deposits, rep),
+          {
+            portfolio,
+            cash: cashLive.total,
+            cashes,
+            deposits,
+            count: Object.keys(portfolio).length,
+            deposit_count: deposits.length,
+            fx_applied: cashLive.fxApplied,
+            reporting_currency: cashLive.reportingCurrency || null,
+            fx_rates: cashLive.fxApplied ? cashLive.fxRates : undefined,
+          },
+        );
       } catch (e) {
         return failFrom(e);
       }
@@ -868,9 +914,10 @@ export function createPortfolioTools(): AgentTool[] {
     label: 'Set Cash',
     description:
       "Record available cash for strategy (dry powder, cash weight vs cash_target_pct, short-put cover). " +
-      'amount ≥ 0; currency required (e.g. USD, HKD) — no silent default. ' +
+      'amount ≥ 0; currency required (e.g. USD, HKD, SGD) — no silent default. ' +
       'Optional channel tags the broker holding this cash (e.g. jude_futu, cmbyonglong, moomoo, ibkr). ' +
       'Multi-channel: set_cash UPSERTS by channel — other channels keep their balances (does not overwrite). ' +
+      'Different channels may use different currencies; totals convert to treasury.reporting_currency via live FX when mixed. ' +
       'Omit or empty channel when unassigned (only one unassigned cash slot). ' +
       'Pass telegram_user_id or slack_user_id from the message context. Does not clear holdings.',
     parameters: Type.Object({
@@ -927,16 +974,32 @@ export function createPortfolioTools(): AgentTool[] {
         saveState(state);
 
         const target = getPlaybook(state).allocation.cash_target_pct;
-        const total = totalCash(cashes);
+        const cashLive = await totalCashLive(cashes, reportingCurrencyOf(state));
+        const total = cashLive.total;
         const multiNote =
           cashes.length > 1 && total != null
-            ? `\nAll cash channels (${cashes.length}): total ${total.amount.toFixed(2)} ${total.currency}.`
+            ? `\nAll cash channels (${cashes.length}): total ${total.amount.toFixed(2)} ${total.currency}` +
+              (cashLive.fxApplied
+                ? ` (live FX → ${cashLive.reportingCurrency}: ${Object.entries(cashLive.fxRates)
+                    .filter(([c]) => c !== cashLive.reportingCurrency)
+                    .map(([c, r]) => `${c}=${r}`)
+                    .join(', ')})`
+                : '') +
+              '.'
             : '';
         return ok(
           `Cash set to ${cash.amount.toFixed(2)} ${cash.currency} (as of ${cash.updated_at})${formatChannelTag(cash.channel)}.` +
             multiNote +
             `\nPlaybook cash target: ${target}%. Use get_portfolio / portfolio_analyzer for weight vs target after live marks.`,
-          { cash, cashes, cash_target_pct: target },
+          {
+            cash,
+            cashes,
+            cash_target_pct: target,
+            total_cash: total,
+            fx_applied: cashLive.fxApplied,
+            reporting_currency: cashLive.reportingCurrency || null,
+            fx_rates: cashLive.fxApplied ? cashLive.fxRates : undefined,
+          },
         );
       } catch (e) {
         return failFrom(e);
@@ -1005,7 +1068,8 @@ export function createPortfolioTools(): AgentTool[] {
           );
         }
 
-        const total = totalCash(before);
+        const cashLive = await totalCashLive(before, reportingCurrencyOf(state));
+        const total = cashLive.total;
         clearCash(state);
         state.log.push({
           ts: new Date().toISOString().slice(0, 10),
@@ -1268,7 +1332,8 @@ export function createPortfolioTools(): AgentTool[] {
         }
         portfolio[nextKey] = next;
         setPortfolio(state, portfolio);
-        const cashAfter = totalCash(cashResult.cashes);
+        const cashAfter = (await totalCashLive(cashResult.cashes, reportingCurrencyOf(state)))
+          .total;
         state.log.push({
           ts: today,
           action: 'holding_updated',
@@ -1614,7 +1679,7 @@ export function createPortfolioTools(): AgentTool[] {
         const cashChannel = next.channel ?? existing.channel;
         let cashResult: CashApplyResult = {
           cashes: getCashes(state),
-          cash: totalCash(getCashes(state)),
+          cash: findCashForChannel(getCashes(state), cashChannel),
           cashDelta: 0,
           adjusted: false,
           note: 'No cash impact (principal unchanged).',

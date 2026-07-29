@@ -24,7 +24,6 @@ import {
 import {
   getCashes,
   getDeposits,
-  totalCash,
   type InvestorState,
 } from '../state/portfolio-state.js';
 import {
@@ -78,13 +77,17 @@ function buildBooks(
   }
   const rep = treasury.reporting_currency;
   const fx = assumptions.fx;
-  const cash = totalCash(getCashes(state));
-  if (cash == null) {
+  const cashes = getCashes(state);
+  if (cashes.length === 0) {
     throw new Error(
       'Free cash not recorded. Call set_cash before projections (cannot invent 0 cash).',
     );
   }
-  const freeCash = toReporting(cash.amount, cash.currency, rep, fx, 'free cash');
+  // Convert each cash line (supports multi-currency free cash).
+  let freeCash = 0;
+  for (const c of cashes) {
+    freeCash += toReporting(c.amount, c.currency, rep, fx, `free cash ${c.channel ?? 'unassigned'}`);
+  }
   const deposits = getDeposits(state).map((d) => ({
     id: d.id,
     amount: d.amount,
