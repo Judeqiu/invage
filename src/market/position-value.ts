@@ -230,7 +230,7 @@ export function normalizeHoldingKeyInput(raw: string): string {
 }
 
 /**
- * Resolve map key for add/upsert.
+ * Resolve map key for add_holding (accumulate) / update targeting.
  *
  * - `channelExplicit=true`: match base + channel slot only; else new lot at BASE@channel.
  *   Same stock under different channels → distinct keys.

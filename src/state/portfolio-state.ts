@@ -23,8 +23,10 @@
  */
 
 import type { UserState } from 'utarus';
-import type { Holding } from '../market/types.js';
+import type { Holding, InstrumentKind } from '../market/types.js';
 import {
+  isEquityHolding,
+  isFundHolding,
   isOptionHolding,
   normalizeOptionalChannel,
 } from '../market/position-value.js';
@@ -36,6 +38,126 @@ import {
 } from '../playbook/index.js';
 
 export { normalizeOptionalChannel };
+
+/** Resolve holding instrument kind (equity when omitted). */
+export function holdingInstrument(h: Holding): InstrumentKind {
+  if (isOptionHolding(h)) return 'option';
+  if (isFundHolding(h)) return 'fund';
+  if (isEquityHolding(h)) return 'equity';
+  throw new Error(`Unknown holding instrument: ${String(h.instrument)}`);
+}
+
+/**
+ * Merge a new purchase into an existing lot (same portfolio map key / channel).
+ *
+ * `add_holding` **appends** shares/units/contracts and computes a
+ * **weighted-average** cost basis. It does **not** replace the prior lot.
+ * Use `update_holding` to set absolute units/avg_price (corrections / full re-import).
+ *
+ * Cash impact of the merge: only the purchase notional (via
+ * {@link cashDeltaForHoldingChange}(existing, result)).
+ */
+export function accumulateHoldingBuy(existing: Holding, purchase: Holding): Holding {
+  const exKind = holdingInstrument(existing);
+  const puKind = holdingInstrument(purchase);
+  if (exKind !== puKind) {
+    throw new Error(
+      `Cannot add ${puKind} onto existing ${exKind} lot. ` +
+        `remove_holding first, then add_holding with the new instrument.`,
+    );
+  }
+  if (!(existing.units > 0) || !Number.isFinite(existing.units)) {
+    throw new Error('accumulateHoldingBuy: existing units must be positive and finite.');
+  }
+  if (!(purchase.units > 0) || !Number.isFinite(purchase.units)) {
+    throw new Error('accumulateHoldingBuy: purchase units must be positive and finite.');
+  }
+  if (!(existing.avg_price > 0) || !Number.isFinite(existing.avg_price)) {
+    throw new Error('accumulateHoldingBuy: existing avg_price must be positive and finite.');
+  }
+  if (!(purchase.avg_price > 0) || !Number.isFinite(purchase.avg_price)) {
+    throw new Error('accumulateHoldingBuy: purchase avg_price must be positive and finite.');
+  }
+
+  const totalUnits = existing.units + purchase.units;
+  const totalCost =
+    existing.avg_price * existing.units + purchase.avg_price * purchase.units;
+  const avg_price = totalCost / totalUnits;
+  if (!(avg_price > 0) || !Number.isFinite(avg_price)) {
+    throw new Error('accumulateHoldingBuy: blended avg_price must be positive and finite.');
+  }
+
+  const category = purchase.category ?? existing.category;
+  const channel = purchase.channel ?? existing.channel;
+
+  if (exKind === 'option') {
+    if (!existing.option || !purchase.option) {
+      throw new Error('accumulateHoldingBuy: option holding missing option fields.');
+    }
+    // Contract identity lives in the map key; keep existing option fields.
+    // MTM mark: prefer existing (live mark) unless purchase carried an explicit mark
+    // different from its trade premium (caller sets mark only when updating MTM).
+    const mark =
+      purchase.option.mark !== purchase.avg_price
+        ? purchase.option.mark
+        : existing.option.mark;
+    return {
+      instrument: 'option',
+      avg_price,
+      units: totalUnits,
+      category,
+      ...(channel != null ? { channel } : {}),
+      option: {
+        ...existing.option,
+        mark,
+        // Prefer purchase quote_source / underlying_mark when provided on the buy.
+        ...(purchase.option.quote_source != null
+          ? { quote_source: purchase.option.quote_source }
+          : {}),
+        ...(purchase.option.underlying_mark != null
+          ? { underlying_mark: purchase.option.underlying_mark }
+          : {}),
+      },
+    };
+  }
+
+  if (exKind === 'fund') {
+    if (!existing.fund || !purchase.fund) {
+      throw new Error('accumulateHoldingBuy: fund holding missing fund fields.');
+    }
+    if (existing.fund.quote_source !== purchase.fund.quote_source) {
+      throw new Error(
+        `Cannot accumulate fund buy: quote_source mismatch ` +
+          `(existing=${existing.fund.quote_source}, purchase=${purchase.fund.quote_source}). ` +
+          `Use update_holding or remove+re-add.`,
+      );
+    }
+    const fund = {
+      quote_source: existing.fund.quote_source,
+      name: purchase.fund.name ?? existing.fund.name,
+      // Keep prior NAV for manual funds unless purchase supplies a new mark.
+      mark:
+        purchase.fund.mark != null ? purchase.fund.mark : existing.fund.mark,
+    };
+    return {
+      instrument: 'fund',
+      avg_price,
+      units: totalUnits,
+      category,
+      ...(channel != null ? { channel } : {}),
+      fund,
+    };
+  }
+
+  // equity
+  return {
+    instrument: 'equity',
+    avg_price,
+    units: totalUnits,
+    category,
+    ...(channel != null ? { channel } : {}),
+  };
+}
 
 /**
  * Settled / free cash available for deployment (not a holding).

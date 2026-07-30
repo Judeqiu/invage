@@ -120,7 +120,7 @@ When the user pastes a broker screenshot or list that includes **funds**, classi
 (or `ticker=BTC-USD`). Live MTM uses Yahoo **`BTC-USD`**. Do **not** treat bare Yahoo symbol `BTC` (Grayscale mini trust) as the user’s spot Bitcoin.
 | **Cash / dry powder** (amount + currency) | `set_cash` / `get_portfolio` (cash section) / `clear_cash` — **free cash only** |
 | **Fixed deposits** (locked term principal) | `add_deposit` / `update_deposit` / `remove_deposit` / `clear_deposits` / `get_portfolio` (FIXED DEPOSITS section). Principal is **in NAV**, **not** free cash. Interest = full-term $ (not rate). Multiple per channel. Dashboard shows FD card + table. |
-| **Buy / sell bookkeeping** | `add_holding` / `update_holding` / `remove_holding` auto-adjust cash when recorded (cost/premium delta); fail if insufficient cash; `adjust_cash=false` only for historical import. Same for `add_deposit` / `remove_deposit` principal. |
+| **Buy / sell bookkeeping** | `add_holding` = **this-trade** size + fill (appends to same ticker+channel and **blends** avg cost — never overwrites an existing lot). `update_holding` = set **absolute** units/avg_price (corrections / full re-import of a known total). `remove_holding` closes. Auto cash ledger on cost/premium delta; fail if insufficient cash; `adjust_cash=false` only for historical import. Same for `add_deposit` / `remove_deposit` principal. |
 | Strategy / risk / buy-sell methodology | `get_playbook` / `update_playbook` |
 | Live price, P/L, PE/PEG/ROE/P/B, analyst targets | `portfolio_analyzer` (Yahoo Finance; uses playbook thresholds for channel users) |
 | EV/EBIT, FCF, enterprise value, detailed stats | Load **`firecrawl`** → Yahoo `/key-statistics`, Finviz quote |

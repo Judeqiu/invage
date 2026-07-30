@@ -31,6 +31,7 @@ const {
   cashDeployedForHolding,
   cashDeltaForHoldingChange,
   applyCashDelta,
+  accumulateHoldingBuy,
   setPortfolio,
   updatePlaybook,
   assertCashBalance,
@@ -270,6 +271,106 @@ describe('portfolio-state', () => {
     expect(cashDeltaForHoldingChange(equity, null)).toBe(1000);
     // double units at same price → need another 1000
     expect(cashDeltaForHoldingChange(equity, { avg_price: 50, units: 40 })).toBe(-1000);
+  });
+
+  it('accumulateHoldingBuy blends equity cost and cash delta is this-trade only', () => {
+    // META: 7 @ 601.97 + buy 5 @ 541.88 → 12 blended (user bug: was replace→5)
+    const existing = {
+      instrument: 'equity' as const,
+      avg_price: 601.97,
+      units: 7,
+      channel: 'jude_futu',
+      category: 'SL Technology S1',
+    };
+    const purchase = {
+      instrument: 'equity' as const,
+      avg_price: 541.88,
+      units: 5,
+      channel: 'jude_futu',
+    };
+    const next = accumulateHoldingBuy(existing, purchase);
+    expect(next.units).toBe(12);
+    const expectedAvg = (7 * 601.97 + 5 * 541.88) / 12;
+    expect(next.avg_price).toBeCloseTo(expectedAvg, 10);
+    expect(next.channel).toBe('jude_futu');
+    expect(next.category).toBe('SL Technology S1');
+    // Cash should only move by the new lot cost (−5 × 541.88), not wipe prior basis
+    const delta = cashDeltaForHoldingChange(existing, next);
+    expect(delta).toBeCloseTo(-(5 * 541.88), 10);
+  });
+
+  it('accumulateHoldingBuy fails on instrument mismatch', () => {
+    expect(() =>
+      accumulateHoldingBuy(
+        { avg_price: 100, units: 1 },
+        {
+          instrument: 'fund',
+          avg_price: 1,
+          units: 10,
+          fund: { quote_source: 'manual', mark: 1 },
+        },
+      ),
+    ).toThrow(/Cannot add fund onto existing equity/);
+  });
+
+  it('accumulateHoldingBuy blends fund units and keeps quote_source', () => {
+    const existing = {
+      instrument: 'fund' as const,
+      avg_price: 1.0,
+      units: 100,
+      fund: { quote_source: 'manual' as const, mark: 1.02, name: 'MMF' },
+    };
+    const purchase = {
+      instrument: 'fund' as const,
+      avg_price: 1.01,
+      units: 50,
+      fund: { quote_source: 'manual' as const, mark: 1.03 },
+    };
+    const next = accumulateHoldingBuy(existing, purchase);
+    expect(next.units).toBe(150);
+    expect(next.avg_price).toBeCloseTo((100 * 1.0 + 50 * 1.01) / 150, 10);
+    expect(next.fund?.quote_source).toBe('manual');
+    expect(next.fund?.mark).toBe(1.03);
+    expect(next.fund?.name).toBe('MMF');
+  });
+
+  it('accumulateHoldingBuy blends option contracts and keeps existing mark when buy mark=premium', () => {
+    const existing = {
+      instrument: 'option' as const,
+      avg_price: 265,
+      units: 1,
+      option: {
+        right: 'put' as const,
+        side: 'short' as const,
+        strike: 90,
+        expiry: '2026-08-07',
+        multiplier: 100,
+        underlying: 'AAPL',
+        settlement: 'physical' as const,
+        mark: 180,
+      },
+    };
+    const purchase = {
+      instrument: 'option' as const,
+      avg_price: 200,
+      units: 1,
+      option: {
+        right: 'put' as const,
+        side: 'short' as const,
+        strike: 90,
+        expiry: '2026-08-07',
+        multiplier: 100,
+        underlying: 'AAPL',
+        settlement: 'physical' as const,
+        mark: 200, // defaulted to trade premium
+      },
+    };
+    const next = accumulateHoldingBuy(existing, purchase);
+    expect(next.units).toBe(2);
+    expect(next.avg_price).toBeCloseTo(232.5, 10);
+    expect(next.option?.mark).toBe(180);
+    // Short open: cash increases by new premium credit only
+    expect(cashDeltaForHoldingChange(existing, next)).toBeCloseTo(200, 10);
   });
 
   it('applyCashDelta deducts and fails when insufficient', () => {

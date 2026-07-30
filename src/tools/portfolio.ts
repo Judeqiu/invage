@@ -18,6 +18,7 @@ import {
 } from '../market/position-value.js';
 import { totalCashLive, totalDepositsLive } from '../market/sum-to-reporting.js';
 import {
+  accumulateHoldingBuy,
   applyCashDelta,
   assertFixedDeposit,
   cashDeltaForHoldingChange,
@@ -418,7 +419,10 @@ export function createPortfolioTools(): AgentTool[] {
     name: 'add_holding',
     label: 'Add Holding',
     description:
-      "Add or update a stock, fund (基金), or option position in the user's portfolio. " +
+      "Record a stock, fund (基金), or option purchase (or open) in the user's portfolio. " +
+      'Pass the **this-trade** units and fill price — not the full position total. ' +
+      'If the same ticker+channel (or option key+channel) already exists, **appends** units/contracts and **blends** average cost (weighted). ' +
+      'Does NOT overwrite an existing lot. To set absolute units/avg_price (correction or full re-import of a known total), use update_holding. ' +
       'Equity: ticker + avg_price + units — stocks/ETFs with a Yahoo-tradable ticker, or spot crypto (BTC/BTC-USD, ETH/ETH-USD; fractional units OK). ' +
       'Fund (ETF / open-end 基金 / MMF / money-market / non-Yahoo products): instrument=fund + ticker (code or symbol) + avg_price + units + fund_quote_source=yahoo|manual. ' +
       'Money-market, unit trusts, bank/robo product codes (e.g. PHILLIPUSDMMF, FULLERTONSGDLIQ, OCBCUT, OCBCRI, OCCYRI) MUST use instrument=fund fund_quote_source=manual + mark (NAV; use avg_price if NAV unknown). ' +
@@ -430,8 +434,8 @@ export function createPortfolioTools(): AgentTool[] {
       'units = contracts. mark = stored premium $ per contract. Live MTM: Yahoo chain for listed underlyings (auto), manual mark for private. ' +
       'quote_source=manual|yahoo optional for options. Contingent obligation (strike×mult×cts) is separate from MTM. ' +
       'Option portfolio key auto-builds as UNDERLYING-P|C-STRIKE-YYYYMMDD-L|S unless ticker is provided. ' +
-      'When cash is recorded, equity/fund/long buys DECREASE cash by cost/premium; short option opens INCREASE cash by premium credit. ' +
-      'Updates adjust cash by the cost delta. Fails if cash would go negative. Pass adjust_cash=false only for historical import (no ledger). ' +
+      'When cash is recorded, equity/fund/long buys DECREASE cash by **this-trade** cost/premium only; short option opens INCREASE cash by premium credit. ' +
+      'Fails if cash would go negative. Pass adjust_cash=false only for historical import (no ledger). ' +
       'Optional channel tags the broker/custody source (e.g. moomoo, ibkr, webull, jude_futu); omit or empty when unassigned. ' +
       'Same ticker under different channels is allowed — keys become TICKER@channel (e.g. TSLA@cmbyonglong and TSLA@jude_futu). ' +
       'Pass telegram_user_id or slack_user_id from the message context — never ask the user for it.',
@@ -445,10 +449,13 @@ export function createPortfolioTools(): AgentTool[] {
       ),
       avg_price: Type.Number({
         description:
-          'Equity/fund: average cost per share or unit. Option: total premium dollars per contract at trade.',
+          'This-trade fill price. Equity/fund: cost per share or unit. Option: total premium dollars per contract. ' +
+          'On an existing lot, blended into the weighted-average cost — do not pass the already-blended portfolio average unless this trade alone used that price.',
       }),
       units: Type.Number({
-        description: 'Equity: shares. Fund: fund units. Option: contracts.',
+        description:
+          'This-trade size (appended when the lot already exists). Equity: shares. Fund: fund units. Option: contracts. ' +
+          'Not the full position total — use update_holding to set absolute units.',
       }),
       category: Type.Optional(
         Type.String({ description: 'Category (e.g. "SL Technology S1", "Bond", "Private / Secondary").' }),
@@ -611,7 +618,7 @@ export function createPortfolioTools(): AgentTool[] {
           const channel = channelProvided
             ? channelParam
             : portfolio[key]?.channel;
-          // Preserve prior fund name/mark when not re-specified on upsert of same lot.
+          // Preserve prior fund name/mark when not re-specified on this purchase lot.
           const prior = portfolio[key];
           if (isFundHolding(prior) && prior.fund) {
             if (fund.name == null && prior.fund.name != null) fund.name = prior.fund.name;
@@ -661,10 +668,18 @@ export function createPortfolioTools(): AgentTool[] {
           assertHolding(key, holding);
         }
 
-        const isUpdate = key in portfolio;
-        const before = isUpdate ? portfolio[key] : null;
+        const before = key in portfolio ? portfolio[key]! : null;
+        const purchase = holding;
+        // Same-key lot already present → append units and blend avg cost (buy more).
+        // Absolute replace is update_holding only.
+        if (before != null) {
+          holding = accumulateHoldingBuy(before, purchase);
+          assertHolding(key, holding);
+        }
+        const isAccumulate = before != null;
         const today = new Date().toISOString().slice(0, 10);
         // Ledger against the holding's channel so multi-broker cash stays isolated.
+        // Delta is only this-trade cost when accumulating (blended position − prior).
         const cashResult = applyCashDelta(
           getCashes(state),
           cashDeltaForHoldingChange(before, holding),
@@ -686,34 +701,47 @@ export function createPortfolioTools(): AgentTool[] {
         const cashAfter = cashAfterLive.total;
         state.log.push({
           ts: today,
-          action: isUpdate ? 'holding_updated' : 'holding_added',
+          action: 'holding_added',
           ticker: key,
           instrument,
-          avg_price: p.avg_price,
-          units: p.units,
+          avg_price: purchase.avg_price,
+          units: purchase.units,
           category: p.category,
           channel: holding.channel,
           cash_delta: cashResult.adjusted ? cashResult.cashDelta : undefined,
           cash_after: cashAfter?.amount,
           cash_channel: cashResult.adjusted ? cashResult.cash?.channel : undefined,
+          ...(isAccumulate
+            ? {
+                accumulated: true,
+                position_avg_price: holding.avg_price,
+                position_units: holding.units,
+              }
+            : {}),
           ...(instrument === 'option' ? { option: holding.option } : {}),
           ...(instrument === 'fund' ? { fund: holding.fund } : {}),
         });
         saveState(state);
 
-        const action = isUpdate ? 'Updated' : 'Added';
         const cashLine = formatCashApplyNote(cashResult);
         const channelLine = holding.channel ? `Channel: ${holding.channel}\n` : '';
+        const tradeCost = purchase.avg_price * purchase.units;
+        const positionLine = isAccumulate
+          ? `Position now: ${holding.units} @ $${holding.avg_price.toFixed(4)} blended ` +
+            `(was ${before!.units} @ $${before!.avg_price.toFixed(4)}; ` +
+            `+${purchase.units} @ $${purchase.avg_price.toFixed(4)})\n`
+          : '';
         if (instrument === 'fund') {
           const f = holding.fund!;
-          const cost = p.avg_price * p.units;
           const name = f.name ? ` (${f.name})` : '';
           const markLine =
             f.quote_source === 'manual' && f.mark != null
               ? `Mark/NAV: $${f.mark.toFixed(4)}/u`
               : 'Mark: live Yahoo';
           return ok(
-            `${action} fund ${key}${name}: ${p.units} units @ $${p.avg_price.toFixed(4)} (cost: $${cost.toFixed(2)})\n` +
+            `${isAccumulate ? 'Bought more' : 'Added'} fund ${key}${name}: ` +
+              `+${purchase.units} units @ $${purchase.avg_price.toFixed(4)} (trade cost: $${tradeCost.toFixed(2)})\n` +
+              positionLine +
               `quote_source: ${f.quote_source} | ${markLine}\n` +
               (p.category ? `Category: ${p.category}\n` : '') +
               channelLine +
@@ -721,7 +749,8 @@ export function createPortfolioTools(): AgentTool[] {
             {
               ticker: key,
               holding,
-              isUpdate,
+              purchase: { avg_price: purchase.avg_price, units: purchase.units },
+              isAccumulate,
               cash: cashResult.cash,
               cashes: cashResult.cashes,
               cashDelta: cashResult.adjusted ? cashResult.cashDelta : 0,
@@ -733,8 +762,11 @@ export function createPortfolioTools(): AgentTool[] {
           const e = valuePosition(key, holding);
           const o = holding.option!;
           return ok(
-            `${action} option ${key}: ${formatOptionLabel(o, p.units)}\n` +
-              `Premium: $${e.premiumAbsolute.toFixed(2)} (${o.side}) @ $${p.avg_price.toFixed(2)}/contract × ${p.units} ct\n` +
+            `${isAccumulate ? 'Bought more' : 'Added'} option ${key}: ` +
+              `+${formatOptionLabel(o, purchase.units)}\n` +
+              `This trade premium: $${(purchase.avg_price * purchase.units).toFixed(2)} (${o.side}) ` +
+              `@ $${purchase.avg_price.toFixed(2)}/contract × ${purchase.units} ct\n` +
+              positionLine +
               `Mark: $${o.mark.toFixed(2)}/ct | MTM: $${e.value.toFixed(2)} | P/L: ${e.pl >= 0 ? '+' : ''}$${e.pl.toFixed(2)}\n` +
               (e.contingentCashObligation > 0
                 ? `Contingent cash if assigned (not current MTM): $${e.contingentCashObligation.toFixed(2)}\n`
@@ -748,7 +780,8 @@ export function createPortfolioTools(): AgentTool[] {
             {
               ticker: key,
               holding,
-              isUpdate,
+              purchase: { avg_price: purchase.avg_price, units: purchase.units },
+              isAccumulate,
               economics: e,
               cash: cashResult.cash,
               cashes: cashResult.cashes,
@@ -758,17 +791,20 @@ export function createPortfolioTools(): AgentTool[] {
           );
         }
 
-        const cost = p.avg_price * p.units;
         return ok(
-          `${action} ${key}: ${p.units} shares @ $${p.avg_price.toFixed(2)} (cost: $${cost.toFixed(2)})${p.category ? ` [${p.category}]` : ''}${formatChannelTag(holding.channel)}` +
-            (cashLine ? `\n${cashLine}` : ''),
+          `${isAccumulate ? 'Bought more' : 'Added'} ${key}: ` +
+            `+${purchase.units} shares @ $${purchase.avg_price.toFixed(2)} (trade cost: $${tradeCost.toFixed(2)})` +
+            `${p.category ? ` [${p.category}]` : ''}${formatChannelTag(holding.channel)}\n` +
+            positionLine +
+            (cashLine ? cashLine : ''),
           {
             ticker: key,
-            avg_price: p.avg_price,
-            units: p.units,
-            category: p.category,
+            avg_price: holding.avg_price,
+            units: holding.units,
+            purchase: { avg_price: purchase.avg_price, units: purchase.units },
+            category: holding.category,
             channel: holding.channel,
-            isUpdate,
+            isAccumulate,
             cash: cashResult.cash,
             cashes: cashResult.cashes,
             cashDelta: cashResult.adjusted ? cashResult.cashDelta : 0,
@@ -1097,7 +1133,9 @@ export function createPortfolioTools(): AgentTool[] {
     name: 'update_holding',
     label: 'Update Holding',
     description:
-      'Update fields of an existing equity, fund, or option position (including option/fund mark for MTM). ' +
+      'Set absolute fields on an existing equity, fund, or option position (units, avg_price, mark, category, channel). ' +
+      'Use this to correct a lot or re-import a known full position total — it replaces units/avg_price, it does not append. ' +
+      'To record a new buy of more shares on an existing lot, use add_holding (appends + blends cost). ' +
       'When cash is recorded, changes to units/avg_price/side adjust cash by the cost/premium delta (mark-only MTM updates do not). ' +
       'Fails if cash would go negative. Pass adjust_cash=false to skip ledger. ' +
       'Same ticker may exist under multiple channels — pass full key (TICKER@channel) or channel to disambiguate. ' +

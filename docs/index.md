@@ -45,7 +45,7 @@ Invester maintains your portfolio in a persistent user state file. Once holdings
 
 | Tool | Description |
 |------|-------------|
-| `add_holding` | Add or update a stock position (ticker, avg price, shares, category) |
+| `add_holding` | Record a buy (this-trade shares + fill); appends + blends cost on existing lot |
 | `remove_holding` | Remove a position from portfolio |
 | `get_portfolio` | View all saved positions with cost basis |
 | `update_holding` | Update specific fields (price, shares, or category) |

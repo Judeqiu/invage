@@ -324,7 +324,7 @@ playbook:
 | Assigned | `AAPL@moomoo` | Same equity at another broker is a separate lot |
 | Option + channel | `SPACEX-P-90-20260807-S@ibkr` | Option base key + `@channel` |
 
-`add_holding` with `channel` upserts only the lot on that channel; a different channel creates a new lot (no forced merge). Yahoo quotes still use the bare symbol (`AAPL`). Legacy rows that store channel on the holding under a bare key (`AAPL` + `channel: moomoo`) remain valid and match that channel on upsert.
+`add_holding` with `channel` targets only the lot on that channel; a different channel creates a new lot (no forced merge). **Same ticker+channel already present:** `add_holding` **appends** units/contracts and **blends** weighted-average cost (pass this-trade size + fill price, not the full position total). To set absolute units/avg_price, use `update_holding`. Yahoo quotes still use the bare symbol (`AAPL`). Legacy rows that store channel on the holding under a bare key (`AAPL` + `channel: moomoo`) remain valid and match that channel on upsert.
 
 **Multi-channel cash:** `set_cash` **upserts by channel** — recording cash for `cmbyonglong` does **not** overwrite `jude_futu`. YAML stores a single object when one slot exists, or an array when two or more. Trades with `adjust_cash=true` debit/credit only the cash slot matching the holding's `channel`.
 
@@ -468,7 +468,7 @@ deposits:
 
 | Tool | Auth | Description |
 |------|------|-------------|
-| `add_holding` | channel id | Add or update equity, **fund** (`instrument=fund` + `fund_quote_source`), or option; optional `channel`; **deducts/credits cash** when recorded (`adjust_cash=false` to skip) |
+| `add_holding` | channel id | Record a **buy/open** (this-trade units + fill); **appends + blends cost** on same ticker+channel; equity / **fund** / option; optional `channel`; cash ledger for this-trade only (`adjust_cash=false` to skip). Absolute totals → `update_holding` |
 | `remove_holding` | channel id | Remove position; credits cash at cost basis when recorded |
 | `get_portfolio` | channel id | List positions + cash + **fixed deposits** section |
 | `update_holding` | channel id | Update fields including option `mark` and optional `channel`; cost changes adjust cash |
