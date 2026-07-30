@@ -399,11 +399,13 @@ Each entry:
 
 | Action | Cash impact |
 |--------|-------------|
-| Add equity / long option | **−** cost or premium (`avg_price × units`) |
-| Add short option | **+** premium credit |
-| Update units/avg_price (or side) | **±** cost/premium **delta** vs prior holding |
+| `add_holding` equity / fund / long option (new or append) | **−** **this-trade** cost or premium only (`purchase.avg × purchase.units`; blended position keeps prior basis) |
+| `add_holding` short option | **+** this-trade premium credit |
+| `update_holding` units/avg_price (or side) | **±** cost/premium **delta** vs prior absolute holding |
 | Mark-only option MTM update | no cash change |
-| Remove holding | reverse open at **cost basis** (not live sale proceeds) |
+| `remove_holding` | reverse open at **cost basis** (not live sale proceeds) — full lot only |
+| `set_cash` | **no trade ledger** — writes absolute free-cash for one channel (other channels untouched) |
+| `add_deposit` / `remove_deposit` | **−** / **+** principal on matching channel when `adjust_cash` |
 
 - Fails fast if cash would go **negative** (insufficient dry powder).
 - Cash unknown → no ledger write (message notes to `set_cash`).

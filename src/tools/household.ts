@@ -321,10 +321,12 @@ export function createHouseholdTools(): AgentTool[] {
     name: 'add_property',
     label: 'Add Property',
     description:
-      'Add or update a real-estate property (manual mark). Optional id; auto-generated if omitted. Link mortgage via add_liability kind=mortgage.',
+      'Add a new real-estate property (manual mark). Optional id; auto-generated if omitted. ' +
+      'Fails if id already exists — use update_property to change an existing property (does not silently overwrite). ' +
+      'Link mortgage via add_liability kind=mortgage.',
     parameters: Type.Object({
       ...channelIdParams,
-      id: Type.Optional(Type.String({ description: 'Stable id (auto if omitted).' })),
+      id: Type.Optional(Type.String({ description: 'Stable id (auto if omitted). Must be new.' })),
       value: Type.Number({ description: 'Property mark ≥ 0.' }),
       currency: Type.String({ description: 'Currency of value (required).' }),
       label: Type.Optional(Type.String()),
@@ -341,9 +343,18 @@ export function createHouseholdTools(): AgentTool[] {
       try {
         const state = asHousehold(resolveInvestorFromChannel(p));
         const today = todayYmd();
-        const id =
-          p.id?.trim() ||
-          generateHouseholdId('prop', getProperties(state));
+        const existingProps = getProperties(state);
+        let id: string;
+        if (p.id != null && String(p.id).trim().length > 0) {
+          id = String(p.id).trim();
+          if (existingProps.some((x) => x.id === id)) {
+            return fail(
+              `Property id "${id}" already exists. Use update_property to change it, or omit id to auto-generate a new one.`,
+            );
+          }
+        } else {
+          id = generateHouseholdId('prop', existingProps);
+        }
         const prop: PropertyAsset = {
           id,
           value: p.value,
@@ -353,11 +364,11 @@ export function createHouseholdTools(): AgentTool[] {
         if (p.label != null) prop.label = p.label;
         if (p.mortgage_id != null) prop.mortgage_id = p.mortgage_id;
         upsertProperty(state, prop);
-        state.log.push({ ts: today, action: 'property_upserted', id });
+        state.log.push({ ts: today, action: 'property_added', id });
         saveState(state);
         const saved = getProperties(state).find((x) => x.id === id)!;
         return ok(
-          `Property ${saved.id}: ${saved.value.toFixed(2)} ${saved.currency}` +
+          `Added property ${saved.id}: ${saved.value.toFixed(2)} ${saved.currency}` +
             (saved.label ? ` (${saved.label})` : ''),
           { property: saved },
         );
@@ -442,12 +453,13 @@ export function createHouseholdTools(): AgentTool[] {
     name: 'add_liability',
     label: 'Add Liability',
     description:
-      'Add or update amortizing liability (mortgage|loan). Mortgage requires property_id. ' +
+      'Add a new amortizing liability (mortgage|loan). Mortgage requires property_id. ' +
+      'Fails if id already exists — use update_liability to change an existing one (does not silently overwrite). ' +
       'If payment_amount omitted, computes standard monthly annuity payment. ' +
       'If payment_amount provided, must match annuity within tolerance (fail-fast).',
     parameters: Type.Object({
       ...channelIdParams,
-      id: Type.Optional(Type.String()),
+      id: Type.Optional(Type.String({ description: 'Stable id (auto if omitted). Must be new.' })),
       kind: Type.Union([Type.Literal('mortgage'), Type.Literal('loan')]),
       principal: Type.Number(),
       annual_rate_pct: Type.Number(),
@@ -480,9 +492,21 @@ export function createHouseholdTools(): AgentTool[] {
       try {
         const state = asHousehold(resolveInvestorFromChannel(p));
         const today = todayYmd();
-        const id =
-          p.id?.trim() ||
-          generateHouseholdId(p.kind === 'mortgage' ? 'mortgage' : 'loan', getLiabilities(state));
+        const existingLiab = getLiabilities(state);
+        let id: string;
+        if (p.id != null && String(p.id).trim().length > 0) {
+          id = String(p.id).trim();
+          if (existingLiab.some((x) => x.id === id)) {
+            return fail(
+              `Liability id "${id}" already exists. Use update_liability to change it, or omit id to auto-generate a new one.`,
+            );
+          }
+        } else {
+          id = generateHouseholdId(
+            p.kind === 'mortgage' ? 'mortgage' : 'loan',
+            existingLiab,
+          );
+        }
         const payment =
           p.payment_amount ??
           annuityPayment(p.principal, p.annual_rate_pct, p.term_months);
@@ -501,11 +525,11 @@ export function createHouseholdTools(): AgentTool[] {
         if (p.property_id != null) L.property_id = p.property_id;
         if (p.label != null) L.label = p.label;
         upsertLiability(state, L);
-        state.log.push({ ts: today, action: 'liability_upserted', id });
+        state.log.push({ ts: today, action: 'liability_added', id });
         saveState(state);
         const saved = getLiabilities(state).find((x) => x.id === id)!;
         return ok(
-          `Liability ${saved.id} [${saved.kind}]: principal ${saved.principal.toFixed(2)} ${saved.currency}, ` +
+          `Added liability ${saved.id} [${saved.kind}]: principal ${saved.principal.toFixed(2)} ${saved.currency}, ` +
             `payment ${saved.payment_amount.toFixed(2)}/mo @ ${saved.annual_rate_pct}%`,
           { liability: saved },
         );
@@ -610,10 +634,11 @@ export function createHouseholdTools(): AgentTool[] {
     name: 'add_cash_flow',
     label: 'Add Cash Flow Line',
     description:
-      'Add or update a recurring income or expense line (amount, currency, frequency monthly|annual, start/end dates).',
+      'Add a new recurring income or expense line (amount, currency, frequency monthly|annual, start/end dates). ' +
+      'Fails if id already exists — use update_cash_flow to change an existing line (does not silently overwrite).',
     parameters: Type.Object({
       ...channelIdParams,
-      id: Type.Optional(Type.String()),
+      id: Type.Optional(Type.String({ description: 'Stable id (auto if omitted). Must be new.' })),
       kind: Type.Union([Type.Literal('income'), Type.Literal('expense')]),
       amount: Type.Number(),
       currency: Type.String(),
@@ -638,9 +663,21 @@ export function createHouseholdTools(): AgentTool[] {
       try {
         const state = asHousehold(resolveInvestorFromChannel(p));
         const today = todayYmd();
-        const id =
-          p.id?.trim() ||
-          generateHouseholdId(p.kind === 'income' ? 'cf-income' : 'cf-expense', getCashFlows(state));
+        const existingCf = getCashFlows(state);
+        let id: string;
+        if (p.id != null && String(p.id).trim().length > 0) {
+          id = String(p.id).trim();
+          if (existingCf.some((x) => x.id === id)) {
+            return fail(
+              `Cash flow id "${id}" already exists. Use update_cash_flow to change it, or omit id to auto-generate a new one.`,
+            );
+          }
+        } else {
+          id = generateHouseholdId(
+            p.kind === 'income' ? 'cf-income' : 'cf-expense',
+            existingCf,
+          );
+        }
         const line: CashFlowLine = {
           id,
           kind: p.kind,
@@ -654,11 +691,11 @@ export function createHouseholdTools(): AgentTool[] {
         if (p.label != null) line.label = p.label;
         if (p.category != null) line.category = p.category;
         upsertCashFlow(state, line);
-        state.log.push({ ts: today, action: 'cash_flow_upserted', id });
+        state.log.push({ ts: today, action: 'cash_flow_added', id });
         saveState(state);
         const saved = getCashFlows(state).find((x) => x.id === id)!;
         return ok(
-          `Cash flow ${saved.id} [${saved.kind}]: ${saved.amount.toFixed(2)} ${saved.currency}/${saved.frequency}`,
+          `Added cash flow ${saved.id} [${saved.kind}]: ${saved.amount.toFixed(2)} ${saved.currency}/${saved.frequency}`,
           { cash_flow: saved },
         );
       } catch (e) {

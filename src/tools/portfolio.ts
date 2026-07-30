@@ -821,8 +821,9 @@ export function createPortfolioTools(): AgentTool[] {
     name: 'remove_holding',
     label: 'Remove Holding',
     description:
-      "Remove a stock or option position from the user's portfolio. " +
-      'When cash is recorded, credits cash by cost basis (equity/long premium) or reverses short premium credit. ' +
+      "Remove an **entire** equity, fund, or option lot from the user's portfolio (full close). " +
+      'Does NOT partial-sell: to sell only some shares/contracts, use update_holding with the remaining absolute units (and blended avg if needed). ' +
+      'When cash is recorded, credits cash by cost basis (equity/fund/long premium) or reverses short premium credit. ' +
       'This is bookkeeping at cost, not live sale proceeds — pass adjust_cash=false to skip. ' +
       'Pass telegram_user_id or slack_user_id from the message context.',
     parameters: Type.Object({
@@ -889,7 +890,11 @@ export function createPortfolioTools(): AgentTool[] {
         });
         saveState(state);
 
-        const kind = isOptionHolding(removed) ? 'option' : 'equity';
+        const kind = isOptionHolding(removed)
+          ? 'option'
+          : isFundHolding(removed)
+            ? 'fund'
+            : 'equity';
         const cashLine = formatCashApplyNote(cashResult);
         return ok(
           `Removed ${ticker} (${kind}: ${removed.units} @ $${removed.avg_price.toFixed(2)}).` +
@@ -951,17 +956,19 @@ export function createPortfolioTools(): AgentTool[] {
     name: 'set_cash',
     label: 'Set Cash',
     description:
-      "Record available cash for strategy (dry powder, cash weight vs cash_target_pct, short-put cover). " +
-      'amount ≥ 0; currency required (e.g. USD, HKD, SGD) — no silent default. ' +
+      "Set the **full free-cash balance** for one broker channel (dry powder, cash weight vs cash_target_pct, short-put cover). " +
+      'amount is the NEW absolute balance for that channel — NOT a delta. "I deposited $1k" → read current via get_portfolio, then set amount = prior + 1000 (or user-stated full balance). ' +
+      'currency required (e.g. USD, HKD, SGD) — no silent default. ' +
       'Optional channel tags the broker holding this cash (e.g. jude_futu, cmbyonglong, moomoo, ibkr). ' +
-      'Multi-channel: set_cash UPSERTS by channel — other channels keep their balances (does not overwrite). ' +
+      'Multi-channel: set_cash UPSERTS by channel only — other channels keep their balances (never wiped by a different channel set). ' +
       'Different channels may use different currencies; totals convert to treasury.reporting_currency via live FX when mixed. ' +
       'Omit or empty channel when unassigned (only one unassigned cash slot). ' +
       'Pass telegram_user_id or slack_user_id from the message context. Does not clear holdings.',
     parameters: Type.Object({
       ...channelIdParams,
       amount: Type.Number({
-        description: 'Available cash amount (≥ 0). Settled / free cash for deployment.',
+        description:
+          'Full free-cash balance after this set (≥ 0), not an increment. Settled / deployable dry powder for this channel.',
       }),
       currency: Type.String({
         description: 'Currency code (e.g. USD, HKD). Required — no default.',

@@ -120,7 +120,30 @@ When the user pastes a broker screenshot or list that includes **funds**, classi
 (or `ticker=BTC-USD`). Live MTM uses Yahoo **`BTC-USD`**. Do **not** treat bare Yahoo symbol `BTC` (Grayscale mini trust) as the user’s spot Bitcoin.
 | **Cash / dry powder** (amount + currency) | `set_cash` / `get_portfolio` (cash section) / `clear_cash` — **free cash only** |
 | **Fixed deposits** (locked term principal) | `add_deposit` / `update_deposit` / `remove_deposit` / `clear_deposits` / `get_portfolio` (FIXED DEPOSITS section). Principal is **in NAV**, **not** free cash. Interest = full-term $ (not rate). Multiple per channel. Dashboard shows FD card + table. |
-| **Buy / sell bookkeeping** | `add_holding` = **this-trade** size + fill (appends to same ticker+channel and **blends** avg cost — never overwrites an existing lot). `update_holding` = set **absolute** units/avg_price (corrections / full re-import of a known total). `remove_holding` closes. Auto cash ledger on cost/premium delta; fail if insufficient cash; `adjust_cash=false` only for historical import. Same for `add_deposit` / `remove_deposit` principal. |
+| **Buy / sell bookkeeping** | See **Mutation semantics (do not wipe data)** below. |
+
+### Mutation semantics (do not wipe data)
+
+| Tool | Identity | On conflict / existing | Correct use |
+|------|----------|------------------------|-------------|
+| `add_holding` | ticker + channel (option key + channel) | **Appends** units + **blends** avg cost | **This-trade** size + fill only (new buy / open) |
+| `update_holding` | existing lot | **Sets absolute** units/avg/mark | Corrections, partial sells (set remaining units), screenshot **full totals** re-sync |
+| `remove_holding` | existing lot | Deletes **entire** lot | Full close only — never for “sold 2 of 12” |
+| `set_cash` | channel slot | **Replaces full balance** for that channel only; other channels kept | Absolute free cash **after** the set (not +delta). Read prior with `get_portfolio` if user said “deposited $X more” |
+| `clear_cash` | optional channel | Clears slot or all (confirm) | Explicit wipe |
+| `add_deposit` | unique `id` | **Fails** if id exists | New FD; multi per channel OK; auto-id when omitted |
+| `update_deposit` | id | Patch absolute fields | Change principal/dates/label |
+| `remove_deposit` | id | Removes one FD | Maturity / close (credits principal to cash when ledger on) |
+| `clear_deposits` | optional channel | Clears (confirm); **no** cash ledger | Bulk wipe only |
+| `clear_portfolio` | all holdings | Wipes holdings only (cash/deposits kept) | confirm required |
+
+**Screenshot / historical import of full position totals:**
+
+1. `get_portfolio` first.
+2. Lot **missing** → `add_holding` with full units + avg, `adjust_cash=false`, correct `channel`.
+3. Lot **already exists** → `update_holding` with absolute units + avg from the screenshot, `adjust_cash=false` — **do not** `add_holding` full totals (would double after append semantics).
+4. Cash from UI → `set_cash` with the **full** free-cash number shown for that channel (not a trade delta).
+5. New FD line → `add_deposit` (omit id or use new id). Existing FD → `update_deposit`.
 | Strategy / risk / buy-sell methodology | `get_playbook` / `update_playbook` |
 | Live price, P/L, PE/PEG/ROE/P/B, analyst targets | `portfolio_analyzer` (Yahoo Finance; uses playbook thresholds for channel users) |
 | EV/EBIT, FCF, enterprise value, detailed stats | Load **`firecrawl`** → Yahoo `/key-statistics`, Finviz quote |
