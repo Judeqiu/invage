@@ -1,8 +1,9 @@
 /**
  * Dynamic portfolio dashboard client.
- * Fetches /api/domain/invage/dashboard (session cookie) and renders the model:
- * summary cards, allocation donut, invested-vs-current bars, fund-vs-benchmark
- * timeline, insights. Archive dates render from snapshot positions client-side.
+ * Fetches /api/domain/invage/dashboard (session cookie) and renders:
+ * high-level KPI overview + channel chips, allocation/performance charts,
+ * then detail tables (channels, holdings, deposits). Archive dates rebuild
+ * from snapshot positions client-side.
  */
 
 const API = '/api/domain/invage/dashboard';
@@ -28,7 +29,13 @@ const el = {
   loading: document.getElementById('loading'),
   error: document.getElementById('error'),
   dashboard: document.getElementById('dashboard'),
-  summaryCards: document.getElementById('summaryCards'),
+  kpiGrid: document.getElementById('kpiGrid'),
+  overviewMeta: document.getElementById('overviewMeta'),
+  channelStrip: document.getElementById('channelStrip'),
+  channelDetailBody: document.getElementById('channelDetailBody'),
+  channelDetailMeta: document.getElementById('channelDetailMeta'),
+  holdingsDetailBody: document.getElementById('holdingsDetailBody'),
+  holdingsDetailMeta: document.getElementById('holdingsDetailMeta'),
   allocationGrid: document.getElementById('allocationGrid'),
   barGrid: document.getElementById('barGrid'),
   chartGrid: document.getElementById('chartGrid'),
@@ -470,102 +477,591 @@ function chartAvailable() {
 
 /* ---------- renderers ---------- */
 
-function renderCards(view) {
-  const benchTicker = payload.benchmark?.ticker || 'SPY';
-  const baseDate = payload.benchmark?.baseDate || 'cost basis';
-  const cards = [];
+function plClass(n) {
+  if (n > 0) return 'pl-pos';
+  if (n < 0) return 'pl-neg';
+  return 'pl-flat';
+}
 
-  const cardHtml = (title, fIdx, bIdx, diff, footer, extraBadgeHtml = '') => {
-    const d = diff == null ? 0 : diff;
-    const isNeutral = Math.abs(d) < 1;
-    const cardClass = diff == null ? 'neutral' : isNeutral ? 'neutral' : d > 0 ? 'positive' : 'negative';
-    const diffHtml =
-      diff == null
-        ? `<div class="diff-indicator" style="background:#f3f4f6;color:#6b7280">vs benchmark n/a</div>`
-        : `<div class="diff-indicator ${d >= 0 ? 'diff-positive' : 'diff-negative'}">
-             ${d >= 0 ? '▲' : '▼'} ${fmtSigned(d)}
-           </div>`;
-    return `
-      <div class="card ${cardClass}">
-        <div class="card-header">
-          <div class="card-title">${escapeHtml(title)}</div>
-          <div style="display:flex;gap:0.35rem;flex-wrap:wrap;justify-content:flex-end">
-            ${extraBadgeHtml}
-            <span class="card-badge badge-benchmark">${escapeHtml(benchTicker)}</span>
-          </div>
-        </div>
-        <div class="card-values">
-          <div class="fund-value">${fIdx.toFixed(2)}</div>
-          <div class="bench-value">${bIdx == null ? 'vs —' : 'vs ' + bIdx.toFixed(2)}</div>
-        </div>
-        ${diffHtml}
-        <div class="card-footer">${footer}</div>
-      </div>`;
-  };
+function typeBadgeHtml(kind) {
+  const k = kind || 'equity';
+  const cls =
+    k === 'option'
+      ? 'badge-type-option'
+      : k === 'fund'
+        ? 'badge-type-fund'
+        : k === 'cash'
+          ? 'badge-type-cash'
+          : k === 'deposit'
+            ? 'badge-type-deposit'
+            : 'badge-type-equity';
+  return `<span class="badge-type ${cls}">${escapeHtml(k)}</span>`;
+}
 
-  const optionNote =
-    (view.optionCount || 0) > 0
-      ? ` | ${view.optionCount} option · prem coll. ${fmtUsd0(view.optionsPremiumCollected || 0)} · oblig. ${fmtUsd0(view.contingentCashObligation || 0)}`
-      : '';
-  const cashNote =
-    view.cashAmount != null
-      ? ` | Cash ${fmtUsd0(view.cashAmount)}${view.cashCurrency ? ' ' + view.cashCurrency : ''}` +
-        (view.cashWeightPct != null ? ` (${view.cashWeightPct.toFixed(1)}%)` : '') +
-        (view.cashChannel ? ` · ch ${view.cashChannel}` : '')
-      : '';
-  const depAmount = Number(view.depositsAmount || 0);
-  const depositNote =
-    depAmount > 0 || (view.depositCount || 0) > 0
-      ? ` | FD principal ${fmtUsd0(depAmount)}` +
-        (view.depositsCurrency ? ' ' + view.depositsCurrency : '') +
-        ` · ${view.depositCount || 0} term${(view.depositCount || 0) === 1 ? '' : 's'}`
-      : '';
-  const channelNote =
-    view.channelView === MERGED_CHANNEL_VIEW
-      ? ` | Channels: ${(view.channels || []).join(', ') || DEFAULT_CHANNEL}`
-      : ` | Channel: ${view.channelLabel || view.channelView}`;
+function dashOrPct(n, digits = 1) {
+  if (n == null || Number.isNaN(n)) return '—';
+  return `${fmtSigned(n, digits)}%`;
+}
 
-  cards.push(
-    cardHtml(
-      view.channelView === MERGED_CHANNEL_VIEW
-        ? 'Overall Portfolio (merged)'
-        : `Portfolio · ${view.channelLabel || view.channelView}`,
-      view.fundIndex,
-      view.benchmarkIndex,
-      view.diff,
-      `Base: ${escapeHtml(baseDate)} | ${view.positions.length} holdings | Cost: ${fmtUsd0(view.totalCost)}${optionNote}${cashNote}${depositNote}${channelNote}${fxFootnote(view)}`,
-    ),
-  );
+function dashOrIndex(n) {
+  if (n == null || Number.isNaN(n)) return '—';
+  return Number(n).toFixed(2);
+}
 
-  if ((view.deposits || []).length > 0) {
-    const interestTotal = view.deposits.reduce((s, d) => s + Number(d.interest || 0), 0);
-    const maturedN = view.deposits.filter((d) => d.matured).length;
-    cards.push(`
-      <div class="card">
-        <div class="card-header">
-          <div class="card-title">Fixed deposits</div>
-          <span class="card-badge badge-channel">FD</span>
-        </div>
-        <div class="card-values">
-          <div class="fund-value">${fmtUsd0(depAmount)}</div>
-          <div class="bench-value">principal</div>
-        </div>
-        <div class="diff-indicator" style="background:#f3e8ff;color:#7c3aed">
-          ${view.deposits.length} term${view.deposits.length === 1 ? '' : 's'} · interest at maturity ${fmtUsd0(interestTotal)}${
-            maturedN > 0 ? ` · ${maturedN} matured` : ''
-          }
-        </div>
-        <div class="card-footer">Locked capital · not free cash · in NAV</div>
-      </div>`);
+/**
+ * Build per-channel rows for the channel detail table.
+ * Prefer server `byChannel` on live; on archive / filter rebuild from positions.
+ */
+function channelRowsForView(view) {
+  if (Array.isArray(view.byChannel) && view.byChannel.length > 0) {
+    if (view.channelView === MERGED_CHANNEL_VIEW) {
+      return view.byChannel.map((c) => ({ ...c, channel: resolveDashboardChannel(c.channel) }));
+    }
+    const one = view.byChannel.find(
+      (c) => resolveDashboardChannel(c.channel) === view.channelView,
+    );
+    if (one) return [{ ...one, channel: resolveDashboardChannel(one.channel) }];
   }
 
-  // When merged and multi-channel, surface per-channel summary cards.
-  if (
+  // Rebuild from filtered view (archive dates or missing byChannel).
+  const channels =
+    view.channelView === MERGED_CHANNEL_VIEW
+      ? view.channels && view.channels.length > 0
+        ? view.channels
+        : [...new Set(view.positions.map((p) => resolveDashboardChannel(p.channel)))].sort(
+            (a, b) => {
+              if (a === DEFAULT_CHANNEL) return -1;
+              if (b === DEFAULT_CHANNEL) return 1;
+              return a.localeCompare(b);
+            },
+          )
+      : [view.channelView];
+
+  return channels.map((ch) => {
+    const pos = view.positions.filter((p) => resolveDashboardChannel(p.channel) === ch);
+    let positionsValue = 0;
+    let totalCost = 0;
+    let equityValue = 0;
+    let equityCost = 0;
+    let equityCount = 0;
+    let optionCount = 0;
+    let fundCount = 0;
+    let optionsPremiumCollected = 0;
+    let optionsPremiumPaid = 0;
+    let contingentCashObligation = 0;
+    let contingentShareObligation = 0;
+    for (const p of pos) {
+      positionsValue += p.value;
+      totalCost += p.cost;
+      if (p.instrument === 'option') {
+        optionCount += 1;
+        contingentCashObligation += p.contingentCashObligation || 0;
+        contingentShareObligation += p.contingentShareObligation || 0;
+        if (p.option?.side === 'short') optionsPremiumCollected += p.premiumAbsolute || 0;
+        else optionsPremiumPaid += p.premiumAbsolute || 0;
+      } else if (p.instrument === 'fund') {
+        fundCount += 1;
+        equityValue += p.value;
+        equityCost += p.cost;
+      } else {
+        equityCount += 1;
+        equityValue += p.value;
+        equityCost += p.cost;
+      }
+    }
+    const deposits = (view.deposits || []).filter(
+      (d) => resolveDashboardChannel(d.channel) === ch,
+    );
+    const depositsAmount = deposits.reduce((s, d) => s + Number(d.amount), 0);
+    const depositsCurrency =
+      deposits.length > 0 ? deposits[0].currency : view.depositsCurrency ?? null;
+    let cashAmount = null;
+    let cashCurrency = null;
+    if (view.channelView !== MERGED_CHANNEL_VIEW) {
+      cashAmount = view.cashAmount ?? null;
+      cashCurrency = view.cashCurrency ?? null;
+    } else if (view.cashChannel != null && resolveDashboardChannel(view.cashChannel) === ch) {
+      cashAmount = view.cashAmount ?? null;
+      cashCurrency = view.cashCurrency ?? null;
+    }
+    const totalPL = positionsValue - totalCost;
+    let totalValue = positionsValue;
+    if (cashAmount != null) totalValue += cashAmount;
+    totalValue += depositsAmount;
+    return {
+      channel: ch,
+      positionCount: pos.length,
+      equityCount,
+      optionCount,
+      fundCount,
+      positionsValue,
+      totalCost,
+      totalPL,
+      totalPLPct: totalCost !== 0 ? (totalPL / Math.abs(totalCost)) * 100 : 0,
+      cashAmount,
+      cashCurrency,
+      depositsAmount,
+      depositsCurrency,
+      depositCount: deposits.length,
+      totalValue,
+      cashWeightPct:
+        cashAmount != null && totalValue !== 0 ? (cashAmount / totalValue) * 100 : null,
+      equityValue,
+      equityCost,
+      optionsPremiumCollected,
+      optionsPremiumPaid,
+      contingentCashObligation,
+      contingentShareObligation,
+    };
+  });
+}
+
+function renderChannelDetailTable(view) {
+  if (!el.channelDetailBody) return;
+  const rows = channelRowsForView(view);
+  const baseDate = payload.benchmark?.baseDate || 'cost basis';
+  const repCcy = reportingCcyCode(view);
+  const scope =
+    view.channelView === MERGED_CHANNEL_VIEW
+      ? `All channels (merged) · ${rows.length} channel${rows.length === 1 ? '' : 's'}`
+      : `Channel: ${view.channelLabel || view.channelView}`;
+
+  if (el.channelDetailMeta) {
+    el.channelDetailMeta.textContent =
+      `${scope} · Cost base ${baseDate} · Positions cost ${fmtMoney0(view.totalCost, repCcy)}` +
+      ` · NAV ${fmtMoney0(view.totalValue, repCcy)}` +
+      ` · Fund idx ${dashOrIndex(view.fundIndex)}` +
+      (view.benchmarkIndex != null
+        ? ` · Bench ${dashOrIndex(view.benchmarkIndex)} (${fmtSigned(view.diff)})`
+        : ' · Bench n/a') +
+      fxFootnote(view);
+  }
+
+  const bodyRows = rows.map((c) => {
+    const chIdx = portfolioFundIndex({
+      equityCost: c.equityCost,
+      equityValue: c.equityValue,
+      totalValue: c.totalValue,
+      totalCost: c.totalCost,
+    });
+    const chDiff = view.benchmarkIndex == null ? null : chIdx - view.benchmarkIndex;
+    const mix = `${c.equityCount || 0} / ${c.optionCount || 0} / ${c.fundCount || 0}`;
+    const cashCell =
+      c.cashAmount != null ? fmtMoney0(c.cashAmount, c.cashCurrency) : '—';
+    const fdCell =
+      c.depositsAmount != null && c.depositsAmount > 0
+        ? `${fmtUsd0(c.depositsAmount)}${
+            c.depositCount
+              ? `<div class="muted">${c.depositCount} term${c.depositCount === 1 ? '' : 's'}</div>`
+              : ''
+          }`
+        : '—';
+    return `<tr>
+      <td>${channelBadgeHtml(c.channel)}</td>
+      <td class="num">${c.positionCount}</td>
+      <td class="num">${mix}</td>
+      <td class="num">${fmtUsd0(c.positionsValue)}</td>
+      <td class="num">${fmtUsd0(c.totalCost)}</td>
+      <td class="num ${plClass(c.totalPL)}">${fmtSignedUsd0(c.totalPL)}</td>
+      <td class="num ${plClass(c.totalPLPct)}">${dashOrPct(c.totalPLPct)}</td>
+      <td class="num">${cashCell}</td>
+      <td class="num">${fdCell}</td>
+      <td class="num">${fmtUsd0(c.totalValue)}</td>
+      <td class="num">${c.cashWeightPct != null ? c.cashWeightPct.toFixed(1) + '%' : '—'}</td>
+      <td class="num">${dashOrIndex(chIdx)}</td>
+      <td class="num ${chDiff == null ? 'pl-flat' : plClass(chDiff)}">${
+        chDiff == null ? '—' : fmtSigned(chDiff)
+      }</td>
+    </tr>`;
+  });
+
+  // Totals row when showing more than one channel.
+  if (rows.length > 1) {
+    bodyRows.push(`<tr class="totals-row">
+      <td>All (merged)</td>
+      <td class="num">${view.positions.length}</td>
+      <td class="num">${view.equityCount || 0} / ${view.optionCount || 0} / ${view.fundCount || 0}</td>
+      <td class="num">${fmtUsd0(view.positionsValue ?? 0)}</td>
+      <td class="num">${fmtUsd0(view.totalCost)}</td>
+      <td class="num ${plClass(view.totalPL)}">${fmtSignedUsd0(view.totalPL)}</td>
+      <td class="num ${plClass(view.totalPLPct)}">${dashOrPct(view.totalPLPct)}</td>
+      <td class="num">${
+        view.cashAmount != null
+          ? fmtMoney0(view.cashAmount, view.cashCurrency)
+          : '—'
+      }</td>
+      <td class="num">${
+        Number(view.depositsAmount || 0) > 0 ? fmtUsd0(view.depositsAmount) : '—'
+      }</td>
+      <td class="num">${fmtUsd0(view.totalValue)}</td>
+      <td class="num">${
+        view.cashWeightPct != null ? view.cashWeightPct.toFixed(1) + '%' : '—'
+      }</td>
+      <td class="num">${dashOrIndex(view.fundIndex)}</td>
+      <td class="num ${view.diff == null ? 'pl-flat' : plClass(view.diff)}">${
+        view.diff == null ? '—' : fmtSigned(view.diff)
+      }</td>
+    </tr>`);
+  }
+
+  if (bodyRows.length === 0) {
+    el.channelDetailBody.innerHTML =
+      '<tr><td colspan="13" class="muted" style="text-align:center;padding:1.5rem">No channel data for this view.</td></tr>';
+    return;
+  }
+  el.channelDetailBody.innerHTML = bodyRows.join('');
+}
+
+function positionNotes(p) {
+  const notes = [];
+  if (p.instrument === 'option') {
+    if (p.option?.side) notes.push(p.option.side);
+    if (p.option?.right) notes.push(p.option.right);
+    if (p.option?.expiry) notes.push(`exp ${p.option.expiry}`);
+    if (p.option?.strike != null) notes.push(`K ${p.option.strike}`);
+    if (p.contingentCashObligation > 0) {
+      notes.push(`if assigned cash ${fmtUsd0(p.contingentCashObligation)}`);
+    }
+    if (p.contingentShareObligation > 0) {
+      notes.push(`if assigned ${p.contingentShareObligation} sh`);
+    }
+    if (p.premiumAbsolute) notes.push(`prem abs ${fmtUsd2(p.premiumAbsolute)}`);
+    if (p.contractSymbol) notes.push(p.contractSymbol);
+  }
+  if (p.instrument === 'fund' && p.fund?.quote_source) {
+    notes.push(`quote ${p.fund.quote_source}`);
+  }
+  if (p.markNote) notes.push(p.markNote);
+  if (p.pricingMode === 'cost' || p.markSource === 'cost') {
+    notes.push('book cost (no live quote)');
+  }
+  return notes.join(' · ');
+}
+
+function pricingLabel(p) {
+  if (p.pricingMode) return p.pricingMode;
+  if (p.markSource) return p.markSource;
+  return 'live';
+}
+
+function renderHoldingsDetailTable(view) {
+  if (!el.holdingsDetailBody) return;
+  const positions = [...(view.positions || [])].sort((a, b) => {
+    const ca = resolveDashboardChannel(a.channel);
+    const cb = resolveDashboardChannel(b.channel);
+    if (ca !== cb) {
+      if (ca === DEFAULT_CHANNEL) return -1;
+      if (cb === DEFAULT_CHANNEL) return 1;
+      return ca.localeCompare(cb);
+    }
+    return Math.abs(b.value) - Math.abs(a.value);
+  });
+
+  if (el.holdingsDetailMeta) {
+    const optNote =
+      (view.optionCount || 0) > 0
+        ? ` · ${view.optionCount} option · prem coll. ${fmtUsd0(view.optionsPremiumCollected || 0)} · oblig. ${fmtUsd0(view.contingentCashObligation || 0)}`
+        : '';
+    el.holdingsDetailMeta.textContent =
+      `${positions.length} holding${positions.length === 1 ? '' : 's'}` +
+      (view.channelView === MERGED_CHANNEL_VIEW
+        ? ` across ${(view.channels || []).join(', ') || DEFAULT_CHANNEL}`
+        : ` on ${view.channelLabel || view.channelView}`) +
+      optNote;
+  }
+
+  if (positions.length === 0) {
+    el.holdingsDetailBody.innerHTML =
+      '<tr><td colspan="15" class="muted" style="text-align:center;padding:1.5rem">No holdings in this view.</td></tr>';
+    return;
+  }
+
+  const showGroup =
     view.channelView === MERGED_CHANNEL_VIEW &&
-    Array.isArray(view.byChannel) &&
-    view.byChannel.length > 1
-  ) {
-    view.byChannel.forEach((c) => {
+    new Set(positions.map((p) => resolveDashboardChannel(p.channel))).size > 1;
+
+  const parts = [];
+  let lastCh = null;
+  for (const p of positions) {
+    const ch = resolveDashboardChannel(p.channel);
+    if (showGroup && ch !== lastCh) {
+      parts.push(
+        `<tr class="channel-group"><td colspan="15">${channelBadgeHtml(ch)} · channel detail</td></tr>`,
+      );
+      lastCh = ch;
+    }
+    const isOpt = p.instrument === 'option';
+    const isFund = p.instrument === 'fund';
+    const atCost = p.pricingMode === 'cost' || p.markSource === 'cost';
+    const pIdx = isOpt ? 100 + (p.plPct || 0) : fundIndex(p.value, p.cost);
+    const title = isOpt || isFund ? p.label || p.ticker : p.ticker;
+    const unitsLabel = isOpt ? `${p.units} ct` : String(p.units);
+    const notes = positionNotes(p);
+    const pricing =
+      (atCost ? '<span class="badge-cost">BOOK COST</span> ' : '') +
+      escapeHtml(pricingLabel(p));
+
+    parts.push(`<tr class="sub-row">
+      <td>${channelBadgeHtml(ch)}</td>
+      <td>
+        <div style="font-weight:600">${escapeHtml(title)}</div>
+        ${
+          title !== p.ticker
+            ? `<div class="muted">${escapeHtml(p.ticker)}</div>`
+            : ''
+        }
+      </td>
+      <td>${typeBadgeHtml(p.instrument || 'equity')}</td>
+      <td>${escapeHtml(p.category || '—')}</td>
+      <td class="num">${escapeHtml(unitsLabel)}</td>
+      <td class="num">${fmtUsd2(p.avgCost)}</td>
+      <td class="num">${fmtUsd2(p.price)}</td>
+      <td class="num">${fmtUsd0(p.cost)}</td>
+      <td class="num">${fmtUsd0(p.value)}</td>
+      <td class="num">${Number(p.weightPct || 0).toFixed(1)}%</td>
+      <td class="num ${plClass(p.pl)}">${fmtSignedUsd0(p.pl)}</td>
+      <td class="num ${plClass(p.plPct)}">${dashOrPct(p.plPct)}</td>
+      <td class="num">${dashOrIndex(pIdx)}</td>
+      <td>${pricing}</td>
+      <td>${notes ? escapeHtml(notes) : '—'}</td>
+    </tr>`);
+  }
+
+  // Cash + FD as trailing rows: per channel when multi-broker, else single summary.
+  const channelRows = channelRowsForView(view);
+  const multiCash =
+    channelRows.filter((c) => c.cashAmount != null && c.cashAmount !== 0).length > 1;
+  if (multiCash) {
+    for (const c of channelRows) {
+      if (c.cashAmount == null) continue;
+      const wt =
+        view.totalValue !== 0 ? (c.cashAmount / view.totalValue) * 100 : null;
+      parts.push(`<tr class="sub-row">
+        <td>${channelBadgeHtml(c.channel)}</td>
+        <td><div style="font-weight:600">Free cash</div></td>
+        <td>${typeBadgeHtml('cash')}</td>
+        <td>Cash</td>
+        <td class="num">—</td>
+        <td class="num">—</td>
+        <td class="num">—</td>
+        <td class="num">—</td>
+        <td class="num">${fmtMoney0(c.cashAmount, c.cashCurrency)}</td>
+        <td class="num">${wt != null ? wt.toFixed(1) + '%' : '—'}</td>
+        <td class="num pl-flat">—</td>
+        <td class="num pl-flat">—</td>
+        <td class="num">—</td>
+        <td>cash</td>
+        <td>Deployable · not positions MTM</td>
+      </tr>`);
+    }
+  } else if (view.cashAmount != null) {
+    parts.push(`<tr class="sub-row">
+      <td>${view.cashChannel ? channelBadgeHtml(view.cashChannel) : '—'}</td>
+      <td><div style="font-weight:600">Free cash</div></td>
+      <td>${typeBadgeHtml('cash')}</td>
+      <td>Cash</td>
+      <td class="num">—</td>
+      <td class="num">—</td>
+      <td class="num">—</td>
+      <td class="num">—</td>
+      <td class="num">${fmtMoney0(view.cashAmount, view.cashCurrency)}</td>
+      <td class="num">${
+        view.cashWeightPct != null ? view.cashWeightPct.toFixed(1) + '%' : '—'
+      }</td>
+      <td class="num pl-flat">—</td>
+      <td class="num pl-flat">—</td>
+      <td class="num">—</td>
+      <td>cash</td>
+      <td>Deployable · not positions MTM</td>
+    </tr>`);
+  }
+
+  const deposits = view.deposits || [];
+  if (deposits.length > 0) {
+    for (const d of deposits) {
+      const ch = resolveDashboardChannel(d.channel);
+      const label = d.label || d.id;
+      const status = d.matured
+        ? 'matured'
+        : `${d.daysRemaining}d to maturity`;
+      parts.push(`<tr class="sub-row">
+        <td>${channelBadgeHtml(ch)}</td>
+        <td>
+          <div style="font-weight:600">${escapeHtml(label)}</div>
+          <div class="muted">${escapeHtml(d.id)}</div>
+        </td>
+        <td>${typeBadgeHtml('deposit')}</td>
+        <td>Deposits</td>
+        <td class="num">—</td>
+        <td class="num">—</td>
+        <td class="num">—</td>
+        <td class="num">—</td>
+        <td class="num">${fmtUsd2(d.amount)}</td>
+        <td class="num">—</td>
+        <td class="num pl-flat">—</td>
+        <td class="num pl-flat">—</td>
+        <td class="num">—</td>
+        <td>principal</td>
+        <td>${escapeHtml(d.start_date)} → ${escapeHtml(d.end_date)} · interest ${fmtUsd2(d.interest)} · ${status}</td>
+      </tr>`);
+    }
+  } else if (Number(view.depositsAmount || 0) > 0) {
+    parts.push(`<tr class="sub-row">
+      <td>—</td>
+      <td>
+        <div style="font-weight:600">Fixed deposits</div>
+        <div class="muted">${view.depositCount || 0} term${(view.depositCount || 0) === 1 ? '' : 's'}</div>
+      </td>
+      <td>${typeBadgeHtml('deposit')}</td>
+      <td>Deposits</td>
+      <td class="num">—</td>
+      <td class="num">—</td>
+      <td class="num">—</td>
+      <td class="num">—</td>
+      <td class="num">${fmtUsd0(view.depositsAmount)}</td>
+      <td class="num">—</td>
+      <td class="num pl-flat">—</td>
+      <td class="num pl-flat">—</td>
+      <td class="num">—</td>
+      <td>principal</td>
+      <td>In NAV · not free cash · interest display-only</td>
+    </tr>`);
+  }
+
+  el.holdingsDetailBody.innerHTML = parts.join('');
+}
+
+function renderDetailTables(view) {
+  renderChannelDetailTable(view);
+  renderHoldingsDetailTable(view);
+}
+
+/**
+ * High-level KPI strip + compact per-channel chips (merged multi-channel only).
+ * Detail numbers live in the tables below.
+ */
+function renderOverview(view) {
+  if (!el.kpiGrid) return;
+  const benchTicker = payload.benchmark?.ticker || 'SPY';
+  const baseDate = payload.benchmark?.baseDate || 'cost basis';
+  const repCcy = reportingCcyCode(view);
+  const channelCount =
+    view.channelView === MERGED_CHANNEL_VIEW
+      ? (view.channels && view.channels.length) || channelRowsForView(view).length
+      : 1;
+  const holdingN = view.positions.length;
+  const fdN = view.depositCount || (view.deposits || []).length || 0;
+  const fdAmt = Number(view.depositsAmount || 0);
+
+  if (el.overviewMeta) {
+    const scope =
+      view.channelView === MERGED_CHANNEL_VIEW
+        ? `All channels · ${channelCount} broker${channelCount === 1 ? '' : 's'}`
+        : `Channel ${view.channelLabel || view.channelView}`;
+    el.overviewMeta.textContent =
+      `${scope} · Cost base ${baseDate}` +
+      ` · ${holdingN} holding${holdingN === 1 ? '' : 's'}` +
+      (fdN > 0 ? ` · ${fdN} FD term${fdN === 1 ? '' : 's'}` : '') +
+      fxFootnote(view);
+  }
+
+  const plTone = view.totalPL > 0 ? 'positive' : view.totalPL < 0 ? 'negative' : '';
+  const diffTone =
+    view.diff == null ? '' : view.diff > 0 ? 'positive' : view.diff < 0 ? 'negative' : '';
+  const idxTone =
+    view.diff == null ? '' : view.diff > 0 ? 'positive' : view.diff < 0 ? 'negative' : '';
+
+  const kpis = [
+    {
+      label: 'NAV',
+      value: fmtMoney0(view.totalValue, repCcy),
+      sub:
+        (view.positionsValue != null
+          ? `Positions ${fmtUsd0(view.positionsValue)}`
+          : 'Mark-to-market + cash + FD') +
+        (view.cashWeightPct != null ? ` · cash ${view.cashWeightPct.toFixed(1)}%` : ''),
+      accent: true,
+    },
+    {
+      label: 'Cost basis',
+      value: fmtMoney0(view.totalCost, repCcy),
+      sub: `Since ${baseDate}`,
+    },
+    {
+      label: 'Unrealized P/L',
+      value: fmtSignedUsd0(view.totalPL),
+      sub: dashOrPct(view.totalPLPct),
+      tone: plTone,
+    },
+    {
+      label: 'Fund index',
+      value: dashOrIndex(view.fundIndex),
+      sub:
+        view.benchmarkIndex == null
+          ? `vs ${benchTicker} n/a`
+          : `vs ${benchTicker} ${dashOrIndex(view.benchmarkIndex)}`,
+      tone: idxTone,
+    },
+    {
+      label: `vs ${benchTicker}`,
+      value: view.diff == null ? '—' : fmtSigned(view.diff),
+      sub: view.diff == null ? 'Benchmark unavailable' : 'Fund − benchmark (index pts)',
+      tone: diffTone,
+    },
+    {
+      label: 'Cash',
+      value:
+        view.cashAmount != null
+          ? fmtMoney0(view.cashAmount, view.cashCurrency || repCcy)
+          : '—',
+      sub:
+        view.cashAmount != null
+          ? view.cashChannel
+            ? `Channel ${view.cashChannel}`
+            : 'Free cash'
+          : 'No free cash recorded',
+    },
+    {
+      label: 'Fixed deposits',
+      value: fdAmt > 0 || fdN > 0 ? fmtUsd0(fdAmt) : '—',
+      sub:
+        fdN > 0
+          ? `${fdN} term${fdN === 1 ? '' : 's'} · in NAV, not free cash`
+          : 'None',
+    },
+    {
+      label: 'Holdings',
+      value: String(holdingN),
+      sub: `${view.equityCount || 0} eq · ${view.optionCount || 0} opt · ${view.fundCount || 0} fund`,
+      valueClass: 'sm',
+    },
+  ];
+
+  el.kpiGrid.innerHTML = kpis
+    .map((k) => {
+      const cls = ['kpi', k.accent ? 'accent' : '', k.tone || ''].filter(Boolean).join(' ');
+      const valCls = ['kpi-value', k.valueClass || ''].filter(Boolean).join(' ');
+      return `<div class="${cls}">
+        <div class="kpi-label">${escapeHtml(k.label)}</div>
+        <div class="${valCls}">${k.value}</div>
+        <div class="kpi-sub">${k.sub}</div>
+      </div>`;
+    })
+    .join('');
+
+  // Compact channel chips only when merged multi-channel.
+  if (!el.channelStrip) return;
+  const rows = channelRowsForView(view);
+  const showChips =
+    view.channelView === MERGED_CHANNEL_VIEW && rows.length > 1;
+  if (!showChips) {
+    el.channelStrip.classList.add('hidden');
+    el.channelStrip.innerHTML = '';
+    return;
+  }
+  el.channelStrip.classList.remove('hidden');
+  el.channelStrip.innerHTML = rows
+    .map((c) => {
       const chIdx = portfolioFundIndex({
         equityCost: c.equityCost,
         equityValue: c.equityValue,
@@ -573,62 +1069,31 @@ function renderCards(view) {
         totalCost: c.totalCost,
       });
       const chDiff = view.benchmarkIndex == null ? null : chIdx - view.benchmarkIndex;
-      cards.push(
-        cardHtml(
-          `Channel · ${c.channel}`,
-          chIdx,
-          view.benchmarkIndex,
-          chDiff,
-          `${c.positionCount} holdings | NAV ${fmtUsd0(c.totalValue)} | P/L ${fmtSignedUsd0(c.totalPL)}` +
-            (c.cashAmount != null
-              ? ` | Cash ${fmtUsd0(c.cashAmount)}${c.cashCurrency ? ' ' + c.cashCurrency : ''}`
-              : '') +
-            (c.depositsAmount != null && c.depositsAmount > 0
-              ? ` | FD ${fmtUsd0(c.depositsAmount)}`
-              : ''),
-        ),
-      );
-    });
-  }
-
-  view.positions.forEach((p) => {
-    const isOpt = p.instrument === 'option';
-    const isFund = p.instrument === 'fund';
-    const atCost = p.pricingMode === 'cost' || p.markSource === 'cost';
-    // Options: show premium P/L % as index-style (100 + plPct); equities/funds: value/cost.
-    const pIdx = isOpt
-      ? 100 + (p.plPct || 0)
-      : fundIndex(p.value, p.cost);
-    const pDiff = isOpt || view.benchmarkIndex == null || atCost ? null : pIdx - view.benchmarkIndex;
-    const title = isOpt || isFund ? p.label || p.ticker : p.ticker;
-    const ch = resolveDashboardChannel(p.channel);
-    const costBadge = atCost
-      ? `<span class="card-badge badge-cost">BOOK COST</span>`
-      : '';
-    const footer = isOpt
-      ? `${p.units} ct @ ${fmtUsd2(p.avgCost)}/ct prem | MTM ${fmtUsd0(p.value)} | P/L ${fmtSignedUsd0(p.pl)}` +
-        (p.contingentCashObligation > 0
-          ? ` | If assigned ${fmtUsd0(p.contingentCashObligation)}`
-          : '') +
-        ` | ${ch}`
-      : isFund
-        ? `FUND ${p.units} u @ ${fmtUsd2(p.avgCost)} | Cost: ${fmtUsd0(p.cost)} | ${ch}` +
-          (atCost ? ' | no live quote — book cost' : '')
-        : `${p.units} units @ ${fmtUsd2(p.avgCost)} | Cost: ${fmtUsd0(p.cost)} | ${ch}` +
-          (atCost ? ' | no live quote — book cost' : '');
-    cards.push(
-      cardHtml(
-        title,
-        pIdx,
-        isOpt || atCost ? null : view.benchmarkIndex,
-        pDiff,
-        footer,
-        costBadge + channelBadgeHtml(ch),
-      ),
-    );
-  });
-
-  el.summaryCards.innerHTML = cards.join('');
+      const diffCls = chDiff == null ? 'pl-flat' : plClass(chDiff);
+      const plCls = plClass(c.totalPL);
+      return `<div class="channel-chip">
+        <div class="channel-chip-head">
+          ${channelBadgeHtml(c.channel)}
+          <span class="diff ${diffCls}">${chDiff == null ? '—' : fmtSigned(chDiff)}</span>
+        </div>
+        <div class="channel-chip-nav">${fmtUsd0(c.totalValue)}</div>
+        <div class="channel-chip-meta">
+          ${c.positionCount} hld · idx ${dashOrIndex(chIdx)} ·
+          <span class="${plCls}">${fmtSignedUsd0(c.totalPL)}</span>
+          ${
+            c.cashAmount != null
+              ? ` · cash ${fmtMoney0(c.cashAmount, c.cashCurrency)}`
+              : ''
+          }
+          ${
+            c.depositsAmount != null && c.depositsAmount > 0
+              ? ` · FD ${fmtUsd0(c.depositsAmount)}`
+              : ''
+          }
+        </div>
+      </div>`;
+    })
+    .join('');
 }
 
 function renderWarnings() {
@@ -1191,12 +1656,14 @@ function renderDate(dateKey, channelKey = selectedChannel) {
 
   destroyCharts();
   renderWarnings();
-  renderCards(view);
+  // High-level first, then charts, then detail tables.
+  renderOverview(view);
   renderAllocation(view);
-  renderDepositsTable(view);
   renderBar(view);
   renderCharts(view);
   renderInsights(view);
+  renderDetailTables(view);
+  renderDepositsTable(view);
 }
 
 function initChannelSelect() {
@@ -1257,15 +1724,20 @@ function renderEmpty(body) {
   el.error.classList.add('hidden');
   el.dashboard.classList.remove('hidden');
   destroyCharts();
-  el.summaryCards.innerHTML = '';
+  if (el.channelDetailBody) {
+    el.channelDetailBody.innerHTML =
+      `<tr><td colspan="13" class="muted" style="text-align:center;padding:1.5rem">${escapeHtml(body.message || 'No holdings yet.')}</td></tr>`;
+  }
+  if (el.channelDetailMeta) el.channelDetailMeta.textContent = '';
+  if (el.holdingsDetailBody) {
+    el.holdingsDetailBody.innerHTML =
+      '<tr><td colspan="15" class="muted" style="text-align:center;padding:1.5rem">No holdings yet.</td></tr>';
+  }
+  if (el.holdingsDetailMeta) el.holdingsDetailMeta.textContent = '';
   el.allocationGrid.innerHTML = '';
   el.barGrid.innerHTML = '';
   el.chartGrid.innerHTML = '';
   el.insightGrid.innerHTML = '';
-  const box = document.createElement('div');
-  box.className = 'empty-box';
-  box.textContent = body.message || 'No holdings yet.';
-  el.summaryCards.appendChild(box);
 }
 
 async function load() {
