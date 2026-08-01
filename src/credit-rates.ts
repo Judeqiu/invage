@@ -3,7 +3,7 @@
  *
  * Required at createFramework boot (utarus ≥ 1.17) whether billing is on or off.
  * Anchor: 100 credits ≡ $0.10 USD → 1 credit ≡ $0.001.
- * LLM: 1 credit / 1k tokens (default DeepSeek-class).
+ * LLM profiles must match UTARUS_LLM_PROFILES keys (daily / vision / heavy).
  * Tools: 10 credits / call for metered research & report tools.
  * Unlisted tools → 0 credits (portfolio CRUD, playbook, etc.).
  *
@@ -17,6 +17,9 @@ export const INVAGE_CREDIT_RATES: CreditRatesCatalog = {
   llm: {
     credits_per_1k_tokens: {
       default: 1,
+      daily: 1,
+      vision: 10,
+      heavy: 10,
     },
   },
   tools: {

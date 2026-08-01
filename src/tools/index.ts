@@ -8,6 +8,7 @@ import { createSnapshotTool } from './snapshot.js';
 import { createQuoteTool } from './quote.js';
 import { createHouseholdTools } from './household.js';
 import { createProjectionTools } from './projection.js';
+import { createPropertyIntelTool } from './property_intel.js';
 
 /** Domain tools only — Utarus framework supplies user/invite/bindrive/firecrawl/write_report. */
 export function createInvageTools(): AgentTool[] {
@@ -16,6 +17,7 @@ export function createInvageTools(): AgentTool[] {
     ...createPlaybookTools(),
     ...createHouseholdTools(),
     ...createProjectionTools(),
+    createPropertyIntelTool(),
     createQuoteTool(),
     createPortfolioAnalyzerTool(),
     createSaveReportTool(),

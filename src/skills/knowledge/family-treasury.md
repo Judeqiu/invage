@@ -20,7 +20,8 @@ Load when the user asks about:
 4. **Scenarios are overlays.** `save_scenario` / inline events do **not** change base books unless the user later adds property/liability for real.  
 5. **Deposits stay locked** until maturity (principal only at maturity in projections).  
 6. **Do not auto-inflate** expense lines; inflation assumption is transparency only in v1.  
-7. **Still Invester** — not a licensed advisor; educational/planning framing.
+7. **Still Invester** — not a licensed advisor; educational/planning framing.  
+8. **SG stamp duties / comps / yield** — when stamp duty or comps affect affordability cash need, also load `sg-real-estate-portfolio` and verify duties this turn before inventing `one_off` amounts. Do not invent ABSD/BSD/SSD from memory.
 
 ---
 
@@ -127,6 +128,7 @@ Ask **one** clarification only when the decision cannot proceed (e.g. house pric
 
 | Skill | When |
 |-------|------|
-| `investment-analysis` | Stocks, portfolio 3-axis, undervalued, news path |
+| `sg-real-estate-portfolio` | SG stamp duties, HDB comps, yield/LTV/mark quality, second-property ABSD, physical vs REIT allocation — **load together** with this skill for SG buy / second property with policy cost |
+| `investment-analysis` | Stocks, portfolio 3-axis, undervalued, news path, REIT securities |
 | `playbook-setup` | Investment methodology wizard |
 | `bindrive` | Saving HTML reports |

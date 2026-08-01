@@ -20,6 +20,7 @@ export const GUIDANCE_SUBCOMMANDS = [
   'skills',
   'admin',
   'chat',
+  'property',
 ] as const;
 
 export type GuidanceSubcommand = (typeof GUIDANCE_SUBCOMMANDS)[number] | 'overview' | 'help';
@@ -84,6 +85,18 @@ function normalizeSub(args: string): GuidanceSubcommand {
   if (raw === 'skill' || raw === 'list' || raw === 'catalog') return 'skills';
   if (raw === 'invite' || raw === 'onboard' || raw === 'codes') return 'admin';
   if (raw === 'tips' || raw === 'howto' || raw === 'talk') return 'chat';
+  if (
+    raw === 'property' ||
+    raw === 'treasury' ||
+    raw === 're' ||
+    raw === 'real-estate' ||
+    raw === 'realestate' ||
+    raw === 'hdb' ||
+    raw === 'absd' ||
+    raw === 'house'
+  ) {
+    return 'property';
+  }
   if ((GUIDANCE_SUBCOMMANDS as readonly string[]).includes(raw)) {
     return raw as GuidanceSubcommand;
   }
@@ -109,6 +122,7 @@ const overview = (): string =>
     '• `research` — news→price-path, filings (US/HK/China), themes (AI, rates, earnings…)',
     '• `reports` — BinDrive reports, snapshots, email',
     '• `skills` — skill catalog (what I load for each job)',
+    '• `property` — household treasury + SG real-estate portfolio (comps, duties, yield)',
     '• `chat` — how to talk to me effectively',
     '• `admin` — invite / admin codes (admins)',
     '',
@@ -117,8 +131,9 @@ const overview = (): string =>
     '• News/trend: "Why did AAPL move?" / "Earnings reaction for MSFT" → `/guidance research`',
     '• Themes: "How will AI affect markets?" → `/guidance research`',
     '• Full analysis stack: `/guidance analysis`',
+    '• Home mark / second property / yield: `/guidance property`',
     '',
-    'Example: `/guidance portfolio`  ·  `/guidance value`  ·  `/guidance research`',
+    'Example: `/guidance portfolio`  ·  `/guidance value`  ·  `/guidance research`  ·  `/guidance property`',
   ].join('\n');
 
 const start = (): string =>
@@ -472,11 +487,46 @@ const skills = (): string =>
     '• *playbook-setup* — patient wizard for strategy / risk / buy-sell / watchlists (user-initiated)',
     '  ↳ One easy question per turn · get_playbook / update_playbook · `/guidance playbook`',
     '  ↳ Watchlist markets: US, HK, CN/China (discovery universe)',
-    '• *firecrawl* — primary news, filings (SEC/HKEX/CNINFO), options chains, themes (pair with D/F/G)',
+    '• *family-treasury* — household books, cash flows, multi-year projection, house affordability',
+    '• *sg-real-estate-portfolio* — SG comps (`property_intel`), stamp duties (verify IRAS), yield/LTV, RE allocation',
+    '  ↳ Dual-load with family-treasury for second property / SG buy with policy cost',
+    '  ↳ Not multi-unit listing shopping — name a price/unit for portfolio analysis',
+    '• *firecrawl* — primary news, filings (SEC/HKEX/CNINFO), options chains, themes, IRAS duty tables',
     '• *bindrive* — reports, files, portal tokens',
     '• *getting-started* / *admin* (framework) — user state & invite codes',
     '',
-    'Focused how-tos: `/guidance portfolio` · `playbook` · `analysis` · `value` · `research` · `reports` · `start`',
+    'Focused how-tos: `/guidance portfolio` · `playbook` · `analysis` · `value` · `research` · `property` · `reports` · `start`',
+  ].join('\n');
+
+const property = (): string =>
+  [
+    '*Household treasury & SG real-estate portfolio*',
+    '',
+    'Two skills work together:',
+    '• *family-treasury* — books (property mark, mortgage, salary/expenses), projections, affordability verdict',
+    '• *sg-real-estate-portfolio* — HDB comps, stamp duties, yield/LTV, mark fairness, physical vs REIT allocation',
+    '',
+    '*When I load which*',
+    '• Net worth / 5-year cash flow only → family-treasury',
+    '• HDB comps / "is my home mark fair?" / yield → sg-real-estate-portfolio',
+    '• Second property or SG buy with ABSD + affordability → **both** (dual-load)',
+    '',
+    '*What to say*',
+    '• "Set reporting currency SGD and record my home mark 1.8M with mortgage principal 1.2M"',
+    '• "Are Tampines 4-room resales around my mark fair?" (I use property_intel — no invented comps)',
+    '• "Rent is 3200/mo — what is gross yield and LTV on my home?"',
+    '• "Second condo at 2M as SC owning one home — all-in stamp + can we afford it?"',
+    '• "How much of our net worth is physical property vs portfolio?"',
+    '',
+    '*Anti-shopping*',
+    '• I am **not** a multi-unit listing shopper (no PropertyGuru shortlist packs / layout design).',
+    '• Name a **price or unit** for all-in cost and affordability analysis.',
+    '',
+    '*Rules*',
+    '• No invented rents, comps, or stamp-duty rates — tools / official pages this turn',
+    '• Affordability = tool verdict only (AFFORDABLE / TIGHT / NOT_AFFORDABLE / UNKNOWN)',
+    '',
+    'See also: `/guidance skills` · `/guidance portfolio`',
   ].join('\n');
 
 const admin = (): string =>
@@ -561,6 +611,8 @@ export function renderGuidance(args: string = ''): string {
       return reports();
     case 'skills':
       return skills();
+    case 'property':
+      return property();
     case 'admin':
       return admin();
     case 'chat':
@@ -593,7 +645,8 @@ export function createGuidanceCommand(): {
     description:
       'How to use Invester: portfolio, playbook, 3-axis analysis, value screen, research, reports',
     adminOnly: false,
-    usageHint: '[start|portfolio|playbook|analysis|value|research|reports|skills|admin|chat]',
+    usageHint:
+      '[start|portfolio|playbook|analysis|value|research|reports|skills|property|admin|chat]',
     handle: (args: string) => renderGuidance(args),
   };
 }
