@@ -53,8 +53,9 @@ Prefer town names (Tampines) over district codes alone.
 
 | Tool | Use |
 |------|-----|
-| `property_intel` | HDB resale comps (`market=hdb`) via data.gov.sg. Actions: `list_sources` (catalog + live ping), `search_transactions`, `price_summary`. Filters: town, flat_type, street_name, month_from/to. **At least one filter required** (except list_sources). Default = 2017–present; older `month_from` auto-queries historical slices (1990–2016). Optional `source_id` / `resource_id`. Private condo sold prices are **not** on these tables. No channel ids. Uses `DATA_GOV_SG_API_KEY` when set. |
-| `firecrawl` | Live IRAS/HDB/URA pages; **named** project/listing URL only (not multi-unit packs) |
+| `property_intel` | **HDB** (`market=hdb`): data.gov.sg resale 1990–present — `list_sources` / `search_transactions` / `price_summary`; filters town, flat_type, street_name, month_from/to. **Private** (`market=private`): URA `PMI_Resi_Transaction` sold comps — requires `URA_ACCESS_KEY`; filters **project**, street_name, district, market_segment (CCR/RCR/OCR), property_type, month_from/to (**at least one filter**). Label URA as **sold** (not asking). PSF approx via sqm×10.7639. No channel ids. |
+| `ura_carpark` | URA car parks: `availability` (live lots), `details` (rates/name/capacity), `lookup` (join). Filters carpark_no, name, lot_type, veh_cat. Requires `URA_ACCESS_KEY`. |
+| `firecrawl` | Live IRAS/HDB pages; **named** listing URL only when URA miss (not multi-unit packs) |
 | `get_household` / property & liability CRUD | Marks, mortgages, cash flows |
 | `run_projection` / `compare_scenarios` | Affordability after all-in cost known |
 | `portfolio_analyzer` / `get_quote` | Liquid book + REIT MTM |

@@ -8,6 +8,11 @@
 
 import { Type } from 'typebox';
 import type { AgentTool, AgentToolResult } from '@earendil-works/pi-agent-core';
+import {
+  fetchPrivateResidentialBatches,
+  flattenPrivateProjects,
+  type FlatPrivateSale,
+} from '../market/ura-client.js';
 
 const DATASTORE_URL = 'https://data.gov.sg/api/action/datastore_search';
 const COLLECTION_META_URL =
@@ -88,6 +93,14 @@ interface SearchParams {
   source_id?: string;
   /** Override resource_id (advanced). When set, skips catalog multi-slice. */
   resource_id?: string;
+  /** Private: project name substring (e.g. condo name). */
+  project?: string;
+  /** Private: market segment CCR | RCR | OCR. */
+  market_segment?: string;
+  /** Private: postal district e.g. "09", "15". */
+  district?: string;
+  /** Private: property type substring e.g. Condominium, Apartment, Terrace. */
+  property_type?: string;
 }
 
 function ok<T>(text: string, details: T): AgentToolResult<T> {
@@ -447,24 +460,150 @@ async function handleListSources(): Promise<AgentToolResult<unknown>> {
   });
 }
 
-async function handlePrivate(_params: SearchParams): Promise<AgentToolResult<null>> {
-  const key = process.env.URA_ACCESS_KEY?.trim();
-  if (!key) {
-    return fail(
-      'property_intel market=private is not connected (URA_ACCESS_KEY missing). ' +
-        'Private residential sold prices are not on the HDB data.gov.sg resale tables. ' +
-        'Do NOT invent private sold prices. ' +
-        'Next channel (same turn): firecrawl search + scrape for a **named** project/unit/listing URL or official URA/IRAS pages. ' +
-        'Label asking vs sold. Do not build multi-unit shopping packs. ' +
-        'For HDB sold prices use market=hdb. To enable URA later: https://www.ura.gov.sg/maps/api/',
+function includesCI(hay: string, needle: string): boolean {
+  return hay.toUpperCase().includes(needle.trim().toUpperCase());
+}
+
+function filterPrivateSales(sales: FlatPrivateSale[], params: SearchParams): FlatPrivateSale[] {
+  return sales.filter((s) => {
+    if (params.project && !includesCI(s.project, params.project)) return false;
+    if (params.street_name && !includesCI(s.street, params.street_name)) return false;
+    if (params.market_segment && !includesCI(s.marketSegment, params.market_segment)) return false;
+    if (params.district) {
+      const d = params.district.trim().replace(/^D/i, '').padStart(2, '0');
+      const sd = s.district.replace(/^D/i, '').padStart(2, '0');
+      if (sd !== d) return false;
+    }
+    if (params.property_type && !includesCI(s.propertyType, params.property_type)) return false;
+    if (params.month_from && s.contractMonth && s.contractMonth < params.month_from) return false;
+    if (params.month_to && s.contractMonth && s.contractMonth > params.month_to) return false;
+    // If month filter set but sale has no parseable month, drop it
+    if ((params.month_from || params.month_to) && !s.contractMonth) return false;
+    return true;
+  });
+}
+
+function sgdPrivate(n: number): string {
+  return `S$${Math.round(n).toLocaleString('en-SG')}`;
+}
+
+function formatPrivateSales(sales: FlatPrivateSale[]): string {
+  if (sales.length === 0) return 'No matching private residential transactions.';
+  return sales
+    .map((s) => {
+      const price = s.price != null ? sgdPrivate(s.price) : 'price?';
+      const area = s.area != null ? `${s.area} sqm` : 'area?';
+      const psf =
+        s.price != null && s.area != null && s.area > 0
+          ? ` (~${sgdPrivate(s.price / (s.area * 10.7639))} psf)`
+          : '';
+      return (
+        `- ${s.contractMonth || s.contractDateRaw} | ${s.project} | ${s.street} | ` +
+        `${s.propertyType} | D${s.district} | ${s.marketSegment} | ${s.tenure} | ` +
+        `${s.floorRange} | ${area} | ${price}${psf}`
+      );
+    })
+    .join('\n');
+}
+
+function summarizePrivate(sales: FlatPrivateSale[]): string {
+  if (sales.length === 0) return 'No matching transactions to summarize.';
+  const priced = sales.filter((s) => s.price != null) as Array<FlatPrivateSale & { price: number }>;
+  if (priced.length === 0) {
+    return `Sample size: ${sales.length} (no numeric prices to summarize).`;
+  }
+  const prices = priced.map((s) => s.price);
+  const sorted = [...prices].sort((a, b) => a - b);
+  const med = sorted[Math.floor(sorted.length / 2)]!;
+  const avg = prices.reduce((a, b) => a + b, 0) / prices.length;
+  const months = sales.map((s) => s.contractMonth || s.contractDateRaw).filter(Boolean).sort();
+  const psfs = priced
+    .filter((s) => s.area != null && s.area > 0)
+    .map((s) => s.price / (s.area! * 10.7639));
+  const lines = [
+    `Sample size: ${sales.length} transactions (${priced.length} with price)`,
+    months.length
+      ? `Contract month span (approx): ${months[0]} → ${months[months.length - 1]}`
+      : 'Contract months: unknown',
+    `Price: min ${sgdPrivate(Math.min(...prices))} | median ${sgdPrivate(med)} | avg ${sgdPrivate(avg)} | max ${sgdPrivate(Math.max(...prices))}`,
+  ];
+  if (psfs.length > 0) {
+    lines.push(
+      `PSF (approx, sqm×10.7639): min ${sgdPrivate(Math.min(...psfs))} | avg ${sgdPrivate(psfs.reduce((a, b) => a + b, 0) / psfs.length)} | max ${sgdPrivate(Math.max(...psfs))}`,
     );
   }
-  return fail(
-    'URA private residential integration is not implemented yet (URA_ACCESS_KEY is set). ' +
-      'Failing fast — do not invent private transaction prices. ' +
-      'Next channel (same turn): firecrawl for a **named** project/unit or official URA pages only (not multi-unit listing packs). ' +
-      'Label asking price vs sold price.',
-  );
+  lines.push('', 'Latest sample rows:', formatPrivateSales(sales.slice(0, 10)));
+  return lines.join('\n');
+}
+
+async function handlePrivate(
+  params: SearchParams,
+): Promise<AgentToolResult<unknown>> {
+  if (
+    !params.project &&
+    !params.street_name &&
+    !params.district &&
+    !params.market_segment &&
+    !params.property_type &&
+    !params.month_from
+  ) {
+    throw new Error(
+      'Private market requires at least one filter: project, street_name, district, market_segment, property_type, or month_from. ' +
+        'Do not pull the full URA universe without a filter.',
+    );
+  }
+
+  const projects = await fetchPrivateResidentialBatches({ maxBatches: 4 });
+  const flat = flattenPrivateProjects(projects);
+  const matched = filterPrivateSales(flat, params);
+  // Newest first by contractMonth then raw
+  matched.sort((a, b) => {
+    const am = a.contractMonth || '';
+    const bm = b.contractMonth || '';
+    if (am !== bm) return am < bm ? 1 : -1;
+    return a.contractDateRaw < b.contractDateRaw ? 1 : -1;
+  });
+  const want = Math.min(Math.max(params.limit ?? 25, 1), 100);
+  const sample = matched.slice(0, want);
+
+  const header = [
+    'Source: URA PMI_Resi_Transaction (eservice.ura.gov.sg)',
+    `Projects loaded: ${projects.length} | flat sales: ${flat.length} | after filters: ${matched.length}`,
+    `Filters: ${JSON.stringify({
+      project: params.project,
+      street_name: params.street_name,
+      district: params.district,
+      market_segment: params.market_segment,
+      property_type: params.property_type,
+      month_from: params.month_from,
+      month_to: params.month_to,
+    })}`,
+    `Returned rows: ${sample.length}`,
+    'Note: contractDate is MMYY → month is approximate (day unknown). PSF uses area sqm × 10.7639.',
+    'Label as URA recorded sold transactions (not portal asking prices).',
+    '',
+  ].join('\n');
+
+  if (params.action === 'price_summary') {
+    return ok(header + summarizePrivate(sample), {
+      market: 'private',
+      action: params.action,
+      projectsLoaded: projects.length,
+      flatSales: flat.length,
+      matched: matched.length,
+      count: sample.length,
+    });
+  }
+
+  return ok(header + formatPrivateSales(sample), {
+    market: 'private',
+    action: params.action,
+    projectsLoaded: projects.length,
+    flatSales: flat.length,
+    matched: matched.length,
+    count: sample.length,
+    sample,
+  });
 }
 
 export function createPropertyIntelTool(): AgentTool {
@@ -472,17 +611,15 @@ export function createPropertyIntelTool(): AgentTool {
     name: 'property_intel',
     label: 'Property Intel',
     description:
-      'Query Singapore residential market data from data.gov.sg. ' +
-      'market=hdb: full HDB resale history (1990–present) via catalogued datasets; ' +
-      'action=list_sources shows resource ids and live connectivity; ' +
-      'action=search_transactions lists comps; action=price_summary gives min/median/avg/max. ' +
-      'Filters: town, flat_type, street_name, month_from/month_to (YYYY-MM). ' +
-      'month range auto-selects historical slices; optional source_id or resource_id to pin. ' +
-      'market=private requires URA (not on data.gov.sg HDB tables). ' +
-      'Always call before stating HDB prices/psf. Requires DATA_GOV_SG_API_KEY in production for rate limits.',
+      'Query Singapore residential market data. ' +
+      'market=hdb: data.gov.sg HDB resale (1990–present); action=list_sources | search_transactions | price_summary; ' +
+      'filters town/flat_type/street_name/month_from/month_to. ' +
+      'market=private: URA PMI_Resi_Transaction sold comps (requires URA_ACCESS_KEY); ' +
+      'filters project/street_name/district/market_segment/property_type/month_from/month_to (at least one required). ' +
+      'Always call before stating sold prices/psf. Never invent comps.',
     parameters: Type.Object({
       market: Type.Union([Type.Literal('hdb'), Type.Literal('private')], {
-        description: 'hdb = HDB resale (data.gov.sg); private = URA path (not data.gov.sg)',
+        description: 'hdb = HDB resale (data.gov.sg); private = URA private residential sold',
       }),
       action: Type.Union(
         [
@@ -492,7 +629,7 @@ export function createPropertyIntelTool(): AgentTool {
         ],
         {
           description:
-            'list_sources = catalog + live ping; search_transactions = rows; price_summary = stats + sample',
+            'list_sources = HDB catalog only; search_transactions = rows; price_summary = stats + sample',
         },
       ),
       town: Type.Optional(
@@ -506,10 +643,12 @@ export function createPropertyIntelTool(): AgentTool {
         }),
       ),
       street_name: Type.Optional(
-        Type.String({ description: 'Street name as in HDB data e.g. "TAMPINES ST 81"' }),
+        Type.String({
+          description: 'Street name (HDB or private project street)',
+        }),
       ),
       month_from: Type.Optional(
-        Type.String({ description: 'Inclusive start month YYYY-MM (selects historical slices)' }),
+        Type.String({ description: 'Inclusive start month YYYY-MM' }),
       ),
       month_to: Type.Optional(Type.String({ description: 'Inclusive end month YYYY-MM' })),
       limit: Type.Optional(
@@ -518,12 +657,26 @@ export function createPropertyIntelTool(): AgentTool {
       source_id: Type.Optional(
         Type.String({
           description:
-            'Catalog id e.g. hdb_resale_2017_present, hdb_resale_2015_2016, … (see list_sources)',
+            'HDB catalog id e.g. hdb_resale_2017_present (see list_sources)',
         }),
       ),
       resource_id: Type.Optional(
         Type.String({
-          description: 'Advanced: pin a data.gov.sg dataset/resource id (d_… or UUID)',
+          description: 'HDB: pin a data.gov.sg dataset/resource id (d_… or UUID)',
+        }),
+      ),
+      project: Type.Optional(
+        Type.String({ description: 'Private: project/condo name substring' }),
+      ),
+      market_segment: Type.Optional(
+        Type.String({ description: 'Private: CCR | RCR | OCR' }),
+      ),
+      district: Type.Optional(
+        Type.String({ description: 'Private: postal district e.g. 09 or 15' }),
+      ),
+      property_type: Type.Optional(
+        Type.String({
+          description: 'Private: Condominium, Apartment, Terrace, Semi-detached, Detached, …',
         }),
       ),
     }),

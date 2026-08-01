@@ -560,13 +560,14 @@ scenarios:
 | `add_cash_flow` / `list_cash_flows` / … | Recurring income/expense (rent lives here when stored — not on PropertyAsset) |
 | `set_projection_assumptions` | Returns, inflation, FX (required for projection) |
 | `save_scenario` / `run_projection` / `compare_scenarios` | Overlays + monthly engine |
-| `property_intel` | HDB resale comps from data.gov.sg collection 189 (1990–present, multi-dataset); `list_sources` / search / summary; private path fail-fast without URA |
+| `property_intel` | HDB resale (data.gov.sg collection 189) + private sold comps (URA `PMI_Resi_Transaction` when `URA_ACCESS_KEY` set) |
+| `ura_carpark` | URA car park availability + rates/details |
 
 **Property marks:** `assertProperty` keeps only known fields (`id`, `value`, `currency`, `updated_at`, optional `label`, `mortgage_id`) — unknown keys are stripped on write, not silently defaulted.
 
 **SG real-estate portfolio skill:** `sg-real-estate-portfolio` (comps, duties, yield/LTV recipes). Dual-load with `family-treasury` for second-property / SG buy with policy cost. Design: [plans/2026-08-01-real-estate-portfolio-intelligence-design.md](./plans/2026-08-01-real-estate-portfolio-intelligence-design.md).
 
-**Env:** `DATA_GOV_SG_API_KEY` (recommended in production for rate limits); optional `HDB_RESALE_RESOURCE_ID` (override 2017+ slice only); `URA_ACCESS_KEY` (private not implemented — fail-fast).
+**Env:** `DATA_GOV_SG_API_KEY` (recommended for HDB rate limits); optional `HDB_RESALE_RESOURCE_ID` (override 2017+ slice); `URA_ACCESS_KEY` (required for private sold + car parks); optional `URA_BASE_URL` (default `https://eservice.ura.gov.sg`).
 
 **NAV (household):** portfolio MTM (or cost basis) + free cash + deposit principal + property − liability principal, all in `reporting_currency` via explicit FX. Fail-fast if FX missing.
 

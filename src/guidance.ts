@@ -517,6 +517,8 @@ const property = (): string =>
     '• "Rent is 3200/mo — what is gross yield and LTV on my home?"',
     '• "Second condo at 2M as SC owning one home — all-in stamp + can we afford it?"',
     '• "How much of our net worth is physical property vs portfolio?"',
+    '• "URA sold comps for project X" / "private condo transactions district 09"',
+    '• "URA car park lots near Orchard" / "rates for carpark A0004"',
     '',
     '*Anti-shopping*',
     '• I am **not** a multi-unit listing shopper (no PropertyGuru shortlist packs / layout design).',

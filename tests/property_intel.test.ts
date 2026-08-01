@@ -67,21 +67,19 @@ describe('property_intel', () => {
     expect(textOf(result)).toMatch(/At least one filter required/i);
   });
 
-  it('fails private market without URA key (named research, no invent)', async () => {
+  it('fails private market without URA key', async () => {
     delete process.env.URA_ACCESS_KEY;
     const tool = createPropertyIntelTool();
     const result = await tool.execute('t2', {
       market: 'private',
       action: 'price_summary',
+      project: 'TEST',
     });
     expect(result.details).toBeNull();
-    const text = textOf(result);
-    expect(text).toMatch(/URA_ACCESS_KEY missing/i);
-    expect(text).toMatch(/named/i);
-    expect(text).toMatch(/Do NOT invent/i);
+    expect(textOf(result)).toMatch(/URA_ACCESS_KEY/i);
   });
 
-  it('fails private market when URA key set but not implemented', async () => {
+  it('fails private market without any filter', async () => {
     process.env.URA_ACCESS_KEY = 'test-key';
     const tool = createPropertyIntelTool();
     const result = await tool.execute('t3', {
@@ -89,7 +87,65 @@ describe('property_intel', () => {
       action: 'search_transactions',
     });
     expect(result.details).toBeNull();
-    expect(textOf(result)).toMatch(/not implemented/i);
+    expect(textOf(result)).toMatch(/at least one filter/i);
+  });
+
+  it('queries URA private residential with project filter', async () => {
+    process.env.URA_ACCESS_KEY = 'test-key';
+    const projectPayload = {
+      Status: 'Success',
+      Result: [
+        {
+          project: 'FORETTE',
+          street: 'BUKIT TIMAH ROAD',
+          marketSegment: 'RCR',
+          transaction: [
+            {
+              area: '67',
+              floorRange: '01-05',
+              noOfUnits: '1',
+              contractDate: '0324',
+              price: '1700000',
+              propertyType: 'Condominium',
+              district: '21',
+              typeOfArea: 'Strata',
+              tenure: 'Freehold',
+              typeOfSale: '3',
+            },
+          ],
+        },
+      ],
+    };
+    const fetchMock = vi
+      .fn()
+      // token
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ Status: 'Success', Result: 'tok' }),
+      })
+      // batch 1
+      .mockResolvedValueOnce({
+        ok: true,
+        arrayBuffer: async () => Buffer.from(JSON.stringify(projectPayload)),
+      })
+      // batch 2 empty stops? actually Status Success Result []
+      .mockResolvedValueOnce({
+        ok: true,
+        arrayBuffer: async () =>
+          Buffer.from(JSON.stringify({ Status: 'Success', Result: [] })),
+      });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const tool = createPropertyIntelTool();
+    const result = await tool.execute('t3b', {
+      market: 'private',
+      action: 'price_summary',
+      project: 'FORETTE',
+    });
+    expect(result.details).not.toBeNull();
+    expect(textOf(result)).toMatch(/FORETTE/);
+    expect(textOf(result)).toMatch(/URA PMI_Resi_Transaction/);
+    expect(textOf(result)).toMatch(/1,?700,?000|1700000|S\$/);
   });
 
   it('sends x-api-key when DATA_GOV_SG_API_KEY is set', async () => {

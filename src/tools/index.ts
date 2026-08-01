@@ -9,6 +9,7 @@ import { createQuoteTool } from './quote.js';
 import { createHouseholdTools } from './household.js';
 import { createProjectionTools } from './projection.js';
 import { createPropertyIntelTool } from './property_intel.js';
+import { createUraCarparkTool } from './ura_carpark.js';
 
 /** Domain tools only — Utarus framework supplies user/invite/bindrive/firecrawl/write_report. */
 export function createInvageTools(): AgentTool[] {
@@ -18,6 +19,7 @@ export function createInvageTools(): AgentTool[] {
     ...createHouseholdTools(),
     ...createProjectionTools(),
     createPropertyIntelTool(),
+    createUraCarparkTool(),
     createQuoteTool(),
     createPortfolioAnalyzerTool(),
     createSaveReportTool(),
