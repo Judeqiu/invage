@@ -53,7 +53,7 @@ Prefer town names (Tampines) over district codes alone.
 
 | Tool | Use |
 |------|-----|
-| `property_intel` | HDB resale comps (`market=hdb`). `search_transactions` or `price_summary`. Filters: town, flat_type, street_name, month_from/to. **At least one filter required.** No channel ids. |
+| `property_intel` | HDB resale comps (`market=hdb`) via data.gov.sg. Actions: `list_sources` (catalog + live ping), `search_transactions`, `price_summary`. Filters: town, flat_type, street_name, month_from/to. **At least one filter required** (except list_sources). Default = 2017–present; older `month_from` auto-queries historical slices (1990–2016). Optional `source_id` / `resource_id`. Private condo sold prices are **not** on these tables. No channel ids. Uses `DATA_GOV_SG_API_KEY` when set. |
 | `firecrawl` | Live IRAS/HDB/URA pages; **named** project/listing URL only (not multi-unit packs) |
 | `get_household` / property & liability CRUD | Marks, mortgages, cash flows |
 | `run_projection` / `compare_scenarios` | Affordability after all-in cost known |

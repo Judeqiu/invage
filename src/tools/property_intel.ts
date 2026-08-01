@@ -1,18 +1,65 @@
 /**
- * property_intel — live Singapore property market intelligence.
+ * property_intel — live Singapore property market intelligence via data.gov.sg.
  *
- * HDB resale: data.gov.sg CKAN datastore (resource configurable via HDB_RESALE_RESOURCE_ID).
- * Private residential: requires URA_ACCESS_KEY (fail-fast if missing).
+ * HDB resale: full collection "Resale Flat Prices" (1990 → present) across
+ * period-sliced datasets. API key DATA_GOV_SG_API_KEY recommended in production
+ * (higher rate limits). Private residential: URA path not implemented yet.
  */
 
 import { Type } from 'typebox';
 import type { AgentTool, AgentToolResult } from '@earendil-works/pi-agent-core';
 
-const DEFAULT_HDB_RESOURCE = 'f1765b54-a209-4718-8d38-a39237f502b3';
 const DATASTORE_URL = 'https://data.gov.sg/api/action/datastore_search';
+const COLLECTION_META_URL =
+  'https://api-production.data.gov.sg/v2/public/api/collections/189/metadata';
+
+/**
+ * Official HDB resale collection (id 189) child datasets.
+ * Coverage verified against data.gov.sg datastore sort month asc/desc.
+ * Env HDB_RESALE_RESOURCE_ID overrides only the "current" (2017+) slice when set.
+ */
+const HDB_RESALE_SOURCES = [
+  {
+    id: 'hdb_resale_1990_1999',
+    resourceId: 'd_ebc5ab87086db484f88045b47411ebc5',
+    label: 'HDB resale Jan 1990 – Dec 1999',
+    monthFrom: '1990-01',
+    monthTo: '1999-12',
+  },
+  {
+    id: 'hdb_resale_2000_2012',
+    resourceId: 'd_43f493c6c50d54243cc1eab0df142d6a',
+    label: 'HDB resale Jan 2000 – Feb 2012',
+    monthFrom: '2000-01',
+    monthTo: '2012-02',
+  },
+  {
+    id: 'hdb_resale_2012_2014',
+    resourceId: 'd_2d5ff9ea31397b66239f245f57751537',
+    label: 'HDB resale Mar 2012 – Dec 2014',
+    monthFrom: '2012-03',
+    monthTo: '2014-12',
+  },
+  {
+    id: 'hdb_resale_2015_2016',
+    resourceId: 'd_ea9ed51da2787afaf8e51f827c304208',
+    label: 'HDB resale Jan 2015 – Dec 2016',
+    monthFrom: '2015-01',
+    monthTo: '2016-12',
+  },
+  {
+    id: 'hdb_resale_2017_present',
+    resourceId: 'd_8b84c4ee58e3cfc0ece0d773c8ca6abc',
+    label: 'HDB resale Jan 2017 – present (default current)',
+    monthFrom: '2017-01',
+    monthTo: '9999-12',
+  },
+] as const;
+
+type HdbSourceId = (typeof HDB_RESALE_SOURCES)[number]['id'];
 
 type Market = 'hdb' | 'private';
-type Action = 'search_transactions' | 'price_summary';
+type Action = 'list_sources' | 'search_transactions' | 'price_summary';
 
 interface HdbRecord {
   month: string;
@@ -37,6 +84,10 @@ interface SearchParams {
   month_from?: string;
   month_to?: string;
   limit?: number;
+  /** Pin to one catalog slice; default auto by month range (current if omitted). */
+  source_id?: string;
+  /** Override resource_id (advanced). When set, skips catalog multi-slice. */
+  resource_id?: string;
 }
 
 function ok<T>(text: string, details: T): AgentToolResult<T> {
@@ -64,12 +115,10 @@ function normalizeTown(town: string): string {
 }
 
 function normalizeFlatType(ft: string): string {
-  // data.gov.sg uses "4 ROOM", "EXECUTIVE", etc.
   let t = ft.trim().toUpperCase().replace(/-/g, ' ').replace(/\s+/g, ' ');
   if (/^\d\s*ROOM$/.test(t)) return t.replace(/(\d)\s*ROOM/, '$1 ROOM');
   if (/^\d$/.test(t)) return `${t} ROOM`;
   if (t === 'EXEC' || t === 'EXEC CONDO' || t === 'EC') {
-    // EC is not in HDB resale dataset; leave as-is for private path
     return t;
   }
   return t;
@@ -81,24 +130,108 @@ function monthInRange(month: string, from?: string, to?: string): boolean {
   return true;
 }
 
-async function fetchHdbPage(filters: Record<string, string>, limit: number, offset: number): Promise<{
-  total: number;
-  records: HdbRecord[];
+function currentResourceId(): string {
+  const env = process.env.HDB_RESALE_RESOURCE_ID?.trim();
+  if (env) return env;
+  return HDB_RESALE_SOURCES[HDB_RESALE_SOURCES.length - 1]!.resourceId;
+}
+
+function resolveSources(params: SearchParams): Array<{
+  sourceId: string;
+  resourceId: string;
+  label: string;
 }> {
-  const resourceId = process.env.HDB_RESALE_RESOURCE_ID?.trim() || DEFAULT_HDB_RESOURCE;
+  if (params.resource_id?.trim()) {
+    return [
+      {
+        sourceId: 'custom',
+        resourceId: params.resource_id.trim(),
+        label: `custom resource_id=${params.resource_id.trim()}`,
+      },
+    ];
+  }
+
+  if (params.source_id?.trim()) {
+    const id = params.source_id.trim() as HdbSourceId;
+    const src = HDB_RESALE_SOURCES.find((s) => s.id === id);
+    if (!src) {
+      throw new Error(
+        `Unknown source_id "${params.source_id}". Use action=list_sources for catalog ids.`,
+      );
+    }
+    const resourceId =
+      src.id === 'hdb_resale_2017_present' ? currentResourceId() : src.resourceId;
+    return [{ sourceId: src.id, resourceId, label: src.label }];
+  }
+
+  // Auto: if month range given, pick all overlapping slices; else current only.
+  const from = params.month_from?.trim();
+  const to = params.month_to?.trim();
+  if (!from && !to) {
+    const cur = HDB_RESALE_SOURCES[HDB_RESALE_SOURCES.length - 1]!;
+    return [
+      {
+        sourceId: cur.id,
+        resourceId: currentResourceId(),
+        label: cur.label,
+      },
+    ];
+  }
+
+  const qFrom = from ?? '0000-01';
+  const qTo = to ?? '9999-12';
+  const matched = HDB_RESALE_SOURCES.filter(
+    (s) => s.monthFrom <= qTo && s.monthTo >= qFrom,
+  ).map((s) => ({
+    sourceId: s.id,
+    resourceId: s.id === 'hdb_resale_2017_present' ? currentResourceId() : s.resourceId,
+    label: s.label,
+  }));
+
+  if (matched.length === 0) {
+    throw new Error(
+      `No HDB resale dataset covers month range ${qFrom}..${qTo}. Use action=list_sources.`,
+    );
+  }
+  return matched;
+}
+
+function authHeaders(): Record<string, string> {
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  const apiKey = process.env.DATA_GOV_SG_API_KEY?.trim();
+  if (apiKey) {
+    headers['x-api-key'] = apiKey;
+  }
+  return headers;
+}
+
+function hasApiKey(): boolean {
+  return Boolean(process.env.DATA_GOV_SG_API_KEY?.trim());
+}
+
+async function fetchDatastorePage(
+  resourceId: string,
+  filters: Record<string, string>,
+  limit: number,
+  offset: number,
+): Promise<{ total: number; records: HdbRecord[] }> {
   const url = new URL(DATASTORE_URL);
   url.searchParams.set('resource_id', resourceId);
   url.searchParams.set('limit', String(limit));
   url.searchParams.set('offset', String(offset));
+  // Prefer newest first when API supports sort (ignored if unsupported).
+  url.searchParams.set('sort', 'month desc');
   if (Object.keys(filters).length > 0) {
     url.searchParams.set('filters', JSON.stringify(filters));
   }
 
-  const headers: Record<string, string> = { Accept: 'application/json' };
-  const apiKey = process.env.DATA_GOV_SG_API_KEY?.trim();
-  if (apiKey) headers['x-api-key'] = apiKey;
-
-  const res = await fetch(url.toString(), { headers });
+  const res = await fetch(url.toString(), { headers: authHeaders() });
+  if (res.status === 429) {
+    throw new Error(
+      'data.gov.sg rate limited (HTTP 429). Ensure DATA_GOV_SG_API_KEY is set for production ' +
+        'higher limits, reduce concurrent queries, and retry. Do not invent comps.',
+    );
+  }
   if (!res.ok) {
     const body = await res.text();
     throw new Error(`data.gov.sg HTTP ${res.status}: ${body.slice(0, 400)}`);
@@ -121,21 +254,12 @@ async function fetchHdbPage(filters: Record<string, string>, limit: number, offs
   };
 }
 
-/**
- * Pull HDB records matching filters. Month range is applied client-side when
- * month_from/month_to are set (CKAN equality filters only).
- */
-async function queryHdb(params: SearchParams): Promise<{
-  totalMatched: number;
-  records: HdbRecord[];
-  filters: Record<string, string>;
-}> {
-  const filters: Record<string, string> = {};
-  if (params.town) filters.town = normalizeTown(params.town);
-  if (params.flat_type) filters.flat_type = normalizeFlatType(params.flat_type);
-  if (params.street_name) filters.street_name = params.street_name.trim().toUpperCase();
-
-  const want = Math.min(Math.max(params.limit ?? 25, 1), 100);
+async function queryOneResource(
+  resourceId: string,
+  params: SearchParams,
+  filters: Record<string, string>,
+  want: number,
+): Promise<{ totalMatched: number; records: HdbRecord[] }> {
   const pageSize = 100;
   const maxScan = 2000;
   const collected: HdbRecord[] = [];
@@ -144,7 +268,7 @@ async function queryHdb(params: SearchParams): Promise<{
   let scanned = 0;
 
   while (scanned < maxScan && collected.length < want) {
-    const page = await fetchHdbPage(filters, pageSize, offset);
+    const page = await fetchDatastorePage(resourceId, filters, pageSize, offset);
     apiTotal = page.total;
     if (page.records.length === 0) break;
 
@@ -159,10 +283,54 @@ async function queryHdb(params: SearchParams): Promise<{
     if (offset >= page.total) break;
   }
 
-  // Prefer newest months in the collected set
   collected.sort((a, b) => (a.month < b.month ? 1 : a.month > b.month ? -1 : 0));
+  return { totalMatched: apiTotal, records: collected.slice(0, want) };
+}
 
-  return { totalMatched: apiTotal, records: collected.slice(0, want), filters };
+async function queryHdb(params: SearchParams): Promise<{
+  totalMatched: number;
+  records: HdbRecord[];
+  filters: Record<string, string>;
+  sourcesUsed: Array<{ sourceId: string; resourceId: string; label: string; totalMatched: number }>;
+}> {
+  const filters: Record<string, string> = {};
+  if (params.town) filters.town = normalizeTown(params.town);
+  if (params.flat_type) filters.flat_type = normalizeFlatType(params.flat_type);
+  if (params.street_name) filters.street_name = params.street_name.trim().toUpperCase();
+
+  const want = Math.min(Math.max(params.limit ?? 25, 1), 100);
+  const sources = resolveSources(params);
+  const all: HdbRecord[] = [];
+  const sourcesUsed: Array<{
+    sourceId: string;
+    resourceId: string;
+    label: string;
+    totalMatched: number;
+  }> = [];
+  let totalMatched = 0;
+
+  // Query newest sources first so returned sample is recent when multi-slice.
+  for (const src of [...sources].reverse()) {
+    const remaining = want - all.length;
+    if (remaining <= 0) break;
+    const part = await queryOneResource(src.resourceId, params, filters, remaining);
+    sourcesUsed.push({
+      sourceId: src.sourceId,
+      resourceId: src.resourceId,
+      label: src.label,
+      totalMatched: part.totalMatched,
+    });
+    totalMatched += part.totalMatched;
+    all.push(...part.records);
+  }
+
+  all.sort((a, b) => (a.month < b.month ? 1 : a.month > b.month ? -1 : 0));
+  return {
+    totalMatched,
+    records: all.slice(0, want),
+    filters,
+    sourcesUsed,
+  };
 }
 
 function formatTransactions(records: HdbRecord[]): string {
@@ -205,11 +373,86 @@ function summarize(records: HdbRecord[]): string {
   ].join('\n');
 }
 
+async function handleListSources(): Promise<AgentToolResult<unknown>> {
+  const lines = [
+    'data.gov.sg HDB resale catalog (collection 189 — Resale Flat Prices)',
+    `API key configured: ${hasApiKey() ? 'yes' : 'NO — set DATA_GOV_SG_API_KEY for production rate limits'}`,
+    `Current (2017+) resource override env: ${process.env.HDB_RESALE_RESOURCE_ID?.trim() || '(none — using catalog default)'}`,
+    '',
+    'source_id | resource_id | coverage',
+  ];
+  for (const s of HDB_RESALE_SOURCES) {
+    const rid = s.id === 'hdb_resale_2017_present' ? currentResourceId() : s.resourceId;
+    lines.push(`- ${s.id} | ${rid} | ${s.monthFrom} → ${s.monthTo === '9999-12' ? 'present' : s.monthTo}`);
+  }
+  lines.push(
+    '',
+    'Usage:',
+    '- Default queries use 2017–present only (current market).',
+    '- Set month_from/month_to spanning older years to auto-query historical slices.',
+    '- Or pass source_id / resource_id to pin one dataset.',
+    '- Private condo sold prices are NOT on data.gov.sg here — use market=private (URA) or firecrawl for named units.',
+  );
+
+  // Live ping current resource (fail-fast if unreachable)
+  const cur = currentResourceId();
+  try {
+    const ping = await fetchDatastorePage(cur, {}, 1, 0);
+    lines.push('', `Live check current resource ${cur}: OK (total rows ≈ ${ping.total})`);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    lines.push('', `Live check current resource ${cur}: FAILED — ${msg}`);
+    return fail(lines.join('\n'));
+  }
+
+  // Optional: refresh child dataset ids from collection metadata (informational)
+  try {
+    const res = await fetch(COLLECTION_META_URL, { headers: authHeaders() });
+    if (res.ok) {
+      const body = (await res.json()) as {
+        data?: { collectionMetadata?: { childDatasets?: string[]; lastUpdatedAt?: string } };
+      };
+      const children = body.data?.collectionMetadata?.childDatasets ?? [];
+      const known = new Set<string>(HDB_RESALE_SOURCES.map((s) => s.resourceId));
+      // current may be env-overridden; also accept env value
+      known.add(currentResourceId());
+      const unknown = children.filter((c) => !known.has(c));
+      lines.push(
+        '',
+        `Collection 189 lastUpdatedAt: ${body.data?.collectionMetadata?.lastUpdatedAt ?? 'unknown'}`,
+        `Child datasets from API: ${children.join(', ') || '(none)'}`,
+      );
+      if (unknown.length > 0) {
+        lines.push(
+          `WARNING: collection has dataset ids not in catalog: ${unknown.join(', ')} — update HDB_RESALE_SOURCES in property_intel.ts`,
+        );
+      } else {
+        lines.push('Catalog covers all collection child datasets (or current env override).');
+      }
+    }
+  } catch {
+    lines.push('', 'Collection metadata refresh skipped (network error) — catalog still usable.');
+  }
+
+  return ok(lines.join('\n'), {
+    action: 'list_sources',
+    apiKeyConfigured: hasApiKey(),
+    sources: HDB_RESALE_SOURCES.map((s) => ({
+      id: s.id,
+      resourceId: s.id === 'hdb_resale_2017_present' ? currentResourceId() : s.resourceId,
+      monthFrom: s.monthFrom,
+      monthTo: s.monthTo === '9999-12' ? null : s.monthTo,
+      label: s.label,
+    })),
+  });
+}
+
 async function handlePrivate(_params: SearchParams): Promise<AgentToolResult<null>> {
   const key = process.env.URA_ACCESS_KEY?.trim();
   if (!key) {
     return fail(
       'property_intel market=private is not connected (URA_ACCESS_KEY missing). ' +
+        'Private residential sold prices are not on the HDB data.gov.sg resale tables. ' +
         'Do NOT invent private sold prices. ' +
         'Next channel (same turn): firecrawl search + scrape for a **named** project/unit/listing URL or official URA/IRAS pages. ' +
         'Label asking vs sold. Do not build multi-unit shopping packs. ' +
@@ -229,17 +472,29 @@ export function createPropertyIntelTool(): AgentTool {
     name: 'property_intel',
     label: 'Property Intel',
     description:
-      'Query live Singapore residential market data and transaction comps. ' +
-      'Use market=hdb for HDB resale (data.gov.sg). Use market=private only when URA_ACCESS_KEY is configured. ' +
-      'action=search_transactions returns recent matching rows; action=price_summary returns min/median/avg/max and sample. ' +
-      'Always call before stating prices, psf, or "latest market" claims. Filter by town, flat_type, street_name, month_from/month_to (YYYY-MM).',
+      'Query Singapore residential market data from data.gov.sg. ' +
+      'market=hdb: full HDB resale history (1990–present) via catalogued datasets; ' +
+      'action=list_sources shows resource ids and live connectivity; ' +
+      'action=search_transactions lists comps; action=price_summary gives min/median/avg/max. ' +
+      'Filters: town, flat_type, street_name, month_from/month_to (YYYY-MM). ' +
+      'month range auto-selects historical slices; optional source_id or resource_id to pin. ' +
+      'market=private requires URA (not on data.gov.sg HDB tables). ' +
+      'Always call before stating HDB prices/psf. Requires DATA_GOV_SG_API_KEY in production for rate limits.',
     parameters: Type.Object({
       market: Type.Union([Type.Literal('hdb'), Type.Literal('private')], {
-        description: 'hdb = HDB resale; private = private residential (requires URA_ACCESS_KEY)',
+        description: 'hdb = HDB resale (data.gov.sg); private = URA path (not data.gov.sg)',
       }),
-      action: Type.Union([Type.Literal('search_transactions'), Type.Literal('price_summary')], {
-        description: 'search_transactions = list rows; price_summary = stats + sample',
-      }),
+      action: Type.Union(
+        [
+          Type.Literal('list_sources'),
+          Type.Literal('search_transactions'),
+          Type.Literal('price_summary'),
+        ],
+        {
+          description:
+            'list_sources = catalog + live ping; search_transactions = rows; price_summary = stats + sample',
+        },
+      ),
       town: Type.Optional(
         Type.String({
           description: 'HDB town e.g. TAMPINES, BISHAN, QUEENSTOWN (case-insensitive)',
@@ -254,33 +509,70 @@ export function createPropertyIntelTool(): AgentTool {
         Type.String({ description: 'Street name as in HDB data e.g. "TAMPINES ST 81"' }),
       ),
       month_from: Type.Optional(
-        Type.String({ description: 'Inclusive start month YYYY-MM' }),
+        Type.String({ description: 'Inclusive start month YYYY-MM (selects historical slices)' }),
       ),
       month_to: Type.Optional(Type.String({ description: 'Inclusive end month YYYY-MM' })),
       limit: Type.Optional(
         Type.Number({ description: 'Max rows to return/sample (1–100, default 25)' }),
+      ),
+      source_id: Type.Optional(
+        Type.String({
+          description:
+            'Catalog id e.g. hdb_resale_2017_present, hdb_resale_2015_2016, … (see list_sources)',
+        }),
+      ),
+      resource_id: Type.Optional(
+        Type.String({
+          description: 'Advanced: pin a data.gov.sg dataset/resource id (d_… or UUID)',
+        }),
       ),
     }),
     execute: async (_id, raw) => {
       try {
         const params = raw as SearchParams;
         if (!params.market) throw new Error('market is required (hdb | private)');
-        if (!params.action) throw new Error('action is required (search_transactions | price_summary)');
+        if (!params.action) {
+          throw new Error(
+            'action is required (list_sources | search_transactions | price_summary)',
+          );
+        }
+
+        if (params.action === 'list_sources') {
+          if (params.market !== 'hdb') {
+            throw new Error('list_sources is only for market=hdb (data.gov.sg HDB resale catalog)');
+          }
+          return await handleListSources();
+        }
 
         if (params.market === 'private') {
           return await handlePrivate(params);
         }
 
-        if (!params.town && !params.street_name && !params.flat_type && !params.month_from) {
+        if (
+          !params.town &&
+          !params.street_name &&
+          !params.flat_type &&
+          !params.month_from &&
+          !params.source_id &&
+          !params.resource_id
+        ) {
           throw new Error(
-            'At least one filter required for HDB queries: town, flat_type, street_name, or month_from',
+            'At least one filter required for HDB queries: town, flat_type, street_name, month_from, source_id, or resource_id',
           );
         }
 
-        const { totalMatched, records, filters } = await queryHdb(params);
+        if (!hasApiKey()) {
+          console.warn(
+            '[property_intel] DATA_GOV_SG_API_KEY not set — public limits apply; set key for production',
+          );
+        }
+
+        const { totalMatched, records, filters, sourcesUsed } = await queryHdb(params);
         const header = [
-          `Source: data.gov.sg HDB resale (resource ${process.env.HDB_RESALE_RESOURCE_ID?.trim() || DEFAULT_HDB_RESOURCE})`,
-          `API filter match count (before month client filter): ${totalMatched}`,
+          'Source: data.gov.sg HDB resale (collection 189)',
+          `API key: ${hasApiKey() ? 'yes' : 'no (public limits)'}`,
+          `Datasets used: ${sourcesUsed.map((s) => `${s.sourceId}(${s.resourceId}, api_total=${s.totalMatched})`).join('; ')}`,
+          `API filter match count (sum of slices, before month client filter): ${totalMatched}`,
           `Filters: ${JSON.stringify({ ...filters, month_from: params.month_from, month_to: params.month_to })}`,
           `Returned rows: ${records.length}`,
           '',
@@ -293,6 +585,7 @@ export function createPropertyIntelTool(): AgentTool {
             totalMatched,
             count: records.length,
             filters,
+            sourcesUsed,
           });
         }
 
@@ -302,6 +595,7 @@ export function createPropertyIntelTool(): AgentTool {
           totalMatched,
           count: records.length,
           filters,
+          sourcesUsed,
           records,
         });
       } catch (error) {
