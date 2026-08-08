@@ -24,7 +24,7 @@ const CATALOG: RawSkill[] = [
     id: 'investment-analysis',
     name: 'Investment Analysis',
     description:
-      'Core Invester analysis skill. Load for portfolio 3-axis, stock evaluation, undervalued discovery (cheap ∩ quality ∩ trap), news→price-path / trend after news (PEAD, underreaction vs overreaction, earnings reaction), index-relative evaluation (SPY/QQQ/HSI/CSI 300/sector ETFs), multi-market equities (US, HK .HK, China A .SS/.SZ, dual-list/ADR), options calls/puts (structure, IV, hedges), value traps, multiples, valuation, buy/sell/hold, "why did TICKER move", "analyze TICKER", "find undervalued stocks".',
+      'Investment research methods for DIY light analysis: portfolio 3-axis, single-name evaluation, idea discovery (cheap ∩ quality ∩ trap), news→price-path, index-relative context, multi-market equities (US/HK/CN suffixes), options structure, valuation multiples, buy/sell/hold framing. Load by capability fit — not keyword matching. Prefer invoke_local_agent Investment Expert for substantive research when coordinating as default host.',
   },
   {
     id: 'bindrive',

@@ -42,7 +42,7 @@ function registerInvestmentExpertSkills(): Skill[] {
       id: 'investment-analysis',
       name: 'Investment Analysis',
       description:
-        'Core portfolio/thesis skill. Load for 3-axis holdings review, stock evaluation, undervalued discovery (cheap ∩ quality ∩ trap), news→price-path, index-relative, multi-market (US/HK/CN), options structure, buy/sell/hold. Full recipes in agent KB (search_kb).',
+        'Investment research methods: 3-axis holdings review, single-name evaluation, idea discovery (cheap ∩ quality ∩ trap), news→price-path, index-relative, multi-market (US/HK/CN), options structure, buy/sell/hold. Load by capability fit when this agent is researching; full recipes also in agent KB (search_kb). Not keyword-matched.',
     },
     {
       id: 'firecrawl',
