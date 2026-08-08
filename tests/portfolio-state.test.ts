@@ -547,6 +547,25 @@ describe('portfolio-state', () => {
     );
   });
 
+  it('applyCashDelta with adjust_cash=false does not throw on multi-ccy channel', () => {
+    const cashes = [
+      { amount: 30515.65, currency: 'SGD', updated_at: '2026-07-31', channel: 'dbs' },
+      { amount: 395635.93, currency: 'USD', updated_at: '2026-08-08', channel: 'dbs' },
+      { amount: 9809.97, currency: 'USD', updated_at: '2026-07-29', channel: 'ocbc' },
+    ];
+    const skip = applyCashDelta(cashes, -20000, '2026-08-08', false, 'dbs');
+    expect(skip.adjusted).toBe(false);
+    expect(skip.cashDelta).toBe(0);
+    expect(skip.note).toMatch(/adjust_cash=false/);
+    // Slot peek may be null when ambiguous — ledger still unchanged.
+    expect(skip.cashes).toEqual(cashes);
+
+    const ocbc = applyCashDelta(cashes, -20000, '2026-08-08', false, 'ocbc');
+    expect(ocbc.adjusted).toBe(false);
+    expect(ocbc.cash?.channel).toBe('ocbc');
+    expect(ocbc.cash?.amount).toBe(9809.97);
+  });
+
   it('clearCash can clear one channel or all', () => {
     const state = loadState('alice');
     setCashes(state, [

@@ -928,10 +928,21 @@ export function applyCashDelta(
     }
   };
 
+  // When not adjusting the ledger (or no delta), never fail on multi-ccy
+  // ambiguity — the cash slot is only for optional reporting on the result.
+  const peekCash = (): CashBalance | null => {
+    if (cashes.length === 0) return null;
+    try {
+      return resolveTarget();
+    } catch {
+      return null;
+    }
+  };
+
   if (!adjustCash) {
     return {
       cashes,
-      cash: cashes.length === 0 ? null : resolveTarget(),
+      cash: peekCash(),
       cashDelta: 0,
       adjusted: false,
       note: 'adjust_cash=false — cash ledger not changed.',
@@ -940,7 +951,7 @@ export function applyCashDelta(
   if (cashDelta === 0) {
     return {
       cashes,
-      cash: cashes.length === 0 ? null : resolveTarget(),
+      cash: peekCash(),
       cashDelta: 0,
       adjusted: false,
       note: 'No cash impact (cost/premium unchanged).',

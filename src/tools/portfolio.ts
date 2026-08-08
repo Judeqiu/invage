@@ -57,6 +57,11 @@ import {
   resolveInvestorFromChannel,
   type ChannelIds,
 } from './channel.js';
+import {
+  CASH_NUMERIC_FIELDS,
+  HOLDING_NUMERIC_FIELDS,
+  prepareNumericToolArgs,
+} from './coerce-tool-numbers.js';
 
 function reportingCurrencyOf(state: unknown): string | null {
   const hh = state as HouseholdInvestorState;
@@ -433,6 +438,9 @@ export function createPortfolioTools(): AgentTool[] {
       'Money-market, unit trusts, bank/robo product codes (e.g. PHILLIPUSDMMF, FULLERTONSGDLIQ, OCBCUT, OCBCRI, OCCYRI) MUST use instrument=fund fund_quote_source=manual + mark (NAV; use avg_price if NAV unknown). ' +
       'Never import those as equity — Yahoo has no price and the dashboard will fail. ' +
       'manual funds require mark (NAV per unit); yahoo funds use live Yahoo on ticker. Optional fund_name. ' +
+      'Screenshot / broker reconcile (correction, no cash impact): adjust_cash=false + instrument=fund + fund_quote_source=manual + short ticker + channel + ' +
+      'avg_price=cost per unit (or total cost if units=1) + units + mark=live NAV/market value per unit (or total MV if units=1). ' +
+      'Numeric args must be JSON numbers (19340.22). Comma-formatted screenshot strings are coerced; do not invent units. ' +
       'Option: set instrument=option with option_right (call|put), option_side (long|short), strike, expiry (YYYY-MM-DD), ' +
       'multiplier (typically 100 shares/contract — assignment size only), underlying, settlement (physical|cash). ' +
       'avg_price = total premium dollars PER CONTRACT (e.g. $265 credit for one put covering 100 shares — do NOT enter per-share ×100). ' +
@@ -440,27 +448,27 @@ export function createPortfolioTools(): AgentTool[] {
       'quote_source=manual|yahoo optional for options. Contingent obligation (strike×mult×cts) is separate from MTM. ' +
       'Option portfolio key auto-builds as UNDERLYING-P|C-STRIKE-YYYYMMDD-L|S unless ticker is provided. ' +
       'When cash is recorded, equity/fund/long buys DECREASE cash by **this-trade** cost/premium only; short option opens INCREASE cash by premium credit. ' +
-      'Fails if cash would go negative. Pass adjust_cash=false only for historical import (no ledger). ' +
-      'Optional channel tags the broker/custody source (e.g. moomoo, ibkr, webull, jude_futu); omit or empty when unassigned. ' +
+      'Fails if cash would go negative. Pass adjust_cash=false only for historical import/correction (no ledger). ' +
+      'Optional channel tags the broker/custody source (e.g. moomoo, ibkr, webull, jude_futu, ocbc); omit or empty when unassigned. ' +
       'Same ticker under different channels is allowed — keys become TICKER@channel (e.g. TSLA@cmbyonglong and TSLA@jude_futu). ' +
-      'Pass telegram_user_id or slack_user_id from the message context — never ask the user for it.',
+      'Pass telegram_user_id or slack_user_id or user_slug from the message context — never ask the user for it.',
     parameters: Type.Object({
       ...channelIdParams,
       ticker: Type.Optional(
         Type.String({
           description:
-            'Bare equity/fund ticker or code (e.g. AAPL, SPY, BTC, BTC-USD, 110011) or optional option-key override. Do not embed @channel — pass channel separately. Spot Bitcoin: BTC or BTC-USD (live Yahoo BTC-USD).',
+            'Bare equity/fund ticker or code (e.g. AAPL, SPY, BTC, BTC-USD, 110011) or optional option-key override. Do not embed @channel — pass channel separately. Spot Bitcoin: BTC or BTC-USD (live Yahoo BTC-USD). For unit trusts without a code, invent a short stable code (e.g. EASTSPRING-ASB) and put the full product name in fund_name.',
         }),
       ),
       avg_price: Type.Number({
         description:
-          'This-trade fill price. Equity/fund: cost per share or unit. Option: total premium dollars per contract. ' +
+          'This-trade fill price as a JSON number (e.g. 19340.22 — no thousand separators). Equity/fund: cost per share or unit. Option: total premium dollars per contract. ' +
           'On an existing lot, blended into the weighted-average cost — do not pass the already-blended portfolio average unless this trade alone used that price.',
       }),
       units: Type.Number({
         description:
-          'This-trade size (appended when the lot already exists). Equity: shares. Fund: fund units. Option: contracts. ' +
-          'Not the full position total — use update_holding to set absolute units.',
+          'This-trade size as a JSON number (appended when the lot already exists). Equity: shares. Fund: fund units. Option: contracts. ' +
+          'Not the full position total — use update_holding to set absolute units. When only total market value is known, units=1 + avg_price=total cost + mark=total market value is valid for manual funds.',
       }),
       category: Type.Optional(
         Type.String({ description: 'Category (e.g. "SL Technology S1", "Bond", "Private / Secondary").' }),
@@ -531,13 +539,15 @@ export function createPortfolioTools(): AgentTool[] {
       mark: Type.Optional(
         Type.Number({
           description:
-            'Option only: current premium mark in dollars per contract for MTM. Defaults to avg_price at entry when omitted.',
+            'JSON number. Fund (instrument=fund, fund_quote_source=manual): NAV / market price per unit (or total market value when units=1). ' +
+            'Option: current premium mark $ per contract for MTM. When omitted: funds default mark to avg_price; options default mark to avg_price at entry.',
         }),
       ),
       quote_source: Type.Optional(
         Type.Union([Type.Literal('manual'), Type.Literal('yahoo')], {
           description:
-            'Option only: manual = always stored mark (private/OTC); yahoo = require Yahoo chain match; omit = auto (Yahoo if listed, else mark).',
+            'Option only: manual = always stored mark (private/OTC); yahoo = require Yahoo chain match; omit = auto (Yahoo if listed, else mark). ' +
+            'For funds use fund_quote_source (not this field).',
         }),
       ),
       underlying_mark: Type.Optional(
@@ -546,6 +556,9 @@ export function createPortfolioTools(): AgentTool[] {
         }),
       ),
     }),
+    prepareArguments(args) {
+      return prepareNumericToolArgs(args, HOLDING_NUMERIC_FIELDS);
+    },
     async execute(_id, raw) {
       const p = raw as ChannelIds & {
         ticker?: string;
@@ -990,6 +1003,9 @@ export function createPortfolioTools(): AgentTool[] {
         }),
       ),
     }),
+    prepareArguments(args) {
+      return prepareNumericToolArgs(args, CASH_NUMERIC_FIELDS);
+    },
     async execute(_id, raw) {
       const p = raw as ChannelIds & { amount: number; currency: string; channel?: string };
       try {
@@ -1263,6 +1279,9 @@ export function createPortfolioTools(): AgentTool[] {
         }),
       ),
     }),
+    prepareArguments(args) {
+      return prepareNumericToolArgs(args, HOLDING_NUMERIC_FIELDS);
+    },
     async execute(_id, raw) {
       const p = raw as ChannelIds & {
         ticker: string;

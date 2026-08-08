@@ -90,6 +90,27 @@ If free cash was inflated (e.g. destination `set_cash` without debiting source):
 2. **Do not** `mature_deposit` on top of an already-credited destination for the same physical move (double free cash).  
 3. After fix, summarize every free-cash slot from tools.
 
+### Reconcile broker screenshot → holdings (funds / unit trusts)
+
+When the user pastes or screenshots real positions and books have placeholders or wrong lots:
+
+1. **Read first.** `get_portfolio` this turn — list channel lots you will change.  
+2. **Classify every line as fund vs equity** before any write. Bank unit trusts, MMF, robo, open-end 基金, product codes → `instrument=fund`. Never equity.  
+3. **Always for funds:**
+   - `instrument=fund`
+   - `fund_quote_source=manual` (unless a true Yahoo-listed ETF ticker)
+   - `fund_quote_source` is **required** — no default; omitting fails
+   - `mark` = live NAV or **market value per unit** from the screenshot (if only totals are shown, use `units=1`, `avg_price=implied cost total`, `mark=market value total`)
+   - `avg_price` = cost per unit (or total cost when `units=1`)
+   - `channel` = broker (e.g. `ocbc`, `tiger`)
+   - optional `fund_name` = full product label from the app
+   - short stable `ticker` code without spaces (e.g. `EASTSPRING-ASB`); full name goes in `fund_name`
+4. **Corrections / import (no cash movement):** `adjust_cash=false` on **every** remove/add/update. Default cash ledger will otherwise try to debit free cash and fail when dry powder is smaller than the lot.  
+5. **Numbers:** pass **JSON numbers** (`19340.22`). Thousand-separator strings from screenshots are coerced, but never invent unit counts. Do not pass a separate `currency` field on `add_holding` (holdings have no currency slot — put SGD/USD in `fund_name` / category if needed).  
+6. **Replace placeholders:** `remove_holding` each synthetic lot (`adjust_cash=false`), then `add_holding` each real fund (`adjust_cash=false`). Do **not** claim removals/adds succeeded until tool results say so.  
+7. **Batch discipline:** prefer one fund at a time (or small batches). After the last write, `get_portfolio` again and report only tool-backed keys/values. If a tool returns an error, quote the error and stop inventing diagnoses (“parse error”) without the tool text.  
+8. **Never** leave books half-fixed without telling the user which keys still wrong (e.g. removed 1 of 3 placeholders).
+
 ### Reconcile
 
 1. `get_household` — list **gaps**.  
@@ -99,13 +120,14 @@ If free cash was inflated (e.g. destination `set_cash` without debiting source):
    - Deposits not double-counted as free cash  
    - Property ↔ `mortgage_id` / liability `property_id` links  
    - Recurring cash_flows vs stated lifestyle (missing income/expense)  
-4. Propose **one** concrete fix at a time; apply only when the user confirms.
+   - Placeholder fund lots (1 unit @ total balance, code like OCBCUT) vs live product names from screenshots  
+4. Propose **one** concrete fix at a time when ambiguous; when the user already gave live screenshot numbers, apply the fund recipe above and verify with tools.
 
 ### Read
 
 1. `get_household` for books summary + gaps.  
 2. Optional `run_projection` when they ask multi-year path / affordability (same family-treasury rules; no invented salary/returns).  
-3. Present assets vs liabilities in reporting currency; label cost-basis vs live MTM (Bookkeeper has no live quote tool — say cost basis or ask @Invester for MTM).
+3. Present assets vs liabilities in reporting currency; label cost-basis vs live MTM (Bookkeeper has no live quote tool — say cost basis / manual mark or ask @Invester for MTM).
 
 ---
 
@@ -115,6 +137,9 @@ If free cash was inflated (e.g. destination `set_cash` without debiting source):
 - Silent multi-currency conversion  
 - Run undervalued screens, news analysis, or playbook interviews  
 - Mutate base books when the user only asked for a hypothetical scenario  
+- Claim “all removals/adds succeeded” without matching tool results  
+- Book funds without `instrument=fund` + `fund_quote_source`  
+- Leave `adjust_cash=true` on pure screenshot corrections when cash would go negative
 
 ---
 

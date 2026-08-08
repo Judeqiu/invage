@@ -31,12 +31,36 @@ describe('Bookkeeper local agent', () => {
   it('registers Bookkeeper purpose and bookkeeping skill', () => {
     expect(bookkeeperExtension.purpose).toMatch(/Bookkeeper/i);
     expect(bookkeeperExtension.purpose).toMatch(/journal/i);
+    expect(bookkeeperExtension.purpose).toMatch(/instrument=fund/);
+    expect(bookkeeperExtension.purpose).toMatch(/fund_quote_source/);
+    expect(bookkeeperExtension.purpose).toMatch(/adjust_cash=false/);
+    expect(bookkeeperExtension.purpose).toMatch(/Screenshot fund reconcile/i);
     expect(bookkeeperExtension.billing).toBeUndefined();
     expect(bookkeeperExtension.webUi).toBeUndefined();
     const skillIds = bookkeeperExtension.skills.map((s) => s.id);
     expect(skillIds).toContain('bookkeeping');
     expect(skillIds).toContain('family-treasury');
     expect(skillIds).not.toContain('investment-analysis');
+    const bookkeeping = bookkeeperExtension.skills.find((s) => s.id === 'bookkeeping');
+    expect(bookkeeping?.description).toMatch(/fund_quote_source=manual/);
+  });
+
+  it('add_holding exposes prepareArguments for screenshot number coercion', () => {
+    const add = createBookkeeperTools().find((t) => t.name === 'add_holding');
+    expect(add?.prepareArguments).toBeTypeOf('function');
+    const coerced = add!.prepareArguments!({
+      ticker: 'EASTSPRING-ASB',
+      avg_price: '20,000.00',
+      units: '1',
+      mark: '19,340.22',
+      instrument: 'fund',
+      fund_quote_source: 'manual',
+      adjust_cash: false,
+      channel: 'ocbc',
+    });
+    expect(coerced.avg_price).toBe(20000);
+    expect(coerced.units).toBe(1);
+    expect(coerced.mark).toBe(19340.22);
   });
 
   it('tools factory returns a fresh array each call', () => {

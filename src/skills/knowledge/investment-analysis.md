@@ -115,6 +115,8 @@ When the user pastes a broker screenshot or list that includes **funds**, classi
 **Wrong (breaks dashboard):** `add_holding ticker=PHILLIPUSDMMF instrument=equity` or `ticker=OCBCUT instrument=equity` or `ticker=ENDOWUS instrument=equity`  
 **Right:** `add_holding instrument=fund ticker=ENDOWUS fund_quote_source=manual mark=1 units=<units> avg_price=1 channel=endowus adjust_cash=false fund_name="Endowus portfolio"`
 
+**Screenshot corrections (bank UT / multi-fund list):** always `adjust_cash=false`. Pass JSON numbers (`19340.22`, not thousand-separated strings). When only total MV and cost are known: `units=1`, `avg_price=<implied cost total>`, `mark=<market value total>`, short ticker + `fund_name`. Required: `instrument=fund` + `fund_quote_source=manual`. Quote tool errors verbatim; re-`get_portfolio` after writes.
+
 **Spot Bitcoin (supported):**  
 `add_holding ticker=BTC avg_price=<USD cost per BTC> units=<fractional OK> channel=…`  
 (or `ticker=BTC-USD`). Live MTM uses Yahoo **`BTC-USD`**. Do **not** treat bare Yahoo symbol `BTC` (Grayscale mini trust) as the user’s spot Bitcoin.
