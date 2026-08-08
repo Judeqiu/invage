@@ -10,6 +10,7 @@ import { createHouseholdTools } from './household.js';
 import { createProjectionTools } from './projection.js';
 import { createPropertyIntelTool } from './property_intel.js';
 import { createUraCarparkTool } from './ura_carpark.js';
+import { createPaymentPlanTool } from './payment_plan.js';
 
 /** Domain tools only — Utarus framework supplies user/invite/bindrive/firecrawl/write_report. */
 export function createInvageTools(): AgentTool[] {
@@ -18,12 +19,45 @@ export function createInvageTools(): AgentTool[] {
     ...createPlaybookTools(),
     ...createHouseholdTools(),
     ...createProjectionTools(),
+    createPaymentPlanTool(),
     createPropertyIntelTool(),
     createUraCarparkTool(),
     createQuoteTool(),
     createPortfolioAnalyzerTool(),
     createSaveReportTool(),
     createSendReportTool(),
+    ...createSnapshotTool(),
+  ];
+}
+
+/**
+ * Bookkeeper local agent — journal / reconcile / read the household books.
+ * Portfolio + cash/deposits tools (ledgered mutations), household CRUD,
+ * projections for read-side checks, snapshots for audit trail.
+ * No market analysis, quotes, playbook, or research tools.
+ */
+export function createBookkeeperTools(): AgentTool[] {
+  return [
+    ...createPortfolioTools(),
+    ...createHouseholdTools(),
+    ...createProjectionTools(),
+    ...createSnapshotTool(),
+  ];
+}
+
+/**
+ * Accountant local agent — accurate cash/investment position view + efficient payment plans.
+ * Books read/write for plan inputs, live MTM (quote/analyzer), projections, build_payment_plan.
+ * No undervalued discovery playbook wizard focus; no property shopping tools.
+ */
+export function createAccountantTools(): AgentTool[] {
+  return [
+    ...createPortfolioTools(),
+    ...createHouseholdTools(),
+    ...createProjectionTools(),
+    createPaymentPlanTool(),
+    createQuoteTool(),
+    createPortfolioAnalyzerTool(),
     ...createSnapshotTool(),
   ];
 }

@@ -1,0 +1,176 @@
+/**
+ * Accountant — local multi-agent peer on the Invage host.
+ *
+ * Responsibility: accurate cash + investment position awareness and
+ * efficient payment plans (debt paydown + deposit/cash funding) that
+ * help the user save money. Shares the same user books as Invester.
+ */
+
+import type { DomainExtension, EnrichMessageContext, Skill } from 'utarus';
+import {
+  resolveUserBySlackUser,
+  resolveUserByTelegramUser,
+  resolveUserBySlug,
+  registerDomainSkill,
+} from 'utarus';
+import { readFileSync, existsSync } from 'fs';
+import { resolve, dirname, join } from 'path';
+import { fileURLToPath } from 'url';
+import { createAccountantTools } from '../tools/index.js';
+import {
+  getCashes,
+  getDeposits,
+  getPortfolio,
+  type InvestorState,
+} from '../state/portfolio-state.js';
+import {
+  getLiabilities,
+  getProjectionAssumptions,
+  getTreasury,
+  householdGaps,
+  type HouseholdInvestorState,
+} from '../state/household-state.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const KNOWLEDGE_DIR = resolve(__dirname, '../skills/knowledge');
+
+function readKnowledge(id: string): string {
+  const filePath = join(KNOWLEDGE_DIR, `${id}.md`);
+  if (!existsSync(filePath)) {
+    throw new Error(`Accountant skill knowledge file not found: ${filePath}`);
+  }
+  return readFileSync(filePath, 'utf-8');
+}
+
+function registerAccountantSkills(): Skill[] {
+  const catalog: Array<{ id: string; name: string; description: string }> = [
+    {
+      id: 'payment-planning',
+      name: 'Payment Planning & Cash Efficiency',
+      description:
+        'Efficient debt paydown and cash/deposit funding plans. Load for payment plan, avalanche vs snowball, which debt first, use FD or free cash, emergency reserve vs paydown, minimize interest, build_payment_plan. Considers free cash, fixed deposits maturities, liability APRs, cash flows. Not stock picking.',
+    },
+    {
+      id: 'family-treasury',
+      name: 'Family Treasury & Projections',
+      description:
+        'Household books and deterministic projections. Load for net worth, recurring cash flows, multi-year path, affordability, projection assumptions. Supports payment planning context.',
+    },
+  ];
+  const skills: Skill[] = [];
+  for (const raw of catalog) {
+    registerDomainSkill(raw.id, readKnowledge(raw.id));
+    skills.push({ ...raw, kind: 'knowledge' });
+  }
+  return skills;
+}
+
+const ACCOUNTANT_SKILLS = registerAccountantSkills();
+
+const ACCOUNTANT_PURPOSE = `You are **Accountant** — a local specialist on the Invester (Invage) host.
+
+**Responsibility:** keep an **accurate view of cash and investment positions** from the user’s books, and design **efficient payment plans** that consider free cash, **fixed deposits**, liabilities, and (when needed) investment opportunity cost — so the user **saves money** (interest and avoidable opportunity cost).
+
+You are **not** the market strategist (undervalued screens, news→price, playbook wizard) and **not** the pure bookkeeper (endless journal hygiene). Hand those to **@Invester** / **@Bookkeeper**.
+
+## What you optimize
+
+1. **Position accuracy** — free cash by channel, locked deposits (amount, maturity, implied yield), portfolio lots at **cost** and, when the decision needs market value, **live marks** via quote/analyzer tools. Never invent balances.
+2. **Payment efficiency** — default **debt avalanche** (highest APR first) to minimize interest (CFPB highest-rate method; industry avalanche vs snowball research). Use **snowball** only when the user wants quick wins. Always fund **minimums on all debts** first.
+3. **Asset-aware funding** — waterfall: (1) free cash above emergency reserve (2) minimums (3) surplus to #1 target (4) **matured** deposits re-checked vs debt APR before re-locking (5) **no auto-sale** of equities/funds/options.
+4. **Deposit intelligence** — compare implied deposit yield (from full-term interest on books) to debt APR; prefer post-maturity paydown when debt is materially more expensive; never invent early-break penalties.
+
+## Success looks like
+
+- Clear ranked paydown order with reasons (APR or balance)
+- Month-by-month or summary schedule from \`build_payment_plan\` (interest totals, months to free)
+- Explicit deposit actions (hold / maturing soon / deploy after maturity)
+- Emergency buffer respected when user wants it (\`preserve_emergency_months\`)
+- Investment MTM labeled when used; cost vs live distinguished
+
+## How you work — CRITICAL
+
+1. **Tool-before-claim.** \`get_household\` + \`get_portfolio\` before planning. \`build_payment_plan\` for schedules. Live marks when accuracy of investments matters.
+2. **No prose before required tool calls.**
+3. **Fail-fast** on mixed currency without reporting currency / matching plan currency.
+4. **Channel IDs from context only** (\`telegram_user_id\` / \`slack_user_id\` / \`user_slug\`).
+5. **Do not reveal** internal tool names, YAML, or tokens.
+6. **Voice:** precise, numbers-first, practical CFO/accountant tone.
+
+## Scope
+
+**In scope:** payment plans; avalanche/snowball compare; cash vs FD vs debt tradeoffs; emergency reserve sizing in a plan; position inventory (cash/deposits/holdings/liabilities); light projection when cash path affects payments.
+
+**Out of scope:** undervalued stock discovery, news trading, playbook setup, multi-unit property shopping, tax/legal advice, executing broker trades, inventing market returns to justify selling stock.
+
+Load skill \`payment-planning\` for strategy detail. Load \`family-treasury\` when multi-year cash path is required.`;
+
+function accountantContextPrefix(investor: InvestorState, ctx: EnrichMessageContext): string {
+  const portfolio = getPortfolio(investor);
+  const n = Object.keys(portfolio).length;
+  const cashes = getCashes(investor);
+  const deposits = getDeposits(investor);
+  const hh = investor as HouseholdInvestorState;
+  const treasury = hh.treasury != null ? getTreasury(hh) : null;
+  const assumptions = hh.projection_assumptions != null ? getProjectionAssumptions(hh) : null;
+  const gaps = householdGaps(hh);
+  const liabilities = getLiabilities(hh);
+  const openDebt = liabilities.filter((L) => L.principal > 0);
+  const cashHint =
+    cashes.length === 0
+      ? 'Cash: not recorded.'
+      : cashes
+          .map((c) => `${c.channel ?? 'unassigned'}=${c.amount.toFixed(2)} ${c.currency}`)
+          .join(', ');
+  const depHint =
+    deposits.length === 0
+      ? 'Deposits: none.'
+      : `${deposits.length} deposit(s); nearest end ${[...deposits].sort((a, b) => a.end_date.localeCompare(b.end_date))[0]?.end_date ?? 'n/a'}.`;
+  const debtHint =
+    openDebt.length === 0
+      ? 'Open liabilities: none.'
+      : openDebt
+          .map((L) => `${L.id}@${L.annual_rate_pct}% p=${L.principal.toFixed(0)} ${L.currency}`)
+          .join('; ');
+  const householdHint =
+    `reporting=${treasury?.reporting_currency ?? 'unset'}; assumptions=${assumptions != null ? 'set' : 'unset'}` +
+    (gaps.length > 0 ? `; gaps: ${gaps.join(', ')}` : '');
+  const channelHint =
+    ctx.telegramUserId != null
+      ? `Use telegram_user_id=${ctx.telegramUserId} on tools.`
+      : ctx.slackUserId
+        ? `Use slack_user_id="${ctx.slackUserId}" on tools.`
+        : ctx.userSlug
+          ? `Use user_slug="${ctx.userSlug}" on tools.`
+          : '';
+  return (
+    `[Accountant context: user "${investor.user.slug}" (${investor.profile.display_name}). ` +
+    `Holdings lots: ${n}. Cash: ${cashHint}. ${depHint} Debt: ${debtHint}. Household: ${householdHint}. ${channelHint} ` +
+    `Default paydown strategy: avalanche. Load payment-planning; use build_payment_plan for schedules.]\n`
+  );
+}
+
+export const accountantExtension: DomainExtension = {
+  purpose: ACCOUNTANT_PURPOSE,
+
+  tools: () => createAccountantTools(),
+
+  skills: ACCOUNTANT_SKILLS,
+
+  async enrichMessage(ctx: EnrichMessageContext): Promise<string> {
+    let investor: InvestorState | null = null;
+    if (ctx.telegramUserId != null) {
+      investor = resolveUserByTelegramUser(ctx.telegramUserId) as InvestorState | null;
+    } else if (ctx.slackUserId) {
+      investor = resolveUserBySlackUser(ctx.slackUserId) as InvestorState | null;
+    } else if (ctx.userSlug) {
+      investor = resolveUserBySlug(ctx.userSlug) as InvestorState | null;
+    }
+
+    if (investor) {
+      return `${accountantContextPrefix(investor, ctx)}\n\n${ctx.text}`;
+    }
+    return ctx.text;
+  },
+};

@@ -1,8 +1,11 @@
 /**
- * Invage (Invester) — AI portfolio analyst.
+ * Invage (Invester) — AI portfolio analyst host.
  *
  * Built on Utarus (same architecture as Binary + Marie channels):
- *   createFramework({ extension })
+ *   createFramework({ defaultAgentId, agents }) — multi-local
+ *     default: Invester (investment analysis + full domain tools)
+ *     peers:   Bookkeeper (journal / reconcile / read books)
+ *              Accountant (positions + efficient payment plans)
  *   Telegram (Binary-style) + Slack (Marie-style) + optional CLI
  *   BinDrive via utarus (npm run webapp)
  *
@@ -12,6 +15,7 @@
  * Optional channels (enable any subset):
  *   TELEGRAM_BOT_TOKEN + TELEGRAM_ADMIN_IDS
  *   SLACK_BOT_TOKEN + SLACK_APP_TOKEN + SLACK_SIGNING_SECRET + SLACK_ADMIN_IDS
+ * Multi-agent (WebUI): Room invite → @Bookkeeper / @Accountant; bare → Invester
  */
 
 import { config as dotenvConfig } from 'dotenv';
@@ -30,6 +34,8 @@ ensureAdminUsersExist();
 
 const { createFramework, config } = await import('utarus');
 const { invageExtension } = await import('./extension.js');
+const { bookkeeperExtension } = await import('./agents/bookkeeper.js');
+const { accountantExtension } = await import('./agents/accountant.js');
 
 process.on('uncaughtException', (error) => {
   console.error('[FATAL] Uncaught Exception:', error.message);
@@ -69,7 +75,16 @@ async function main(): Promise<void> {
 
   ensureAdminUsersExist();
 
-  const framework = createFramework({ extension: invageExtension });
+  // Multi-local: Invester is default (bare messages, billing, WebUI shell).
+  // Bookkeeper / Accountant: Room invite → @Bookkeeper / @Accountant.
+  const framework = createFramework({
+    defaultAgentId: 'invage',
+    agents: [
+      { id: 'invage', label: 'Invester', extension: invageExtension },
+      { id: 'bookkeeper', label: 'Bookkeeper', extension: bookkeeperExtension },
+      { id: 'accountant', label: 'Accountant', extension: accountantExtension },
+    ],
+  });
 
   // ── Web UI (Utarus-owned: chat SPA + BinDrive + admin + web onboard) ──
   // Chat needs the in-memory agent pool in this process. Invage only adds
