@@ -125,7 +125,7 @@ function accountantContextPrefix(investor: InvestorState, ctx: EnrichMessageCont
     cashes.length === 0
       ? 'Cash: not recorded.'
       : cashes
-          .map((c) => `${c.channel ?? 'unassigned'}=${c.amount.toFixed(2)} ${c.currency}`)
+          .map((c) => `${c.channel ?? 'unassigned'}/${c.currency}=${c.amount.toFixed(2)}`)
           .join(', ');
   const depHint =
     deposits.length === 0

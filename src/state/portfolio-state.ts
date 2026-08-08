@@ -163,9 +163,9 @@ export function accumulateHoldingBuy(existing: Holding, purchase: Holding): Hold
  * Settled / free cash available for deployment (not a holding).
  * Missing top-level `cash` means cash is unknown — never invent 0.
  *
- * Multi-broker: one CashBalance per channel key (see {@link cashSlotKey}).
- * Unassigned cash (no channel) occupies the empty-string slot; only one
- * unassigned entry is allowed.
+ * Multi-broker + multi-currency: one CashBalance per
+ * {@link cashBalanceKey}(channel, currency). Same channel may hold SGD and USD
+ * as separate free-cash sleeves. Unassigned (no channel) allows one slot per currency.
  */
 export interface CashBalance {
   /** Available cash amount. Must be finite and ≥ 0. */
@@ -236,13 +236,38 @@ export function setPortfolio(state: InvestorState, portfolio: Record<string, Hol
 }
 
 /**
- * Identity key for a cash slot: normalized channel name, or '' for unassigned.
- * Used to upsert / match multi-channel cash without inventing broker names.
+ * Identity key for a **channel** (deposits, channel filters): normalized name, or '' for unassigned.
+ * Not unique for free cash when multi-currency — use {@link cashBalanceKey} for free-cash slots.
  */
 export function cashSlotKey(channel: string | undefined | null): string {
   if (channel == null) return '';
   const t = String(channel).trim();
   return t.length === 0 ? '' : t;
+}
+
+/**
+ * Free-cash slot identity: channel + currency.
+ * Unassigned USD → `@USD`. Channel dbs + SGD → `dbs@SGD`.
+ */
+export function cashBalanceKey(
+  channel: string | undefined | null,
+  currency: string,
+): string {
+  if (typeof currency !== 'string' || currency.trim().length === 0) {
+    throw new Error('cashBalanceKey: currency is required (e.g. USD, SGD).');
+  }
+  const ccy = currency.trim().toUpperCase();
+  if (!/^[A-Z]{3,4}$/.test(ccy)) {
+    throw new Error(`cashBalanceKey: currency must be 3–4 letters (got "${currency}").`);
+  }
+  return `${cashSlotKey(channel)}@${ccy}`;
+}
+
+/** Human label for a free-cash slot, e.g. `dbs/USD` or `(unassigned)/SGD`. */
+export function formatCashSlotLabel(c: Pick<CashBalance, 'channel' | 'currency'>): string {
+  const ch = cashSlotKey(c.channel);
+  const ccy = c.currency.trim().toUpperCase();
+  return `${ch.length > 0 ? ch : '(unassigned)'}/${ccy}`;
 }
 
 /** Fail-fast validation for a cash balance object. */
@@ -279,7 +304,9 @@ export function assertCashBalance(raw: unknown): CashBalance {
 
 /**
  * Normalize YAML cash (object | array | missing) → validated CashBalance[].
- * Empty array means cash unknown. Fails fast on duplicate channel slots.
+ * Empty array means cash unknown.
+ * Fails fast on duplicate (channel, currency) slots — multi-ccy per channel is allowed.
+ * Lossless for legacy single-object and multi-channel one-ccy-per-channel shapes.
  */
 export function normalizeCashes(raw: unknown): CashBalance[] {
   if (raw == null) return [];
@@ -294,11 +321,11 @@ export function normalizeCashes(raw: unknown): CashBalance[] {
   });
   const seen = new Set<string>();
   for (const c of cashes) {
-    const key = cashSlotKey(c.channel);
+    const key = cashBalanceKey(c.channel, c.currency);
     if (seen.has(key)) {
-      const label = key.length > 0 ? key : '(unassigned)';
       throw new Error(
-        `Duplicate cash entry for channel "${label}". Each channel may have only one cash balance.`,
+        `Duplicate cash entry for ${formatCashSlotLabel(c)}. ` +
+          `Each (channel, currency) may have only one free-cash balance.`,
       );
     }
     seen.add(key);
@@ -433,13 +460,42 @@ export function getCash(
   return totalCash(getCashes(state), opts);
 }
 
-/** Cash entry matching a channel slot, or null. */
+/** All free-cash slots on a channel (0..N; multi-currency). */
+export function findCashesForChannel(
+  cashes: CashBalance[],
+  channel: string | undefined | null,
+): CashBalance[] {
+  const key = cashSlotKey(channel);
+  return cashes.filter((c) => cashSlotKey(c.channel) === key);
+}
+
+/** Free-cash slot matching channel + currency, or null. */
+export function findCashForSlot(
+  cashes: CashBalance[],
+  channel: string | undefined | null,
+  currency: string,
+): CashBalance | null {
+  const key = cashBalanceKey(channel, currency);
+  return cashes.find((c) => cashBalanceKey(c.channel, c.currency) === key) ?? null;
+}
+
+/**
+ * Cash entry matching a channel when there is exactly one free-cash sleeve on it.
+ * 0 slots → null. ≥2 sleeves (multi-ccy) → throw (ambiguous — use findCashForSlot).
+ */
 export function findCashForChannel(
   cashes: CashBalance[],
   channel: string | undefined | null,
 ): CashBalance | null {
-  const key = cashSlotKey(channel);
-  return cashes.find((c) => cashSlotKey(c.channel) === key) ?? null;
+  const slots = findCashesForChannel(cashes, channel);
+  if (slots.length === 0) return null;
+  if (slots.length === 1) return slots[0];
+  const labels = slots.map((c) => formatCashSlotLabel(c)).join(', ');
+  const want = cashSlotKey(channel) || '(unassigned)';
+  throw new Error(
+    `Ambiguous free cash on channel "${want}": ${labels}. ` +
+      `Pass currency to select a slot (findCashForSlot).`,
+  );
 }
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -685,27 +741,43 @@ export function setCashes(state: InvestorState, cashes: CashBalance[]): void {
 }
 
 /**
- * Upsert one cash balance by channel slot. Other channel balances are preserved.
- * This is the multi-channel-safe replacement for overwriting a single cash object.
+ * Upsert one free-cash balance by (channel, currency).
+ * Other channels and other currencies on the same channel are preserved.
  */
 export function setCash(state: InvestorState, cash: CashBalance): void {
   const entry = assertCashBalance(cash);
-  const key = cashSlotKey(entry.channel);
-  const rest = getCashes(state).filter((c) => cashSlotKey(c.channel) !== key);
+  const key = cashBalanceKey(entry.channel, entry.currency);
+  const rest = getCashes(state).filter(
+    (c) => cashBalanceKey(c.channel, c.currency) !== key,
+  );
   setCashes(state, [...rest, entry]);
 }
 
 /**
- * Remove cash. With no channel arg, clears all recorded cash (unknown again).
- * With channel (including empty string for unassigned), clears that slot only.
+ * Remove cash.
+ * - No channel arg: clear all free cash (unknown again).
+ * - Channel only: clear every currency on that channel.
+ * - Channel + currency: clear one free-cash sleeve.
  */
-export function clearCash(state: InvestorState, channel?: string | null): void {
+export function clearCash(
+  state: InvestorState,
+  channel?: string | null,
+  currency?: string | null,
+): void {
   if (channel === undefined) {
     delete state.cash;
     return;
   }
-  const key = cashSlotKey(channel);
-  const rest = getCashes(state).filter((c) => cashSlotKey(c.channel) !== key);
+  if (currency != null && String(currency).trim().length > 0) {
+    const key = cashBalanceKey(channel, currency);
+    const rest = getCashes(state).filter(
+      (c) => cashBalanceKey(c.channel, c.currency) !== key,
+    );
+    setCashes(state, rest);
+    return;
+  }
+  const chKey = cashSlotKey(channel);
+  const rest = getCashes(state).filter((c) => cashSlotKey(c.channel) !== chKey);
   setCashes(state, rest);
 }
 
@@ -778,16 +850,53 @@ function asCashList(cashOrCashes: CashBalance | CashBalance[] | null): CashBalan
 }
 
 /**
- * Apply a cash delta to the cash slot for `channel` (holding's broker tag).
- * Fail-fast if the matched slot would go negative.
+ * Resolve free-cash currency for a ledger op.
+ * Explicit currency wins; else exactly one sleeve on the channel; else fail.
+ */
+export function resolveCashCurrencyForChannel(
+  cashes: CashBalance[],
+  channel: string | undefined | null,
+  currency?: string | null,
+): string {
+  if (currency != null && String(currency).trim().length > 0) {
+    return String(currency).trim().toUpperCase();
+  }
+  const slots = findCashesForChannel(cashes, channel);
+  if (slots.length === 1) return slots[0].currency;
+  if (slots.length === 0) {
+    const labels =
+      cashes.length === 0
+        ? 'none'
+        : cashes.map((c) => formatCashSlotLabel(c)).join(', ');
+    const want = cashSlotKey(channel) || '(unassigned)';
+    throw new Error(
+      `No free cash on channel "${want}" to infer currency. Recorded: ${labels}. ` +
+        `Pass currency explicitly.`,
+    );
+  }
+  throw new Error(
+    `Ambiguous free cash currency on channel "${cashSlotKey(channel) || '(unassigned)'}": ` +
+      `${slots.map((c) => formatCashSlotLabel(c)).join(', ')}. Pass currency explicitly.`,
+  );
+}
+
+export interface ApplyCashDeltaOptions {
+  /**
+   * When true and cashDelta > 0, create the (channel, currency) slot if missing.
+   * Default false (debits and credits require an existing slot, except transfer/mature helpers).
+   */
+  createIfMissing?: boolean;
+}
+
+/**
+ * Apply a cash delta to the free-cash slot for `(channel, currency)`.
+ * Fail-fast if the matched slot would go negative or currency would be mixed silently.
  *
  * When cash is unknown (empty list), does not invent a balance — adjusted=false.
- * When cash exists but not on the requested channel, fails fast (do not silently
- * debit another broker's dry powder).
+ * When cash exists but not on the requested slot, fails fast (do not silently
+ * debit another broker's or currency's dry powder).
  *
- * @param cashOrCashes Single balance, multi list, or null (unknown).
- * @param channel Holding / trade channel; omit/empty = unassigned slot.
- * @param adjustCash When false, skip ledger even if cash is recorded.
+ * @param currency Optional when the channel has exactly one free-cash sleeve; required when multi-ccy.
  */
 export function applyCashDelta(
   cashOrCashes: CashBalance | CashBalance[] | null,
@@ -795,37 +904,43 @@ export function applyCashDelta(
   updatedAt: string,
   adjustCash: boolean,
   channel?: string | null,
+  currency?: string | null,
+  options?: ApplyCashDeltaOptions,
 ): CashApplyResult {
   if (!Number.isFinite(cashDelta)) {
     throw new Error('cashDelta must be a finite number.');
   }
   const cashes = asCashList(cashOrCashes);
-  /** Prefer the trade channel slot; never force multi-ccy sum here. */
-  const resultCash = (): CashBalance | null =>
-    findCashForChannel(cashes, channel) ?? (cashes.length === 1 ? cashes[0] : null);
+  const createIfMissing = options?.createIfMissing === true;
+
+  const resolveTarget = (): CashBalance | null => {
+    if (cashes.length === 0) return null;
+    if (currency != null && String(currency).trim().length > 0) {
+      return findCashForSlot(cashes, channel, currency);
+    }
+    try {
+      return findCashForChannel(cashes, channel);
+    } catch {
+      throw new Error(
+        `Ambiguous free cash on channel "${cashSlotKey(channel) || '(unassigned)'}". ` +
+          `Pass currency. Recorded: ${cashes.map((c) => formatCashSlotLabel(c)).join(', ')}.`,
+      );
+    }
+  };
 
   if (!adjustCash) {
     return {
       cashes,
-      cash: resultCash(),
+      cash: cashes.length === 0 ? null : resolveTarget(),
       cashDelta: 0,
       adjusted: false,
       note: 'adjust_cash=false — cash ledger not changed.',
     };
   }
-  if (cashes.length === 0) {
-    return {
-      cashes: [],
-      cash: null,
-      cashDelta: 0,
-      adjusted: false,
-      note: 'Cash not recorded — set_cash first so buys deduct dry powder.',
-    };
-  }
   if (cashDelta === 0) {
     return {
       cashes,
-      cash: resultCash(),
+      cash: cashes.length === 0 ? null : resolveTarget(),
       cashDelta: 0,
       adjusted: false,
       note: 'No cash impact (cost/premium unchanged).',
@@ -835,25 +950,72 @@ export function applyCashDelta(
     throw new Error('updatedAt must be YYYY-MM-DD.');
   }
 
-  const key = cashSlotKey(channel);
-  let target = findCashForChannel(cashes, channel);
+  // First free-cash credit ever (e.g. mature_deposit / transfer into empty books).
+  const canCreate =
+    createIfMissing &&
+    cashDelta > 0 &&
+    currency != null &&
+    String(currency).trim().length > 0;
 
-  // Single un-tagged cash + trade with a channel: only allow when the sole
-  // entry is also unassigned; otherwise require an explicit matching slot.
+  if (cashes.length === 0 && !canCreate) {
+    return {
+      cashes: [],
+      cash: null,
+      cashDelta: 0,
+      adjusted: false,
+      note: 'Cash not recorded — set_cash first so buys deduct dry powder.',
+    };
+  }
+
+  let ccy: string;
+  if (canCreate && (cashes.length === 0 || currency != null && String(currency).trim())) {
+    try {
+      ccy =
+        cashes.length === 0
+          ? String(currency).trim().toUpperCase()
+          : resolveCashCurrencyForChannel(cashes, channel, currency);
+    } catch {
+      ccy = String(currency).trim().toUpperCase();
+    }
+  } else {
+    ccy = resolveCashCurrencyForChannel(cashes, channel, currency);
+  }
+  if (!/^[A-Z]{3,4}$/.test(ccy)) {
+    throw new Error(`applyCashDelta: invalid currency "${ccy}".`);
+  }
+
+  let target = findCashForSlot(cashes, channel, ccy);
+
+  if (target == null && canCreate) {
+    const created: CashBalance = {
+      amount: 0,
+      currency: ccy,
+      updated_at: updatedAt,
+    };
+    const ch = cashSlotKey(channel);
+    if (ch.length > 0) created.channel = ch;
+    target = created;
+  }
+
   if (target == null) {
-    const labels = cashes.map((c) => cashSlotKey(c.channel) || '(unassigned)').join(', ');
-    const want = key.length > 0 ? key : '(unassigned)';
+    const labels =
+      cashes.length === 0
+        ? 'none'
+        : cashes.map((c) => formatCashSlotLabel(c)).join(', ');
+    const want = formatCashSlotLabel({
+      channel: cashSlotKey(channel) || undefined,
+      currency: ccy,
+    });
     throw new Error(
-      `No cash recorded for channel "${want}". Recorded cash channels: ${labels}. ` +
-        `Use set_cash with channel matching the trade, or pass adjust_cash=false for import.`,
+      `No free cash recorded for ${want}. Recorded: ${labels}. ` +
+        `Use set_cash with matching channel and currency, or pass adjust_cash=false for import.`,
     );
   }
 
   const nextAmount = target.amount + cashDelta;
   if (nextAmount < 0) {
-    const label = key.length > 0 ? key : 'unassigned';
     throw new Error(
-      `Insufficient cash on channel "${label}": have ${target.amount.toFixed(2)} ${target.currency}, ` +
+      `Insufficient cash on ${formatCashSlotLabel(target)}: have ${target.amount.toFixed(2)} ${target.currency}, ` +
         `need ${(-cashDelta).toFixed(2)} more for this trade ` +
         `(delta ${cashDelta.toFixed(2)}). Top up with set_cash or reduce size.`,
     );
@@ -866,10 +1028,15 @@ export function applyCashDelta(
   };
   if (target.channel != null) nextEntry.channel = target.channel;
 
-  const nextCashes = cashes.map((c) =>
-    cashSlotKey(c.channel) === key ? nextEntry : c,
-  );
+  const balKey = cashBalanceKey(nextEntry.channel, nextEntry.currency);
+  const hadSlot = cashes.some((c) => cashBalanceKey(c.channel, c.currency) === balKey);
+  const nextCashes = hadSlot
+    ? cashes.map((c) =>
+        cashBalanceKey(c.channel, c.currency) === balKey ? nextEntry : c,
+      )
+    : [...cashes, nextEntry];
 
+  const slotLabel = formatCashSlotLabel(nextEntry);
   return {
     cashes: nextCashes,
     cash: nextEntry,
@@ -877,12 +1044,175 @@ export function applyCashDelta(
     adjusted: true,
     note:
       cashDelta < 0
-        ? `Cash −${(-cashDelta).toFixed(2)} ${nextEntry.currency}` +
-          (key ? ` [${key}]` : '') +
+        ? `Cash −${(-cashDelta).toFixed(2)} ${nextEntry.currency} [${slotLabel}]` +
           ` → ${nextEntry.amount.toFixed(2)} ${nextEntry.currency}`
-        : `Cash +${cashDelta.toFixed(2)} ${nextEntry.currency}` +
-          (key ? ` [${key}]` : '') +
+        : `Cash +${cashDelta.toFixed(2)} ${nextEntry.currency} [${slotLabel}]` +
           ` → ${nextEntry.amount.toFixed(2)} ${nextEntry.currency}`,
+  };
+}
+
+/**
+ * Atomic same-currency free-cash transfer between channels.
+ * Net free cash in `currency` is unchanged.
+ */
+export function transferCash(
+  state: InvestorState,
+  args: {
+    fromChannel?: string | null;
+    toChannel?: string | null;
+    amount: number;
+    currency: string;
+    updatedAt: string;
+  },
+): { from: CashBalance; to: CashBalance; cashes: CashBalance[] } {
+  const { amount, currency, updatedAt } = args;
+  if (!(amount > 0) || !Number.isFinite(amount)) {
+    throw new Error('transferCash: amount must be a finite number > 0.');
+  }
+  const ccy = currency.trim().toUpperCase();
+  if (!/^[A-Z]{3,4}$/.test(ccy)) {
+    throw new Error(`transferCash: currency must be 3–4 letters (got "${currency}").`);
+  }
+  const fromKey = cashSlotKey(args.fromChannel);
+  const toKey = cashSlotKey(args.toChannel);
+  if (fromKey === toKey) {
+    throw new Error(
+      'transferCash: from_channel and to_channel must differ ' +
+        `(got "${fromKey || '(unassigned)'}").`,
+    );
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(updatedAt)) {
+    throw new Error('transferCash: updatedAt must be YYYY-MM-DD.');
+  }
+
+  const cashes = getCashes(state);
+  const debit = applyCashDelta(
+    cashes,
+    -amount,
+    updatedAt,
+    true,
+    args.fromChannel,
+    ccy,
+  );
+  if (!debit.adjusted || debit.cash == null) {
+    throw new Error(
+      debit.note ||
+        `transferCash: could not debit ${amount} ${ccy} from ${fromKey || '(unassigned)'}.`,
+    );
+  }
+  const credit = applyCashDelta(
+    debit.cashes,
+    amount,
+    updatedAt,
+    true,
+    args.toChannel,
+    ccy,
+    { createIfMissing: true },
+  );
+  if (!credit.adjusted || credit.cash == null) {
+    throw new Error(
+      credit.note ||
+        `transferCash: could not credit ${amount} ${ccy} to ${toKey || '(unassigned)'}.`,
+    );
+  }
+  setCashes(state, credit.cashes);
+  return { from: debit.cash, to: credit.cash, cashes: credit.cashes };
+}
+
+/**
+ * Unlock fixed-deposit principal into free cash on the same channel + currency.
+ * Partial amount allowed; full amount removes the deposit.
+ * Interest is not auto-credited (v1).
+ */
+export function matureDeposit(
+  state: InvestorState,
+  args: {
+    id: string;
+    /** Principal to unlock; omit = full deposit amount. */
+    amount?: number;
+    updatedAt: string;
+    adjustCash?: boolean;
+  },
+): {
+  deposit: FixedDeposit | null;
+  unlocked: number;
+  removed: boolean;
+  cash: CashBalance | null;
+  cashes: CashBalance[];
+  cashAdjusted: boolean;
+} {
+  const id = args.id.trim();
+  if (!id) throw new Error('matureDeposit: id is required.');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(args.updatedAt)) {
+    throw new Error('matureDeposit: updatedAt must be YYYY-MM-DD.');
+  }
+  const existing = findDepositById(getDeposits(state), id);
+  if (existing == null) {
+    throw new Error(`matureDeposit: deposit id "${id}" not found.`);
+  }
+  const unlock =
+    args.amount === undefined ? existing.amount : args.amount;
+  if (!(unlock > 0) || !Number.isFinite(unlock)) {
+    throw new Error('matureDeposit: amount must be a finite number > 0.');
+  }
+  if (unlock > existing.amount) {
+    throw new Error(
+      `matureDeposit: cannot unlock ${unlock} ${existing.currency}; ` +
+        `principal is ${existing.amount} ${existing.currency}.`,
+    );
+  }
+
+  const adjustCash = args.adjustCash !== false;
+  let cashResult: CashApplyResult = {
+    cashes: getCashes(state),
+    cash: findCashForSlot(getCashes(state), existing.channel, existing.currency),
+    cashDelta: 0,
+    adjusted: false,
+    note: '',
+  };
+  if (adjustCash) {
+    cashResult = applyCashDelta(
+      getCashes(state),
+      unlock,
+      args.updatedAt,
+      true,
+      existing.channel,
+      existing.currency,
+      { createIfMissing: true },
+    );
+    if (!cashResult.adjusted || cashResult.cash == null) {
+      throw new Error(
+        cashResult.note ||
+          'matureDeposit: could not credit free cash for unlocked principal.',
+      );
+    }
+    setCashes(state, cashResult.cashes);
+  }
+
+  const remaining = existing.amount - unlock;
+  let deposit: FixedDeposit | null;
+  let removed: boolean;
+  if (remaining === 0) {
+    removeDeposit(state, existing.id);
+    deposit = null;
+    removed = true;
+  } else {
+    deposit = {
+      ...existing,
+      amount: remaining,
+      updated_at: args.updatedAt,
+    };
+    upsertDeposit(state, deposit);
+    removed = false;
+  }
+
+  return {
+    deposit,
+    unlocked: unlock,
+    removed,
+    cash: cashResult.cash,
+    cashes: cashResult.cashes,
+    cashAdjusted: cashResult.adjusted,
   };
 }
 

@@ -9,6 +9,8 @@ describe('Bookkeeper local agent', () => {
     expect(names).toContain('record_property_payment');
     expect(names).toContain('get_portfolio');
     expect(names).toContain('set_cash');
+    expect(names).toContain('transfer_cash');
+    expect(names).toContain('mature_deposit');
     expect(names).toContain('add_cash_flow');
     expect(names).toContain('run_projection');
     expect(names).not.toContain('portfolio_analyzer');

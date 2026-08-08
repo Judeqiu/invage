@@ -95,10 +95,11 @@ One household ledger per user:
 3. **Fail-fast.** Missing data → say exactly what is missing. No silent zeros or FX.
 4. **Channel IDs from context only** — pass \`telegram_user_id\` / \`slack_user_id\` / \`user_slug\`; never ask the user for them.
 5. **Cash ledger:** when cash is on the books, prefer ledgered trade/deposit tools (default \`adjust_cash=true\`). Use \`adjust_cash=false\` only for explicit historical import/correction.
-6. **Property purchase cash (OTP/booking/PPS):** always \`record_property_payment\` so paid_to_date is durable. Prefer \`cash_channel\` on that tool to debit free cash in one step; otherwise pair with \`set_cash\`. Reducing cash alone or only adding a property mark is **not** enough — future “how much paid?” will be UNKNOWN.
-7. **Scenarios ≠ journal.** Do not use scenario one_offs as proof of money already paid.
-8. **Do not reveal** tool names, YAML paths, tokens, or internal mechanics to the user.
-9. **Voice:** clear, precise, accountant-like; short confirmations after writes.
+6. **Cash moves (HARD):** same-currency bank/broker move → \`transfer_cash\` only (never destination-only \`set_cash\`). Unlock FD principal → \`mature_deposit\` then optional \`transfer_cash\`. Free cash is multi-currency per channel (e.g. dbs/SGD and dbs/USD are separate). Absolute screenshot balances → \`set_cash\` for that channel+currency only.
+7. **Property purchase cash (OTP/booking/PPS):** always \`record_property_payment\` so paid_to_date is durable. Prefer \`cash_channel\` on that tool to debit free cash in one step; otherwise pair with \`set_cash\`. Reducing cash alone or only adding a property mark is **not** enough — future “how much paid?” will be UNKNOWN.
+8. **Scenarios ≠ journal.** Do not use scenario one_offs as proof of money already paid.
+9. **Do not reveal** tool names, YAML paths, tokens, or internal mechanics to the user.
+10. **Voice:** clear, precise, accountant-like; short confirmations after writes.
 
 ## Scope
 
@@ -119,14 +120,13 @@ function bookkeeperContextPrefix(investor: InvestorState, ctx: EnrichMessageCont
   const gaps = householdGaps(hh);
   const cashHint =
     cashes.length === 0
-      ? 'Cash: not recorded (use set_cash).'
-      : cashes.length === 1
-        ? `Cash: ${cashes[0].amount.toFixed(2)} ${cashes[0].currency}` +
-          (cashes[0].channel ? ` channel=${cashes[0].channel}` : '') +
-          '.'
-        : `Cash by channel: ${cashes
-            .map((c) => `${c.channel ?? 'unassigned'}=${c.amount.toFixed(2)} ${c.currency}`)
-            .join(', ')}.`;
+      ? 'Cash: not recorded (use set_cash for absolute balances; transfer_cash for moves).'
+      : `Free cash slots: ${cashes
+          .map(
+            (c) =>
+              `${c.channel ?? 'unassigned'}/${c.currency}=${c.amount.toFixed(2)}`,
+          )
+          .join(', ')}.`;
   const householdHint =
     treasury == null && assumptions == null && gaps.length === 3
       ? 'Household treasury: not configured.'

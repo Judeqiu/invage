@@ -26,18 +26,23 @@ import {
   clearCash,
   clearDeposits,
   findCashForChannel,
+  findCashForSlot,
+  findCashesForChannel,
   findDepositById,
+  formatCashSlotLabel,
   generateDepositId,
   getCashes,
   getDeposits,
   getPlaybook,
   getPortfolio,
+  matureDeposit,
   removeDeposit,
   setCash,
   setCashes,
   setPortfolio,
   totalCash,
   totalDepositsPrincipal,
+  transferCash,
   upsertDeposit,
   type CashApplyResult,
   type CashBalance,
@@ -96,14 +101,14 @@ function formatCashSection(
   if (cashes.length === 1) {
     const cash = cashes[0];
     lines.push(
-      `  Cash: ${cash.amount.toFixed(2)} ${cash.currency} (updated ${cash.updated_at})${formatChannelTag(cash.channel)}`,
+      `  Cash: ${cash.amount.toFixed(2)} ${cash.currency} (updated ${cash.updated_at})` +
+        ` [${formatCashSlotLabel(cash)}]`,
     );
   } else {
-    lines.push('  Cash by channel:');
+    lines.push('  Free cash by channel/currency:');
     for (const c of cashes) {
-      const ch = cashSlotKey(c.channel) || '(unassigned)';
       lines.push(
-        `    ${ch}: ${c.amount.toFixed(2)} ${c.currency} (updated ${c.updated_at})`,
+        `    ${formatCashSlotLabel(c)}: ${c.amount.toFixed(2)} ${c.currency} (updated ${c.updated_at})`,
       );
     }
     const total = totalOverride !== undefined ? totalOverride : totalCash(cashes);
@@ -686,6 +691,7 @@ export function createPortfolioTools(): AgentTool[] {
           today,
           adjustCash,
           holding.channel,
+          undefined,
         );
         if (cashResult.adjusted) {
           setCashes(state, cashResult.cashes);
@@ -867,6 +873,7 @@ export function createPortfolioTools(): AgentTool[] {
           today,
           adjustCash,
           removed.channel,
+          undefined,
         );
         if (cashResult.adjusted) {
           setCashes(state, cashResult.cashes);
@@ -956,28 +963,30 @@ export function createPortfolioTools(): AgentTool[] {
     name: 'set_cash',
     label: 'Set Cash',
     description:
-      "Set the **full free-cash balance** for one broker channel (dry powder, cash weight vs cash_target_pct, short-put cover). " +
-      'amount is the NEW absolute balance for that channel — NOT a delta. "I deposited $1k" → read current via get_portfolio, then set amount = prior + 1000 (or user-stated full balance). ' +
+      'Set the **full free-cash balance** for one **(channel, currency)** sleeve (absolute import/screenshot correction). ' +
+      'amount is the NEW absolute balance for that sleeve — NOT a delta. "I deposited $1k more" → read get_portfolio, then set amount = prior + 1000. ' +
       'currency required (e.g. USD, HKD, SGD) — no silent default. ' +
-      'Optional channel tags the broker holding this cash (e.g. jude_futu, cmbyonglong, moomoo, ibkr). ' +
-      'Multi-channel: set_cash UPSERTS by channel only — other channels keep their balances (never wiped by a different channel set). ' +
-      'Different channels may use different currencies; totals convert to treasury.reporting_currency via live FX when mixed. ' +
-      'Omit or empty channel when unassigned (only one unassigned cash slot). ' +
+      'Optional channel tags the broker (e.g. dbs, ibkr, moomoo). ' +
+      'Upserts only that channel+currency; other channels and other currencies on the same channel are preserved ' +
+      '(e.g. set dbs USD does not wipe dbs SGD). ' +
+      'NOT for transfers between banks/brokers — use transfer_cash. NOT for unlocking FDs — use mature_deposit. ' +
+      'Totals convert to treasury.reporting_currency via live FX when mixed. ' +
+      'Omit or empty channel when unassigned (at most one unassigned sleeve per currency). ' +
       'Pass telegram_user_id or slack_user_id from the message context. Does not clear holdings.',
     parameters: Type.Object({
       ...channelIdParams,
       amount: Type.Number({
         description:
-          'Full free-cash balance after this set (≥ 0), not an increment. Settled / deployable dry powder for this channel.',
+          'Full free-cash balance after this set (≥ 0), not an increment. Settled / deployable dry powder for this channel+currency.',
       }),
       currency: Type.String({
-        description: 'Currency code (e.g. USD, HKD). Required — no default.',
+        description: 'Currency code (e.g. USD, HKD, SGD). Required — no default. Part of the slot key with channel.',
       }),
       channel: Type.Optional(
         Type.String({
           description:
-            'Broker / custody source for this cash (e.g. jude_futu, cmbyonglong, moomoo). ' +
-            'Upserts this channel only; other channel cash is preserved. Omit or empty when unassigned.',
+            'Broker / custody source (e.g. dbs, ibkr, moomoo). ' +
+            'Upserts this channel+currency only. Omit or empty when unassigned.',
         }),
       ),
     }),
@@ -1033,7 +1042,8 @@ export function createPortfolioTools(): AgentTool[] {
               '.'
             : '';
         return ok(
-          `Cash set to ${cash.amount.toFixed(2)} ${cash.currency} (as of ${cash.updated_at})${formatChannelTag(cash.channel)}.` +
+          `Cash set to ${cash.amount.toFixed(2)} ${cash.currency} (as of ${cash.updated_at})` +
+            ` [${formatCashSlotLabel(cash)}].` +
             multiNote +
             `\nPlaybook cash target: ${target}%. Use get_portfolio / portfolio_analyzer for weight vs target after live marks.`,
           {
@@ -1056,8 +1066,9 @@ export function createPortfolioTools(): AgentTool[] {
     name: 'clear_cash',
     label: 'Clear Cash',
     description:
-      'Remove recorded cash. With no channel: clears ALL cash (becomes unknown). ' +
-      'With channel: clears only that channel slot (other channels kept). Requires confirm=true. ' +
+      'Remove recorded free cash. With no channel: clears ALL free cash (unknown). ' +
+      'With channel only: clears every currency on that channel. ' +
+      'With channel + currency: clears one free-cash sleeve. Requires confirm=true. ' +
       'Does not clear holdings. Pass telegram_user_id or slack_user_id from the message context.',
     parameters: Type.Object({
       ...channelIdParams,
@@ -1067,12 +1078,18 @@ export function createPortfolioTools(): AgentTool[] {
       channel: Type.Optional(
         Type.String({
           description:
-            'If set, clear only this channel\'s cash. Omit to clear all cash records.',
+            'If set, clear this channel (all currencies unless currency is also set). Omit to clear all cash.',
+        }),
+      ),
+      currency: Type.Optional(
+        Type.String({
+          description:
+            'If set with channel, clear only that channel+currency sleeve. Ignored if channel omitted.',
         }),
       ),
     }),
     async execute(_id, raw) {
-      const p = raw as ChannelIds & { confirm: boolean; channel?: string };
+      const p = raw as ChannelIds & { confirm: boolean; channel?: string; currency?: string };
       try {
         if (!p.confirm) {
           return fail('Set confirm=true to clear recorded cash. Confirm with the user first.');
@@ -1085,10 +1102,41 @@ export function createPortfolioTools(): AgentTool[] {
         const channelProvided = Object.prototype.hasOwnProperty.call(raw, 'channel');
         if (channelProvided) {
           const ch = normalizeOptionalChannel(p.channel, 'channel');
+          const ccy =
+            p.currency != null && String(p.currency).trim().length > 0
+              ? String(p.currency).trim().toUpperCase()
+              : null;
+          if (ccy != null) {
+            const target = findCashForSlot(before, ch, ccy);
+            if (target == null) {
+              const labels = before.map((c) => formatCashSlotLabel(c)).join(', ');
+              return fail(
+                `No free cash for ${formatCashSlotLabel({ channel: ch ?? undefined, currency: ccy })}. Recorded: ${labels}.`,
+              );
+            }
+            clearCash(state, ch ?? '', ccy);
+            state.log.push({
+              ts: new Date().toISOString().slice(0, 10),
+              action: 'cash_cleared',
+              amount: target.amount,
+              currency: target.currency,
+              channel: target.channel,
+            });
+            saveState(state);
+            const remaining = getCashes(state);
+            return ok(
+              `Cleared free cash ${formatCashSlotLabel(target)} ` +
+                `(was ${target.amount.toFixed(2)} ${target.currency}). ` +
+                (remaining.length > 0
+                  ? `${remaining.length} other free-cash slot(s) remain.`
+                  : 'Cash is now unknown.'),
+              { cleared: target, cashes: remaining },
+            );
+          }
           const key = cashSlotKey(ch);
-          const target = before.find((c) => cashSlotKey(c.channel) === key);
-          if (target == null) {
-            const labels = before.map((c) => cashSlotKey(c.channel) || '(unassigned)').join(', ');
+          const targets = findCashesForChannel(before, ch);
+          if (targets.length === 0) {
+            const labels = before.map((c) => formatCashSlotLabel(c)).join(', ');
             return fail(
               `No cash for channel "${key || '(unassigned)'}". Recorded: ${labels}.`,
             );
@@ -1097,19 +1145,18 @@ export function createPortfolioTools(): AgentTool[] {
           state.log.push({
             ts: new Date().toISOString().slice(0, 10),
             action: 'cash_cleared',
-            amount: target.amount,
-            currency: target.currency,
-            channel: target.channel,
+            channel: ch ?? undefined,
+            cash_slots: targets.length,
           });
           saveState(state);
           const remaining = getCashes(state);
           return ok(
-            `Cleared cash for channel "${key || '(unassigned)'}" ` +
-              `(was ${target.amount.toFixed(2)} ${target.currency}). ` +
+            `Cleared all free cash on channel "${key || '(unassigned)'}" ` +
+              `(${targets.map((t) => `${t.amount.toFixed(2)} ${t.currency}`).join(', ')}). ` +
               (remaining.length > 0
-                ? `${remaining.length} other cash channel(s) remain.`
+                ? `${remaining.length} other free-cash slot(s) remain.`
                 : 'Cash is now unknown.'),
-            { cleared: target, cashes: remaining },
+            { cleared: targets, cashes: remaining },
           );
         }
 
@@ -1369,6 +1416,7 @@ export function createPortfolioTools(): AgentTool[] {
           today,
           adjustCash,
           next.channel,
+          undefined,
         );
         if (cashResult.adjusted) {
           setCashes(state, cashResult.cashes);
@@ -1582,21 +1630,13 @@ export function createPortfolioTools(): AgentTool[] {
 
         const adjustCash = p.adjust_cash !== false;
         const cashesBefore = getCashes(state);
-        if (adjustCash && cashesBefore.length > 0) {
-          const slot = findCashForChannel(cashesBefore, deposit.channel);
-          if (slot != null && slot.currency !== deposit.currency) {
-            throw new Error(
-              `Deposit currency ${deposit.currency} does not match cash currency ${slot.currency} on channel. ` +
-                'No silent FX conversion.',
-            );
-          }
-        }
         const cashResult = applyCashDelta(
           cashesBefore,
           -deposit.amount,
           today,
           adjustCash,
           deposit.channel,
+          deposit.currency,
         );
         if (cashResult.adjusted) {
           setCashes(state, cashResult.cashes);
@@ -1722,32 +1762,25 @@ export function createPortfolioTools(): AgentTool[] {
 
         const amountDelta = existing.amount - next.amount; // +cash when principal shrinks
         const adjustCash = p.adjust_cash !== false;
-        // Ledger on the NEW channel for amount change.
+        // Ledger on the NEW channel + deposit currency (no silent re-denomination).
         const cashChannel = next.channel ?? existing.channel;
         let cashResult: CashApplyResult = {
           cashes: getCashes(state),
-          cash: findCashForChannel(getCashes(state), cashChannel),
+          cash: findCashForSlot(getCashes(state), cashChannel, next.currency),
           cashDelta: 0,
           adjusted: false,
           note: 'No cash impact (principal unchanged).',
         };
         if (amountDelta !== 0) {
           const cashesBefore = getCashes(state);
-          if (adjustCash && cashesBefore.length > 0) {
-            const slot = findCashForChannel(cashesBefore, cashChannel);
-            if (slot != null && slot.currency !== next.currency) {
-              throw new Error(
-                `Deposit currency ${next.currency} does not match cash currency ${slot.currency}. ` +
-                  'No silent FX conversion.',
-              );
-            }
-          }
           cashResult = applyCashDelta(
             cashesBefore,
             amountDelta,
             today,
             adjustCash,
             cashChannel,
+            next.currency,
+            amountDelta > 0 ? { createIfMissing: true } : undefined,
           );
           if (cashResult.adjusted) {
             setCashes(state, cashResult.cashes);
@@ -1823,6 +1856,8 @@ export function createPortfolioTools(): AgentTool[] {
           today,
           adjustCash,
           existing.channel,
+          existing.currency,
+          { createIfMissing: true },
         );
         if (cashResult.adjusted) {
           setCashes(state, cashResult.cashes);
@@ -1938,6 +1973,175 @@ export function createPortfolioTools(): AgentTool[] {
     },
   };
 
+  const transferCashTool: AgentTool = {
+    name: 'transfer_cash',
+    label: 'Transfer Cash',
+    description:
+      'Atomic same-currency free-cash move between two channels (double-entry). ' +
+      'Debits from_channel and credits to_channel for the same currency in one step. ' +
+      'Net free cash in that currency is unchanged. Fails if source insufficient or missing. ' +
+      'Use for bank→broker wires (e.g. dbs USD → ibkr USD). ' +
+      'NOT for FX conversion. NOT for absolute screenshot balances (use set_cash). ' +
+      'If funds are still locked in a fixed deposit, call mature_deposit first. ' +
+      'Pass telegram_user_id or slack_user_id from the message context.',
+    parameters: Type.Object({
+      ...channelIdParams,
+      from_channel: Type.String({
+        description: 'Source broker/bank channel to debit (e.g. dbs). Empty string = unassigned.',
+      }),
+      to_channel: Type.String({
+        description: 'Destination channel to credit (e.g. ibkr). Must differ from from_channel.',
+      }),
+      amount: Type.Number({
+        description: 'Amount to move (> 0), same currency on both legs.',
+      }),
+      currency: Type.String({
+        description: 'Currency code for both legs (e.g. USD). Required — no silent FX.',
+      }),
+    }),
+    async execute(_id, raw) {
+      const p = raw as ChannelIds & {
+        from_channel: string;
+        to_channel: string;
+        amount: number;
+        currency: string;
+      };
+      try {
+        if (typeof p.amount !== 'number' || !Number.isFinite(p.amount) || p.amount <= 0) {
+          return fail('amount must be a finite number > 0.');
+        }
+        if (!p.currency?.trim()) {
+          return fail('currency is required (e.g. USD) — no silent default.');
+        }
+        if (p.from_channel == null || p.to_channel == null) {
+          return fail('from_channel and to_channel are required.');
+        }
+        const state = resolveInvestorFromChannel(p);
+        const today = new Date().toISOString().slice(0, 10);
+        const fromCh = normalizeOptionalChannel(p.from_channel, 'from_channel');
+        const toCh = normalizeOptionalChannel(p.to_channel, 'to_channel');
+        const result = transferCash(state, {
+          fromChannel: fromCh,
+          toChannel: toCh,
+          amount: p.amount,
+          currency: p.currency,
+          updatedAt: today,
+        });
+        state.log.push({
+          ts: today,
+          action: 'cash_transferred',
+          amount: p.amount,
+          currency: p.currency.trim().toUpperCase(),
+          from_channel: fromCh ?? '',
+          to_channel: toCh ?? '',
+        });
+        saveState(state);
+        const cashLive = await totalCashLive(result.cashes, reportingCurrencyOf(state));
+        return ok(
+          `Transferred ${p.amount.toFixed(2)} ${p.currency.trim().toUpperCase()}: ` +
+            `${formatCashSlotLabel(result.from)} → ${formatCashSlotLabel(result.to)}.\n` +
+            `From: ${result.from.amount.toFixed(2)} ${result.from.currency} remaining.\n` +
+            `To: ${result.to.amount.toFixed(2)} ${result.to.currency} now.` +
+            (cashLive.total != null
+              ? `\nTotal free cash: ${cashLive.total.amount.toFixed(2)} ${cashLive.total.currency}` +
+                (cashLive.fxApplied ? ' (reporting FX applied)' : '') +
+                '.'
+              : ''),
+          {
+            from: result.from,
+            to: result.to,
+            cashes: result.cashes,
+            total_cash: cashLive.total,
+          },
+        );
+      } catch (e) {
+        return failFrom(e);
+      }
+    },
+  };
+
+  const matureDepositTool: AgentTool = {
+    name: 'mature_deposit',
+    label: 'Mature Deposit',
+    description:
+      'Unlock fixed-deposit principal into free cash on the same channel and currency (double-entry). ' +
+      'Partial amount allowed; full amount removes the deposit. Interest is NOT auto-credited in v1. ' +
+      'Does not move cash to another broker — use transfer_cash after unlock if wiring out. ' +
+      'Pass telegram_user_id or slack_user_id from the message context.',
+    parameters: Type.Object({
+      ...channelIdParams,
+      id: Type.String({ description: 'Fixed deposit id to unlock.' }),
+      amount: Type.Optional(
+        Type.Number({
+          description:
+            'Principal to unlock (> 0). Omit to unlock the full remaining principal.',
+        }),
+      ),
+      adjust_cash: Type.Optional(
+        Type.Boolean({
+          description:
+            'When true (default), credit free cash (channel+currency). False = reduce FD only (correction).',
+        }),
+      ),
+    }),
+    async execute(_id, raw) {
+      const p = raw as ChannelIds & {
+        id: string;
+        amount?: number;
+        adjust_cash?: boolean;
+      };
+      try {
+        if (!p.id?.trim()) return fail('id is required.');
+        const state = resolveInvestorFromChannel(p);
+        const today = new Date().toISOString().slice(0, 10);
+        const before = findDepositById(getDeposits(state), p.id);
+        if (before == null) {
+          return fail(`Deposit id "${p.id.trim()}" not found.`);
+        }
+        const result = matureDeposit(state, {
+          id: p.id,
+          amount: p.amount,
+          updatedAt: today,
+          adjustCash: p.adjust_cash !== false,
+        });
+        state.log.push({
+          ts: today,
+          action: 'deposit_matured',
+          deposit_id: p.id.trim(),
+          amount: result.unlocked,
+          currency: before.currency,
+          channel: before.channel,
+          remaining_principal: result.deposit?.amount ?? 0,
+          removed: result.removed,
+          cash_adjusted: result.cashAdjusted,
+        });
+        saveState(state);
+        return ok(
+          `Matured ${result.unlocked.toFixed(2)} ${before.currency} from deposit ${before.id}` +
+            formatChannelTag(before.channel) +
+            (result.removed
+              ? ' (deposit removed).'
+              : ` (remaining principal ${result.deposit!.amount.toFixed(2)} ${before.currency}).`) +
+            (result.cashAdjusted && result.cash != null
+              ? `\nFree cash ${formatCashSlotLabel(result.cash)}: ${result.cash.amount.toFixed(2)} ${result.cash.currency}.`
+              : result.cashAdjusted
+                ? ''
+                : '\nCash ledger not adjusted (adjust_cash=false).'),
+          {
+            unlocked: result.unlocked,
+            deposit: result.deposit,
+            removed: result.removed,
+            cash: result.cash,
+            cashes: result.cashes,
+            deposits: getDeposits(state),
+          },
+        );
+      } catch (e) {
+        return failFrom(e);
+      }
+    },
+  };
+
   return [
     addHolding,
     removeHolding,
@@ -1946,6 +2150,8 @@ export function createPortfolioTools(): AgentTool[] {
     clearPortfolio,
     setCashTool,
     clearCashTool,
+    transferCashTool,
+    matureDepositTool,
     addDepositTool,
     updateDepositTool,
     removeDepositTool,

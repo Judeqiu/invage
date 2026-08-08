@@ -326,7 +326,7 @@ playbook:
 
 `add_holding` with `channel` targets only the lot on that channel; a different channel creates a new lot (no forced merge). **Same ticker+channel already present:** `add_holding` **appends** units/contracts and **blends** weighted-average cost (pass this-trade size + fill price, not the full position total). To set absolute units/avg_price, use `update_holding`. Yahoo quotes still use the bare symbol (`AAPL`). Legacy rows that store channel on the holding under a bare key (`AAPL` + `channel: moomoo`) remain valid and match that channel on upsert.
 
-**Multi-channel cash:** `set_cash` **upserts by channel** — recording cash for `cmbyonglong` does **not** overwrite `jude_futu`. YAML stores a single object when one slot exists, or an array when two or more. Trades with `adjust_cash=true` debit/credit only the cash slot matching the holding's `channel`.
+**Multi-channel + multi-currency free cash:** `set_cash` **upserts by (channel, currency)** — recording `dbs` USD does **not** overwrite `dbs` SGD or `jude_futu` USD. YAML stores a single object when one slot exists, or an array when two or more. Trades with `adjust_cash=true` debit/credit the free-cash slot matching the holding's channel (and currency when multi-ccy). Same-currency bank→broker moves use **`transfer_cash`** (double-entry). Unlocking a fixed deposit uses **`mature_deposit`** into the same channel+currency free-cash sleeve.
 
 **Dashboard dimension:** Live WebUI and HTML dashboard reports always expose a channel dimension:
 

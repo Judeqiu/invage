@@ -232,18 +232,18 @@ function investorContextPrefix(investor: InvestorState, ctx: EnrichMessageContex
   const gaps = householdGaps(hh);
   const cashHint =
     cashes.length === 0
-      ? 'Cash: not recorded (use set_cash for dry powder / cash weight vs cash_target_pct; multi-channel: set_cash per channel; mixed ccy totals need treasury.reporting_currency + live FX).'
-      : cashes.length === 1
-        ? `Cash: ${cashes[0].amount.toFixed(2)} ${cashes[0].currency} (updated ${cashes[0].updated_at})${cashes[0].channel ? ` channel=${cashes[0].channel}` : ''}.`
-        : `Cash by channel: ${cashes
-            .map(
-              (c) =>
-                `${c.channel ?? 'unassigned'}=${c.amount.toFixed(2)} ${c.currency}`,
-            )
-            .join(', ')}` +
-          (treasury != null
+      ? 'Cash: not recorded (use set_cash for dry powder / cash weight vs cash_target_pct; multi-channel+currency: set_cash per channel+currency; moves: transfer_cash; mixed ccy totals need treasury.reporting_currency + live FX).'
+      : `Free cash slots: ${cashes
+          .map(
+            (c) =>
+              `${c.channel ?? 'unassigned'}/${c.currency}=${c.amount.toFixed(2)}`,
+          )
+          .join(', ')}` +
+        (cashes.length > 1
+          ? treasury != null
             ? ` (mixed ccy → sum in ${treasury.reporting_currency} via live FX on get_portfolio / dashboard).`
-            : ' (mixed ccy — set_treasury reporting_currency to sum with live FX).');
+            : ' (mixed ccy — set_treasury reporting_currency to sum with live FX).'
+          : '.');
   const householdHint =
     treasury == null && assumptions == null && gaps.length === 3
       ? 'Household treasury: not configured (set_treasury / cash flows / assumptions when user asks net worth path or house affordability).'

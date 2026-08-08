@@ -16,12 +16,13 @@ Load when the user asks to:
 1. **No invented numbers.** Only tool/state values or the user’s explicit statement (then write via tools).  
 2. **Fail-fast.** Missing `reporting_currency`, cash, FX, or assumptions → say what’s missing; never assume 0 or silent FX.  
 3. **Tool-before-claim.** Summaries and reconciliations must use `get_household` / `get_portfolio` (and related tools) **this turn**.  
-4. **Channel isolation.** Multi-broker cash: pass/use `channel` on cash and holdings; do not merge channels without the user asking.  
+4. **Channel + currency isolation.** Free cash is one sleeve per **(channel, currency)** — e.g. `dbs/SGD` and `dbs/USD` coexist. Never overwrite SGD when setting USD on the same bank.  
 5. **Cash ledger on trades.** Prefer `adjust_cash=true` (default) when cash is recorded so the books stay consistent; `adjust_cash=false` only for historical import/correction when the user says so.  
-6. **Scenarios are overlays.** Projection scenarios do **not** mutate base books unless the user later posts real property/liability/cash changes. Scenarios are **not** proof of cash already paid.  
-7. **Property purchase payments.** OTP / booking / S&P / PPS → `record_property_payment` so `properties[].payments` is durable. Prefer `cash_channel` to debit free cash in the same step. Cash-only `set_cash` without the payment ledger leaves “how much paid?” as UNKNOWN.  
-8. **Scope.** Journal / reconcile / read only. Redirect valuation, undervalued screens, news→price, playbook setup, and themes to **@Invester**.  
-9. **Still not a licensed accountant/advisor.** Educational bookkeeping on user-provided books.
+6. **Cash moves (HARD).** Same-currency bank/broker wire → `transfer_cash` only (never destination-only `set_cash`). Unlock FD → `mature_deposit` (then `transfer_cash` if wiring out). Screenshot full balance → `set_cash` absolute for that channel+currency.  
+7. **Scenarios are overlays.** Projection scenarios do **not** mutate base books unless the user later posts real property/liability/cash changes. Scenarios are **not** proof of cash already paid.  
+8. **Property purchase payments.** OTP / booking / S&P / PPS → `record_property_payment` so `properties[].payments` is durable. Prefer `cash_channel` to debit free cash in the same step. Cash-only `set_cash` without the payment ledger leaves “how much paid?” as UNKNOWN.  
+9. **Scope.** Journal / reconcile / read only. Redirect valuation, undervalued screens, news→price, playbook setup, and themes to **@Invester**.  
+10. **Still not a licensed accountant/advisor.** Educational bookkeeping on user-provided books.
 
 ---
 
@@ -49,7 +50,9 @@ Load when the user asks to:
 | Full books + gaps | `get_household` |
 | Holdings / cash / deposits read | `get_portfolio` |
 | Reporting currency | `get_treasury` / `set_treasury` |
-| Free cash journal | `set_cash` / `clear_cash` |
+| Free cash absolute (screenshot) | `set_cash` / `clear_cash` (per channel+currency) |
+| Free cash transfer (same ccy) | `transfer_cash` |
+| Unlock FD → free cash | `mature_deposit` (then `transfer_cash` if moving to another channel) |
 | Deposit journal | `add_deposit` / `update_deposit` / `remove_deposit` / `clear_deposits` |
 | Holding journal | `add_holding` / `update_holding` / `remove_holding` / `clear_portfolio` |
 | Property | `add_property` / `update_property` / `remove_property` |
@@ -71,8 +74,21 @@ Always pass channel user id from context (`telegram_user_id` / `slack_user_id` /
 1. Resolve user from context; never ask for ids.  
 2. `get_household` and/or `get_portfolio` before mutating when books may already exist.  
 3. Write only what the user stated (cash amount, trade, salary line, mortgage, etc.).  
-4. **Condo OTP / downpayment / booking:** `add_property` if missing, then `record_property_payment` with date/amount/label and `cash_channel` when the cash came from free cash.  
-5. Confirm back with tool output (amounts, channels, ids, paid_to_date).  
+4. **Cash movement:**  
+   - “Transferred X USD A→B” → `transfer_cash` (same currency).  
+   - “Withdrew / matured FD” → `mature_deposit`; if then wired elsewhere → `transfer_cash`.  
+   - “App shows cash = X” → `set_cash` absolute for that channel+currency.  
+   - Never credit destination only for a transfer. Never invent FX.  
+5. **Condo OTP / downpayment / booking:** `add_property` if missing, then `record_property_payment` with date/amount/label and `cash_channel` when the cash came from free cash.  
+6. Confirm back with tool output (amounts, channel/currency slots, ids, paid_to_date).  
+
+### Repair one-leg transfer / double-count
+
+If free cash was inflated (e.g. destination `set_cash` without debiting source):
+
+1. Prefer **absolute balances from bank/broker UI**: `set_cash` per `(channel, currency)` + `update_deposit(..., adjust_cash=false)` for true FD principal.  
+2. **Do not** `mature_deposit` on top of an already-credited destination for the same physical move (double free cash).  
+3. After fix, summarize every free-cash slot from tools.
 
 ### Reconcile
 

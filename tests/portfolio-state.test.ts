@@ -27,6 +27,11 @@ const {
   clearCash,
   totalCash,
   findCashForChannel,
+  findCashForSlot,
+  findCashesForChannel,
+  cashBalanceKey,
+  cashSlotKey,
+  formatCashSlotLabel,
   cashStrategyMetrics,
   cashDeployedForHolding,
   cashDeltaForHoldingChange,
@@ -47,6 +52,8 @@ const {
   findDepositById,
   totalDepositsPrincipal,
   generateDepositId,
+  transferCash,
+  matureDeposit,
 } = await import('../src/state/portfolio-state.js');
 
 describe('portfolio-state', () => {
@@ -429,7 +436,7 @@ describe('portfolio-state', () => {
     expect(findCashForChannel(getCashes(reloaded), 'cmbyonglong')?.amount).toBe(38758.91);
   });
 
-  it('normalizeCashes accepts legacy single object and rejects duplicate channels', () => {
+  it('normalizeCashes accepts legacy single object and rejects duplicate channel+currency', () => {
     expect(normalizeCashes(null)).toEqual([]);
     expect(
       normalizeCashes({ amount: 1, currency: 'USD', updated_at: '2026-07-29', channel: 'a' }),
@@ -440,6 +447,87 @@ describe('portfolio-state', () => {
         { amount: 2, currency: 'USD', updated_at: '2026-07-29', channel: 'a' },
       ]),
     ).toThrow(/Duplicate cash/);
+  });
+
+  it('lossless: multi-ccy free cash on same channel + round-trip', () => {
+    expect(cashSlotKey('dbs')).toBe('dbs');
+    expect(cashBalanceKey('dbs', 'usd')).toBe('dbs@USD');
+    const multi = normalizeCashes([
+      { amount: 30515.65, currency: 'SGD', updated_at: '2026-07-30', channel: 'dbs' },
+      { amount: 10000, currency: 'USD', updated_at: '2026-08-08', channel: 'dbs' },
+    ]);
+    expect(multi).toHaveLength(2);
+    expect(findCashForSlot(multi, 'dbs', 'SGD')?.amount).toBe(30515.65);
+    expect(findCashForSlot(multi, 'dbs', 'USD')?.amount).toBe(10000);
+    expect(() => findCashForChannel(multi, 'dbs')).toThrow(/Ambiguous/);
+
+    const state = loadState('alice');
+    setCashes(state, multi);
+    setCash(state, {
+      amount: 8000,
+      currency: 'USD',
+      updated_at: '2026-08-08',
+      channel: 'dbs',
+    });
+    const after = getCashes(state);
+    expect(findCashForSlot(after, 'dbs', 'SGD')?.amount).toBe(30515.65);
+    expect(findCashForSlot(after, 'dbs', 'USD')?.amount).toBe(8000);
+  });
+
+  it('transferCash double-entry conserves currency total', () => {
+    const state = loadState('alice');
+    setCashes(state, [
+      { amount: 10000, currency: 'USD', updated_at: '2026-08-08', channel: 'dbs' },
+      { amount: 30515.65, currency: 'SGD', updated_at: '2026-08-08', channel: 'dbs' },
+    ]);
+    const result = transferCash(state, {
+      fromChannel: 'dbs',
+      toChannel: 'ibkr',
+      amount: 10000,
+      currency: 'USD',
+      updatedAt: '2026-08-08',
+    });
+    expect(result.from.amount).toBe(0);
+    expect(result.to.amount).toBe(10000);
+    expect(result.to.channel).toBe('ibkr');
+    expect(findCashForSlot(getCashes(state), 'dbs', 'SGD')?.amount).toBe(30515.65);
+    const usdTotal = getCashes(state)
+      .filter((c) => c.currency === 'USD')
+      .reduce((s, c) => s + c.amount, 0);
+    expect(usdTotal).toBe(10000);
+  });
+
+  it('matureDeposit unlocks principal into matching free-cash currency', () => {
+    const state = loadState('alice');
+    clearCash(state);
+    setCash(state, {
+      amount: 30515.65,
+      currency: 'SGD',
+      updated_at: '2026-08-08',
+      channel: 'dbs',
+    });
+    upsertDeposit(
+      state,
+      assertFixedDeposit({
+        id: 'fd-dbs-20260630',
+        amount: 405633.73,
+        interest: 1000,
+        currency: 'USD',
+        start_date: '2026-01-01',
+        end_date: '2026-07-30',
+        updated_at: '2026-08-08',
+        channel: 'dbs',
+      }),
+    );
+    const result = matureDeposit(state, {
+      id: 'fd-dbs-20260630',
+      amount: 10000,
+      updatedAt: '2026-08-08',
+    });
+    expect(result.unlocked).toBe(10000);
+    expect(result.deposit?.amount).toBeCloseTo(395633.73, 2);
+    expect(findCashForSlot(getCashes(state), 'dbs', 'USD')?.amount).toBe(10000);
+    expect(findCashForSlot(getCashes(state), 'dbs', 'SGD')?.amount).toBe(30515.65);
   });
 
   it('applyCashDelta only touches the matching channel slot', () => {
@@ -455,7 +543,7 @@ describe('portfolio-state', () => {
     expect(findCashForChannel(result.cashes, 'cmbyonglong')?.amount).toBe(4800);
 
     expect(() => applyCashDelta(cashes, -100, '2026-07-29', true, 'ibkr')).toThrow(
-      /No cash recorded for channel/,
+      /No free cash|No cash recorded/,
     );
   });
 

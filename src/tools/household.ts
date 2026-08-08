@@ -507,22 +507,27 @@ export function createHouseholdTools(): AgentTool[] {
             return fail(`Property id "${p.property_id}" not found.`);
           }
           const cashes = getCashes(state);
-          const slot = cashes.find((c) => c.channel === cashChannelRaw);
+          const slot =
+            cashes.find(
+              (c) =>
+                (c.channel ?? '') === cashChannelRaw &&
+                c.currency === prop.currency.trim().toUpperCase(),
+            ) ?? null;
           if (slot == null) {
+            const labels =
+              cashes.length === 0
+                ? 'none'
+                : cashes
+                    .map((c) => `${c.channel ?? '(unassigned)'}/${c.currency}`)
+                    .join(', ');
             return fail(
-              `cash_channel "${cashChannelRaw}" not found on free cash. ` +
-                `Recorded channels: ${cashes.map((c) => c.channel ?? '(unassigned)').join(', ') || 'none'}.`,
-            );
-          }
-          if (slot.currency !== prop.currency) {
-            return fail(
-              `cash_channel "${cashChannelRaw}" is ${slot.currency} but property is ${prop.currency}. ` +
-                `Convert/set cash explicitly or omit cash_channel and use set_cash after FX.`,
+              `No free cash ${cashChannelRaw}/${prop.currency} for property payment. ` +
+                `Recorded: ${labels}. Convert/set cash explicitly or omit cash_channel.`,
             );
           }
           if (p.amount > slot.amount) {
             return fail(
-              `Insufficient free cash on channel "${cashChannelRaw}": have ${slot.amount.toFixed(2)} ${slot.currency}, ` +
+              `Insufficient free cash on ${cashChannelRaw}/${slot.currency}: have ${slot.amount.toFixed(2)} ${slot.currency}, ` +
                 `need ${p.amount.toFixed(2)}.`,
             );
           }
