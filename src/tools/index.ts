@@ -15,7 +15,7 @@ import { createOpportunityCostTool } from './opportunity_cost.js';
 
 /**
  * Default host (Invester) — orchestration + residual host domains only.
- * No portfolio CRUD, market analysis, quotes, or payment plans — those are peer work.
+ * Peer craft (books, payments, securities research, physical RE) lives on specialists.
  * Framework supplies list_local_agents / invoke_local_agent, firecrawl, bindrive, etc.
  */
 export function createInvageTools(): AgentTool[] {
@@ -23,8 +23,6 @@ export function createInvageTools(): AgentTool[] {
     ...createPlaybookTools(),
     ...createHouseholdTools(),
     ...createProjectionTools(),
-    createPropertyIntelTool(),
-    createUraCarparkTool(),
   ];
 }
 
@@ -73,5 +71,20 @@ export function createInvestmentExpertTools(): AgentTool[] {
     createQuoteTool(),
     createPortfolioAnalyzerTool(),
     createSaveReportTool(),
+  ];
+}
+
+/**
+ * Real Estate Expert — physical property sleeve (SG-focused tools + household RE).
+ * Comps, duties research via Firecrawl, property ledger, affordability projections.
+ * No securities analysis or pure portfolio CRUD (Bookkeeper / Investment Expert).
+ */
+export function createRealEstateExpertTools(): AgentTool[] {
+  return [
+    createPropertyIntelTool(),
+    createUraCarparkTool(),
+    ...createHouseholdTools(),
+    ...createProjectionTools(),
+    createGetPortfolioTool(),
   ];
 }

@@ -4,9 +4,7 @@
  * Built on Utarus (same architecture as Binary + Marie channels):
  *   createFramework({ defaultAgentId, agents }) — multi-local
  *     default: Invester (investment analysis + full domain tools)
- *     peers:   Bookkeeper (journal / reconcile / read books)
- *              Accountant (positions + efficient payment plans)
- *              Investment Expert (portfolio + thesis, read-only books)
+ *     peers:   Bookkeeper, Accountant, Investment Expert, Real Estate Expert
  *   Telegram (Binary-style) + Slack (Marie-style) + optional CLI
  *   BinDrive via utarus (npm run webapp)
  *
@@ -16,7 +14,7 @@
  * Optional channels (enable any subset):
  *   TELEGRAM_BOT_TOKEN + TELEGRAM_ADMIN_IDS
  *   SLACK_BOT_TOKEN + SLACK_APP_TOKEN + SLACK_SIGNING_SECRET + SLACK_ADMIN_IDS
- * Multi-agent (WebUI): Room invite → @Bookkeeper / @Accountant / @InvestmentExpert; bare → Invester
+ * Multi-agent (WebUI): @ peers; bare → Invester orchestrator
  */
 
 import { config as dotenvConfig } from 'dotenv';
@@ -38,6 +36,7 @@ const { invageExtension } = await import('./extension.js');
 const { bookkeeperExtension } = await import('./agents/bookkeeper.js');
 const { accountantExtension } = await import('./agents/accountant.js');
 const { investmentExpertExtension } = await import('./agents/investment-expert.js');
+const { realEstateExpertExtension } = await import('./agents/real-estate-expert.js');
 
 process.on('uncaughtException', (error) => {
   console.error('[FATAL] Uncaught Exception:', error.message);
@@ -77,8 +76,8 @@ async function main(): Promise<void> {
 
   ensureAdminUsersExist();
 
-  // Multi-local: Invester is default (bare messages, billing, WebUI shell).
-  // Peers: Room invite → @Bookkeeper / @Accountant / @InvestmentExpert.
+  // Multi-local: Invester is default orchestrator (bare messages, billing, WebUI shell).
+  // Peers: @Bookkeeper / @Accountant / @InvestmentExpert / @RealEstateExpert.
   const framework = createFramework({
     defaultAgentId: 'invage',
     agents: [
@@ -89,6 +88,11 @@ async function main(): Promise<void> {
         id: 'investment-expert',
         label: 'Investment Expert',
         extension: investmentExpertExtension,
+      },
+      {
+        id: 'real-estate-expert',
+        label: 'Real Estate Expert',
+        extension: realEstateExpertExtension,
       },
     ],
   });

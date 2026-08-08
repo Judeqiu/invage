@@ -14,7 +14,6 @@ describe('Invester default orchestrator', () => {
     expect(names.has('get_playbook')).toBe(true);
     expect(names.has('update_playbook')).toBe(true);
     expect(names.has('get_household')).toBe(true);
-    expect(names.has('property_intel')).toBe(true);
 
     for (const forbidden of [
       'add_holding',
@@ -26,6 +25,8 @@ describe('Invester default orchestrator', () => {
       'estimate_opportunity_cost',
       'save_report',
       'send_report',
+      'property_intel',
+      'ura_carpark',
     ]) {
       expect(names.has(forbidden), forbidden).toBe(false);
     }
@@ -38,16 +39,17 @@ describe('Invester default orchestrator', () => {
     expect(invageExtension.purpose).toMatch(/capability fit/i);
     expect(invageExtension.purpose).toMatch(/keyword/i);
     expect(invageExtension.purpose).toMatch(/Investment Expert/i);
+    expect(invageExtension.purpose).toMatch(/Real Estate Expert/i);
     expect(invageExtension.purpose).toMatch(/Bookkeeper/i);
     expect(invageExtension.purpose).toMatch(/Accountant/i);
     expect(invageExtension.purpose).toMatch(/DIY is forbidden|do not perform that work|Never DIY/i);
   });
 
-  it('default skills exclude investment-analysis and firecrawl DIY research', () => {
+  it('default skills exclude peer craft DIY research skills', () => {
     const ids = invageExtension.skills.map((s) => s.id);
     expect(ids).toContain('playbook-setup');
     expect(ids).toContain('family-treasury');
-    expect(ids).toContain('sg-real-estate-portfolio');
+    expect(ids).not.toContain('sg-real-estate-portfolio');
     expect(ids).not.toContain('investment-analysis');
     expect(ids).not.toContain('firecrawl');
   });

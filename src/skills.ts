@@ -19,13 +19,13 @@ interface RawSkill {
   description: string;
 }
 
-/** Default host skills — orchestration residuals only (no investment DIY skill). */
+/** Default host skills — orchestration residuals only (no peer craft DIY). */
 const CATALOG: RawSkill[] = [
   {
     id: 'bindrive',
     name: 'BinDrive',
     description:
-      'Load when listing or managing the user file portal after specialists produce artifacts. Use owner_slug + user.auth_token with bindrive_* tools. Investment HTML reports are produced by Investment Expert via save_report — orchestrator does not run analysis reports.',
+      'Load when listing or managing the user file portal after specialists produce artifacts. Use owner_slug + user.auth_token with bindrive_* tools. Analysis HTML is produced by specialists — orchestrator does not run research reports.',
   },
   {
     id: 'playbook-setup',
@@ -37,13 +37,7 @@ const CATALOG: RawSkill[] = [
     id: 'family-treasury',
     name: 'Family Treasury & Projections',
     description:
-      'Host residual: household books and deterministic projections (net worth path, cash flows, house affordability). Load by capability fit. Tools: get_household, set_treasury, property/liability/cash_flow CRUD, assumptions, scenarios, run_projection, compare_scenarios. Pair with sg-real-estate-portfolio for SG duties/comps. Not investment research — route that to Investment Expert. Not ledger journal — route to Bookkeeper.',
-  },
-  {
-    id: 'sg-real-estate-portfolio',
-    name: 'SG Real-Estate Portfolio',
-    description:
-      'Host residual: Singapore physical RE as a household sleeve — comps via property_intel, duties (verify IRAS this turn), yield/LTV, all-in buy cost, allocation vs REITs. Load by capability fit with family-treasury when affordability matters. Not multi-unit listing shopping. Not securities research (Investment Expert).',
+      'Host residual for non-property cash-path work: recurring cash flows, multi-year projection without a property thesis. Load by capability fit. Property-centric affordability/comps/duties → route Real Estate Expert. Securities research → Investment Expert. Ledger journal → Bookkeeper.',
   },
 ];
 

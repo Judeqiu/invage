@@ -24,7 +24,7 @@ if (!dataRoot) {
 const dryRun = process.argv.includes('--dry-run');
 const force = process.argv.includes('--force'); // overwrite all seed ids even if body changed by admin
 
-const AGENTS = ['bookkeeper', 'accountant', 'investment-expert'];
+const AGENTS = ['bookkeeper', 'accountant', 'investment-expert', 'real-estate-expert'];
 
 function loadSeed(agentId) {
   const p = join(seedDir, `${agentId}.yaml`);
