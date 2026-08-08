@@ -26,8 +26,10 @@ import {
 import {
   getLiabilities,
   getProjectionAssumptions,
+  getProperties,
   getTreasury,
   householdGaps,
+  propertyPaidToDate,
   type HouseholdInvestorState,
 } from '../state/household-state.js';
 
@@ -97,6 +99,7 @@ You are **not** the market strategist (undervalued screens, news→price, playbo
 4. **Channel IDs from context only** (\`telegram_user_id\` / \`slack_user_id\` / \`user_slug\`).
 5. **Do not reveal** internal tool names, YAML, or tokens.
 6. **Voice:** precise, numbers-first, practical CFO/accountant tone.
+7. **Property “how much paid”:** use \`properties[].payments\` / paid_to_date from \`get_household\` only. **Scenarios are forward overlays, not a payment ledger** — never treat scenario one_off dates as “already paid” or “upcoming paid status.” If payments omitted → say unknown and ask to \`record_property_payment\` (or @Bookkeeper).
 
 ## Scope
 
@@ -117,6 +120,7 @@ function accountantContextPrefix(investor: InvestorState, ctx: EnrichMessageCont
   const gaps = householdGaps(hh);
   const liabilities = getLiabilities(hh);
   const openDebt = liabilities.filter((L) => L.principal > 0);
+  const properties = hh.properties != null ? getProperties(hh) : [];
   const cashHint =
     cashes.length === 0
       ? 'Cash: not recorded.'
@@ -133,6 +137,17 @@ function accountantContextPrefix(investor: InvestorState, ctx: EnrichMessageCont
       : openDebt
           .map((L) => `${L.id}@${L.annual_rate_pct}% p=${L.principal.toFixed(0)} ${L.currency}`)
           .join('; ');
+  const propHint =
+    properties.length === 0
+      ? 'Properties: none.'
+      : properties
+          .map((p) => {
+            const paid = propertyPaidToDate(p);
+            const paidStr =
+              paid == null ? 'paid=UNKNOWN' : `paid=${paid.toFixed(0)} ${p.currency}`;
+            return `${p.id}@mark=${p.value.toFixed(0)} ${p.currency} ${paidStr}`;
+          })
+          .join('; ');
   const householdHint =
     `reporting=${treasury?.reporting_currency ?? 'unset'}; assumptions=${assumptions != null ? 'set' : 'unset'}` +
     (gaps.length > 0 ? `; gaps: ${gaps.join(', ')}` : '');
@@ -146,8 +161,8 @@ function accountantContextPrefix(investor: InvestorState, ctx: EnrichMessageCont
           : '';
   return (
     `[Accountant context: user "${investor.user.slug}" (${investor.profile.display_name}). ` +
-    `Holdings lots: ${n}. Cash: ${cashHint}. ${depHint} Debt: ${debtHint}. Household: ${householdHint}. ${channelHint} ` +
-    `Default paydown strategy: avalanche. Load payment-planning; use build_payment_plan for schedules.]\n`
+    `Holdings lots: ${n}. Cash: ${cashHint}. ${depHint} Debt: ${debtHint}. ${propHint}. Household: ${householdHint}. ${channelHint} ` +
+    `Property paid_to_date from payments ledger only (not scenarios). Default paydown strategy: avalanche. Load payment-planning; use build_payment_plan for schedules.]\n`
   );
 }
 

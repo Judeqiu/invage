@@ -504,6 +504,11 @@ properties:
     currency: SGD
     updated_at: "2026-07-29"
     mortgage_id: loan-mortgage-home
+    # Optional purchase-payment ledger (OTP / booking / S&P / PPS). Omit = paid unknown (not zero).
+    payments:
+      - date: "2026-08-03"
+        amount: 109100
+        label: "OTP option lock ~5%"
 
 liabilities:
   - id: loan-mortgage-home
@@ -556,6 +561,7 @@ scenarios:
 |------|------|
 | `get_household` / `get_treasury` / `set_treasury` | Unified books + reporting currency |
 | `add_property` / `update_property` / `remove_property` | Real estate marks (manual; never auto-written from comps) |
+| `record_property_payment` | Append OTP/booking/PPS payment to `properties[].payments` (optional free-cash debit via `cash_channel`) |
 | `add_liability` / `update_liability` / `remove_liability` | Amortizing mortgage/loan |
 | `add_cash_flow` / `list_cash_flows` / … | Recurring income/expense (rent lives here when stored — not on PropertyAsset) |
 | `set_projection_assumptions` | Returns, inflation, FX (required for projection) |
@@ -563,7 +569,7 @@ scenarios:
 | `property_intel` | HDB resale (data.gov.sg collection 189) + private sold comps (URA `PMI_Resi_Transaction` when `URA_ACCESS_KEY` set) |
 | `ura_carpark` | URA car park availability + rates/details |
 
-**Property marks:** `assertProperty` keeps only known fields (`id`, `value`, `currency`, `updated_at`, optional `label`, `mortgage_id`) — unknown keys are stripped on write, not silently defaulted.
+**Property marks:** `assertProperty` keeps only known fields (`id`, `value`, `currency`, `updated_at`, optional `label`, `mortgage_id`, optional `payments[]`) — unknown keys are stripped on write, not silently defaulted. **paid_to_date** is derived as the sum of `payments` when present; omit `payments` = paid amount **unknown** (do not invent 0). Scenarios remain projection overlays and are **not** the purchase-payment ledger.
 
 **SG real-estate portfolio skill:** `sg-real-estate-portfolio` (comps, duties, yield/LTV recipes). Dual-load with `family-treasury` for second-property / SG buy with policy cost. Design: [plans/2026-08-01-real-estate-portfolio-intelligence-design.md](./plans/2026-08-01-real-estate-portfolio-intelligence-design.md).
 

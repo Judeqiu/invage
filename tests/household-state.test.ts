@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  appendPropertyPayment,
   assertProperty,
   assertLiability,
   assertCashFlowLine,
@@ -7,6 +8,7 @@ import {
   assertSavedScenario,
   assertTreasurySettings,
   normalizeProperties,
+  propertyPaidToDate,
   upsertLiability,
   upsertProperty,
   removeProperty,
@@ -52,6 +54,8 @@ describe('household-state validation', () => {
       label: 'Home',
     });
     expect(p.id).toBe('prop-1');
+    expect(p.payments).toBeUndefined();
+    expect(propertyPaidToDate(p)).toBeNull();
     const cf = assertCashFlowLine({
       id: 'cf-1',
       kind: 'income',
@@ -62,6 +66,85 @@ describe('household-state validation', () => {
       updated_at: '2026-07-29',
     });
     expect(cf.kind).toBe('income');
+  });
+
+  it('validates property payments ledger and paid_to_date', () => {
+    const p = assertProperty({
+      id: 'prop-8bt',
+      value: 2_200_000,
+      currency: 'SGD',
+      updated_at: '2026-08-03',
+      label: '8@BT #1708',
+      payments: [
+        { date: '2026-08-03', amount: 109_100, label: 'OTP option lock ~5%' },
+      ],
+    });
+    expect(p.payments).toHaveLength(1);
+    expect(propertyPaidToDate(p)).toBe(109_100);
+
+    expect(() =>
+      assertProperty({
+        id: 'prop-bad',
+        value: 1,
+        currency: 'SGD',
+        updated_at: '2026-08-03',
+        payments: null,
+      }),
+    ).toThrow(/omit the field/);
+
+    expect(() =>
+      assertProperty({
+        id: 'prop-bad2',
+        value: 1,
+        currency: 'SGD',
+        updated_at: '2026-08-03',
+        payments: [{ date: '2026-08-03', amount: -1 }],
+      }),
+    ).toThrow(/>= 0|≥ 0/);
+  });
+
+  it('appends property payment and keeps mark unchanged', () => {
+    const state = blankState();
+    upsertProperty(state, {
+      id: 'prop-8bt-1708',
+      value: 2_200_000,
+      currency: 'SGD',
+      updated_at: '2026-08-03',
+      label: '8@BT #1708',
+    });
+    expect(propertyPaidToDate(state.properties![0])).toBeNull();
+
+    const after = appendPropertyPayment(
+      state,
+      'prop-8bt-1708',
+      { date: '2026-08-03', amount: 109_100, label: 'OTP option lock ~5%' },
+      '2026-08-03',
+    );
+    expect(after.value).toBe(2_200_000);
+    expect(propertyPaidToDate(after)).toBe(109_100);
+    expect(after.payments).toEqual([
+      { date: '2026-08-03', amount: 109_100, label: 'OTP option lock ~5%' },
+    ]);
+
+    appendPropertyPayment(
+      state,
+      'prop-8bt-1708',
+      { date: '2026-09-15', amount: 220_000, label: 'PPS foundation' },
+      '2026-09-15',
+    );
+    const again = state.properties!.find((x) => x.id === 'prop-8bt-1708')!;
+    expect(propertyPaidToDate(again)).toBe(329_100);
+  });
+
+  it('empty payments array means known-zero paid (not unknown)', () => {
+    const p = assertProperty({
+      id: 'prop-empty-pay',
+      value: 500_000,
+      currency: 'SGD',
+      updated_at: '2026-08-03',
+      payments: [],
+    });
+    expect(propertyPaidToDate(p)).toBe(0);
   });
 
   it('requires mortgage property_id', () => {

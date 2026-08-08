@@ -6,6 +6,7 @@ describe('Bookkeeper local agent', () => {
   it('exposes book tools only (no market analyzer / playbook / quote)', () => {
     const names = createBookkeeperTools().map((t) => t.name).sort();
     expect(names).toContain('get_household');
+    expect(names).toContain('record_property_payment');
     expect(names).toContain('get_portfolio');
     expect(names).toContain('set_cash');
     expect(names).toContain('add_cash_flow');

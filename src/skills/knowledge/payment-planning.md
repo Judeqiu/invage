@@ -16,11 +16,12 @@ Load when the user asks for:
 
 1. **Books first.** Call `get_household` + `get_portfolio` this turn before any plan. For investment **accuracy**, also `get_quote` / `portfolio_analyzer` when MTM matters to the decision.  
 2. **No invented rates, balances, FX, or early-break penalties.** Missing data → fail-fast list of gaps.  
-3. **Tool-before-claim.** Numeric schedules and interest totals come from `build_payment_plan` (and amortizing books), not freehand math.  
-4. **Default strategy = avalanche** (highest APR first) when the user wants to **save money**. Offer snowball only if they want quick wins / motivation.  
-5. **Never auto-sell equities/funds/options** for paydown. Surface as last-resort with opportunity cost; deep valuation → `@Invester`.  
-6. **Never break fixed deposits early** unless the user states break cost and you still show net savings. Prefer maturity dates in the plan.  
-7. **Not a licensed advisor.** Educational planning on user books.
+3. **Condo / property “already paid”:** use `properties[].payments` / paid_to_date from `get_household`. **Scenarios are not a payment ledger** — do not report scenario one_offs as paid or unpaid status. If payments omitted → unknown; hand off journal to `@Bookkeeper` / `record_property_payment`.  
+4. **Tool-before-claim.** Numeric schedules and interest totals come from `build_payment_plan` (and amortizing books), not freehand math.  
+5. **Default strategy = avalanche** (highest APR first) when the user wants to **save money**. Offer snowball only if they want quick wins / motivation.  
+6. **Never auto-sell equities/funds/options** for paydown. Surface as last-resort with opportunity cost; deep valuation → `@Invester`.  
+7. **Never break fixed deposits early** unless the user states break cost and you still show net savings. Prefer maturity dates in the plan.  
+8. **Not a licensed advisor.** Educational planning on user books.
 
 ---
 

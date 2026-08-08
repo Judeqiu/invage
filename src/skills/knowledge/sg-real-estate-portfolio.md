@@ -155,7 +155,8 @@ All require explicit inputs. Same currency **or** reporting currency + `projecti
 | **LTV** | principal / value | same | value = 0; cross-ccy without FX |
 | **Gross yield** | (12 × monthly gross rent) / value | rent path + value | rent missing |
 | **Net yield** | (12 × (rent − monthly opex)) / value | opex if claiming net | opex missing for net |
-| **Cash-on-cash** | annual CF after debt / cash equity in | user-stated equity in + CF | missing |
+| **Cash-on-cash** | annual CF after debt / cash equity in | user-stated equity in + CF, or `properties[].payments` paid_to_date when used as equity in | missing |
+| **Paid toward purchase** | sum(`properties[].payments`) | payments ledger present | payments omitted → **unknown** (not 0; do not use scenarios) |
 | **Carry (monthly)** | mortgage payment + opex − rent | as available | — |
 | **All-in buy** | P + BSD + ABSD + fees | verified rates | duties not verified |
 | **Mark vs comps** | (mark − median) / median | property_intel + town/type | empty sample or no town/type |

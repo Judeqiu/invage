@@ -11,12 +11,18 @@ describe('Accountant local agent', () => {
     const names = createAccountantTools().map((t) => t.name);
     expect(names).toContain('get_household');
     expect(names).toContain('get_portfolio');
+    expect(names).toContain('record_property_payment');
     expect(names).toContain('build_payment_plan');
     expect(names).toContain('get_quote');
     expect(names).toContain('portfolio_analyzer');
     expect(names).toContain('run_projection');
     expect(names).not.toContain('get_playbook');
     expect(names).not.toContain('property_intel');
+  });
+
+  it('purpose requires payments ledger not scenarios for paid-to-date', () => {
+    expect(accountantExtension.purpose).toMatch(/properties\[\]\.payments/);
+    expect(accountantExtension.purpose).toMatch(/not a payment ledger/i);
   });
 
   it('has build_payment_plan while Bookkeeper does not', () => {

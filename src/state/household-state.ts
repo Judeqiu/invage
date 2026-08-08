@@ -25,6 +25,17 @@ export interface TreasurySettings {
   updated_at: string;
 }
 
+/**
+ * Cash applied toward purchase of a property (OTP, booking, S&P, PPS milestone).
+ * Amount is always in the parent property's currency.
+ * Omit the whole payments array when purchase payments are unknown — never invent 0.
+ */
+export interface PropertyPayment {
+  date: string;
+  amount: number;
+  label?: string;
+}
+
 export interface PropertyAsset {
   id: string;
   value: number;
@@ -32,6 +43,13 @@ export interface PropertyAsset {
   updated_at: string;
   label?: string;
   mortgage_id?: string;
+  /**
+   * Purchase-payment ledger (OTP / booking / S&P / progressive milestones).
+   * Source of truth for “how much have I paid toward this unit.”
+   * Omit when unknown. Empty array means known-zero payments recorded.
+   * Does not change property mark (value); cash reduction is a separate journal entry.
+   */
+  payments?: PropertyPayment[];
 }
 
 export interface Liability {
@@ -227,6 +245,43 @@ export function setTreasury(state: HouseholdInvestorState, treasury: TreasurySet
 
 // ── properties ─────────────────────────────────────────────────────────
 
+export function assertPropertyPayment(raw: unknown, fieldPrefix = 'payment'): PropertyPayment {
+  if (raw == null || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new Error(
+      `${fieldPrefix} must be an object with date, amount (optional label).`,
+    );
+  }
+  const pay = raw as Record<string, unknown>;
+  const result: PropertyPayment = {
+    date: assertDate(pay.date, `${fieldPrefix}.date`),
+    amount: assertNonNegNumber(pay.amount, `${fieldPrefix}.amount`),
+  };
+  const label = optionalLabel(pay.label, `${fieldPrefix}.label`);
+  if (label != null) result.label = label;
+  return result;
+}
+
+export function normalizePropertyPayments(
+  raw: unknown,
+  fieldPrefix = 'property.payments',
+): PropertyPayment[] {
+  if (raw == null) return [];
+  if (!Array.isArray(raw)) {
+    throw new Error(`${fieldPrefix} must be an array when provided.`);
+  }
+  return raw.map((item, i) => assertPropertyPayment(item, `${fieldPrefix}[${i}]`));
+}
+
+/** Sum of recorded purchase payments, or null when payments field is omitted (unknown). */
+export function propertyPaidToDate(property: PropertyAsset): number | null {
+  if (property.payments == null) return null;
+  let sum = 0;
+  for (const pay of property.payments) {
+    sum += pay.amount;
+  }
+  return sum;
+}
+
 export function assertProperty(raw: unknown): PropertyAsset {
   if (raw == null || typeof raw !== 'object' || Array.isArray(raw)) {
     throw new Error(
@@ -245,7 +300,41 @@ export function assertProperty(raw: unknown): PropertyAsset {
   if (p.mortgage_id != null) {
     result.mortgage_id = assertId(p.mortgage_id, 'property.mortgage_id');
   }
+  if (Object.prototype.hasOwnProperty.call(p, 'payments')) {
+    if (p.payments == null) {
+      throw new Error(
+        'property.payments must be an array when provided (omit the field if unknown; do not store null).',
+      );
+    }
+    result.payments = normalizePropertyPayments(p.payments);
+  }
   return result;
+}
+
+/**
+ * Append a purchase payment to a property. Mutates state via upsertProperty.
+ * Does not touch free cash — pair with set_cash / record_property_payment(cash_channel=…).
+ */
+export function appendPropertyPayment(
+  state: HouseholdInvestorState,
+  propertyId: string,
+  payment: PropertyPayment,
+  updatedAt: string,
+): PropertyAsset {
+  const key = assertId(propertyId, 'property.id');
+  const pay = assertPropertyPayment(payment);
+  const updated = assertDate(updatedAt, 'property.updated_at');
+  const existing = getProperties(state).find((x) => x.id === key);
+  if (existing == null) {
+    throw new Error(`Property id "${key}" not found.`);
+  }
+  const next: PropertyAsset = {
+    ...existing,
+    updated_at: updated,
+    payments: [...(existing.payments ?? []), pay],
+  };
+  upsertProperty(state, next);
+  return getProperties(state).find((x) => x.id === key)!;
 }
 
 export function normalizeProperties(raw: unknown): PropertyAsset[] {

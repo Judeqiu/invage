@@ -6,6 +6,7 @@ import { Type } from 'typebox';
 import type { AgentTool, AgentToolResult } from '@earendil-works/pi-agent-core';
 import { saveState } from 'utarus';
 import {
+  appendPropertyPayment,
   getCashFlows,
   getLiabilities,
   getProjectionAssumptions,
@@ -13,6 +14,7 @@ import {
   getScenarios,
   getTreasury,
   householdGaps,
+  propertyPaidToDate,
   removeCashFlow,
   removeLiability,
   removeProperty,
@@ -27,11 +29,13 @@ import {
   type Liability,
   type ProjectionAssumptions,
   type PropertyAsset,
+  type PropertyPayment,
 } from '../state/household-state.js';
 import {
   getCashes,
   getDeposits,
   getPortfolio,
+  setCash,
   type InvestorState,
 } from '../state/portfolio-state.js';
 import { cashDeployedForHolding } from '../state/portfolio-state.js';
@@ -134,10 +138,27 @@ function formatHouseholdSummary(state: HouseholdInvestorState): string {
   lines.push('', '── PROPERTIES ──');
   if (props.length === 0) lines.push('  None');
   for (const p of props) {
+    const paid = propertyPaidToDate(p);
+    const paidHint =
+      paid == null
+        ? ' | paid_to_date=UNKNOWN (no payments ledger)'
+        : ` | paid_to_date=${paid.toFixed(2)} ${p.currency}` +
+          (p.payments != null && p.payments.length > 0
+            ? ` (${p.payments.length} payment(s))`
+            : ' (0 payments recorded)');
     lines.push(
-      `  ${p.id}${p.label ? ` "${p.label}"` : ''}: ${p.value.toFixed(2)} ${p.currency}` +
+      `  ${p.id}${p.label ? ` "${p.label}"` : ''}: mark ${p.value.toFixed(2)} ${p.currency}` +
+        paidHint +
         (p.mortgage_id ? ` | mortgage=${p.mortgage_id}` : ''),
     );
+    if (p.payments != null && p.payments.length > 0) {
+      for (const pay of p.payments) {
+        lines.push(
+          `    - ${pay.date}: ${pay.amount.toFixed(2)} ${p.currency}` +
+            (pay.label ? ` | ${pay.label}` : ''),
+        );
+      }
+    }
   }
 
   lines.push('', '── LIABILITIES ──');
@@ -323,7 +344,8 @@ export function createHouseholdTools(): AgentTool[] {
     description:
       'Add a new real-estate property (manual mark). Optional id; auto-generated if omitted. ' +
       'Fails if id already exists — use update_property to change an existing property (does not silently overwrite). ' +
-      'Link mortgage via add_liability kind=mortgage.',
+      'Link mortgage via add_liability kind=mortgage. ' +
+      'OTP/booking/PPS cash paid toward purchase → record_property_payment (not scenarios, not label prose alone).',
     parameters: Type.Object({
       ...channelIdParams,
       id: Type.Optional(Type.String({ description: 'Stable id (auto if omitted). Must be new.' })),
@@ -381,7 +403,9 @@ export function createHouseholdTools(): AgentTool[] {
   const updateProperty: AgentTool = {
     name: 'update_property',
     label: 'Update Property',
-    description: 'Patch a property by id (value, currency, label, mortgage_id).',
+    description:
+      'Patch a property by id (value, currency, label, mortgage_id). ' +
+      'Does not add purchase payments — use record_property_payment for OTP/booking/PPS cash applied.',
     parameters: Type.Object({
       ...channelIdParams,
       id: Type.String(),
@@ -420,6 +444,146 @@ export function createHouseholdTools(): AgentTool[] {
         state.log.push({ ts: today, action: 'property_updated', id: p.id });
         saveState(state);
         return ok(`Property ${p.id} updated.`, { property: next });
+      } catch (e) {
+        return failFrom(e);
+      }
+    },
+  };
+
+  const recordPropertyPayment: AgentTool = {
+    name: 'record_property_payment',
+    label: 'Record Property Purchase Payment',
+    description:
+      'Append a purchase payment (OTP option, booking fee, S&P deposit, PPS milestone) to a property. ' +
+      'This is the durable source of truth for “how much paid toward this unit” — NOT scenarios (scenarios are forward overlays only). ' +
+      'Amount is in the property currency. Does not change property mark (value). ' +
+      'Optional cash_channel: when set, deducts the same amount from that free-cash channel (currency must match property; fails if insufficient). ' +
+      'When cash_channel omitted, only the property payments ledger is updated — pair with set_cash if cash was already reduced separately.',
+    parameters: Type.Object({
+      ...channelIdParams,
+      property_id: Type.String({ description: 'Existing property id.' }),
+      amount: Type.Number({ description: 'Cash paid toward purchase ≥ 0 (property currency).' }),
+      date: Type.String({ description: 'Payment date YYYY-MM-DD (required — no silent default).' }),
+      label: Type.Optional(
+        Type.String({
+          description: 'e.g. "OTP option lock ~5%", "PPS booking 5%", "BSD+ABSD".',
+        }),
+      ),
+      cash_channel: Type.Optional(
+        Type.String({
+          description:
+            'Free-cash channel to debit (e.g. uob). When set, reduces that channel by amount. Currency must match property.',
+        }),
+      ),
+    }),
+    async execute(_id, raw) {
+      const p = raw as ChannelIds & {
+        property_id: string;
+        amount: number;
+        date: string;
+        label?: string;
+        cash_channel?: string;
+      };
+      try {
+        const state = asHousehold(resolveInvestorFromChannel(p));
+        const payment: PropertyPayment = {
+          date: p.date,
+          amount: p.amount,
+        };
+        if (p.label != null && String(p.label).trim().length > 0) {
+          payment.label = String(p.label).trim();
+        }
+        const today = todayYmd();
+        let cashAfter: { channel: string; amount: number; currency: string } | undefined;
+
+        const cashChannelRaw =
+          p.cash_channel != null && String(p.cash_channel).trim().length > 0
+            ? String(p.cash_channel).trim()
+            : null;
+        if (cashChannelRaw != null) {
+          const props = getProperties(state);
+          const prop = props.find((x) => x.id === p.property_id);
+          if (prop == null) {
+            return fail(`Property id "${p.property_id}" not found.`);
+          }
+          const cashes = getCashes(state);
+          const slot = cashes.find((c) => c.channel === cashChannelRaw);
+          if (slot == null) {
+            return fail(
+              `cash_channel "${cashChannelRaw}" not found on free cash. ` +
+                `Recorded channels: ${cashes.map((c) => c.channel ?? '(unassigned)').join(', ') || 'none'}.`,
+            );
+          }
+          if (slot.currency !== prop.currency) {
+            return fail(
+              `cash_channel "${cashChannelRaw}" is ${slot.currency} but property is ${prop.currency}. ` +
+                `Convert/set cash explicitly or omit cash_channel and use set_cash after FX.`,
+            );
+          }
+          if (p.amount > slot.amount) {
+            return fail(
+              `Insufficient free cash on channel "${cashChannelRaw}": have ${slot.amount.toFixed(2)} ${slot.currency}, ` +
+                `need ${p.amount.toFixed(2)}.`,
+            );
+          }
+          const newAmount = slot.amount - p.amount;
+          setCash(state, {
+            amount: newAmount,
+            currency: slot.currency,
+            updated_at: today,
+            channel: cashChannelRaw,
+          });
+          state.log.push({
+            ts: today,
+            action: 'cash_set',
+            amount: newAmount,
+            currency: slot.currency,
+            channel: cashChannelRaw,
+            cash_slots: getCashes(state).length,
+            note: `property_payment ${p.property_id}`,
+          });
+          cashAfter = {
+            channel: cashChannelRaw,
+            amount: newAmount,
+            currency: slot.currency,
+          };
+        }
+
+        const saved = appendPropertyPayment(state, p.property_id, payment, today);
+        const paid = propertyPaidToDate(saved);
+        if (paid == null) {
+          throw new Error('property.payments missing after record_property_payment — internal error.');
+        }
+        state.log.push({
+          ts: today,
+          action: 'property_payment_recorded',
+          property_id: saved.id,
+          amount: payment.amount,
+          currency: saved.currency,
+          date: payment.date,
+          label: payment.label,
+          paid_to_date: paid,
+          cash_channel: cashChannelRaw ?? undefined,
+        });
+        saveState(state);
+
+        const cashNote =
+          cashAfter != null
+            ? ` Free cash ${cashAfter.channel}: ${cashAfter.amount.toFixed(2)} ${cashAfter.currency} after debit.`
+            : ' Cash not adjusted (cash_channel omitted).';
+        return ok(
+          `Recorded payment ${payment.amount.toFixed(2)} ${saved.currency} on ${payment.date}` +
+            (payment.label ? ` (${payment.label})` : '') +
+            ` for property ${saved.id}. ` +
+            `Paid to date: ${paid.toFixed(2)} ${saved.currency} / mark ${saved.value.toFixed(2)} ${saved.currency}.` +
+            cashNote,
+          {
+            property: saved,
+            payment,
+            paid_to_date: paid,
+            cash_after: cashAfter ?? null,
+          },
+        );
       } catch (e) {
         return failFrom(e);
       }
@@ -904,6 +1068,7 @@ export function createHouseholdTools(): AgentTool[] {
     setTreasuryTool,
     addProperty,
     updateProperty,
+    recordPropertyPayment,
     removePropertyTool,
     addLiability,
     updateLiability,

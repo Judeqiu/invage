@@ -17,11 +17,12 @@ Load when the user asks about:
 1. **No invented numbers.** Salary, expense, property value, mortgage rate, FX, portfolio return — only from tools/state or the user’s explicit statement (then write via tools).  
 2. **Fail-fast.** Missing `reporting_currency`, assumptions, cash, or FX → say what’s missing; do not assume 0 cash or 5% returns.  
 3. **Tool-before-claim.** Affordability verdict and projected paths must come from `run_projection` / `compare_scenarios` in this turn.  
-4. **Scenarios are overlays.** `save_scenario` / inline events do **not** change base books unless the user later adds property/liability for real.  
-5. **Deposits stay locked** until maturity (principal only at maturity in projections).  
-6. **Do not auto-inflate** expense lines; inflation assumption is transparency only in v1.  
-7. **Still Invester** — not a licensed advisor; educational/planning framing.  
-8. **SG stamp duties / comps / yield** — when stamp duty or comps affect affordability cash need, also load `sg-real-estate-portfolio` and verify duties this turn before inventing `one_off` amounts. Do not invent ABSD/BSD/SSD from memory.
+4. **Scenarios are overlays.** `save_scenario` / inline events do **not** change base books unless the user later adds property/liability for real. Scenario dates are **not** a payment ledger for “already paid.”  
+5. **Property purchase cash** (OTP / booking / S&P / PPS) lives on `properties[].payments` via `record_property_payment`. Omit payments = paid_to_date **unknown** (not zero). Cash reduction alone is incomplete.  
+6. **Deposits stay locked** until maturity (principal only at maturity in projections).  
+7. **Do not auto-inflate** expense lines; inflation assumption is transparency only in v1.  
+8. **Still Invester** — not a licensed advisor; educational/planning framing.  
+9. **SG stamp duties / comps / yield** — when stamp duty or comps affect affordability cash need, also load `sg-real-estate-portfolio` and verify duties this turn before inventing `one_off` amounts. Do not invent ABSD/BSD/SSD from memory.
 
 ---
 
@@ -30,7 +31,7 @@ Load when the user asks about:
 | Block | Role |
 |-------|------|
 | `treasury.reporting_currency` | Household reporting ccy |
-| `properties[]` | Real estate manual marks |
+| `properties[]` | Real estate manual marks + optional `payments[]` (cash already applied toward purchase) |
 | `liabilities[]` | `mortgage` \| `loan` amortizing |
 | `cash_flows[]` | Recurring income/expense |
 | `projection_assumptions` | Returns, inflation, FX map, optional cash_buffer |
@@ -50,6 +51,7 @@ portfolio + free cash + deposit principal + property − liability principal
 | Full household summary + gaps | `get_household` |
 | Reporting currency | `get_treasury` / `set_treasury` |
 | Property | `add_property` / `update_property` / `remove_property` |
+| Purchase payments (OTP/booking/PPS) | `record_property_payment` (optional `cash_channel` to debit free cash) |
 | Mortgage / loan | `add_liability` / `update_liability` / `remove_liability` |
 | Income / expense lines | `add_cash_flow` / `update_cash_flow` / `remove_cash_flow` / `list_cash_flows` |
 | Projection inputs | `get_projection_assumptions` / `set_projection_assumptions` |
@@ -73,10 +75,18 @@ Always pass channel user id from context (`telegram_user_id` / `slack_user_id` /
 2. `set_cash` if missing  
 3. `add_cash_flow` for major income/expenses  
 4. `add_property` + `add_liability` kind=mortgage if home owned  
-5. `set_projection_assumptions` (return %, inflation %, fx as needed)  
-6. `get_household` to confirm gaps  
+5. If user already paid OTP/booking/downpayment: `record_property_payment` (prefer `cash_channel`) — do **not** only `set_cash`  
+6. `set_projection_assumptions` (return %, inflation %, fx as needed)  
+7. `get_household` to confirm gaps  
 
 Ask **one** clarification only when the decision cannot proceed (e.g. house price missing). Do not run a long interview for pure portfolio research.
+
+### How much have I paid on the condo?
+
+1. `get_household` — read property mark + **payments** ledger / paid_to_date line  
+2. If paid_to_date shown → that is the answer (list payment dates/labels)  
+3. If **UNKNOWN** (no payments ledger) → do **not** invent 0 from scenarios; ask user amounts/dates and `record_property_payment`  
+4. Never treat scenario one_off “upcoming” rows as the actual paid status
 
 ### Net worth now
 

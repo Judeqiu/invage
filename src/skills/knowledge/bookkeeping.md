@@ -18,9 +18,10 @@ Load when the user asks to:
 3. **Tool-before-claim.** Summaries and reconciliations must use `get_household` / `get_portfolio` (and related tools) **this turn**.  
 4. **Channel isolation.** Multi-broker cash: pass/use `channel` on cash and holdings; do not merge channels without the user asking.  
 5. **Cash ledger on trades.** Prefer `adjust_cash=true` (default) when cash is recorded so the books stay consistent; `adjust_cash=false` only for historical import/correction when the user says so.  
-6. **Scenarios are overlays.** Projection scenarios do **not** mutate base books unless the user later posts real property/liability/cash changes.  
-7. **Scope.** Journal / reconcile / read only. Redirect valuation, undervalued screens, news→price, playbook setup, and themes to **@Invester**.  
-8. **Still not a licensed accountant/advisor.** Educational bookkeeping on user-provided books.
+6. **Scenarios are overlays.** Projection scenarios do **not** mutate base books unless the user later posts real property/liability/cash changes. Scenarios are **not** proof of cash already paid.  
+7. **Property purchase payments.** OTP / booking / S&P / PPS → `record_property_payment` so `properties[].payments` is durable. Prefer `cash_channel` to debit free cash in the same step. Cash-only `set_cash` without the payment ledger leaves “how much paid?” as UNKNOWN.  
+8. **Scope.** Journal / reconcile / read only. Redirect valuation, undervalued screens, news→price, playbook setup, and themes to **@Invester**.  
+9. **Still not a licensed accountant/advisor.** Educational bookkeeping on user-provided books.
 
 ---
 
@@ -31,7 +32,7 @@ Load when the user asks to:
 | `treasury.reporting_currency` | Household reporting currency |
 | `cash` / `deposits` | Free cash (dry powder) and fixed deposits |
 | `portfolio` | Investable sleeve (equity / fund / option) — cost basis on books |
-| `properties[]` | Real estate marks |
+| `properties[]` | Real estate marks + optional `payments[]` purchase ledger |
 | `liabilities[]` | `mortgage` \| `loan` amortizing |
 | `cash_flows[]` | Recurring income / expense lines |
 | `projection_assumptions` | Returns, inflation, FX map |
@@ -52,6 +53,7 @@ Load when the user asks to:
 | Deposit journal | `add_deposit` / `update_deposit` / `remove_deposit` / `clear_deposits` |
 | Holding journal | `add_holding` / `update_holding` / `remove_holding` / `clear_portfolio` |
 | Property | `add_property` / `update_property` / `remove_property` |
+| Purchase payments | `record_property_payment` (OTP/booking/PPS; optional `cash_channel`) |
 | Mortgage / loan | `add_liability` / `update_liability` / `remove_liability` |
 | Income / expense | `add_cash_flow` / `update_cash_flow` / `remove_cash_flow` / `list_cash_flows` |
 | Assumptions | `get_projection_assumptions` / `set_projection_assumptions` |
@@ -69,7 +71,8 @@ Always pass channel user id from context (`telegram_user_id` / `slack_user_id` /
 1. Resolve user from context; never ask for ids.  
 2. `get_household` and/or `get_portfolio` before mutating when books may already exist.  
 3. Write only what the user stated (cash amount, trade, salary line, mortgage, etc.).  
-4. Confirm back with tool output (amounts, channels, ids).  
+4. **Condo OTP / downpayment / booking:** `add_property` if missing, then `record_property_payment` with date/amount/label and `cash_channel` when the cash came from free cash.  
+5. Confirm back with tool output (amounts, channels, ids, paid_to_date).  
 
 ### Reconcile
 
