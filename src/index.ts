@@ -6,6 +6,7 @@
  *     default: Invester (investment analysis + full domain tools)
  *     peers:   Bookkeeper (journal / reconcile / read books)
  *              Accountant (positions + efficient payment plans)
+ *              Investment Expert (portfolio + thesis, read-only books)
  *   Telegram (Binary-style) + Slack (Marie-style) + optional CLI
  *   BinDrive via utarus (npm run webapp)
  *
@@ -15,7 +16,7 @@
  * Optional channels (enable any subset):
  *   TELEGRAM_BOT_TOKEN + TELEGRAM_ADMIN_IDS
  *   SLACK_BOT_TOKEN + SLACK_APP_TOKEN + SLACK_SIGNING_SECRET + SLACK_ADMIN_IDS
- * Multi-agent (WebUI): Room invite → @Bookkeeper / @Accountant; bare → Invester
+ * Multi-agent (WebUI): Room invite → @Bookkeeper / @Accountant / @InvestmentExpert; bare → Invester
  */
 
 import { config as dotenvConfig } from 'dotenv';
@@ -36,6 +37,7 @@ const { createFramework, config } = await import('utarus');
 const { invageExtension } = await import('./extension.js');
 const { bookkeeperExtension } = await import('./agents/bookkeeper.js');
 const { accountantExtension } = await import('./agents/accountant.js');
+const { investmentExpertExtension } = await import('./agents/investment-expert.js');
 
 process.on('uncaughtException', (error) => {
   console.error('[FATAL] Uncaught Exception:', error.message);
@@ -76,13 +78,18 @@ async function main(): Promise<void> {
   ensureAdminUsersExist();
 
   // Multi-local: Invester is default (bare messages, billing, WebUI shell).
-  // Bookkeeper / Accountant: Room invite → @Bookkeeper / @Accountant.
+  // Peers: Room invite → @Bookkeeper / @Accountant / @InvestmentExpert.
   const framework = createFramework({
     defaultAgentId: 'invage',
     agents: [
       { id: 'invage', label: 'Invester', extension: invageExtension },
       { id: 'bookkeeper', label: 'Bookkeeper', extension: bookkeeperExtension },
       { id: 'accountant', label: 'Accountant', extension: accountantExtension },
+      {
+        id: 'investment-expert',
+        label: 'Investment Expert',
+        extension: investmentExpertExtension,
+      },
     ],
   });
 

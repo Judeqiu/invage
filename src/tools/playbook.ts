@@ -30,8 +30,9 @@ function failFrom(error: unknown): AgentToolResult<null> {
   return fail(error instanceof Error ? error.message : String(error));
 }
 
-export function createPlaybookTools(): AgentTool[] {
-  const getPlaybookTool: AgentTool = {
+/** Read-only playbook tool for analysis peers (e.g. Investment Expert). */
+export function createGetPlaybookTool(): AgentTool {
+  return {
     name: 'get_playbook',
     label: 'Get Investment Playbook',
     description:
@@ -55,6 +56,10 @@ export function createPlaybookTools(): AgentTool[] {
       }
     },
   };
+}
+
+export function createPlaybookTools(): AgentTool[] {
+  const getPlaybookTool = createGetPlaybookTool();
 
   const updatePlaybookTool: AgentTool = {
     name: 'update_playbook',

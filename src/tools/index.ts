@@ -1,6 +1,6 @@
 import type { AgentTool } from '@earendil-works/pi-agent-core';
-import { createPortfolioTools } from './portfolio.js';
-import { createPlaybookTools } from './playbook.js';
+import { createGetPortfolioTool, createPortfolioTools } from './portfolio.js';
+import { createGetPlaybookTool, createPlaybookTools } from './playbook.js';
 import { createPortfolioAnalyzerTool } from './portfolio_analyzer.js';
 import { createSaveReportTool } from './save_report.js';
 import { createSendReportTool } from './send_report.js';
@@ -62,5 +62,20 @@ export function createAccountantTools(): AgentTool[] {
     createQuoteTool(),
     createPortfolioAnalyzerTool(),
     ...createSnapshotTool(),
+  ];
+}
+
+/**
+ * Investment Expert local agent — portfolio + thesis analysis (read-only books).
+ * Live marks, playbook-aware recommendations, optional HTML report.
+ * No mutations, household journal, payment plans, or playbook wizard.
+ */
+export function createInvestmentExpertTools(): AgentTool[] {
+  return [
+    createGetPortfolioTool(),
+    createGetPlaybookTool(),
+    createQuoteTool(),
+    createPortfolioAnalyzerTool(),
+    createSaveReportTool(),
   ];
 }

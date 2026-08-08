@@ -1012,43 +1012,7 @@ export function createPortfolioTools(): AgentTool[] {
     },
   };
 
-  const getPortfolioTool: AgentTool = {
-    name: 'get_portfolio',
-    label: 'Get Portfolio',
-    description:
-      "Retrieve the user's saved portfolio (equities + options + cash by channel + fixed deposits). " +
-      'Cash may list multiple broker channels. Fixed deposits are locked principal (in NAV, not free cash). ' +
-      'Pass telegram_user_id or slack_user_id from the message context.',
-    parameters: Type.Object({ ...channelIdParams }),
-    async execute(_id, raw) {
-      const p = raw as ChannelIds;
-      try {
-        const state = resolveInvestorFromChannel(p);
-        const portfolio = getPortfolio(state);
-        const cashes = getCashes(state);
-        const deposits = getDeposits(state);
-        const rep = reportingCurrencyOf(state);
-        const cashLive = await totalCashLive(cashes, rep);
-        const cashTargetPct = getPlaybook(state).allocation.cash_target_pct;
-        return ok(
-          await formatPortfolio(portfolio, cashes, cashTargetPct, deposits, rep),
-          {
-            portfolio,
-            cash: cashLive.total,
-            cashes,
-            deposits,
-            count: Object.keys(portfolio).length,
-            deposit_count: deposits.length,
-            fx_applied: cashLive.fxApplied,
-            reporting_currency: cashLive.reportingCurrency || null,
-            fx_rates: cashLive.fxApplied ? cashLive.fxRates : undefined,
-          },
-        );
-      } catch (e) {
-        return failFrom(e);
-      }
-    },
-  };
+  const getPortfolioTool = createGetPortfolioTool();
 
   const setCashTool: AgentTool = {
     name: 'set_cash',
@@ -2280,4 +2244,45 @@ export function createPortfolioTools(): AgentTool[] {
     removeDepositTool,
     clearDepositsTool,
   ];
+}
+
+/** Read-only portfolio tool for analysis peers (e.g. Investment Expert). */
+export function createGetPortfolioTool(): AgentTool {
+  return {
+    name: 'get_portfolio',
+    label: 'Get Portfolio',
+    description:
+      "Retrieve the user's saved portfolio (equities + options + cash by channel + fixed deposits). " +
+      'Cash may list multiple broker channels. Fixed deposits are locked principal (in NAV, not free cash). ' +
+      'Pass telegram_user_id or slack_user_id from the message context.',
+    parameters: Type.Object({ ...channelIdParams }),
+    async execute(_id, raw) {
+      const p = raw as ChannelIds;
+      try {
+        const state = resolveInvestorFromChannel(p);
+        const portfolio = getPortfolio(state);
+        const cashes = getCashes(state);
+        const deposits = getDeposits(state);
+        const rep = reportingCurrencyOf(state);
+        const cashLive = await totalCashLive(cashes, rep);
+        const cashTargetPct = getPlaybook(state).allocation.cash_target_pct;
+        return ok(
+          await formatPortfolio(portfolio, cashes, cashTargetPct, deposits, rep),
+          {
+            portfolio,
+            cash: cashLive.total,
+            cashes,
+            deposits,
+            count: Object.keys(portfolio).length,
+            deposit_count: deposits.length,
+            fx_applied: cashLive.fxApplied,
+            reporting_currency: cashLive.reportingCurrency || null,
+            fx_rates: cashLive.fxApplied ? cashLive.fxRates : undefined,
+          },
+        );
+      } catch (e) {
+        return failFrom(e);
+      }
+    },
+  };
 }
