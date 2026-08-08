@@ -19,42 +19,31 @@ interface RawSkill {
   description: string;
 }
 
+/** Default host skills — orchestration residuals only (no investment DIY skill). */
 const CATALOG: RawSkill[] = [
-  {
-    id: 'investment-analysis',
-    name: 'Investment Analysis',
-    description:
-      'Investment research methods for DIY light analysis: portfolio 3-axis, single-name evaluation, idea discovery (cheap ∩ quality ∩ trap), news→price-path, index-relative context, multi-market equities (US/HK/CN suffixes), options structure, valuation multiples, buy/sell/hold framing. Load by capability fit — not keyword matching. Prefer invoke_local_agent Investment Expert for substantive research when coordinating as default host.',
-  },
   {
     id: 'bindrive',
     name: 'BinDrive',
     description:
-      'Load when saving or sharing portfolio reports, listing BinDrive files, or when the user asks about their file portal. Use owner_slug + user.auth_token with bindrive_* tools; prefer save_report for analysis HTML.',
+      'Load when listing or managing the user file portal after specialists produce artifacts. Use owner_slug + user.auth_token with bindrive_* tools. Investment HTML reports are produced by Investment Expert via save_report — orchestrator does not run analysis reports.',
   },
   {
     id: 'playbook-setup',
     name: 'Playbook Setup Wizard',
     description:
-      'Patient guided setup of the Investment Playbook. Load when the user wants to configure strategy, philosophy, risk, allocation, buy/sell rules, rebalancing, or watchlists; "set up my investment style", "help me choose risk", "walk me through settings", questionnaire, or change how recommendations work. One easy question at a time with clear explanations. Uses get_playbook / update_playbook.',
+      'Patient guided setup of the Investment Playbook (host-owned methodology config). Load by capability fit when the user intends to configure strategy, philosophy, risk, allocation, buy/sell rules, rebalancing, or watchlists. One easy question at a time. Uses get_playbook / update_playbook. Not keyword-matched.',
   },
   {
     id: 'family-treasury',
     name: 'Family Treasury & Projections',
     description:
-      'Household books and deterministic financial projections. Load for family net worth (property + mortgage + cash + portfolio), recurring income/expense cash flows, 5-year cash flow, house affordability projection, scenario compare, projection assumptions, FX into reporting currency. Tools: get_household, set_treasury, property/liability/cash_flow CRUD, set_projection_assumptions, save_scenario, run_projection, compare_scenarios. For SG stamp duty, HDB comps, yield, ABSD on a buy: also load sg-real-estate-portfolio. Not for stock picking alone — use investment-analysis. Not multi-unit listing shopping.',
+      'Host residual: household books and deterministic projections (net worth path, cash flows, house affordability). Load by capability fit. Tools: get_household, set_treasury, property/liability/cash_flow CRUD, assumptions, scenarios, run_projection, compare_scenarios. Pair with sg-real-estate-portfolio for SG duties/comps. Not investment research — route that to Investment Expert. Not ledger journal — route to Bookkeeper.',
   },
   {
     id: 'sg-real-estate-portfolio',
     name: 'SG Real-Estate Portfolio',
     description:
-      'Singapore real-estate as a household portfolio sleeve: HDB/private comps via property_intel, BSD/ABSD/SSD and cooling-measure framing (verify IRAS this turn), gross/net yield, cash-on-cash, equity/LTV, all-in buy cost, mark fairness vs comps, lease decay, total wealth allocation (physical RE equity vs portfolio vs REITs), hold/sell and second-property policy cost. Load for stamp duty, ABSD, HDB resale comps, property yield, is my home mark fair, property vs REIT allocation. For second-property / SG buy with duties+affordability: load TOGETHER with family-treasury. Not multi-unit listing shopping, shortlist UX, layout, or interior design. Not pure multi-year cash-flow alone.',
-  },
-  {
-    id: 'firecrawl',
-    name: 'Firecrawl',
-    description:
-      'Load for live web research, primary news sources, and market themes: Yahoo Finance (US/HK/China tickers), options chains, SEC EDGAR, HKEXnews, CNINFO/SSE/SZSE, IR, Reuters/CNBC, Finviz, Fed/PBOC/macro, earnings releases, and themes (AI, sectors). Also IRAS/HDB official pages for stamp duties (pair with sg-real-estate-portfolio). Pair with investment-analysis Part D for news→price-path, Part F multi-market, Part G options. Prefer portfolio_analyzer for quotes; Firecrawl for news/filings/guidance/options text.',
+      'Host residual: Singapore physical RE as a household sleeve — comps via property_intel, duties (verify IRAS this turn), yield/LTV, all-in buy cost, allocation vs REITs. Load by capability fit with family-treasury when affordability matters. Not multi-unit listing shopping. Not securities research (Investment Expert).',
   },
 ];
 

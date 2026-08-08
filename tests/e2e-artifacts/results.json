@@ -1,0 +1,227 @@
+{
+  "url": "https://chat.investor.lextok.com",
+  "passed": 44,
+  "failed": [],
+  "results": [
+    {
+      "name": "health 200",
+      "ok": true,
+      "detail": "{\"status\":\"ok\",\"service\":\"bindrive\",\"timestamp\":\"2026-07-15T11:16:38.766Z\"}"
+    },
+    {
+      "name": "spa index 200",
+      "ok": true,
+      "detail": "status=200"
+    },
+    {
+      "name": "spa has hashed assets",
+      "ok": true,
+      "detail": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n    <title>Agent · Web</title>\n    <link rel=\"precon"
+    },
+    {
+      "name": "demo meta returns agentName",
+      "ok": true,
+      "detail": "{\"enabled\":false,\"agentName\":\"Invester\"}"
+    },
+    {
+      "name": "demo meta returns enabled boolean",
+      "ok": true,
+      "detail": "{\"enabled\":false,\"agentName\":\"Invester\"}"
+    },
+    {
+      "name": "chat/agent unauth is 401 (not redirect)",
+      "ok": true,
+      "detail": "status=401"
+    },
+    {
+      "name": "admin unauth is 401 or 403",
+      "ok": true,
+      "detail": "status=403"
+    },
+    {
+      "name": "login bad token 401",
+      "ok": true,
+      "detail": "{\"error\":\"invalid_token\",\"message\":\"Invalid auth token.\"}"
+    },
+    {
+      "name": "login empty body 400",
+      "ok": true,
+      "detail": "{\"error\":\"invalid_request\",\"message\":\"Either auth_token or identifier+password required.\"}"
+    },
+    {
+      "name": "login bad password 401",
+      "ok": true,
+      "detail": "{\"error\":\"invalid_credentials\",\"message\":\"Invalid username or password.\"}"
+    },
+    {
+      "name": "login good token 200",
+      "ok": true,
+      "detail": "{\"type\":\"user\",\"slug\":\"david\",\"displayName\":\"David\"}"
+    },
+    {
+      "name": "login sets session cookie",
+      "ok": true,
+      "detail": "bindrive_session=15657218-504e-4539-baff-a9613033a5e2"
+    },
+    {
+      "name": "redeem empty name 400",
+      "ok": true,
+      "detail": "{\"error\":\"invalid_display_name\",\"message\":\"Display name must be 1–60 chars.\"}"
+    },
+    {
+      "name": "redeem bad code 4xx",
+      "ok": true,
+      "detail": "{\"error\":\"redeem_failed\",\"message\":\"Invalid invite code \\\"INV-NOTREAL1\\\".\"}"
+    },
+    {
+      "name": "redeem name too long 400",
+      "ok": true,
+      "detail": "{\"error\":\"invalid_display_name\",\"message\":\"Display name must be 1–60 chars.\"}"
+    },
+    {
+      "name": "chat/agent auth returns slug+agentName",
+      "ok": true,
+      "detail": "{\"slug\":\"david\",\"displayName\":\"David\",\"agentName\":\"Invester\",\"isStreaming\":false,\"hasContext\":true}"
+    },
+    {
+      "name": "clear context ok",
+      "ok": true,
+      "detail": "{\"ok\":true}"
+    },
+    {
+      "name": "messages empty text 400",
+      "ok": true,
+      "detail": "{\"error\":\"text required\"}"
+    },
+    {
+      "name": "messages missing text 400",
+      "ok": true,
+      "detail": "{\"error\":\"text required\"}"
+    },
+    {
+      "name": "stream unknown id 404",
+      "ok": true,
+      "detail": "status=404"
+    },
+    {
+      "name": "messages unauth is 401 (not redirect)",
+      "ok": true,
+      "detail": "status=401"
+    },
+    {
+      "name": "messages start run",
+      "ok": true,
+      "detail": "{\"kind\":\"run\",\"messageId\":\"1382c5e0-d611-4a18-a953-cd59466f0f7b\"}"
+    },
+    {
+      "name": "got messageId",
+      "ok": true,
+      "detail": "1382c5e0-d611-4a18-a953-cd59466f0f7b"
+    },
+    {
+      "name": "stream HTTP 200",
+      "ok": true,
+      "detail": "status=200"
+    },
+    {
+      "name": "stream has ack",
+      "ok": true,
+      "detail": "ack,delta,done,end"
+    },
+    {
+      "name": "stream has done or deltas",
+      "ok": true,
+      "detail": "ack,delta,done,end"
+    },
+    {
+      "name": "stream has end",
+      "ok": true,
+      "detail": "ack,delta,done,end"
+    },
+    {
+      "name": "final text non-empty",
+      "ok": true,
+      "detail": "SpaceX's proposed **$1.675T** valuation is larger than IBM's entire market cap by **6×**, yet IBM ge"
+    },
+    {
+      "name": "no jammed words from $ math bug",
+      "ok": true,
+      "detail": "SpaceX's proposed **$1.675T** valuation is larger than IBM's entire market cap by **6×**, yet IBM generates **3.6× more revenue**, is **solidly profitable**, and throws off **$14.7B in annual free cas"
+    },
+    {
+      "name": "mentions valuation and IBM",
+      "ok": true,
+      "detail": "SpaceX's proposed **$1.675T** valuation is larger than IBM's entire market cap by **6×**, yet IBM generates **3.6× more revenue**, is **solidly profitable**, and throws off **$14.7B in annual free cas"
+    },
+    {
+      "name": "no spaced asterisk pairs (* *)",
+      "ok": true,
+      "detail": "SpaceX's proposed **$1.675T** valuation is larger than IBM's entire market cap by **6×**, yet IBM generates **3.6× more revenue**, is **solidly profitable**, and throws off **$14.7B in annual free cas"
+    },
+    {
+      "name": "abort when idle is 409",
+      "ok": true,
+      "detail": "{\"error\":\"not_running\",\"message\":\"Agent is not currently running.\"} status=409"
+    },
+    {
+      "name": "password too short 400",
+      "ok": true,
+      "detail": "{\"error\":\"invalid_password\",\"message\":\"Password must be at least 6 characters.\"}"
+    },
+    {
+      "name": "login page shows agent name",
+      "ok": true,
+      "detail": "Invester · Web\n\nSign in to chat with your agent.\n\nSign in\nAuth token\nRedeem invite\nUsername\nPassword\nSign in"
+    },
+    {
+      "name": "login has password or token fields",
+      "ok": true,
+      "detail": "no password/token UI"
+    },
+    {
+      "name": "token input filled",
+      "ok": true,
+      "detail": "could not find token field"
+    },
+    {
+      "name": "UI after login leaves auth screen",
+      "ok": true,
+      "detail": "Invester · David\nslug: david\nPassword\nLogout\n👋\nWelcome to Invester\n\nSend a message to start. Tables, code, and BinDrive reports render inline here.\n\nSend\n/help for commands · shift+enter for newline"
+    },
+    {
+      "name": "typed chat message in UI",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "UI assistant prose readable (spaces present)",
+      "ok": true,
+      "detail": "Hello David. Your portfolio's empty — ready to build it when you are. Want to analyze a ticker, find some growth ideas, or start loading holdings?"
+    },
+    {
+      "name": "UI first assistant reply",
+      "ok": true,
+      "detail": "Hello David. Your portfolio's empty — ready to build it when you are. Want to analyze a ticker, find"
+    },
+    {
+      "name": "UI markdown prose not jammed",
+      "ok": true,
+      "detail": "Hello David. Your portfolio's empty — ready to build it when you are. Want to analyze a ticker, find some growth ideas, or start loading holdings?\nSpaceX $1.675T vs IBM 6× revenue. Cash $14.7B."
+    },
+    {
+      "name": "UI markdown rendered bold currency",
+      "ok": true,
+      "detail": "$1.675T | 6× | $14.7B"
+    },
+    {
+      "name": "UI markdown few raw ** leaks",
+      "ok": true,
+      "detail": "** count=0 Hello David. Your portfolio's empty — ready to build it when you are. Want to analyze a ticker, find some growth ideas, or start loading holdings?\nSpaceX $1.675"
+    },
+    {
+      "name": "no critical console errors",
+      "ok": true,
+      "detail": "Failed to load resource: the server responded with a status of 401 () | Failed to load resource: the server responded with a status of 404 ()"
+    }
+  ]
+}

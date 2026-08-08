@@ -20,12 +20,16 @@ describe('Bookkeeper local agent', () => {
     expect(names).not.toContain('property_intel');
   });
 
-  it('is a strict subset of Invester domain tool names for shared book surfaces', () => {
+  it('owns ledger tools that default orchestrator does not', () => {
     const book = new Set(createBookkeeperTools().map((t) => t.name));
     const invage = new Set(createInvageTools().map((t) => t.name));
-    for (const name of book) {
-      expect(invage.has(name), `Invester missing shared tool ${name}`).toBe(true);
-    }
+    expect(book.has('add_holding')).toBe(true);
+    expect(book.has('set_cash')).toBe(true);
+    expect(invage.has('add_holding')).toBe(false);
+    expect(invage.has('set_cash')).toBe(false);
+    // Shared residual surfaces may still exist on host (household projections)
+    expect(book.has('get_household')).toBe(true);
+    expect(invage.has('get_household')).toBe(true);
   });
 
   it('registers Bookkeeper purpose and bookkeeping skill', () => {

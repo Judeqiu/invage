@@ -45,8 +45,9 @@ describe('Accountant local agent', () => {
     expect(book.has('build_payment_plan')).toBe(false);
   });
 
-  it('Invester also exposes build_payment_plan for default-agent access', () => {
-    expect(createInvageTools().map((t) => t.name)).toContain('build_payment_plan');
+  it('default orchestrator does not own payment-plan tools (Accountant does)', () => {
+    expect(createInvageTools().map((t) => t.name)).not.toContain('build_payment_plan');
+    expect(createAccountantTools().map((t) => t.name)).toContain('build_payment_plan');
   });
 
   it('registers Accountant purpose and payment-planning skill', () => {

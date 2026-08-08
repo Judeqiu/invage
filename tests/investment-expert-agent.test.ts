@@ -72,18 +72,17 @@ describe('Investment Expert local agent', () => {
     expect(skillIds).not.toContain('bookkeeping');
   });
 
-  it('is narrower than Invester and orthogonal to Bookkeeper/Accountant toolsets', () => {
+  it('owns research tools the default orchestrator does not', () => {
     const expert = new Set(createInvestmentExpertTools().map((t) => t.name));
     const invage = new Set(createInvageTools().map((t) => t.name));
     const book = new Set(createBookkeeperTools().map((t) => t.name));
     const acc = new Set(createAccountantTools().map((t) => t.name));
 
-    for (const n of expert) {
-      expect(invage.has(n)).toBe(true);
-    }
+    expect(expert.has('portfolio_analyzer')).toBe(true);
+    expect(expert.has('get_quote')).toBe(true);
+    expect(invage.has('portfolio_analyzer')).toBe(false);
+    expect(invage.has('get_quote')).toBe(false);
     expect(book.has('portfolio_analyzer')).toBe(false);
-    expect(book.has('get_playbook')).toBe(false);
-    expect(acc.has('get_playbook')).toBe(false);
     expect(acc.has('save_report')).toBe(false);
     expect(expert.has('build_payment_plan')).toBe(false);
   });

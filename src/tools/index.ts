@@ -13,22 +13,18 @@ import { createUraCarparkTool } from './ura_carpark.js';
 import { createPaymentPlanTool } from './payment_plan.js';
 import { createOpportunityCostTool } from './opportunity_cost.js';
 
-/** Domain tools only — Utarus framework supplies user/invite/bindrive/firecrawl/write_report. */
+/**
+ * Default host (Invester) — orchestration + residual host domains only.
+ * No portfolio CRUD, market analysis, quotes, or payment plans — those are peer work.
+ * Framework supplies list_local_agents / invoke_local_agent, firecrawl, bindrive, etc.
+ */
 export function createInvageTools(): AgentTool[] {
   return [
-    ...createPortfolioTools(),
     ...createPlaybookTools(),
     ...createHouseholdTools(),
     ...createProjectionTools(),
-    createPaymentPlanTool(),
-    createOpportunityCostTool(),
     createPropertyIntelTool(),
     createUraCarparkTool(),
-    createQuoteTool(),
-    createPortfolioAnalyzerTool(),
-    createSaveReportTool(),
-    createSendReportTool(),
-    ...createSnapshotTool(),
   ];
 }
 
