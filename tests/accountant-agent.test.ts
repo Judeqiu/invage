@@ -50,6 +50,12 @@ describe('Accountant local agent', () => {
     expect(createAccountantTools().map((t) => t.name)).toContain('build_payment_plan');
   });
 
+  it('purpose requires help-first and create_task for deferred re-plans', () => {
+    expect(accountantExtension.purpose).toMatch(/Help-first/i);
+    expect(accountantExtension.purpose).toMatch(/create_task/);
+    expect(accountantExtension.purpose).toMatch(/maturity|matures/i);
+  });
+
   it('registers Accountant purpose and payment-planning skill', () => {
     expect(accountantExtension.purpose).toMatch(/Accountant/i);
     expect(accountantExtension.purpose).toMatch(/avalanche/i);

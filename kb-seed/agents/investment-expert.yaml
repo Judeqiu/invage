@@ -292,3 +292,36 @@ entries:
     refs: []
     created_at: 2026-08-08T12:00:00.000Z
     updated_at: 2026-08-08T12:00:00.000Z
+  - id: a3000001-0001-4000-8000-000000000007
+    scope: agent
+    owner_slug: system-seed
+    agent_id: investment-expert
+    title: Help-first and async observe tasks
+    body: >
+      Help-first: never brush off a portfolio/thesis ask. Partial answer now + action plan.
+
+
+      When the user needs time (observe a name, post-earnings re-check, daily mark):
+
+      1. Best tool-backed snapshot now (quote / analyzer / news path as needed).
+
+      2. create_task with instruction for host Invester to invoke_local_agent investment-expert
+      with self-contained ticker, thesis, success criteria.
+
+      3. delivery_channel=telegram when linked; confirm next_run_at from tool result.
+
+      4. Do not invent next_run_at; do not claim the deferred work finished early.
+
+
+      Hard refuse only: trade execution, inventing metrics, licensed advice as advice.
+    tags:
+      - playbook
+      - tasks
+      - help-first
+      - investment-analysis
+    source: invage-seed
+    provenance: system
+    domain_tag: investment-analysis
+    refs: []
+    created_at: 2026-08-09T00:00:00.000Z
+    updated_at: 2026-08-09T00:00:00.000Z

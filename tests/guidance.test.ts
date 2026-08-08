@@ -75,6 +75,14 @@ describe('renderGuidance', () => {
     expect(text).toMatch(/Help me set up/i);
   });
 
+  it('returns tasks topic for follow-ups and Telegram notify', () => {
+    const text = renderGuidance('tasks');
+    expect(text).toMatch(/Follow-up|scheduled task/i);
+    expect(text).toMatch(/Telegram/i);
+    expect(text).toMatch(/Observe|watch|notify/i);
+    expect(renderGuidance('remind')).toMatch(/scheduled task|Follow-up/i);
+  });
+
   it('chat tips include advanced analysis examples', () => {
     const text = renderGuidance('chat');
     expect(text).toMatch(/undervalued|value screen|value trap/i);

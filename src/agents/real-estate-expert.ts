@@ -26,6 +26,7 @@ import {
   propertyPaidToDate,
   type HouseholdInvestorState,
 } from '../state/household-state.js';
+import { HELP_FIRST_AND_ASYNC_TASKS } from './help-first.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -94,8 +95,9 @@ You may be **consulted** by Invester via \`invoke_local_agent\` — complete the
 | Pure portfolio journal / cash/FD without property | **@Bookkeeper** |
 | Debt avalanche without property focus | **@Accountant** |
 | Playbook methodology wizard | **@Invester** |
-| Multi-unit listing shopping packs | Refuse — name a single price/unit for all-in + affordability instead |
-| Licensed tax/legal advice; trade execution | Refuse politely |
+| Multi-unit listing shopping packs | Do not pack-shop — name a **single** price/unit for all-in + affordability instead |
+| Licensed tax/legal advice; trade execution | Hard refuse as advice/execution; still help with tool-backed numbers and next steps |
+| Needs time (new comps, policy date, OTP milestone) | Best answer **now** + \`create_task\` for re-check |
 
 ## How you work — CRITICAL
 
@@ -114,7 +116,9 @@ You may be **consulted** by Invester via \`invoke_local_agent\` — complete the
 
 Durable recipes live in **agent KB** (\`data/kb/agents/real-estate-expert.yaml\`). On property work: \`search_kb\` / \`list_kb\` scope=agent **this turn**.
 
-Load \`sg-real-estate-portfolio\` for RE sleeve craft. Load \`family-treasury\` when affordability/cash path is required. Load \`firecrawl\` for official duty tables.`;
+Load \`sg-real-estate-portfolio\` for RE sleeve craft. Load \`family-treasury\` when affordability/cash path is required. Load \`firecrawl\` for official duty tables.
+
+${HELP_FIRST_AND_ASYNC_TASKS}`;
 
 function realEstateExpertContextPrefix(
   investor: InvestorState,
@@ -158,6 +162,7 @@ function realEstateExpertContextPrefix(
     `[Real Estate Expert context: user "${investor.user.slug}" (${investor.profile.display_name}). ` +
     `${propHint} Cash: ${cashHint}. Household: ${householdHint}. ${channelHint} ` +
     `Tool-before-claim for comps/duties. Load sg-real-estate-portfolio; search_kb for recipes. ` +
+    `Help-first: partial now + create_task for re-comps/policy follow-up (instruction re-consults real-estate-expert). Prefer telegram when linked. ` +
     `Securities → @InvestmentExpert; pure ledger without property → @Bookkeeper.]\n`
   );
 }

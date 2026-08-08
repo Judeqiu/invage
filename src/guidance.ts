@@ -21,6 +21,7 @@ export const GUIDANCE_SUBCOMMANDS = [
   'admin',
   'chat',
   'property',
+  'tasks',
 ] as const;
 
 export type GuidanceSubcommand = (typeof GUIDANCE_SUBCOMMANDS)[number] | 'overview' | 'help';
@@ -97,6 +98,19 @@ function normalizeSub(args: string): GuidanceSubcommand {
   ) {
     return 'property';
   }
+  if (
+    raw === 'tasks' ||
+    raw === 'task' ||
+    raw === 'schedule' ||
+    raw === 'follow-up' ||
+    raw === 'followup' ||
+    raw === 'remind' ||
+    raw === 'reminder' ||
+    raw === 'notify' ||
+    raw === 'telegram'
+  ) {
+    return 'tasks';
+  }
   if ((GUIDANCE_SUBCOMMANDS as readonly string[]).includes(raw)) {
     return raw as GuidanceSubcommand;
   }
@@ -123,6 +137,7 @@ const overview = (): string =>
     '• `reports` — BinDrive reports, snapshots, email',
     '• `skills` — skill catalog (what I load for each job)',
     '• `property` — household treasury + SG real-estate portfolio (comps, duties, yield)',
+    '• `tasks` — follow-ups, scheduled checks, Telegram notify when done',
     '• `chat` — how to talk to me effectively',
     '• `admin` — invite / admin codes (admins)',
     '',
@@ -132,8 +147,9 @@ const overview = (): string =>
     '• Themes: "How will AI affect markets?" → `/guidance research`',
     '• Full analysis stack: `/guidance analysis`',
     '• Home mark / second property / yield: `/guidance property`',
+    '• Watch a name & get pinged: "Observe NVDA for a day and notify me" → `/guidance tasks`',
     '',
-    'Example: `/guidance portfolio`  ·  `/guidance value`  ·  `/guidance research`  ·  `/guidance property`',
+    'Example: `/guidance portfolio`  ·  `/guidance value`  ·  `/guidance tasks`  ·  `/guidance property`',
   ].join('\n');
 
 const start = (): string =>
@@ -587,8 +603,37 @@ const chat = (): string =>
     '• "Help me understand how AI will impact the stock market"',
     '• "Research latest NEE guidance from IR or SEC"',
     '• "Save report and snapshot today"',
+    '• "Watch NVDA for a day and notify me on Telegram"',
     '',
-    'Playbooks: `/guidance value` · `/guidance analysis` · `/guidance research`',
+    'Playbooks: `/guidance value` · `/guidance analysis` · `/guidance research` · `/guidance tasks`',
+  ].join('\n');
+
+const tasks = (): string =>
+  [
+    '*Follow-ups & scheduled tasks*',
+    '',
+    'I help first: convert your ask into what we can do *now*, what needs one answer from you, and what we can *schedule*.',
+    'If a job needs time (watch a stock for a day, re-check after earnings, revisit when a deposit matures), I can schedule it — you get a result in the inbox and a *Telegram DM* when Telegram is linked.',
+    '',
+    '*How to ask*',
+    '• "Observe NVDA for a day and message me with the result"',
+    '• "After my DBS deposit matures, re-check paydown vs re-lock"',
+    '• "Re-run comps for my condo next week and notify me"',
+    '• "List my tasks" / "pause the NVDA watch" / "cancel that follow-up"',
+    '',
+    '*Slash*',
+    '• `/tasks` — list your scheduled tasks (framework command)',
+    '',
+    '*Telegram link*',
+    '• WebUI → Settings → Telegram notifications → Connect, or open the bot deep link and redeem the code',
+    '• Once linked, task completions and system notifications auto-push to Telegram',
+    '',
+    '*What to expect*',
+    '1. Best partial answer *now* with live tools when possible',
+    '2. Confirmed schedule: title, next run time, delivery channel',
+    '3. When the task runs, a concise result — not silence',
+    '',
+    'Related: `/guidance chat` · `/guidance research` · `/guidance property`',
   ].join('\n');
 
 /**
@@ -615,6 +660,8 @@ export function renderGuidance(args: string = ''): string {
       return skills();
     case 'property':
       return property();
+    case 'tasks':
+      return tasks();
     case 'admin':
       return admin();
     case 'chat':
@@ -648,7 +695,7 @@ export function createGuidanceCommand(): {
       'How to use Invester: portfolio, playbook, 3-axis analysis, value screen, research, reports',
     adminOnly: false,
     usageHint:
-      '[start|portfolio|playbook|analysis|value|research|reports|skills|property|admin|chat]',
+      '[start|portfolio|playbook|analysis|value|research|reports|skills|property|tasks|admin|chat]',
     handle: (args: string) => renderGuidance(args),
   };
 }

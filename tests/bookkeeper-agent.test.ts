@@ -40,6 +40,8 @@ describe('Bookkeeper local agent', () => {
     expect(bookkeeperExtension.purpose).toMatch(/adjust_cash=false/);
     expect(bookkeeperExtension.purpose).toMatch(/Screenshot fund reconcile/i);
     expect(bookkeeperExtension.purpose).toMatch(/agent KB|search_kb/i);
+    expect(bookkeeperExtension.purpose).toMatch(/Help-first/i);
+    expect(bookkeeperExtension.purpose).toMatch(/create_task/);
     expect(bookkeeperExtension.billing).toBeUndefined();
     expect(bookkeeperExtension.webUi).toBeUndefined();
     const skillIds = bookkeeperExtension.skills.map((s) => s.id);

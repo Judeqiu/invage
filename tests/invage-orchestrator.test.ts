@@ -45,6 +45,15 @@ describe('Invester default orchestrator', () => {
     expect(invageExtension.purpose).toMatch(/DIY is forbidden|do not perform that work|Never DIY/i);
   });
 
+  it('purpose requires help-first action plans and async create_task follow-ups', () => {
+    expect(invageExtension.purpose).toMatch(/Help-first/i);
+    expect(invageExtension.purpose).toMatch(/create_task/);
+    expect(invageExtension.purpose).toMatch(/action plan/i);
+    expect(invageExtension.purpose).toMatch(/do not lightly reject/i);
+    expect(invageExtension.purpose).toMatch(/telegram/i);
+    expect(invageExtension.purpose).toMatch(/task runner/i);
+  });
+
   it('default skills exclude peer craft DIY research skills', () => {
     const ids = invageExtension.skills.map((s) => s.id);
     expect(ids).toContain('playbook-setup');

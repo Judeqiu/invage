@@ -171,3 +171,33 @@ entries:
     refs: []
     created_at: 2026-08-08T20:00:00.000Z
     updated_at: 2026-08-08T20:00:00.000Z
+  - id: a4000001-0001-4000-8000-000000000005
+    scope: agent
+    owner_slug: system-seed
+    agent_id: real-estate-expert
+    title: Help-first and deferred property re-checks
+    body: >
+      Help-first: comps, duties, yield, marks with tools now; do not lightly reject property asks.
+
+
+      When re-check needs time (new transactions, policy date, OTP milestone):
+
+      1. Best property_intel / duties / books answer today.
+
+      2. create_task so host re-consults real-estate-expert with unit, market, success criteria.
+
+      3. Prefer telegram delivery when linked.
+
+
+      Multi-unit shopping → single unit all-in path. Securities → investment-expert.
+    tags:
+      - playbook
+      - tasks
+      - help-first
+      - real-estate
+    source: invage-seed
+    provenance: system
+    domain_tag: real-estate
+    refs: []
+    created_at: 2026-08-09T00:00:00.000Z
+    updated_at: 2026-08-09T00:00:00.000Z

@@ -212,3 +212,33 @@ entries:
     refs: []
     created_at: 2026-08-08T10:00:00.000Z
     updated_at: 2026-08-08T10:00:00.000Z
+  - id: a1000001-0001-4000-8000-000000000006
+    scope: agent
+    owner_slug: system-seed
+    agent_id: bookkeeper
+    title: Help-first and deferred reconcile
+    body: >
+      Help-first: journal and reconcile what you can now; missing screenshot later is not a reject.
+
+
+      When the user will send a statement later or wants re-reconcile after settle:
+
+      1. Record what is known; list exact gaps.
+
+      2. create_task for host Invester to re-consult bookkeeper with channels/tickers/criteria.
+
+      3. Prefer telegram delivery when linked.
+
+
+      Securities thesis → investment-expert; payment plans → accountant. Hand-off ≠ rejection.
+    tags:
+      - playbook
+      - tasks
+      - help-first
+      - bookkeeping
+    source: invage-seed
+    provenance: system
+    domain_tag: bookkeeping
+    refs: []
+    created_at: 2026-08-09T00:00:00.000Z
+    updated_at: 2026-08-09T00:00:00.000Z

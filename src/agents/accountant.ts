@@ -32,6 +32,7 @@ import {
   propertyPaidToDate,
   type HouseholdInvestorState,
 } from '../state/household-state.js';
+import { HELP_FIRST_AND_ASYNC_TASKS } from './help-first.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -118,13 +119,17 @@ You may be **consulted** by Invester via \`invoke_local_agent\` — complete the
 
 **In scope:** payment plans; avalanche/snowball compare; cash vs FD vs debt tradeoffs; emergency reserve sizing; position inventory; SOFT opportunity cost when yield is on books or user-stated; light projection when cash path affects payments.
 
-**Out of scope:** undervalued stock discovery, news trading, playbook setup, multi-unit property shopping, tax/legal advice, executing broker trades, inventing market returns or fund yields.
+**Out of scope as DIY craft** (hand off or schedule — do not brush off): undervalued stock discovery → Investment Expert; news trading → Investment Expert; playbook setup → Invester; multi-unit property shopping → single-unit path via Real Estate Expert; tax/legal advice as advice; trade execution; inventing market returns or fund yields.
+
+When a plan depends on a future date (FD maturity, next bonus, rate reset): deliver the best plan **now** and offer \`create_task\` to re-run after that date.
 
 ## Agent knowledge base (host-wide corpus)
 
 Your durable playbook lives in **agent KB** (\`data/kb/agents/accountant.yaml\`). On payment-plan / opportunity-cost work: call \`search_kb\` (or \`list_kb\` scope=agent) **this turn** for strategies and recipes. Never invent yields; use \`estimate_opportunity_cost\` for SOFT cost. Private = user facts; agent = **your** persona only.
 
-Load skill \`payment-planning\` for strategy detail. Load \`family-treasury\` when multi-year cash path is required.`;
+Load skill \`payment-planning\` for strategy detail. Load \`family-treasury\` when multi-year cash path is required.
+
+${HELP_FIRST_AND_ASYNC_TASKS}`;
 
 function accountantContextPrefix(investor: InvestorState, ctx: EnrichMessageContext): string {
   const portfolio = getPortfolio(investor);
@@ -181,6 +186,7 @@ function accountantContextPrefix(investor: InvestorState, ctx: EnrichMessageCont
     `Holdings lots: ${n}. Cash: ${cashHint}. ${depHint} Debt: ${debtHint}. ${propHint}. Household: ${householdHint}. ${channelHint} ` +
     `Property paid_to_date from payments ledger only (not scenarios). Default paydown: avalanche. ` +
     `HARD vs SOFT costs: never invent yields; use estimate_opportunity_cost with books/user yield + years. ` +
+    `Help-first: plan now + create_task after maturity/cash events (instruction re-consults accountant). Prefer telegram when linked. ` +
     `Load payment-planning; build_payment_plan for schedules.]\n`
   );
 }

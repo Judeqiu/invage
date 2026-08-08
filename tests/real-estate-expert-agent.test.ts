@@ -45,6 +45,11 @@ describe('Real Estate Expert local agent', () => {
     expect(realEstateExpertExtension.purpose).toMatch(/licensed/i);
   });
 
+  it('purpose requires help-first and create_task for deferred re-checks', () => {
+    expect(realEstateExpertExtension.purpose).toMatch(/Help-first/i);
+    expect(realEstateExpertExtension.purpose).toMatch(/create_task/);
+  });
+
   it('defaults LLM routing to heavy', () => {
     expect(realEstateExpertExtension.llmRouting).toEqual({ default: 'heavy' });
   });

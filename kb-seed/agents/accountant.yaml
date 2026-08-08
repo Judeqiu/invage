@@ -231,3 +231,33 @@ entries:
     refs: []
     created_at: 2026-08-08T10:00:00.000Z
     updated_at: 2026-08-08T10:00:00.000Z
+  - id: a2000001-0001-4000-8000-000000000006
+    scope: agent
+    owner_slug: system-seed
+    agent_id: accountant
+    title: Help-first and deferred re-plans
+    body: >
+      Help-first: convert payment/cash efficiency asks into a plan now; never flat reject.
+
+
+      When the right check is after a date (FD maturity, bonus, rate reset):
+
+      1. build_payment_plan / estimate_opportunity_cost with what books allow today.
+
+      2. create_task so host Invester re-consults accountant after that date with ids + criteria.
+
+      3. Prefer telegram delivery when linked. Confirm next_run_at from tool result only.
+
+
+      Never invent yields. Hand securities thesis to investment-expert — hand-off is not rejection.
+    tags:
+      - playbook
+      - tasks
+      - help-first
+      - payment-planning
+    source: invage-seed
+    provenance: system
+    domain_tag: payment-planning
+    refs: []
+    created_at: 2026-08-09T00:00:00.000Z
+    updated_at: 2026-08-09T00:00:00.000Z

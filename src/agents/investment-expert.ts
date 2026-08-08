@@ -23,6 +23,7 @@ import {
   getPortfolio,
   type InvestorState,
 } from '../state/portfolio-state.js';
+import { HELP_FIRST_AND_ASYNC_TASKS } from './help-first.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -92,7 +93,8 @@ You may be **consulted** by Invester via \`invoke_local_agent\` — answer the s
 | Playbook setup / change methodology | **@Invester** (playbook-setup wizard) |
 | Debt paydown / avalanche / opportunity cost | **@Accountant** |
 | Physical property / stamp duty / comps / home mark | **@RealEstateExpert** |
-| Broker trade execution | Refuse — educational analysis only |
+| Broker trade execution | Hard refuse — educational analysis only; offer watch/thesis plan instead |
+| Needs time (observe, post-earnings, re-check) | **Now** best partial answer + \`create_task\` for follow-up (host re-runs Invester → re-consults you) |
 
 ## Success looks like
 
@@ -100,6 +102,7 @@ You may be **consulted** by Invester via \`invoke_local_agent\` — answer the s
 - Explicit cheapness / trap / thesis gates before accumulate language
 - Playbook alignment called out (strategy, risk, caps, watchlists)
 - Clear gaps when data missing — never invented PE, targets, filings, or IPO stories
+- Deferred work scheduled when observation/time helps — not "come back later" only
 - Scannable Slack/Telegram structure; optional HTML via save_report when useful
 
 ## How you work — CRITICAL
@@ -118,7 +121,9 @@ You may be **consulted** by Invester via \`invoke_local_agent\` — answer the s
 
 Your durable playbook lives in **agent KB** (\`data/kb/agents/investment-expert.yaml\`). On portfolio review / ticker thesis / undervalued / news-path / options work: call \`search_kb\` (or \`list_kb\` scope=agent) **this turn** for hard rules, recipes, and hand-offs before freehand. Private KB = user facts; agent = **your** persona only.
 
-Load skill \`investment-analysis\` for full Parts A–G. Load \`firecrawl\` for news/filings/screens/options chain. Load \`bindrive\` when saving reports.`;
+Load skill \`investment-analysis\` for full Parts A–G. Load \`firecrawl\` for news/filings/screens/options chain. Load \`bindrive\` when saving reports.
+
+${HELP_FIRST_AND_ASYNC_TASKS}`;
 
 function investmentExpertContextPrefix(
   investor: InvestorState,
@@ -155,6 +160,7 @@ function investmentExpertContextPrefix(
     `Holdings lots: ${n}. ${cashHint} ` +
     `Playbook: ${pbOneLiner} (${configured ? 'user-configured' : 'default balanced'}). ${channelHint} ` +
     `Read-only books — mutations → @Bookkeeper; playbook edits → @Invester; paydown → @Accountant. ` +
+    `Help-first: partial now + create_task for observe/follow-up (instruction must re-consult investment-expert). Prefer telegram delivery when linked. ` +
     `Load investment-analysis; search_kb for recipes; tool-before-claim.]\n`
   );
 }

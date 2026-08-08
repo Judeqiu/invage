@@ -55,6 +55,13 @@ describe('Investment Expert local agent', () => {
     expect(investmentExpertExtension.purpose).toMatch(/licensed/i);
   });
 
+  it('purpose requires help-first and create_task for deferred observation', () => {
+    expect(investmentExpertExtension.purpose).toMatch(/Help-first/i);
+    expect(investmentExpertExtension.purpose).toMatch(/create_task/);
+    expect(investmentExpertExtension.purpose).toMatch(/observe/i);
+    expect(investmentExpertExtension.purpose).toMatch(/invoke_local_agent/);
+  });
+
   it('defaults LLM routing to heavy', () => {
     expect(investmentExpertExtension.llmRouting).toEqual({ default: 'heavy' });
   });
