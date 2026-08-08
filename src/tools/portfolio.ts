@@ -637,8 +637,9 @@ export function createPortfolioTools(): AgentTool[] {
             ? channelParam
             : portfolio[key]?.channel;
           // Preserve prior fund name/mark when not re-specified on this purchase lot.
+          // prior is undefined for brand-new keys — isFundHolding must tolerate null/undefined.
           const prior = portfolio[key];
-          if (isFundHolding(prior) && prior.fund) {
+          if (prior != null && isFundHolding(prior) && prior.fund) {
             if (fund.name == null && prior.fund.name != null) fund.name = prior.fund.name;
             if (fund.quote_source === 'yahoo' && fund.mark == null && prior.fund.mark != null) {
               fund.mark = prior.fund.mark;

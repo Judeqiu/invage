@@ -5,6 +5,9 @@ import {
   equityQuoteSymbol,
   equityQuoteSymbols,
   holdingBaseKey,
+  isEquityHolding,
+  isFundHolding,
+  isOptionHolding,
   resolveLookupHoldingKey,
   resolveUpsertHoldingKey,
   valuePosition,
@@ -98,6 +101,24 @@ describe('buildOptionKey', () => {
 });
 
 describe('fund holdings', () => {
+  it('isFundHolding / isOptionHolding tolerate null/undefined (new-lot add path)', () => {
+    // Regression: add_holding for a brand-new fund key called isFundHolding(undefined)
+    // and threw "Cannot read properties of undefined (reading 'instrument')".
+    expect(isFundHolding(undefined)).toBe(false);
+    expect(isFundHolding(null)).toBe(false);
+    expect(isOptionHolding(undefined)).toBe(false);
+    expect(isOptionHolding(null)).toBe(false);
+    expect(isEquityHolding(undefined)).toBe(false);
+    expect(
+      isFundHolding({
+        instrument: 'fund',
+        avg_price: 1,
+        units: 1,
+        fund: { quote_source: 'manual', mark: 1 },
+      }),
+    ).toBe(true);
+  });
+
   it('values manual fund from fund.mark without Yahoo price', () => {
     const h: Holding = {
       instrument: 'fund',

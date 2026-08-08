@@ -68,17 +68,17 @@ export interface PositionEconomics {
   fund?: FundSpec;
 }
 
-export function isOptionHolding(h: Holding): boolean {
-  return h.instrument === 'option';
+export function isOptionHolding(h: Holding | null | undefined): boolean {
+  return h != null && h.instrument === 'option';
 }
 
-export function isFundHolding(h: Holding): boolean {
-  return h.instrument === 'fund';
+export function isFundHolding(h: Holding | null | undefined): boolean {
+  return h != null && h.instrument === 'fund';
 }
 
 /** Stocks (instrument omitted or equity). */
-export function isEquityHolding(h: Holding): boolean {
-  return h.instrument == null || h.instrument === 'equity';
+export function isEquityHolding(h: Holding | null | undefined): boolean {
+  return h != null && (h.instrument == null || h.instrument === 'equity');
 }
 
 /**

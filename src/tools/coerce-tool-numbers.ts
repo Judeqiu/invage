@@ -56,7 +56,11 @@ export function prepareNumericToolArgs(
   fields: readonly string[],
 ): Record<string, unknown> {
   if (args == null || typeof args !== 'object' || Array.isArray(args)) {
-    throw new Error('Tool arguments must be a JSON object.');
+    throw new Error(
+      'Tool arguments must be a JSON object ' +
+        `(got ${args === null ? 'null' : args === undefined ? 'undefined' : typeof args}). ` +
+        'Re-issue the tool call with complete JSON arguments.',
+    );
   }
   const out: Record<string, unknown> = { ...(args as Record<string, unknown>) };
   for (const field of fields) {

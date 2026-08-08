@@ -109,7 +109,10 @@ When the user pastes or screenshots real positions and books have placeholders o
 5. **Numbers:** pass **JSON numbers** (`19340.22`). Thousand-separator strings from screenshots are coerced, but never invent unit counts. Do not pass a separate `currency` field on `add_holding` (holdings have no currency slot — put SGD/USD in `fund_name` / category if needed).  
 6. **Replace placeholders:** `remove_holding` each synthetic lot (`adjust_cash=false`), then `add_holding` each real fund (`adjust_cash=false`). Do **not** claim removals/adds succeeded until tool results say so.  
 7. **Batch discipline:** prefer one fund at a time (or small batches). After the last write, `get_portfolio` again and report only tool-backed keys/values. If a tool returns an error, quote the error and stop inventing diagnoses (“parse error”) without the tool text.  
-8. **Never** leave books half-fixed without telling the user which keys still wrong (e.g. removed 1 of 3 placeholders).
+8. **Never** leave books half-fixed without telling the user which keys still wrong (e.g. removed 1 of 3 placeholders).  
+9. **Minimum successful fund call (copy shape):**  
+   `add_holding ticker=OCBCPM instrument=fund fund_quote_source=manual mark=<NAV or MV> avg_price=<cost> units=1 channel=ocbc adjust_cash=false fund_name="… (SGD)"`  
+   Required every time: `instrument=fund`, `fund_quote_source`, `avg_price`, `units`, and for manual funds `mark` (or mark defaults to avg_price).
 
 ### Reconcile
 
