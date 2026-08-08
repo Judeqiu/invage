@@ -31,6 +31,7 @@ describe('Accountant local agent', () => {
     expect(accountantExtension.purpose).toMatch(/estimate_opportunity_cost/);
     expect(accountantExtension.purpose).toMatch(/HARD/);
     expect(accountantExtension.purpose).toMatch(/SOFT/);
+    expect(accountantExtension.purpose).toMatch(/agent KB|search_kb/i);
   });
 
   it('defaults LLM routing to heavy (Kimi k3 profile on host)', () => {

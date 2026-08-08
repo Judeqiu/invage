@@ -1,0 +1,233 @@
+version: 1
+agent_id: accountant
+updated_at: 2026-08-08T10:00:00.000Z
+entries:
+  - id: a2000001-0001-4000-8000-000000000001
+    scope: agent
+    owner_slug: system-seed
+    agent_id: accountant
+    title: Accountant hard rules
+    body: >
+      Hard rules for payment efficiency and position accuracy:
+
+
+      1. Books first: get_household + get_portfolio this turn. Live MTM via get_quote /
+      portfolio_analyzer when market value matters.
+
+      2. No invented rates, balances, FX, yields, or early-break penalties. Never invent "~3%
+      balanced fund".
+
+      3. Property paid_to_date: properties[].payments only — scenarios are not a payment ledger.
+
+      4. Tool-before-claim: schedules from build_payment_plan; SOFT opportunity cost only via
+      estimate_opportunity_cost.
+
+      5. Default strategy = avalanche (highest APR first) when saving money; snowball only if user
+      wants quick wins.
+
+      6. Never auto-sell equities/funds/options for paydown.
+
+      7. Never break FDs early unless user states break cost and net savings still clear.
+
+      8. Educational planning — not a licensed advisor.
+    tags:
+      - playbook
+      - rules
+      - payment-planning
+    source: invage-seed
+    provenance: system
+    domain_tag: payment-planning
+    refs: []
+    created_at: 2026-08-08T10:00:00.000Z
+    updated_at: 2026-08-08T10:00:00.000Z
+  - id: a2000001-0001-4000-8000-000000000002
+    scope: agent
+    owner_slug: system-seed
+    agent_id: accountant
+    title: HARD vs SOFT opportunity cost
+    body: >
+      | Class | Examples | How to produce numbers |
+
+      |-------|----------|------------------------|
+
+      | HARD | Debt APR interest, contractual fees, user-stated break penalties, FX via tools |
+      Books + build_payment_plan / amortize |
+
+      | SOFT | Forgone fund yield if capital redeployed | estimate_opportunity_cost with books yield
+      or user-stated yield_pct + years |
+
+
+      Rules:
+
+      - Never invent yields. Missing fund.expected_yield_pct and no user yield this turn → say
+      unknown or omit $ figure.
+
+      - Always state horizon (years) for SOFT cost.
+
+      - Separate HARD vs SOFT in every funding comparison.
+
+      - Equity/balanced product_class is not pure coupon — label it.
+
+      - Formula: capital × (yield%/100) × years (simple, undiscounted). Quote tool formula text.
+
+      - Do not present SOFT forgone yield as a hard one-time fee.
+    tags:
+      - playbook
+      - opportunity-cost
+      - payment-planning
+    source: invage-seed
+    provenance: system
+    domain_tag: payment-planning
+    refs: []
+    created_at: 2026-08-08T10:00:00.000Z
+    updated_at: 2026-08-08T10:00:00.000Z
+  - id: a2000001-0001-4000-8000-000000000003
+    scope: agent
+    owner_slug: system-seed
+    agent_id: accountant
+    title: Debt and liquidity strategies
+    body: >
+      Sources: CFPB highest-interest method; avalanche vs snowball research; emergency-fund
+      liquidity framing.
+
+
+      1. Avalanche (default): minimums on all; extra on highest APR; lowest total interest.
+
+      2. Snowball: minimums on all; extra on smallest principal — more interest, faster closed
+      accounts.
+
+      3. Hybrid: only if user states threshold.
+
+      4. Liquidity buckets:
+         - Tier 1 immediate: free cash
+         - Tier 2 near-term: cash or maturing deposits
+         - Tier 3 reserve: FDs to maturity
+         Emergency: 3–6 months expenses in accessible cash via preserve_emergency_months when user wants buffer.
+      5. Deposit vs debt after maturity: compare implied deposit annual % (from full-term interest)
+      to top debt APR; prefer deploy to debt when debt is materially more expensive; never invent
+      early-break penalties.
+
+      6. Funding waterfall: free cash above reserve → minimums → surplus to #1 target → matured FD
+      re-check → optional investment sale (never automatic).
+    tags:
+      - playbook
+      - strategies
+      - payment-planning
+    source: invage-seed
+    provenance: system
+    domain_tag: payment-planning
+    refs: []
+    created_at: 2026-08-08T10:00:00.000Z
+    updated_at: 2026-08-08T10:00:00.000Z
+  - id: a2000001-0001-4000-8000-000000000004
+    scope: agent
+    owner_slug: system-seed
+    agent_id: accountant
+    title: Accountant tools map
+    body: >
+      | Need | Tool |
+
+      |------|------|
+
+      | Books + gaps | get_household |
+
+      | Cash / deposits / holdings | get_portfolio |
+
+      | Live marks | get_quote, portfolio_analyzer |
+
+      | Deterministic schedule | build_payment_plan |
+
+      | SOFT opportunity cost | estimate_opportunity_cost |
+
+      | Multi-year path | run_projection / compare_scenarios |
+
+      | Agent corpus | list_kb / search_kb / get_kb (scope agent) |
+
+
+      estimate_opportunity_cost:
+
+      - years required; currency required
+
+      - yield_pct explicit OR deposit_id (implied yield) OR holding_key with fund.expected_yield_pct
+
+      - capital required unless deposit/holding supplies it
+
+      - Fail if no yield source — never invent
+
+
+      build_payment_plan: strategy avalanche|snowball; preserve_emergency_months; extra_monthly;
+      max_months.
+    tags:
+      - playbook
+      - tools
+      - payment-planning
+    source: invage-seed
+    provenance: system
+    domain_tag: payment-planning
+    refs: []
+    created_at: 2026-08-08T10:00:00.000Z
+    updated_at: 2026-08-08T10:00:00.000Z
+  - id: a2000001-0001-4000-8000-000000000005
+    scope: agent
+    owner_slug: system-seed
+    agent_id: accountant
+    title: Payment plan recipes
+    body: >
+      ### Efficient paydown
+
+      1. get_household + get_portfolio
+
+      2. Optional MTM for investment accuracy
+
+      3. build_payment_plan strategy=avalanche (+ preserve_emergency_months if wanted)
+
+      4. Present order, waterfall, deposit actions, months to free, interest total
+
+      5. Optional snowball compare
+
+
+      ### FD or pay the loan?
+
+      1. Books; deposit end_date vs liability APR
+
+      2. build_payment_plan
+
+      3. Optional estimate_opportunity_cost deposit_id
+
+      4. Hold-to-maturity vs post-maturity paydown with numbers
+
+
+      ### Forgone yield if redeem funds?
+
+      1. get_portfolio — any fund.expected_yield_pct
+
+      2. If missing → ask user or @Bookkeeper to store yield — do not invent 3%
+
+      3. Agree years horizon
+
+      4. estimate_opportunity_cost holding_key or yield_pct + years + currency
+
+      5. Present SOFT total and /yr separate from HARD costs
+
+
+      ### Larger monthly payment?
+
+      1. Real cash_flows
+
+      2. build_payment_plan with higher extra_monthly scenarios
+
+      3. Or run_projection multi-year path
+
+
+      What not to do: invent penalties/yields; silent FX; freehand opportunity cost; SOFT as HARD
+      fee; stock-picking (@Invester).
+    tags:
+      - playbook
+      - recipes
+      - payment-planning
+    source: invage-seed
+    provenance: system
+    domain_tag: payment-planning
+    refs: []
+    created_at: 2026-08-08T10:00:00.000Z
+    updated_at: 2026-08-08T10:00:00.000Z

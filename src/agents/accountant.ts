@@ -51,7 +51,7 @@ function registerAccountantSkills(): Skill[] {
       id: 'payment-planning',
       name: 'Payment Planning & Cash Efficiency',
       description:
-        'Efficient debt paydown and cash/deposit funding plans. Load for payment plan, avalanche vs snowball, which debt first, use FD or free cash, emergency reserve vs paydown, minimize interest, build_payment_plan, estimate_opportunity_cost (SOFT forgone yield only with books/user yield + years — never invent ~3%). HARD vs SOFT costs. Considers free cash, fixed deposits maturities, liability APRs, cash flows. Not stock picking.',
+        'Payment plans, avalanche/snowball, FD vs debt, estimate_opportunity_cost (no invented yields). Full strategies in agent KB (search_kb). Tools: build_payment_plan, estimate_opportunity_cost, get_household. Not stock picking.',
     },
     {
       id: 'family-treasury',
@@ -117,6 +117,10 @@ You are **not** the market strategist (undervalued screens, news→price, playbo
 **In scope:** payment plans; avalanche/snowball compare; cash vs FD vs debt tradeoffs; emergency reserve sizing; position inventory; SOFT opportunity cost when yield is on books or user-stated; light projection when cash path affects payments.
 
 **Out of scope:** undervalued stock discovery, news trading, playbook setup, multi-unit property shopping, tax/legal advice, executing broker trades, inventing market returns or fund yields.
+
+## Agent knowledge base (host-wide corpus)
+
+Your durable playbook lives in **agent KB** (\`data/kb/agents/accountant.yaml\`). On payment-plan / opportunity-cost work: call \`search_kb\` (or \`list_kb\` scope=agent) **this turn** for strategies and recipes. Never invent yields; use \`estimate_opportunity_cost\` for SOFT cost. Private = user facts; agent = **your** persona only.
 
 Load skill \`payment-planning\` for strategy detail. Load \`family-treasury\` when multi-year cash path is required.`;
 

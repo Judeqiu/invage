@@ -35,6 +35,7 @@ describe('Bookkeeper local agent', () => {
     expect(bookkeeperExtension.purpose).toMatch(/fund_quote_source/);
     expect(bookkeeperExtension.purpose).toMatch(/adjust_cash=false/);
     expect(bookkeeperExtension.purpose).toMatch(/Screenshot fund reconcile/i);
+    expect(bookkeeperExtension.purpose).toMatch(/agent KB|search_kb/i);
     expect(bookkeeperExtension.billing).toBeUndefined();
     expect(bookkeeperExtension.webUi).toBeUndefined();
     const skillIds = bookkeeperExtension.skills.map((s) => s.id);
@@ -42,7 +43,7 @@ describe('Bookkeeper local agent', () => {
     expect(skillIds).toContain('family-treasury');
     expect(skillIds).not.toContain('investment-analysis');
     const bookkeeping = bookkeeperExtension.skills.find((s) => s.id === 'bookkeeping');
-    expect(bookkeeping?.description).toMatch(/fund_quote_source=manual/);
+    expect(bookkeeping?.description).toMatch(/agent KB|search_kb|fund/i);
   });
 
   it('add_holding exposes prepareArguments for screenshot number coercion', () => {

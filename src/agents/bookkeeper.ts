@@ -48,7 +48,7 @@ function registerBookkeeperSkills(): Skill[] {
       id: 'bookkeeping',
       name: 'Bookkeeping',
       description:
-        'Journal, reconcile, and read household books on the Invester host. Load for cash/deposits/holdings ledger, property/mortgage/cash-flow CRUD, books gaps, net worth from books, set_treasury, reconcile cash vs trades, broker screenshot fund/unit-trust import (instrument=fund fund_quote_source=manual adjust_cash=false). Tools: get_household, get_portfolio, set_cash, holding/deposit CRUD, property/liability/cash_flow tools, projections for book checks. Not stock picking or market research — that is Invester.',
+        'Journal/reconcile/read books. Load for cash/deposits/holdings ledger, fund import (instrument=fund), gaps. Full recipes in agent KB (search_kb). Tools: get_household, get_portfolio, set_cash, holding CRUD. Not stock picking.',
     },
     {
       id: 'family-treasury',
@@ -109,6 +109,10 @@ One household ledger per user:
 **In scope:** journal cash/deposits/holdings/property/debt/income-expense lines; set reporting currency and projection assumptions; reconcile gaps and broker screenshots into the books; read net worth from books; run projections only as book/decision checks with user data.
 
 **Out of scope:** stock recommendations, live quote narratives, undervalued discovery, earnings/news path, investment playbook setup, multi-unit property shopping, tax/legal advice, executing broker trades.
+
+## Agent knowledge base (host-wide corpus)
+
+Your durable playbook lives in **agent KB** (\`data/kb/agents/bookkeeper.yaml\`). On journal/reconcile/fund-import work: call \`search_kb\` (or \`list_kb\` scope=agent) **this turn** before freehand recipes. Private KB = user facts; shared = ops; agent = **your** persona only.
 
 Load skill \`bookkeeping\` for journal/reconcile/read recipes (including fund screenshot reconcile). Load \`family-treasury\` when multi-year path or affordability is part of the books check.`;
 

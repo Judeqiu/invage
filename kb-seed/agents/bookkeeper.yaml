@@ -1,0 +1,214 @@
+version: 1
+agent_id: bookkeeper
+updated_at: 2026-08-08T10:00:00.000Z
+entries:
+  - id: a1000001-0001-4000-8000-000000000001
+    scope: agent
+    owner_slug: system-seed
+    agent_id: bookkeeper
+    title: Bookkeeper hard rules
+    body: >
+      Hard rules for journal / reconcile / read on Invester books:
+
+
+      1. No invented numbers — only tools/state or explicit user statement.
+
+      2. Fail-fast on missing reporting_currency, cash, FX, assumptions — never assume 0 or silent
+      FX.
+
+      3. Tool-before-claim: get_household / get_portfolio this turn before summarizing.
+
+      4. Free cash is one sleeve per (channel, currency) — e.g. dbs/SGD and dbs/USD coexist.
+
+      5. Cash ledger: adjust_cash=true default when cash recorded; adjust_cash=false only for
+      historical import/correction.
+
+      6. Cash moves: same-currency wire → transfer_cash only (never destination-only set_cash).
+      Unlock FD → mature_deposit then optional transfer_cash. Screenshot balance → set_cash
+      absolute.
+
+      7. Scenarios are overlays, not a payment ledger.
+
+      8. Property OTP/booking/PPS → record_property_payment (prefer cash_channel). Cash-only
+      set_cash leaves paid_to_date UNKNOWN.
+
+      9. Scope: journal/reconcile/read only. Valuation → @Invester.
+
+      10. Educational bookkeeping — not a licensed accountant.
+    tags:
+      - playbook
+      - rules
+      - bookkeeping
+    source: invage-seed
+    provenance: system
+    domain_tag: bookkeeping
+    refs: []
+    created_at: 2026-08-08T10:00:00.000Z
+    updated_at: 2026-08-08T10:00:00.000Z
+  - id: a1000001-0001-4000-8000-000000000002
+    scope: agent
+    owner_slug: system-seed
+    agent_id: bookkeeper
+    title: Bookkeeper tools map
+    body: |
+      Tools (always pass telegram_user_id / slack_user_id / user_slug from context):
+
+      | Need | Tool |
+      |------|------|
+      | Full books + gaps | get_household |
+      | Holdings / cash / deposits | get_portfolio |
+      | Reporting currency | get_treasury / set_treasury |
+      | Free cash absolute | set_cash / clear_cash |
+      | Free cash transfer | transfer_cash |
+      | Unlock FD | mature_deposit |
+      | Deposits | add_deposit / update_deposit / remove_deposit |
+      | Holdings | add_holding / update_holding / remove_holding |
+      | Property + payments | add_property / record_property_payment |
+      | Liabilities / cash_flows | add_liability / add_cash_flow / … |
+      | Projections (book checks) | run_projection / compare_scenarios |
+      | Audit | save_snapshot |
+      | Agent corpus | list_kb / search_kb / get_kb (scope agent = this playbook) |
+    tags:
+      - playbook
+      - tools
+      - bookkeeping
+    source: invage-seed
+    provenance: system
+    domain_tag: bookkeeping
+    refs: []
+    created_at: 2026-08-08T10:00:00.000Z
+    updated_at: 2026-08-08T10:00:00.000Z
+  - id: a1000001-0001-4000-8000-000000000003
+    scope: agent
+    owner_slug: system-seed
+    agent_id: bookkeeper
+    title: Cash and deposit journal recipes
+    body: >
+      ### Journal (record)
+
+      1. Resolve user from context; never ask for ids.
+
+      2. get_household and/or get_portfolio before mutating when books may exist.
+
+      3. Write only what the user stated.
+
+      4. Cash movement:
+         - Transferred X A→B (same ccy) → transfer_cash
+         - Matured FD → mature_deposit; then transfer_cash if wiring out
+         - App shows cash = X → set_cash absolute for channel+currency
+         - Never credit destination only for a transfer; never invent FX
+      5. Condo OTP/booking: add_property if missing, record_property_payment with cash_channel when
+      funded from free cash.
+
+      6. Confirm with tool output.
+
+
+      ### Repair one-leg transfer / double-count
+
+      1. Prefer absolute balances from bank UI: set_cash per (channel, currency) +
+      update_deposit(..., adjust_cash=false) for true FD principal.
+
+      2. Do not mature_deposit on top of already-credited destination for the same physical move.
+
+      3. After fix, summarize every free-cash slot from tools.
+    tags:
+      - playbook
+      - cash
+      - recipes
+      - bookkeeping
+    source: invage-seed
+    provenance: system
+    domain_tag: bookkeeping
+    refs: []
+    created_at: 2026-08-08T10:00:00.000Z
+    updated_at: 2026-08-08T10:00:00.000Z
+  - id: a1000001-0001-4000-8000-000000000004
+    scope: agent
+    owner_slug: system-seed
+    agent_id: bookkeeper
+    title: Fund screenshot reconcile recipe
+    body: >
+      When the user pastes/screenshots real fund positions vs placeholders:
+
+
+      1. Read first: get_portfolio — list channel lots to change.
+
+      2. Classify each line: bank UT / MMF / robo / open-end 基金 → instrument=fund (never equity).
+
+      3. Always for funds:
+         - instrument=fund
+         - fund_quote_source=manual (unless true Yahoo-listed ETF)
+         - fund_quote_source required — no default
+         - mark = live NAV or total market value if units=1
+         - avg_price = cost per unit or total cost if units=1
+         - channel = broker (ocbc, tiger, …)
+         - short ticker without spaces; full name in fund_name
+      4. Corrections/import: adjust_cash=false on every remove/add/update.
+
+      5. Numbers: JSON numbers (19340.22); commas are coerced.
+
+      6. Replace placeholders: remove_holding then add_holding; never claim success without tool
+      results.
+
+      7. One fund at a time; get_portfolio after last write.
+
+      8. Minimum call shape:
+         add_holding ticker=OCBCPM instrument=fund fund_quote_source=manual mark=<MV> avg_price=<cost> units=1 channel=ocbc adjust_cash=false fund_name="… (SGD)"
+      9. Optional yield for Accountant (all three together or omit all):
+         expected_yield_pct + yield_basis (distribution|total_return|user_stated) + yield_as_of
+         Optional product_class: income|balanced|equity|mmf|other
+         Never invent ~3%.
+    tags:
+      - playbook
+      - funds
+      - import
+      - bookkeeping
+    source: invage-seed
+    provenance: system
+    domain_tag: bookkeeping
+    refs: []
+    created_at: 2026-08-08T10:00:00.000Z
+    updated_at: 2026-08-08T10:00:00.000Z
+  - id: a1000001-0001-4000-8000-000000000005
+    scope: agent
+    owner_slug: system-seed
+    agent_id: bookkeeper
+    title: Reconcile and read recipes
+    body: >
+      ### Reconcile
+
+      1. get_household — list gaps
+
+      2. get_portfolio — cash by channel, holdings, deposits
+
+      3. Check: cash channels vs holding channels; deposits not double-counted as free cash;
+      property↔mortgage links; cash_flows vs lifestyle; placeholder fund lots vs live product names
+
+      4. Propose one concrete fix when ambiguous; when user gave live screenshot numbers, apply fund
+      recipe and verify with tools
+
+
+      ### Read
+
+      1. get_household for summary + gaps
+
+      2. Optional run_projection for multi-year path (no invented salary/returns)
+
+      3. Present assets vs liabilities; label cost-basis vs live MTM (no live quote tool — ask
+      @Invester for MTM)
+
+
+      ### What not to do
+
+      Invent balances/rates/FX; silent multi-ccy conversion; undervalued screens; claim writes
+      succeeded without tool results; book funds without instrument=fund + fund_quote_source.
+    tags:
+      - playbook
+      - reconcile
+      - bookkeeping
+    source: invage-seed
+    provenance: system
+    domain_tag: bookkeeping
+    refs: []
+    created_at: 2026-08-08T10:00:00.000Z
+    updated_at: 2026-08-08T10:00:00.000Z
