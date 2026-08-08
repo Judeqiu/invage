@@ -1,6 +1,6 @@
 {
   "name": "invage",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "AI investment portfolio analyst. Built on the Utarus agent framework (BinDrive, Telegram, per-user YAML state).",
   "type": "module",
   "main": "dist/index.js",
