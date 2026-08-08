@@ -11,6 +11,7 @@ import { createProjectionTools } from './projection.js';
 import { createPropertyIntelTool } from './property_intel.js';
 import { createUraCarparkTool } from './ura_carpark.js';
 import { createPaymentPlanTool } from './payment_plan.js';
+import { createOpportunityCostTool } from './opportunity_cost.js';
 
 /** Domain tools only — Utarus framework supplies user/invite/bindrive/firecrawl/write_report. */
 export function createInvageTools(): AgentTool[] {
@@ -20,6 +21,7 @@ export function createInvageTools(): AgentTool[] {
     ...createHouseholdTools(),
     ...createProjectionTools(),
     createPaymentPlanTool(),
+    createOpportunityCostTool(),
     createPropertyIntelTool(),
     createUraCarparkTool(),
     createQuoteTool(),
@@ -56,6 +58,7 @@ export function createAccountantTools(): AgentTool[] {
     ...createHouseholdTools(),
     ...createProjectionTools(),
     createPaymentPlanTool(),
+    createOpportunityCostTool(),
     createQuoteTool(),
     createPortfolioAnalyzerTool(),
     ...createSnapshotTool(),

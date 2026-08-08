@@ -393,6 +393,10 @@ function parseFundFromParams(p: {
   mark?: number;
   fund_name?: string;
   avg_price: number;
+  expected_yield_pct?: number;
+  yield_basis?: string;
+  yield_as_of?: string;
+  product_class?: string;
 }): FundSpec {
   const qs = p.fund_quote_source?.trim().toLowerCase();
   if (qs !== 'yahoo' && qs !== 'manual') {
@@ -421,8 +425,73 @@ function parseFundFromParams(p: {
     }
     fund.name = name;
   }
+  if (
+    p.expected_yield_pct != null ||
+    p.yield_basis != null ||
+    p.yield_as_of != null
+  ) {
+    if (p.expected_yield_pct == null || p.yield_basis == null || p.yield_as_of == null) {
+      throw new Error(
+        'Fund yield fields must be set together: expected_yield_pct + yield_basis + yield_as_of ' +
+          '(omit all when unknown — never invent a yield).',
+      );
+    }
+    fund.expected_yield_pct = p.expected_yield_pct;
+    const basis = p.yield_basis.trim().toLowerCase();
+    if (basis !== 'distribution' && basis !== 'total_return' && basis !== 'user_stated') {
+      throw new Error('yield_basis must be distribution|total_return|user_stated.');
+    }
+    fund.yield_basis = basis;
+    fund.yield_as_of = p.yield_as_of.trim();
+  }
+  if (p.product_class != null) {
+    const pc = p.product_class.trim().toLowerCase();
+    if (pc !== 'income' && pc !== 'balanced' && pc !== 'equity' && pc !== 'mmf' && pc !== 'other') {
+      throw new Error('product_class must be income|balanced|equity|mmf|other.');
+    }
+    fund.product_class = pc;
+  }
   return fund;
 }
+
+const fundYieldParams = {
+  expected_yield_pct: Type.Optional(
+    Type.Number({
+      description:
+        'Fund only (optional): annual yield in percent points (3.2 = 3.2% p.a.). ' +
+        'Only when factsheet/app/user stated — never invent. Requires yield_basis + yield_as_of.',
+    }),
+  ),
+  yield_basis: Type.Optional(
+    Type.Union(
+      [Type.Literal('distribution'), Type.Literal('total_return'), Type.Literal('user_stated')],
+      {
+        description:
+          'Fund only: how expected_yield_pct is defined. Required with expected_yield_pct.',
+      },
+    ),
+  ),
+  yield_as_of: Type.Optional(
+    Type.String({
+      description: 'Fund only: YYYY-MM-DD when yield was captured. Required with expected_yield_pct.',
+    }),
+  ),
+  product_class: Type.Optional(
+    Type.Union(
+      [
+        Type.Literal('income'),
+        Type.Literal('balanced'),
+        Type.Literal('equity'),
+        Type.Literal('mmf'),
+        Type.Literal('other'),
+      ],
+      {
+        description:
+          'Fund only (optional): income|balanced|equity|mmf|other — frames opportunity-cost language.',
+      },
+    ),
+  ),
+};
 
 export function createPortfolioTools(): AgentTool[] {
   const addHolding: AgentTool = {
@@ -506,6 +575,7 @@ export function createPortfolioTools(): AgentTool[] {
           description: 'Fund only: product display name from broker (e.g. "Phillip USD MMF A USDHDG Acc").',
         }),
       ),
+      ...fundYieldParams,
       option_right: Type.Optional(
         Type.Union([Type.Literal('call'), Type.Literal('put')], {
           description: 'Option only: call or put.',
@@ -557,7 +627,10 @@ export function createPortfolioTools(): AgentTool[] {
       ),
     }),
     prepareArguments(args) {
-      return prepareNumericToolArgs(args, HOLDING_NUMERIC_FIELDS);
+      return prepareNumericToolArgs(args, [
+        ...HOLDING_NUMERIC_FIELDS,
+        'expected_yield_pct',
+      ]);
     },
     async execute(_id, raw) {
       const p = raw as ChannelIds & {
@@ -570,6 +643,10 @@ export function createPortfolioTools(): AgentTool[] {
         instrument?: 'equity' | 'option' | 'fund';
         fund_quote_source?: 'yahoo' | 'manual';
         fund_name?: string;
+        expected_yield_pct?: number;
+        yield_basis?: 'distribution' | 'total_return' | 'user_stated';
+        yield_as_of?: string;
+        product_class?: 'income' | 'balanced' | 'equity' | 'mmf' | 'other';
         option_right?: 'call' | 'put';
         option_side?: 'long' | 'short';
         strike?: number;
@@ -1253,6 +1330,7 @@ export function createPortfolioTools(): AgentTool[] {
       fund_name: Type.Optional(
         Type.String({ description: 'Fund only: product display name. Empty string clears.' }),
       ),
+      ...fundYieldParams,
       quote_source: Type.Optional(
         Type.Union([Type.Literal('manual'), Type.Literal('yahoo')], {
           description: 'Option only: manual | yahoo (omit = auto).',
@@ -1281,7 +1359,10 @@ export function createPortfolioTools(): AgentTool[] {
       ),
     }),
     prepareArguments(args) {
-      return prepareNumericToolArgs(args, HOLDING_NUMERIC_FIELDS);
+      return prepareNumericToolArgs(args, [
+        ...HOLDING_NUMERIC_FIELDS,
+        'expected_yield_pct',
+      ]);
     },
     async execute(_id, raw) {
       const p = raw as ChannelIds & {
@@ -1294,6 +1375,10 @@ export function createPortfolioTools(): AgentTool[] {
         mark?: number;
         fund_quote_source?: 'manual' | 'yahoo';
         fund_name?: string;
+        expected_yield_pct?: number;
+        yield_basis?: 'distribution' | 'total_return' | 'user_stated';
+        yield_as_of?: string;
+        product_class?: 'income' | 'balanced' | 'equity' | 'mmf' | 'other';
         quote_source?: 'manual' | 'yahoo';
         underlying_mark?: number;
         strike?: number;
@@ -1390,6 +1475,24 @@ export function createPortfolioTools(): AgentTool[] {
             } else {
               nextFund.name = n;
             }
+          }
+          // Yield fields: set all three together, or clear all if expected_yield_pct is explicitly nullish with basis/as_of empty clears
+          if (
+            p.expected_yield_pct != null ||
+            p.yield_basis != null ||
+            p.yield_as_of != null
+          ) {
+            if (p.expected_yield_pct == null || p.yield_basis == null || p.yield_as_of == null) {
+              return fail(
+                'Fund yield fields must be set together: expected_yield_pct + yield_basis + yield_as_of.',
+              );
+            }
+            nextFund.expected_yield_pct = p.expected_yield_pct;
+            nextFund.yield_basis = p.yield_basis;
+            nextFund.yield_as_of = p.yield_as_of.trim();
+          }
+          if (p.product_class != null) {
+            nextFund.product_class = p.product_class;
           }
           next = {
             instrument: 'fund',

@@ -13,6 +13,7 @@ describe('Accountant local agent', () => {
     expect(names).toContain('get_portfolio');
     expect(names).toContain('record_property_payment');
     expect(names).toContain('build_payment_plan');
+    expect(names).toContain('estimate_opportunity_cost');
     expect(names).toContain('get_quote');
     expect(names).toContain('portfolio_analyzer');
     expect(names).toContain('run_projection');
@@ -23,6 +24,17 @@ describe('Accountant local agent', () => {
   it('purpose requires payments ledger not scenarios for paid-to-date', () => {
     expect(accountantExtension.purpose).toMatch(/properties\[\]\.payments/);
     expect(accountantExtension.purpose).toMatch(/not a payment ledger/i);
+  });
+
+  it('purpose bans invented yields and requires estimate_opportunity_cost', () => {
+    expect(accountantExtension.purpose).toMatch(/Never invent yields/i);
+    expect(accountantExtension.purpose).toMatch(/estimate_opportunity_cost/);
+    expect(accountantExtension.purpose).toMatch(/HARD/);
+    expect(accountantExtension.purpose).toMatch(/SOFT/);
+  });
+
+  it('defaults LLM routing to heavy (Kimi k3 profile on host)', () => {
+    expect(accountantExtension.llmRouting).toEqual({ default: 'heavy' });
   });
 
   it('has build_payment_plan while Bookkeeper does not', () => {

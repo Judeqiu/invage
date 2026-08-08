@@ -71,6 +71,10 @@ export type OptionQuoteSource = 'manual' | 'yahoo';
  */
 export type FundQuoteSource = 'manual' | 'yahoo';
 
+/** Optional fund economics — omit when unknown (never invent). */
+export type FundYieldBasis = 'distribution' | 'total_return' | 'user_stated';
+export type FundProductClass = 'income' | 'balanced' | 'equity' | 'mmf' | 'other';
+
 /**
  * Fund (基金) fields — ETF or open-end mutual fund.
  * Economics match equity: avg_price / mark per unit; units = shares or fund units.
@@ -85,6 +89,17 @@ export interface FundSpec {
   mark?: number;
   /** Optional human name (e.g. open-end fund product name). */
   name?: string;
+  /**
+   * Optional forward/trailing yield % (e.g. 3.2 = 3.2% p.a.).
+   * Only when user/factsheet/app provided — never a silent product default.
+   */
+  expected_yield_pct?: number;
+  /** How expected_yield_pct should be interpreted. Required when yield is set. */
+  yield_basis?: FundYieldBasis;
+  /** YYYY-MM-DD when yield was captured. Required when yield is set. */
+  yield_as_of?: string;
+  /** Optional sleeve class for opportunity-cost framing (income ≠ pure coupon). */
+  product_class?: FundProductClass;
 }
 
 /**

@@ -428,6 +428,10 @@ export function assertOptionSpec(o: OptionSpec, key: string): void {
   }
 }
 
+const FUND_YIELD_BASES = new Set(['distribution', 'total_return', 'user_stated']);
+const FUND_PRODUCT_CLASSES = new Set(['income', 'balanced', 'equity', 'mmf', 'other']);
+const YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
+
 export function assertFundSpec(f: FundSpec, key: string): void {
   if (f.quote_source !== 'yahoo' && f.quote_source !== 'manual') {
     throw new Error(
@@ -447,6 +451,39 @@ export function assertFundSpec(f: FundSpec, key: string): void {
     if (typeof f.name !== 'string' || f.name.trim().length === 0) {
       throw new Error(`Fund ${key}: fund.name must be a non-empty string when set.`);
     }
+  }
+  const hasYield = f.expected_yield_pct != null;
+  const hasBasis = f.yield_basis != null;
+  const hasAsOf = f.yield_as_of != null;
+  if (hasYield || hasBasis || hasAsOf) {
+    if (!hasYield || !hasBasis || !hasAsOf) {
+      throw new Error(
+        `Fund ${key}: expected_yield_pct, yield_basis, and yield_as_of must be set together ` +
+          `(omit all three when yield is unknown — never invent).`,
+      );
+    }
+    if (!(f.expected_yield_pct! >= 0) || !Number.isFinite(f.expected_yield_pct!)) {
+      throw new Error(`Fund ${key}: expected_yield_pct must be a finite number ≥ 0.`);
+    }
+    if (f.expected_yield_pct! > 100) {
+      throw new Error(
+        `Fund ${key}: expected_yield_pct looks like basis points or a typo (${f.expected_yield_pct}). ` +
+          `Use percent points (e.g. 3.2 for 3.2% p.a.).`,
+      );
+    }
+    if (!FUND_YIELD_BASES.has(f.yield_basis!)) {
+      throw new Error(
+        `Fund ${key}: yield_basis must be distribution|total_return|user_stated.`,
+      );
+    }
+    if (!YMD_RE.test(f.yield_as_of!)) {
+      throw new Error(`Fund ${key}: yield_as_of must be YYYY-MM-DD.`);
+    }
+  }
+  if (f.product_class != null && !FUND_PRODUCT_CLASSES.has(f.product_class)) {
+    throw new Error(
+      `Fund ${key}: product_class must be income|balanced|equity|mmf|other when set.`,
+    );
   }
 }
 

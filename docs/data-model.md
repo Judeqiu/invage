@@ -291,6 +291,10 @@ playbook:
 | `fund.quote_source` | `yahoo` \| `manual` | Yes | **No silent default.** yahoo = live Yahoo on map base key; manual = stored NAV |
 | `fund.mark` | number | If manual | Current NAV/price per unit ≥ 0 |
 | `fund.name` | string | No | Product display name |
+| `fund.expected_yield_pct` | number | No* | Annual yield % points (3.2 = 3.2% p.a.). *With basis+as_of only — never invent |
+| `fund.yield_basis` | enum | With yield | `distribution` \| `total_return` \| `user_stated` |
+| `fund.yield_as_of` | YYYY-MM-DD | With yield | When yield was captured |
+| `fund.product_class` | enum | No | `income` \| `balanced` \| `equity` \| `mmf` \| `other` |
 
 **Economics:** same as equity (cost = avg × units; value = mark × units). Cash ledger same as equity buys. Multi-channel keys: `SPY@ibkr`, `110011@jude_futu`. Street 3-axis analyzer buckets remain **equity-only** in v1; funds still count in NAV / dashboard / snapshot.
 

@@ -112,7 +112,10 @@ When the user pastes or screenshots real positions and books have placeholders o
 8. **Never** leave books half-fixed without telling the user which keys still wrong (e.g. removed 1 of 3 placeholders).  
 9. **Minimum successful fund call (copy shape):**  
    `add_holding ticker=OCBCPM instrument=fund fund_quote_source=manual mark=<NAV or MV> avg_price=<cost> units=1 channel=ocbc adjust_cash=false fund_name="… (SGD)"`  
-   Required every time: `instrument=fund`, `fund_quote_source`, `avg_price`, `units`, and for manual funds `mark` (or mark defaults to avg_price).
+   Required every time: `instrument=fund`, `fund_quote_source`, `avg_price`, `units`, and for manual funds `mark` (or mark defaults to avg_price).  
+10. **Optional fund economics (for Accountant opportunity cost):** when the user or factsheet states a yield, store **together**:  
+    `expected_yield_pct` (e.g. 3.2) + `yield_basis` (`distribution`|`total_return`|`user_stated`) + `yield_as_of` (YYYY-MM-DD).  
+    Optional `product_class` (`income`|`balanced`|`equity`|`mmf`|`other`). **Omit all yield fields when unknown — never invent ~3%.**
 
 ### Reconcile
 
