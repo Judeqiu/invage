@@ -32,6 +32,15 @@ function failFrom(error: unknown): AgentToolResult<null> {
   return fail(error instanceof Error ? error.message : String(error));
 }
 
+export function createSnapshotReadTools(): AgentTool[] {
+  return createSnapshotTool().filter((t) => t.name === 'list_snapshots');
+}
+
+export function createSnapshotWriteTools(): AgentTool[] {
+  return createSnapshotTool().filter((t) => t.name === 'save_snapshot');
+}
+
+/** Full snapshot tools (save + list). Bookkeeper owns save. */
 export function createSnapshotTool(): AgentTool[] {
   const saveSnapshot: AgentTool = {
     name: 'save_snapshot',

@@ -30,12 +30,16 @@ const {
   startWebApp,
 } = await import('utarus');
 const { onboardRouter } = await import('../onboard/api.js');
+const { createFaviconRouter } = await import('./favicon.js');
 
 export { startBinDrive, createBinDriveApp, buildWebApp, startWebApp };
 export { onboardRouter };
 
-/** Domain-only mount: landing register API. */
-const INVAGE_EXTRA_ROUTERS = [{ path: '/api/onboard', router: onboardRouter }];
+/** Favicon at `/` + landing register API. */
+const INVAGE_EXTRA_ROUTERS = [
+  { path: '/', router: createFaviconRouter() },
+  { path: '/api/onboard', router: onboardRouter },
+];
 
 /**
  * Full WebUI for the agent process (chat needs the in-memory agent pool).

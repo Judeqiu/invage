@@ -37,7 +37,7 @@ const CATALOG: RawSkill[] = [
     id: 'family-treasury',
     name: 'Family Treasury & Projections',
     description:
-      'Host residual for non-property cash-path work: recurring cash flows, multi-year projection without a property thesis. Load by capability fit. Property-centric affordability/comps/duties → route Real Estate Expert. Securities research → Investment Expert. Ledger journal → Bookkeeper.',
+      'Host residual for non-property cash-path work: recurring cash flows, multi-year projection without a property thesis. Load by capability fit. Property-centric affordability/comps/duties → route Real Estate Expert. Securities research → InvestmentAdvisor. Ledger journal → Bookkeeper.',
   },
 ];
 

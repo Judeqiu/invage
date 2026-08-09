@@ -480,3 +480,17 @@ export function createProjectionTools(): AgentTool[] {
     compareScenariosTool,
   ];
 }
+
+/** Projection reads / runs (no scenario save/delete). */
+export function createProjectionReadTools(): AgentTool[] {
+  return createProjectionTools().filter((t) =>
+    ['get_scenario', 'list_scenarios', 'run_projection', 'compare_scenarios'].includes(t.name),
+  );
+}
+
+/** Scenario mutations — Bookkeeper only. */
+export function createProjectionWriteTools(): AgentTool[] {
+  return createProjectionTools().filter((t) =>
+    ['save_scenario', 'delete_scenario'].includes(t.name),
+  );
+}

@@ -30,7 +30,7 @@ function failFrom(error: unknown): AgentToolResult<null> {
   return fail(error instanceof Error ? error.message : String(error));
 }
 
-/** Read-only playbook tool for analysis peers (e.g. Investment Expert). */
+/** Read-only playbook tool for analysis peers (e.g. InvestmentAdvisor). */
 export function createGetPlaybookTool(): AgentTool {
   return {
     name: 'get_playbook',

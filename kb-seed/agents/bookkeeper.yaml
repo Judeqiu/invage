@@ -154,7 +154,7 @@ entries:
 
       8. Minimum call shape:
          add_holding ticker=OCBCPM instrument=fund fund_quote_source=manual mark=<MV> avg_price=<cost> units=1 channel=ocbc adjust_cash=false fund_name="… (SGD)"
-      9. Optional yield for Accountant (all three together or omit all):
+      9. Optional yield for FinancialPlanner (all three together or omit all):
          expected_yield_pct + yield_basis (distribution|total_return|user_stated) + yield_as_of
          Optional product_class: income|balanced|equity|mmf|other
          Never invent ~3%.
@@ -230,7 +230,7 @@ entries:
       3. Prefer telegram delivery when linked.
 
 
-      Securities thesis → investment-expert; payment plans → accountant. Hand-off ≠ rejection.
+      Securities thesis → investment-advisor; payment plans → financial-planner. Hand-off ≠ rejection.
     tags:
       - playbook
       - tasks

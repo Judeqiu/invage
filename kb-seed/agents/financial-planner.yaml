@@ -1,12 +1,12 @@
 version: 1
-agent_id: accountant
+agent_id: financial-planner
 updated_at: 2026-08-08T10:00:00.000Z
 entries:
   - id: a2000001-0001-4000-8000-000000000001
     scope: agent
     owner_slug: system-seed
-    agent_id: accountant
-    title: Accountant hard rules
+    agent_id: financial-planner
+    title: FinancialPlanner hard rules
     body: >
       Hard rules for payment efficiency and position accuracy:
 
@@ -19,11 +19,11 @@ entries:
 
       3. Property paid_to_date: properties[].payments only — scenarios are not a payment ledger.
 
-      4. Tool-before-claim: schedules from build_payment_plan; SOFT opportunity cost only via
-      estimate_opportunity_cost.
+      4. Tool-before-claim: best plan via optimize_payment_plan (combination search); single config
+      via build_payment_plan; SOFT opportunity cost only via estimate_opportunity_cost.
 
-      5. Default strategy = avalanche (highest APR first) when saving money; snowball only if user
-      wants quick wins.
+      5. Objective = min HARD interest then fastest debt-free. Search avalanche and snowball (and
+      emergency/extra axes) — do not pick one strategy from intuition alone.
 
       6. Never auto-sell equities/funds/options for paydown.
 
@@ -43,7 +43,7 @@ entries:
   - id: a2000001-0001-4000-8000-000000000002
     scope: agent
     owner_slug: system-seed
-    agent_id: accountant
+    agent_id: financial-planner
     title: HARD vs SOFT opportunity cost
     body: >
       | Class | Examples | How to produce numbers |
@@ -84,7 +84,7 @@ entries:
   - id: a2000001-0001-4000-8000-000000000003
     scope: agent
     owner_slug: system-seed
-    agent_id: accountant
+    agent_id: financial-planner
     title: Debt and liquidity strategies
     body: >
       Sources: CFPB highest-interest method; avalanche vs snowball research; emergency-fund
@@ -122,8 +122,8 @@ entries:
   - id: a2000001-0001-4000-8000-000000000004
     scope: agent
     owner_slug: system-seed
-    agent_id: accountant
-    title: Accountant tools map
+    agent_id: financial-planner
+    title: FinancialPlanner tools map
     body: >
       | Need | Tool |
 
@@ -135,13 +135,32 @@ entries:
 
       | Live marks | get_quote, portfolio_analyzer |
 
-      | Deterministic schedule | build_payment_plan |
+      | Best plan (multi-combination search) | optimize_payment_plan |
+
+      | Single pinned schedule | build_payment_plan |
 
       | SOFT opportunity cost | estimate_opportunity_cost |
 
       | Multi-year path | run_projection / compare_scenarios |
 
       | Agent corpus | list_kb / search_kb / get_kb (scope agent) |
+
+
+      optimize_payment_plan (preferred for recommendations):
+
+      - Cartesian product: strategies × emergency_months_candidates × extra_monthly_candidates
+
+      - Default axes when omitted: avalanche+snowball; emergency none/3/6; extra = books surplus
+
+      - Ranks by HARD total_interest (min), then months_to_debt_free, then total_paid
+
+      - Returns ranked table + full best plan; SOFT cost never mixed in
+
+      - Cap 48 candidates — narrow axes if over limit; never invent extra amounts user cannot fund
+
+
+      build_payment_plan: one config only — strategy avalanche|snowball; preserve_emergency_months;
+      extra_monthly; max_months. Use after optimize or when user pins a config.
 
 
       estimate_opportunity_cost:
@@ -153,10 +172,6 @@ entries:
       - capital required unless deposit/holding supplies it
 
       - Fail if no yield source — never invent
-
-
-      build_payment_plan: strategy avalanche|snowball; preserve_emergency_months; extra_monthly;
-      max_months.
     tags:
       - playbook
       - tools
@@ -170,20 +185,22 @@ entries:
   - id: a2000001-0001-4000-8000-000000000005
     scope: agent
     owner_slug: system-seed
-    agent_id: accountant
+    agent_id: financial-planner
     title: Payment plan recipes
     body: >
-      ### Efficient paydown
+      ### Efficient paydown (min HARD cost / max gain)
 
       1. get_household + get_portfolio
 
       2. Optional MTM for investment accuracy
 
-      3. build_payment_plan strategy=avalanche (+ preserve_emergency_months if wanted)
+      3. optimize_payment_plan (default axes: avalanche+snowball × emergency none/3/6 × books surplus)
 
-      4. Present order, waterfall, deposit actions, months to free, interest total
+      4. If user states affordable extra monthly amounts, pass extra_monthly_candidates=[...]
 
-      5. Optional snowball compare
+      5. Present ranking, recommended best, interest saved vs worst/#2, deposit actions for winner
+
+      6. build_payment_plan only if user pins one config after seeing the table
 
 
       ### FD or pay the loan?
@@ -234,7 +251,7 @@ entries:
   - id: a2000001-0001-4000-8000-000000000006
     scope: agent
     owner_slug: system-seed
-    agent_id: accountant
+    agent_id: financial-planner
     title: Help-first and deferred re-plans
     body: >
       Help-first: convert payment/cash efficiency asks into a plan now; never flat reject.
@@ -242,14 +259,15 @@ entries:
 
       When the right check is after a date (FD maturity, bonus, rate reset):
 
-      1. build_payment_plan / estimate_opportunity_cost with what books allow today.
+      1. optimize_payment_plan (or build_payment_plan if config pinned) + estimate_opportunity_cost
+      with what books allow today.
 
-      2. create_task so host Invester re-consults accountant after that date with ids + criteria.
+      2. create_task so host Invester re-consults financial-planner after that date with ids + criteria.
 
       3. Prefer telegram delivery when linked. Confirm next_run_at from tool result only.
 
 
-      Never invent yields. Hand securities thesis to investment-expert — hand-off is not rejection.
+      Never invent yields. Hand securities thesis to investment-advisor — hand-off is not rejection.
     tags:
       - playbook
       - tasks

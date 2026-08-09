@@ -24,7 +24,9 @@ data/
     └── ...
 ```
 
-Each user gets a **single YAML file** at `data/users/<slug>.yaml`. This file is the source of truth for that user's identity, profile, portfolio, and activity log. Users cannot access each other's files.
+Each user gets a **single YAML file** at `data/users/<slug>.yaml`. This file is the source of truth for that user's identity, profile, and (legacy) portfolio snapshot. Users cannot access each other's files.
+
+**Books of record (optional, recommended):** when `INVAGE_BOOKS_DATABASE_URL` is set, money mutations (cash, deposits, holding cash legs) post to an **append-only PostgreSQL journal** (`src/books/`). YAML free-cash and deposits are dual-written from ledger projections. See [plans/2026-08-09-financial-database-ledger-design.md](./plans/2026-08-09-financial-database-ledger-design.md).
 
 ---
 

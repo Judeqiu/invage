@@ -1,36 +1,53 @@
 import type { AgentTool } from '@earendil-works/pi-agent-core';
-import { createGetPortfolioTool, createPortfolioTools } from './portfolio.js';
+import {
+  createGetPortfolioTool,
+  createListJournalEntriesTool,
+  createPortfolioReadTools,
+  createPortfolioTools,
+} from './portfolio.js';
 import { createGetPlaybookTool, createPlaybookTools } from './playbook.js';
 import { createPortfolioAnalyzerTool } from './portfolio_analyzer.js';
 import { createSaveReportTool } from './save_report.js';
 import { createSendReportTool } from './send_report.js';
-import { createSnapshotTool } from './snapshot.js';
+import {
+  createSnapshotReadTools,
+  createSnapshotTool,
+} from './snapshot.js';
 import { createQuoteTool } from './quote.js';
-import { createHouseholdTools } from './household.js';
-import { createProjectionTools } from './projection.js';
+import {
+  createHouseholdReadTools,
+  createHouseholdTools,
+} from './household.js';
+import {
+  createProjectionReadTools,
+  createProjectionTools,
+} from './projection.js';
 import { createPropertyIntelTool } from './property_intel.js';
 import { createUraCarparkTool } from './ura_carpark.js';
-import { createPaymentPlanTool } from './payment_plan.js';
+import {
+  createOptimizePaymentPlanTool,
+  createPaymentPlanTool,
+} from './payment_plan.js';
 import { createOpportunityCostTool } from './opportunity_cost.js';
+import { createSubmitFactcheckVerdictTool } from './factcheck_verdict.js';
 
 /**
  * Default host (Invester) — orchestration + residual host domains only.
- * Peer craft (books, payments, securities research, physical RE) lives on specialists.
- * Framework supplies list_local_agents / invoke_local_agent, firecrawl, bindrive, etc.
+ *
+ * **No books writes.** Portfolio / cash / FD / household ledger mutations are
+ * Bookkeeper-only. Host may configure playbook and run read-side projections.
  */
 export function createInvageTools(): AgentTool[] {
   return [
     ...createPlaybookTools(),
-    ...createHouseholdTools(),
-    ...createProjectionTools(),
+    ...createHouseholdReadTools(),
+    ...createProjectionReadTools(),
   ];
 }
 
 /**
- * Bookkeeper local agent — journal / reconcile / read the household books.
- * Portfolio + cash/deposits tools (ledgered mutations), household CRUD,
- * projections for read-side checks, snapshots for audit trail.
- * No market analysis, quotes, playbook, or research tools.
+ * Bookkeeper — **sole agent allowed to write/update books data**:
+ * portfolio, cash, deposits, journals, household ledger, projection assumptions/scenarios, snapshots.
  */
 export function createBookkeeperTools(): AgentTool[] {
   return [
@@ -42,29 +59,27 @@ export function createBookkeeperTools(): AgentTool[] {
 }
 
 /**
- * Accountant local agent — accurate cash/investment position view + efficient payment plans.
- * Books read/write for plan inputs, live MTM (quote/analyzer), projections, build_payment_plan.
- * No undervalued discovery playbook wizard focus; no property shopping tools.
+ * FinancialPlanner — read books + payment-plan craft. **No ledger mutations.**
+ * Journal changes → hand off to @Bookkeeper.
  */
-export function createAccountantTools(): AgentTool[] {
+export function createFinancialPlannerTools(): AgentTool[] {
   return [
-    ...createPortfolioTools(),
-    ...createHouseholdTools(),
-    ...createProjectionTools(),
+    ...createPortfolioReadTools(),
+    ...createHouseholdReadTools(),
+    ...createProjectionReadTools(),
+    createOptimizePaymentPlanTool(),
     createPaymentPlanTool(),
     createOpportunityCostTool(),
     createQuoteTool(),
     createPortfolioAnalyzerTool(),
-    ...createSnapshotTool(),
+    ...createSnapshotReadTools(),
   ];
 }
 
 /**
- * Investment Expert local agent — portfolio + thesis analysis (read-only books).
- * Live marks, playbook-aware recommendations, optional HTML report.
- * No mutations, household journal, payment plans, or playbook wizard.
+ * InvestmentAdvisor — portfolio + thesis analysis (read-only books).
  */
-export function createInvestmentExpertTools(): AgentTool[] {
+export function createInvestmentAdvisorTools(): AgentTool[] {
   return [
     createGetPortfolioTool(),
     createGetPlaybookTool(),
@@ -75,16 +90,39 @@ export function createInvestmentExpertTools(): AgentTool[] {
 }
 
 /**
- * Real Estate Expert — physical property sleeve (SG-focused tools + household RE).
- * Comps, duties research via Firecrawl, property ledger, affordability projections.
- * No securities analysis or pure portfolio CRUD (Bookkeeper / Investment Expert).
+ * Real Estate Expert — comps/research + **read** household/portfolio.
+ * Property marks / payments / liability journal → @Bookkeeper.
  */
 export function createRealEstateExpertTools(): AgentTool[] {
   return [
     createPropertyIntelTool(),
     createUraCarparkTool(),
-    ...createHouseholdTools(),
-    ...createProjectionTools(),
+    ...createHouseholdReadTools(),
+    ...createProjectionReadTools(),
     createGetPortfolioTool(),
   ];
 }
+
+/**
+ * Factchecker — read-only re-check tools + typed verdict submit.
+ * No mutations, no optimize_payment_plan, no snapshots, no save_report.
+ * Exact set (18): tests assert name equality.
+ */
+export function createFactcheckerTools(): AgentTool[] {
+  return [
+    createGetPortfolioTool(),
+    createListJournalEntriesTool(),
+    ...createHouseholdReadTools(),
+    createGetPlaybookTool(),
+    ...createProjectionReadTools(),
+    createQuoteTool(),
+    createPortfolioAnalyzerTool(),
+    createPaymentPlanTool(),
+    createOpportunityCostTool(),
+    createPropertyIntelTool(),
+    createUraCarparkTool(),
+    createSubmitFactcheckVerdictTool(),
+  ];
+}
+
+export { createSubmitFactcheckVerdictTool, validateFactcheckVerdict } from './factcheck_verdict.js';

@@ -8,7 +8,9 @@ describe('Bookkeeper local agent', () => {
     expect(names).toContain('get_household');
     expect(names).toContain('record_property_payment');
     expect(names).toContain('get_portfolio');
-    expect(names).toContain('set_cash');
+    expect(names).toContain('post_opening_balance');
+    expect(names).toContain('post_adjustment');
+    expect(names).not.toContain('set_cash');
     expect(names).toContain('transfer_cash');
     expect(names).toContain('mature_deposit');
     expect(names).toContain('add_cash_flow');
@@ -24,12 +26,49 @@ describe('Bookkeeper local agent', () => {
     const book = new Set(createBookkeeperTools().map((t) => t.name));
     const invage = new Set(createInvageTools().map((t) => t.name));
     expect(book.has('add_holding')).toBe(true);
-    expect(book.has('set_cash')).toBe(true);
+    expect(book.has('post_opening_balance')).toBe(true);
+    expect(book.has('post_adjustment')).toBe(true);
     expect(invage.has('add_holding')).toBe(false);
+    expect(invage.has('post_adjustment')).toBe(false);
     expect(invage.has('set_cash')).toBe(false);
-    // Shared residual surfaces may still exist on host (household projections)
+    // Host may read household; must not write books
     expect(book.has('get_household')).toBe(true);
     expect(invage.has('get_household')).toBe(true);
+    expect(invage.has('set_treasury')).toBe(false);
+    expect(invage.has('record_property_payment')).toBe(false);
+    expect(invage.has('save_scenario')).toBe(false);
+  });
+
+  it('is the sole agent with books write tools among peers', async () => {
+    const { createFinancialPlannerTools, createInvestmentAdvisorTools, createRealEstateExpertTools } =
+      await import('../src/tools/index.js');
+    const writers = [
+      'post_opening_balance',
+      'post_adjustment',
+      'add_holding',
+      'transfer_cash',
+      'record_property_payment',
+      'add_property',
+      'set_treasury',
+      'save_snapshot',
+      'save_scenario',
+      'set_projection_assumptions',
+    ];
+    const book = new Set(createBookkeeperTools().map((t) => t.name));
+    for (const w of writers) {
+      expect(book.has(w)).toBe(true);
+    }
+    for (const factory of [
+      createFinancialPlannerTools,
+      createInvestmentAdvisorTools,
+      createRealEstateExpertTools,
+      createInvageTools,
+    ]) {
+      const names = new Set(factory().map((t) => t.name));
+      for (const w of writers) {
+        expect(names.has(w)).toBe(false);
+      }
+    }
   });
 
   it('registers Bookkeeper purpose and bookkeeping skill', () => {

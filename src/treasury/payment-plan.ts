@@ -657,3 +657,252 @@ export function buildPaymentPlan(input: PaymentPlanInput): PaymentPlanResult {
     },
   };
 }
+
+/** Shared books/snapshot fields for multi-candidate optimize (strategy & levers vary). */
+export type PaymentPlanBaseInput = Omit<
+  PaymentPlanInput,
+  'strategy' | 'preserveEmergencyMonths' | 'extraMonthly'
+>;
+
+export interface OptimizePaymentPlanAxes {
+  /** Paydown order strategies to try. Must be non-empty. */
+  strategies: PaydownStrategy[];
+  /**
+   * Emergency-reserve months to try.
+   * Use `undefined` for "no reserve reserved by plan".
+   * Must be non-empty.
+   */
+  emergencyMonths: Array<number | undefined>;
+  /**
+   * Extra monthly paydown amounts to try.
+   * Use `undefined` for books-derived surplus (income − expense − minimums).
+   * Must be non-empty.
+   */
+  extraMonthlies: Array<number | undefined>;
+  /** Simulation cap per candidate (default 360). */
+  maxMonths?: number;
+}
+
+export interface OptimizedPlanCandidateConfig {
+  strategy: PaydownStrategy;
+  /** Omitted when candidate does not set a reserve. */
+  preserve_emergency_months?: number;
+  /** Omitted when candidate uses books-derived surplus. */
+  extra_monthly?: number;
+}
+
+export interface OptimizedPlanCandidate {
+  id: string;
+  label: string;
+  config: OptimizedPlanCandidateConfig;
+  rank: number;
+  summary: PaymentPlanResult['summary'];
+  liability_order: LiabilityOrderEntry[];
+  monthly_surplus_for_debt: number;
+  deployable_cash_now: number;
+  emergency_reserve: number;
+  /** Interest above the best candidate (0 for best). */
+  interest_vs_best: number;
+  /** Months longer than best to debt-free; null if either has no debt-free horizon. */
+  months_vs_best: number | null;
+}
+
+export interface OptimizePaymentPlanResult {
+  objective: 'min_hard_interest_then_fastest_debt_free';
+  currency: string;
+  as_of: string;
+  candidates_evaluated: number;
+  ranking: OptimizedPlanCandidate[];
+  best: OptimizedPlanCandidate;
+  /** Full schedule for the winning candidate only. */
+  best_plan: PaymentPlanResult;
+  interest_saved_vs_worst: number;
+  interest_saved_vs_second: number | null;
+  comparison_notes: string[];
+}
+
+function candidateLabel(cfg: OptimizedPlanCandidateConfig): string {
+  const parts: string[] = [cfg.strategy];
+  if (cfg.preserve_emergency_months != null) {
+    parts.push(`emergency=${cfg.preserve_emergency_months}mo`);
+  } else {
+    parts.push('emergency=none');
+  }
+  if (cfg.extra_monthly != null) {
+    parts.push(`extra_mo=${cfg.extra_monthly}`);
+  } else {
+    parts.push('extra_mo=books');
+  }
+  return parts.join(' | ');
+}
+
+function monthsKey(months: number | null): number {
+  return months == null ? Number.POSITIVE_INFINITY : months;
+}
+
+/**
+ * Compare candidate plans by HARD cost first:
+ * 1) lower total_interest
+ * 2) faster months_to_debt_free (null = worst)
+ * 3) lower total_paid
+ * 4) stable label order
+ *
+ * SOFT opportunity cost is never mixed into ranking — use estimate_opportunity_cost separately.
+ */
+export function comparePlanSummaries(
+  a: PaymentPlanResult['summary'],
+  b: PaymentPlanResult['summary'],
+): number {
+  if (a.total_interest !== b.total_interest) return a.total_interest - b.total_interest;
+  const am = monthsKey(a.months_to_debt_free);
+  const bm = monthsKey(b.months_to_debt_free);
+  if (am !== bm) return am - bm;
+  if (a.total_paid !== b.total_paid) return a.total_paid - b.total_paid;
+  return 0;
+}
+
+/**
+ * Exhaustively evaluate strategy × emergency × extra_monthly combinations from books,
+ * rank by min HARD interest then fastest debt-free, return best full plan + comparison table.
+ * Fail-fast: empty axes, invalid numbers, or buildPaymentPlan errors.
+ */
+export function optimizePaymentPlan(
+  base: PaymentPlanBaseInput,
+  axes: OptimizePaymentPlanAxes,
+): OptimizePaymentPlanResult {
+  if (!Array.isArray(axes.strategies) || axes.strategies.length === 0) {
+    throw new Error(
+      'optimizePaymentPlan: strategies must be a non-empty array (avalanche and/or snowball).',
+    );
+  }
+  for (const s of axes.strategies) {
+    if (s !== 'avalanche' && s !== 'snowball') {
+      throw new Error(`optimizePaymentPlan: invalid strategy "${String(s)}".`);
+    }
+  }
+  if (!Array.isArray(axes.emergencyMonths) || axes.emergencyMonths.length === 0) {
+    throw new Error(
+      'optimizePaymentPlan: emergencyMonths must be a non-empty array ' +
+        '(use undefined for no reserve).',
+    );
+  }
+  if (!Array.isArray(axes.extraMonthlies) || axes.extraMonthlies.length === 0) {
+    throw new Error(
+      'optimizePaymentPlan: extraMonthlies must be a non-empty array ' +
+        '(use undefined for books-derived surplus).',
+    );
+  }
+  for (const em of axes.emergencyMonths) {
+    if (em === undefined) continue;
+    if (typeof em !== 'number' || !Number.isFinite(em) || em < 0) {
+      throw new Error(
+        'optimizePaymentPlan: each emergencyMonths entry must be undefined or a finite number ≥ 0.',
+      );
+    }
+  }
+  for (const ex of axes.extraMonthlies) {
+    if (ex === undefined) continue;
+    if (typeof ex !== 'number' || !Number.isFinite(ex) || ex < 0) {
+      throw new Error(
+        'optimizePaymentPlan: each extraMonthlies entry must be undefined or a finite number ≥ 0.',
+      );
+    }
+  }
+
+  type Built = {
+    config: OptimizedPlanCandidateConfig;
+    plan: PaymentPlanResult;
+  };
+  const built: Built[] = [];
+  let seq = 0;
+  for (const strategy of axes.strategies) {
+    for (const emergency of axes.emergencyMonths) {
+      for (const extra of axes.extraMonthlies) {
+        seq += 1;
+        const config: OptimizedPlanCandidateConfig = { strategy };
+        if (emergency !== undefined) config.preserve_emergency_months = emergency;
+        if (extra !== undefined) config.extra_monthly = extra;
+        const plan = buildPaymentPlan({
+          ...base,
+          strategy,
+          preserveEmergencyMonths: emergency,
+          extraMonthly: extra,
+          maxMonths: axes.maxMonths ?? base.maxMonths,
+        });
+        built.push({ config, plan });
+        void seq;
+      }
+    }
+  }
+  if (built.length === 0) {
+    throw new Error('optimizePaymentPlan: no candidates produced (empty cartesian product).');
+  }
+
+  built.sort((x, y) => {
+    const c = comparePlanSummaries(x.plan.summary, y.plan.summary);
+    if (c !== 0) return c;
+    return candidateLabel(x.config).localeCompare(candidateLabel(y.config));
+  });
+
+  const bestPlan = built[0].plan;
+  const worstPlan = built[built.length - 1].plan;
+  const secondPlan = built.length > 1 ? built[1].plan : null;
+
+  const ranking: OptimizedPlanCandidate[] = built.map((b, i) => {
+    const bestMonths = bestPlan.summary.months_to_debt_free;
+    const thisMonths = b.plan.summary.months_to_debt_free;
+    let months_vs_best: number | null = null;
+    if (bestMonths != null && thisMonths != null) {
+      months_vs_best = thisMonths - bestMonths;
+    }
+    return {
+      id: `c${i + 1}`,
+      label: candidateLabel(b.config),
+      config: b.config,
+      rank: i + 1,
+      summary: b.plan.summary,
+      liability_order: b.plan.liability_order,
+      monthly_surplus_for_debt: b.plan.monthly_surplus_for_debt,
+      deployable_cash_now: b.plan.deployable_cash_now,
+      emergency_reserve: b.plan.emergency_reserve,
+      interest_vs_best:
+        Math.round((b.plan.summary.total_interest - bestPlan.summary.total_interest) * 100) / 100,
+      months_vs_best,
+    };
+  });
+
+  const interest_saved_vs_worst =
+    Math.round((worstPlan.summary.total_interest - bestPlan.summary.total_interest) * 100) / 100;
+  const interest_saved_vs_second =
+    secondPlan == null
+      ? null
+      : Math.round((secondPlan.summary.total_interest - bestPlan.summary.total_interest) * 100) /
+        100;
+
+  const comparison_notes: string[] = [
+    `Objective: minimize HARD interest (sim), then fastest months_to_debt_free, then lower total_paid.`,
+    `Evaluated ${ranking.length} combination(s) over strategies=[${axes.strategies.join(',')}], ` +
+      `emergencyMonths=[${axes.emergencyMonths.map((e) => (e === undefined ? 'none' : String(e))).join(',')}], ` +
+      `extraMonthlies=[${axes.extraMonthlies.map((e) => (e === undefined ? 'books' : String(e))).join(',')}].`,
+    `Best: ${ranking[0].label} — interest ${bestPlan.summary.total_interest.toFixed(2)} ${bestPlan.currency}` +
+      (bestPlan.summary.months_to_debt_free != null
+        ? `, debt-free in ${bestPlan.summary.months_to_debt_free} mo`
+        : ', not debt-free within horizon'),
+    `HARD interest saved vs worst candidate: ${interest_saved_vs_worst.toFixed(2)} ${bestPlan.currency}.`,
+    'SOFT opportunity cost (forgone yield) is NOT in this ranking — call estimate_opportunity_cost when yield is known.',
+    'Do not auto-sell investments; matured deposits unlock into paydown per each plan schedule.',
+  ];
+
+  return {
+    objective: 'min_hard_interest_then_fastest_debt_free',
+    currency: bestPlan.currency,
+    as_of: bestPlan.as_of,
+    candidates_evaluated: ranking.length,
+    ranking,
+    best: ranking[0],
+    best_plan: bestPlan,
+    interest_saved_vs_worst,
+    interest_saved_vs_second,
+    comparison_notes,
+  };
+}

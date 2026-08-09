@@ -1,12 +1,12 @@
 version: 1
-agent_id: investment-expert
+agent_id: investment-advisor
 updated_at: 2026-08-08T12:00:00.000Z
 entries:
   - id: a3000001-0001-4000-8000-000000000001
     scope: agent
     owner_slug: system-seed
-    agent_id: investment-expert
-    title: Investment Expert hard rules
+    agent_id: investment-advisor
+    title: InvestmentAdvisor hard rules
     body: >
       Hard rules for portfolio + thesis analysis on Invester books:
 
@@ -31,7 +31,7 @@ entries:
 
       6. Read-only: no holding/cash/FD/household mutations. Direct @Bookkeeper or @Invester.
 
-      7. Playbook edits / wizard → @Invester only. Payment plans → @Accountant.
+      7. Playbook edits / wizard → @Invester only. Payment plans → @FinancialPlanner.
 
       8. Educational analysis — not a licensed advisor; do not execute trades.
     tags:
@@ -47,8 +47,8 @@ entries:
   - id: a3000001-0001-4000-8000-000000000002
     scope: agent
     owner_slug: system-seed
-    agent_id: investment-expert
-    title: Investment Expert tools map
+    agent_id: investment-advisor
+    title: InvestmentAdvisor tools map
     body: >
       | Need | Tool |
 
@@ -85,7 +85,7 @@ entries:
   - id: a3000001-0001-4000-8000-000000000003
     scope: agent
     owner_slug: system-seed
-    agent_id: investment-expert
+    agent_id: investment-advisor
     title: Playbook application
     body: >
       Apply the user's Investment Playbook on every recommendation:
@@ -138,7 +138,7 @@ entries:
   - id: a3000001-0001-4000-8000-000000000004
     scope: agent
     owner_slug: system-seed
-    agent_id: investment-expert
+    agent_id: investment-advisor
     title: Analysis recipes
     body: >
       ### Recipe 1 — Portfolio 3-axis + value sweep
@@ -223,7 +223,7 @@ entries:
   - id: a3000001-0001-4000-8000-000000000008
     scope: agent
     owner_slug: system-seed
-    agent_id: investment-expert
+    agent_id: investment-advisor
     title: Research analyst pack (Part H)
     body: >
       Six structured single-name research products (skill investment-analysis Part H).
@@ -288,7 +288,7 @@ entries:
   - id: a3000001-0001-4000-8000-000000000005
     scope: agent
     owner_slug: system-seed
-    agent_id: investment-expert
+    agent_id: investment-advisor
     title: Hand-off matrix
     body: >
       | User need | Who |
@@ -298,7 +298,7 @@ entries:
 
 
       | Analyze my portfolio / ticker / undervalued / news path / options thesis | You
-      (Investment Expert) or default Invester |
+      (InvestmentAdvisor) or default Invester |
 
 
       | Add/remove holding, set cash, FD, screenshot import | @Bookkeeper or @Invester |
@@ -307,7 +307,7 @@ entries:
       | Set up or change playbook / risk / strategy | @Invester only |
 
 
-      | Avalanche paydown / FD vs debt / opportunity cost $ | @Accountant |
+      | Avalanche paydown / FD vs debt / opportunity cost $ | @FinancialPlanner |
 
 
       | Household books journal / property payments ledger | @Bookkeeper |
@@ -330,7 +330,7 @@ entries:
   - id: a3000001-0001-4000-8000-000000000006
     scope: agent
     owner_slug: system-seed
-    agent_id: investment-expert
+    agent_id: investment-advisor
     title: Output templates (short)
     body: >
       Use investment-analysis skill templates; keep chat scannable.
@@ -383,7 +383,7 @@ entries:
   - id: a3000001-0001-4000-8000-000000000007
     scope: agent
     owner_slug: system-seed
-    agent_id: investment-expert
+    agent_id: investment-advisor
     title: Help-first and async observe tasks
     body: >
       Help-first: never brush off a portfolio/thesis ask. Partial answer now + action plan.
@@ -393,7 +393,7 @@ entries:
 
       1. Best tool-backed snapshot now (quote / analyzer / news path as needed).
 
-      2. create_task with instruction for host Invester to invoke_local_agent investment-expert
+      2. create_task with instruction for host Invester to invoke_local_agent investment-advisor
       with self-contained ticker, thesis, success criteria.
 
       3. delivery_channel=telegram when linked; confirm next_run_at from tool result.

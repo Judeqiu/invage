@@ -4,7 +4,7 @@
  * Built on Utarus (same architecture as Binary + Marie channels):
  *   createFramework({ defaultAgentId, agents }) — multi-local
  *     default: Invester (investment analysis + full domain tools)
- *     peers:   Bookkeeper, Accountant, Investment Expert, Real Estate Expert
+ *     peers:   Bookkeeper, FinancialPlanner, InvestmentAdvisor, Real Estate Expert
  *   Telegram (Binary-style) + Slack (Marie-style) + optional CLI
  *   BinDrive via utarus (npm run webapp)
  *
@@ -15,6 +15,7 @@
  *   TELEGRAM_BOT_TOKEN + TELEGRAM_ADMIN_IDS
  *   SLACK_BOT_TOKEN + SLACK_APP_TOKEN + SLACK_SIGNING_SECRET + SLACK_ADMIN_IDS
  * Multi-agent (WebUI): @ peers; bare → Invester orchestrator
+ * Peers: Bookkeeper, FinancialPlanner, InvestmentAdvisor, RealEstateExpert, Factchecker
  */
 
 import { config as dotenvConfig } from 'dotenv';
@@ -34,9 +35,10 @@ ensureAdminUsersExist();
 const { createFramework, config } = await import('utarus');
 const { invageExtension } = await import('./extension.js');
 const { bookkeeperExtension } = await import('./agents/bookkeeper.js');
-const { accountantExtension } = await import('./agents/accountant.js');
-const { investmentExpertExtension } = await import('./agents/investment-expert.js');
+const { financialPlannerExtension } = await import('./agents/financial-planner.js');
+const { investmentAdvisorExtension } = await import('./agents/investment-advisor.js');
 const { realEstateExpertExtension } = await import('./agents/real-estate-expert.js');
+const { factcheckerExtension } = await import('./agents/factchecker.js');
 
 process.on('uncaughtException', (error) => {
   console.error('[FATAL] Uncaught Exception:', error.message);
@@ -78,23 +80,24 @@ async function main(): Promise<void> {
 
   // Multi-local: Invester is default orchestrator (bare messages, billing, WebUI shell).
   // Peer labels must be single @ tokens (no spaces) — WebUI inserts @label and the
-  // mention parser only matches [A-Za-z0-9_-]+. Use CamelCase: @InvestmentExpert.
+  // mention parser only matches [A-Za-z0-9_-]+. Use CamelCase: @InvestmentAdvisor.
   const framework = createFramework({
     defaultAgentId: 'invage',
     agents: [
       { id: 'invage', label: 'Invester', extension: invageExtension },
       { id: 'bookkeeper', label: 'Bookkeeper', extension: bookkeeperExtension },
-      { id: 'accountant', label: 'Accountant', extension: accountantExtension },
+      { id: 'financial-planner', label: 'FinancialPlanner', extension: financialPlannerExtension },
       {
-        id: 'investment-expert',
-        label: 'InvestmentExpert',
-        extension: investmentExpertExtension,
+        id: 'investment-advisor',
+        label: 'InvestmentAdvisor',
+        extension: investmentAdvisorExtension,
       },
       {
         id: 'real-estate-expert',
         label: 'RealEstateExpert',
         extension: realEstateExpertExtension,
       },
+      { id: 'factchecker', label: 'Factchecker', extension: factcheckerExtension },
     ],
   });
 
@@ -103,13 +106,17 @@ async function main(): Promise<void> {
   // the landing-page register route.
   if (process.env.WEBAPP_PORT) {
     const { onboardRouter } = await import('./onboard/api.js');
+    const { createFaviconRouter } = await import('./webapp/favicon.js');
     const port = parseInt(process.env.WEBAPP_PORT, 10);
     if (!Number.isFinite(port) || port <= 0) {
       throw new Error(`WEBAPP_PORT must be a positive integer, got "${process.env.WEBAPP_PORT}".`);
     }
     framework.startWebApp({
       port,
-      extraRouters: [{ path: '/api/onboard', router: onboardRouter }],
+      extraRouters: [
+        { path: '/', router: createFaviconRouter() },
+        { path: '/api/onboard', router: onboardRouter },
+      ],
     });
   } else {
     console.log('WEBAPP_PORT not set — WebUI chat interface disabled.');

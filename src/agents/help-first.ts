@@ -17,9 +17,10 @@ const SPECIALIST_HANDOFF_NOTE =
 
 If the message includes a **[Handoff]** block or you were engaged as a peer specialist:
 1. Complete the **task** with **your** domain tools and agent KB this turn.
-2. Prefer finishing cleanly so control returns to **Invester** (host). You may call \`handoff_to_agent\` with target \`host\` / \`Invester\` / \`invage\` when you need an explicit return.
-3. Do **not** hand off to other specialists — only the host routes peers.
-4. Never invent books marks, quotes, or duties — tool results only.
+2. **Deliverable in the body (critical):** Your **final assistant message text** must contain the full user-facing result (verdict, numbers, schedules, comparisons) grounded in tool output. Process notes alone ("books pulled… handing back…") are a failure — the host only receives your **text** (or an explicit handoff \`task\`), not hidden tool state.
+3. Finish cleanly so control returns to **Invester**: either (a) write the complete answer then stop, or (b) call \`handoff_to_agent\` to \`host\` / \`Invester\` / \`invage\` with the **full** result in \`task\`. Prefer (a) or (b) with complete content — never stop mid-narration after tools.
+4. Do **not** hand off to other specialists — only the host routes peers.
+5. Never invent books marks, quotes, or duties — tool results only.
 `
     : '';
 
@@ -50,8 +51,10 @@ When good help needs **time** — e.g. observe a name for a day/week, re-check a
 ${SPECIALIST_HANDOFF_NOTE}
 ### Instruction template (examples)
 
-- Observe equity once: *"Consult investment-expert via invoke_local_agent. User asked to observe {TICKER} for 1 day. Pull books/playbook as needed, live quote + news path, compare to thesis: {…}. Deliver concise update: move, what changed, hold/watch under playbook. Fail-fast on missing data."*
-- After FD maturity: *"Consult accountant (and bookkeeper if ledger moves). Deposit {id} matures {date}. Re-check debt APR vs re-lock; propose deploy vs paydown with build_payment_plan / estimate_opportunity_cost only when yield is known."*
-- Property re-mark: *"Consult real-estate-expert. Re-run property_intel comps for {unit}; compare to books mark; report fairness and next steps."*
+- Observe equity once: *"Consult investment-advisor via invoke_local_agent. User asked to observe {TICKER} for 1 day. Pull books/playbook as needed, live quote + news path, compare to thesis: {…}. Then consult factchecker via invoke_local_agent with a structured claim list from tool fields + redo_count=0. Only after Factcheck PASS/PASS_WITH_CAVEATS write the concise user-facing update: move, what changed, hold/watch under playbook. Fail-fast on missing data; never invent."*
+- After FD maturity: *"Consult financial-planner (and bookkeeper if ledger moves). Deposit {id} matures {date}. Re-check debt APR vs re-lock; run optimize_payment_plan for best HARD-cost combination; estimate_opportunity_cost only when yield is known. Then invoke factchecker with claim list (HARD interest, months free, deposit actions). Only then write user-facing result."*
+- Property re-mark: *"Consult real-estate-expert. Re-run property_intel comps for {unit}; compare to books mark. Then invoke factchecker on mark/comps claims. Report fairness and next steps only after PASS*."*
 
-When you create a task, tell the user in plain language what will happen and when — not tool names.`;
+When you create a task, tell the user in plain language what will happen and when — not tool names.
+
+**Factchecker note:** Factchecker is always-last integrity audit (invoke). Do not put full craft recipes in a Factchecker task — structured claim list + redo_count only. Factchecker does not own create_task craft follow-ups.`;

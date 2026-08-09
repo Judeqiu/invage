@@ -10,7 +10,9 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "books:migrate": "tsx src/books/migrate.ts",
+    "books:test": "vitest run tests/books-ledger.test.ts"
   },
   "keywords": [
     "ai",
@@ -26,8 +28,9 @@
     "cookie-parser": "^1.4.7",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "pg": "^8.23.0",
     "tsx": "^4.22.4",
-    "utarus": "github:Judeqiu/utarus#v3.0.0-beta.16",
+    "utarus": "github:Judeqiu/utarus#v3.0.0-beta.26",
     "yahoo-finance2": "^3.15.3",
     "yaml": "^2.9.0"
   },
@@ -35,6 +38,7 @@
     "@types/cookie-parser": "^1.4.10",
     "@types/express": "^5.0.6",
     "@types/node": "^25.9.3",
+    "@types/pg": "^8.21.0",
     "@types/supertest": "^7.2.0",
     "puppeteer-core": "^25.3.0",
     "supertest": "^7.2.2",

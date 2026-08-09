@@ -10,3 +10,6 @@ data/
 .netlify
 
 .worktrees/
+
+# Local ops backups (user data — never commit)
+backups/

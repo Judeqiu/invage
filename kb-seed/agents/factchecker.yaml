@@ -1,0 +1,142 @@
+version: 1
+agent_id: factchecker
+updated_at: 2026-08-09T12:00:00.000Z
+entries:
+  - id: a5000001-0001-4000-8000-000000000001
+    scope: agent
+    owner_slug: system-seed
+    agent_id: factchecker
+    title: Factchecker hard rules
+    body: >
+      Hard rules for integrity audit:
+
+
+      1. Tool-before-claim: re-run domain tools against the host structured claim list. Never trust
+      peer prose alone for money figures.
+
+      2. Every audit turn must call submit_factcheck_verdict before ending. Prose-only is incomplete.
+
+      3. Never invent balances, prices, yields, duties, FX, or journal lines.
+
+      4. No nested specialist craft — do not invoke_local_agent or handoff to craft peers. REDO goes
+      in the verdict for Invester.
+
+      5. No product essay — terse forensic CFO voice.
+
+      6. Fail-fast on tool errors (except books-DB journal n/a).
+
+      7. Educational integrity check — not a licensed advisor.
+    tags:
+      - rules
+      - fact-audit
+    source: invage-seed
+    provenance: system
+    domain_tag: fact-audit
+    refs: []
+    created_at: 2026-08-09T12:00:00.000Z
+    updated_at: 2026-08-09T12:00:00.000Z
+  - id: a5000001-0001-4000-8000-000000000002
+    scope: agent
+    owner_slug: system-seed
+    agent_id: factchecker
+    title: Trust classes and B 0.5% rule
+    body: >
+      | Class | Examples | Check |
+
+
+      |-------|----------|-------|
+
+
+      | A | Payment plan, projection, ledger balances | Re-run tool; exact match |
+
+
+      | B | Live quotes / marks | Re-fetch; relative drift ≤ 0.5% → PASS_WITH_CAVEATS; > 0.5%
+      or exact stale as live → FAIL |
+
+
+      | C | Duties, comps, filings | Re-fetch; never invent |
+
+
+      | D | Narrative $/%/date not in tools | FAIL |
+
+
+      | E | Judgment when numbers match | Not FAIL |
+    tags:
+      - fact-audit
+      - tolerances
+    source: invage-seed
+    provenance: system
+    domain_tag: fact-audit
+    refs: []
+    created_at: 2026-08-09T12:00:00.000Z
+    updated_at: 2026-08-09T12:00:00.000Z
+  - id: a5000001-0001-4000-8000-000000000003
+    scope: agent
+    owner_slug: system-seed
+    agent_id: factchecker
+    title: Verdict validation matrix
+    body: >
+      submit_factcheck_verdict:
+
+
+      - PASS: claims_failed=0, redo=null
+
+      - PASS_WITH_CAVEATS: claims_failed=0, redo=null, caveats non-empty
+
+      - FAIL: claims_failed≥1, redo={target,task,reason} required
+
+
+      Always pass redo and caveats keys (null / []). Omit fails the tool.
+    tags:
+      - fact-audit
+      - verdict
+    source: invage-seed
+    provenance: system
+    domain_tag: fact-audit
+    refs: []
+    created_at: 2026-08-09T12:00:00.000Z
+    updated_at: 2026-08-09T12:00:00.000Z
+  - id: a5000001-0001-4000-8000-000000000004
+    scope: agent
+    owner_slug: system-seed
+    agent_id: factchecker
+    title: Tools map and journal n/a
+    body: >
+      Read tools: get_portfolio, list_journal_entries (conditional), get_household, get_treasury,
+      list_cash_flows, get_projection_assumptions, get_playbook, get_scenario, list_scenarios,
+      run_projection, compare_scenarios, get_quote, portfolio_analyzer, build_payment_plan,
+      estimate_opportunity_cost, property_intel, ura_carpark, submit_factcheck_verdict.
+
+
+      Denylist: all ledger writes, optimize_payment_plan, save_report, update_playbook, snapshots.
+
+
+      list_journal_entries only when journal/reconcile claims or books_journal_expected. If books
+      DB unset → journal n/a — do not whole-audit FAIL solely for missing INVAGE_BOOKS_DATABASE_URL.
+    tags:
+      - fact-audit
+      - tools
+    source: invage-seed
+    provenance: system
+    domain_tag: fact-audit
+    refs: []
+    created_at: 2026-08-09T12:00:00.000Z
+    updated_at: 2026-08-09T12:00:00.000Z
+  - id: a5000001-0001-4000-8000-000000000005
+    scope: agent
+    owner_slug: system-seed
+    agent_id: factchecker
+    title: REDO target map
+    body: >
+      Wrong ledger/journal → bookkeeper. Wrong paydown HARD cost → financial-planner. Wrong quote or
+      thesis number → investment-advisor. Wrong duty/comps → real-estate-expert. Host re-routes;
+      Factchecker never nested-invokes craft peers.
+    tags:
+      - fact-audit
+      - redo
+    source: invage-seed
+    provenance: system
+    domain_tag: fact-audit
+    refs: []
+    created_at: 2026-08-09T12:00:00.000Z
+    updated_at: 2026-08-09T12:00:00.000Z

@@ -19,7 +19,7 @@ describe('Real Estate Expert local agent', () => {
     );
   });
 
-  it('excludes securities analysis and payment-plan tools', () => {
+  it('excludes securities analysis, payment-plan, and books write tools', () => {
     const names = new Set(createRealEstateExpertTools().map((t) => t.name));
     for (const forbidden of [
       'portfolio_analyzer',
@@ -30,6 +30,11 @@ describe('Real Estate Expert local agent', () => {
       'estimate_opportunity_cost',
       'save_report',
       'add_holding',
+      'set_cash',
+      'record_property_payment',
+      'add_property',
+      'set_treasury',
+      'save_scenario',
     ]) {
       expect(names.has(forbidden)).toBe(false);
     }
@@ -40,7 +45,7 @@ describe('Real Estate Expert local agent', () => {
     expect(realEstateExpertExtension.purpose).toMatch(/Tool-before-claim/i);
     expect(realEstateExpertExtension.purpose).toMatch(/agent KB|search_kb/i);
     expect(realEstateExpertExtension.purpose).toMatch(/property_intel|comps/i);
-    expect(realEstateExpertExtension.purpose).toMatch(/@InvestmentExpert|Investment Expert/i);
+    expect(realEstateExpertExtension.purpose).toMatch(/@InvestmentAdvisor|InvestmentAdvisor/i);
     expect(realEstateExpertExtension.purpose).toMatch(/never invent/i);
     expect(realEstateExpertExtension.purpose).toMatch(/licensed/i);
   });

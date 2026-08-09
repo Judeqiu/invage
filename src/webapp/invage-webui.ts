@@ -70,7 +70,7 @@ export const INVAGE_CHAT_EMPTY_STATE = {
 export function createInvageWebUi(): DomainWebUiExtension {
   return {
     agentKey: 'invage',
-    productName: 'Invester',
+    productName: 'Wallet Street',
     defaultPath: '/',
     chatEmptyState: {
       title: INVAGE_CHAT_EMPTY_STATE.title,

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
-  createAccountantTools,
+  createFinancialPlannerTools,
   createBookkeeperTools,
-  createInvestmentExpertTools,
+  createInvestmentAdvisorTools,
   createInvageTools,
 } from '../src/tools/index.js';
 import { invageExtension } from '../src/extension.js';
@@ -38,11 +38,27 @@ describe('Invester default orchestrator', () => {
     expect(invageExtension.purpose).toMatch(/always/i);
     expect(invageExtension.purpose).toMatch(/capability fit/i);
     expect(invageExtension.purpose).toMatch(/keyword/i);
-    expect(invageExtension.purpose).toMatch(/Investment Expert/i);
+    expect(invageExtension.purpose).toMatch(/InvestmentAdvisor/i);
     expect(invageExtension.purpose).toMatch(/Real Estate Expert/i);
     expect(invageExtension.purpose).toMatch(/Bookkeeper/i);
-    expect(invageExtension.purpose).toMatch(/Accountant/i);
+    expect(invageExtension.purpose).toMatch(/FinancialPlanner/i);
+    expect(invageExtension.purpose).toMatch(/Factchecker/i);
     expect(invageExtension.purpose).toMatch(/DIY is forbidden|do not perform that work|Never DIY/i);
+  });
+
+  it('purpose requires always-last Factcheck via invoke and peer-return ladder', () => {
+    const p = invageExtension.purpose;
+    expect(p).toMatch(/always-last Factcheck|Always-last Factcheck/i);
+    expect(p).toMatch(/peer-return ladder/i);
+    expect(p).toMatch(/Factchecker/);
+    expect(p).toMatch(/invoke_local_agent/);
+    // invoke allowlist (d) for Factchecker audit — not only short lookups
+    expect(p).toMatch(/always-last Factchecker full audit consult|\(d\).*Factcheck|Factcheck.*invoke/i);
+    expect(p).toMatch(/no new material (numbers|\$)/i);
+    expect(p).toMatch(/after PASS/i);
+    expect(p).toMatch(/block contested numbers/i);
+    expect(p).toMatch(/structured claim list/i);
+    expect(p).toMatch(/continue craft/i);
   });
 
   it('purpose requires help-first action plans and async create_task follow-ups', () => {
@@ -66,8 +82,8 @@ describe('Invester default orchestrator', () => {
   it('specialists own craft tools the orchestrator does not', () => {
     const host = new Set(createInvageTools().map((t) => t.name));
     const book = new Set(createBookkeeperTools().map((t) => t.name));
-    const acc = new Set(createAccountantTools().map((t) => t.name));
-    const expert = new Set(createInvestmentExpertTools().map((t) => t.name));
+    const acc = new Set(createFinancialPlannerTools().map((t) => t.name));
+    const expert = new Set(createInvestmentAdvisorTools().map((t) => t.name));
 
     expect(book.has('add_holding')).toBe(true);
     expect(host.has('add_holding')).toBe(false);

@@ -1068,21 +1068,90 @@ export function createHouseholdTools(): AgentTool[] {
   };
 
   return [
-    getHousehold,
-    getTreasuryTool,
-    setTreasuryTool,
-    addProperty,
-    updateProperty,
-    recordPropertyPayment,
-    removePropertyTool,
-    addLiability,
-    updateLiability,
-    removeLiabilityTool,
-    addCashFlow,
-    updateCashFlow,
-    removeCashFlowTool,
-    listCashFlows,
-    getAssumptions,
-    setAssumptions,
+    ...createHouseholdReadToolsFrom({
+      getHousehold,
+      getTreasuryTool,
+      listCashFlows,
+      getAssumptions,
+    }),
+    ...createHouseholdWriteToolsFrom({
+      setTreasuryTool,
+      addProperty,
+      updateProperty,
+      recordPropertyPayment,
+      removePropertyTool,
+      addLiability,
+      updateLiability,
+      removeLiabilityTool,
+      addCashFlow,
+      updateCashFlow,
+      removeCashFlowTool,
+      setAssumptions,
+    }),
   ];
+}
+
+type HouseholdReadParts = {
+  getHousehold: AgentTool;
+  getTreasuryTool: AgentTool;
+  listCashFlows: AgentTool;
+  getAssumptions: AgentTool;
+};
+
+type HouseholdWriteParts = {
+  setTreasuryTool: AgentTool;
+  addProperty: AgentTool;
+  updateProperty: AgentTool;
+  recordPropertyPayment: AgentTool;
+  removePropertyTool: AgentTool;
+  addLiability: AgentTool;
+  updateLiability: AgentTool;
+  removeLiabilityTool: AgentTool;
+  addCashFlow: AgentTool;
+  updateCashFlow: AgentTool;
+  removeCashFlowTool: AgentTool;
+  setAssumptions: AgentTool;
+};
+
+function createHouseholdReadToolsFrom(p: HouseholdReadParts): AgentTool[] {
+  return [p.getHousehold, p.getTreasuryTool, p.listCashFlows, p.getAssumptions];
+}
+
+function createHouseholdWriteToolsFrom(p: HouseholdWriteParts): AgentTool[] {
+  return [
+    p.setTreasuryTool,
+    p.addProperty,
+    p.updateProperty,
+    p.recordPropertyPayment,
+    p.removePropertyTool,
+    p.addLiability,
+    p.updateLiability,
+    p.removeLiabilityTool,
+    p.addCashFlow,
+    p.updateCashFlow,
+    p.removeCashFlowTool,
+    p.setAssumptions,
+  ];
+}
+
+/** Read-only household tools — safe for FinancialPlanner / RE / host. */
+export function createHouseholdReadTools(): AgentTool[] {
+  return createHouseholdTools().filter((t) =>
+    ['get_household', 'get_treasury', 'list_cash_flows', 'get_projection_assumptions'].includes(
+      t.name,
+    ),
+  );
+}
+
+/** Household mutations — Bookkeeper only. */
+export function createHouseholdWriteTools(): AgentTool[] {
+  return createHouseholdTools().filter(
+    (t) =>
+      ![
+        'get_household',
+        'get_treasury',
+        'list_cash_flows',
+        'get_projection_assumptions',
+      ].includes(t.name),
+  );
 }
