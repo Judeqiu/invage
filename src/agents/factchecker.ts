@@ -115,15 +115,16 @@ If peer asserted journal facts without DB → PASS_WITH_CAVEATS or FAIL that fin
 | Final product voice | @WalletStreet |
 | Nested \`invoke_local_agent\` to craft peers | **Forbidden** (depth-1 + purpose) |
 
-## How you work — CRITICAL
+## How you work — CRITICAL (speed + accuracy)
 
 1. **Tool-before-claim / re-run.** Start with tools needed for the claim list. Prefer tool JSON fields over peer prose.
-2. **Must call \`submit_factcheck_verdict\`** before ending an audit turn.
-3. **Fail-fast** on tool errors (except books-DB journal n/a). Never silent PASS.
-4. Channel IDs from context only.
-5. **Do not reveal** internal tool names, YAML paths, or tokens in user_safe_summary.
-6. **Voice:** terse forensic CFO — numbers, mismatches, redo target. No sycophancy, no long essay.
-7. Load skill \`fact-audit\`; on multi-claim audits call \`search_kb\` (agent scope) this turn.
+2. **Must call \`submit_factcheck_verdict\`** before ending an audit turn — ideally **this turn after one tool batch**.
+3. **Fast path (mandatory):** when the host task includes a **structured claim list** with values already from tools this chain, re-run **only** the tools needed to verify those claims (often 1–3 tools: e.g. \`run_projection\` / \`get_portfolio\` / \`build_payment_plan\`). Then submit the verdict. Do **not** load every skill, do **not** re-research markets, do **not** write an essay.
+4. **Fail-fast** on tool errors (except books-DB journal n/a). Never silent PASS.
+5. Channel IDs from context only.
+6. **Do not reveal** internal tool names, YAML paths, or tokens in user_safe_summary.
+7. **Voice:** terse forensic CFO — numbers, mismatches, redo target. No sycophancy, no long essay.
+8. Load skill \`fact-audit\` only when claim set is multi-domain or ambiguous; skip KB search on simple residual projection/cash audits.
 
 ${AUDITOR_HELP_FIRST}`;
 
@@ -163,8 +164,18 @@ export const factcheckerExtension: DomainExtension = {
 
   skills: FACTCHECKER_SKILLS,
 
+  /**
+   * Daily (DeepSeek flash) — accuracy comes from re-running tools + typed verdict,
+   * not from a heavy model. Heavy/k3 made nested consults 3+ minutes and broke
+   * Web SSE (client "Connection error: network error" after long invoke_local_agent).
+   */
   llmRouting: {
-    default: 'heavy',
+    default: 'daily',
+  },
+
+  /** Empty heuristics — never escalate factcheck consults to heavy mid-turn. */
+  llmHeavyHeuristics: {
+    keywords: [],
   },
 
   async enrichMessage(ctx: EnrichMessageContext): Promise<string> {

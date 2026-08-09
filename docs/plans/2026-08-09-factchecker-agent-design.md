@@ -117,7 +117,7 @@ Fact grounding already exists in `INVAGE_PURPOSE`: user-visible facts from peer/
 | Label | `Factchecker` |
 | Mention | `@Factchecker` (single token — WebUI `@${label}` + room parser `[A-Za-z0-9_-]+`) |
 | Display prose | "Factchecker" (no spaces in label) |
-| LLM routing | **`{ default: 'heavy' }`** |
+| LLM routing | **`{ default: 'daily' }`** (+ empty heavy heuristics) |
 | Billing / webUi | None (host owns shell + credits) |
 | Skills | **`fact-audit` only** (v1) |
 
@@ -732,7 +732,7 @@ No dead env flag with silent default. Staging: count heavy turns / tool credits 
 | --- | --- | --- | --- |
 | 1 | Product role | Tool-backed auditor peer | Independent tool re-run + REDO |
 | 2 | Identity | `factchecker` / `Factchecker` / `@Factchecker` | Peer pattern; single-token label |
-| 3 | LLM | **heavy** | Numeric audit quality |
+| 3 | LLM | **daily** (not heavy) | Accuracy from tool re-runs + typed verdict; heavy/k3 nested consults caused multi-minute hangs and Web "Connection error: network error" |
 | 4 | Power model | Soft loop + **typed** `submit_factcheck_verdict`; hard gate later | Machine-readable status without utarus fork; REDO still best-effort |
 | 5 | Placement | Always-last before final synthesis | Product requirement |
 | 6 | Skip | Only when no claim-producing work / no user-visible money fields | Accuracy first; capability check not keywords |

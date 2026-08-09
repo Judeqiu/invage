@@ -78,8 +78,9 @@ describe('Factchecker local agent', () => {
     expect(factcheckerExtension.purpose).toMatch(/Auditor help-first/i);
   });
 
-  it('defaults LLM routing to heavy', () => {
-    expect(factcheckerExtension.llmRouting).toEqual({ default: 'heavy' });
+  it('defaults LLM routing to daily (fast audit; tools carry accuracy)', () => {
+    expect(factcheckerExtension.llmRouting).toEqual({ default: 'daily' });
+    expect(factcheckerExtension.llmHeavyHeuristics).toEqual({ keywords: [] });
   });
 
   it('room @mention label is a single token', () => {
