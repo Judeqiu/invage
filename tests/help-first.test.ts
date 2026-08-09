@@ -12,7 +12,7 @@ describe('HELP_FIRST_AND_ASYNC_TASKS shared contract', () => {
     expect(HELP_FIRST_AND_ASYNC_TASKS).toMatch(/Help-first/i);
     expect(HELP_FIRST_AND_ASYNC_TASKS).toMatch(/create_task/);
     expect(HELP_FIRST_AND_ASYNC_TASKS).toMatch(/invoke_local_agent/);
-    expect(HELP_FIRST_AND_ASYNC_TASKS).toMatch(/Invester/);
+    expect(HELP_FIRST_AND_ASYNC_TASKS).toMatch(/WalletStreet/);
     expect(HELP_FIRST_AND_ASYNC_TASKS).toMatch(/telegram/i);
     expect(HELP_FIRST_AND_ASYNC_TASKS).toMatch(/do \*\*not\*\* lightly reject/i);
     expect(HELP_FIRST_AND_ASYNC_TASKS).toMatch(/factchecker/i);

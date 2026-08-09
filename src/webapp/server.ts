@@ -71,7 +71,7 @@ if (isMain) {
   }
   app.listen(port, () => {
     console.log(
-      `[InvesterDrive] listening on http://localhost:${port} (BinDrive + landing /api/onboard/register)`,
+      `[WalletStreetDrive] listening on http://localhost:${port} (BinDrive + landing /api/onboard/register)`,
     );
   });
 }

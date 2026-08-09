@@ -8,7 +8,7 @@ entries:
     agent_id: bookkeeper
     title: Bookkeeper hard rules
     body: >
-      Hard rules for journal / reconcile / read on Invester books:
+      Hard rules for journal / reconcile / read on WalletStreet books:
 
 
       1. No invented numbers — only tools/state or explicit user statement.
@@ -32,7 +32,7 @@ entries:
       8. Property OTP/booking/PPS → record_property_payment (prefer cash_channel). Cash-only
       set_cash leaves paid_to_date UNKNOWN.
 
-      9. Scope: journal/reconcile/read only. Valuation → @Invester.
+      9. Scope: journal/reconcile/read only. Valuation → @WalletStreet.
 
       10. Educational bookkeeping — not a licensed accountant.
     tags:
@@ -195,7 +195,7 @@ entries:
       2. Optional run_projection for multi-year path (no invented salary/returns)
 
       3. Present assets vs liabilities; label cost-basis vs live MTM (no live quote tool — ask
-      @Invester for MTM)
+      @WalletStreet for MTM)
 
 
       ### What not to do
@@ -225,7 +225,7 @@ entries:
 
       1. Record what is known; list exact gaps.
 
-      2. create_task for host Invester to re-consult bookkeeper with channels/tickers/criteria.
+      2. create_task for host WalletStreet to re-consult bookkeeper with channels/tickers/criteria.
 
       3. Prefer telegram delivery when linked.
 

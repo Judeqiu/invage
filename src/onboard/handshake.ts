@@ -77,7 +77,7 @@ export async function handleBind(args: BindArgs): Promise<BindResult> {
   }
   if (entry.status === 'rejected') {
     return {
-      reply: 'This onboarding link has been rejected. Contact the Invester team.',
+      reply: 'This onboarding link has been rejected. Contact the WalletStreet team.',
     };
   }
   if (isExpired(entry)) {
@@ -156,7 +156,7 @@ export async function handleBind(args: BindArgs): Promise<BindResult> {
 
   return {
     reply:
-      `Hi *${entry.display_name}*! You're now registered with Invester as \`${userResult.slug}\`.\n` +
+      `Hi *${entry.display_name}*! You're now registered with WalletStreet as \`${userResult.slug}\`.\n` +
       passwordLine +
       `\nYou can start right away — add holdings, ask for a portfolio review, or research a ticker. ` +
       `Try \`/guidance start\` for a short how-to.`,

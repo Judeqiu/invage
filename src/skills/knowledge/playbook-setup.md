@@ -18,7 +18,7 @@ Related: **`investment-analysis`** (how the playbook is used once set). How-to: 
 
 ## When this skill overrides the “no questionnaire” rule
 
-Normally Invester **does not** interview users about preferences.
+Normally WalletStreet **does not** interview users about preferences.
 
 **Exception — only while this wizard is active:**
 

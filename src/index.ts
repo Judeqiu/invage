@@ -1,9 +1,9 @@
 /**
- * Invage (Invester) — AI portfolio analyst host.
+ * Invage (WalletStreet) — AI portfolio analyst host.
  *
  * Built on Utarus (same architecture as Binary + Marie channels):
  *   createFramework({ defaultAgentId, agents }) — multi-local
- *     default: Invester (investment analysis + full domain tools)
+ *     default: WalletStreet (investment analysis + full domain tools)
  *     peers:   Bookkeeper, FinancialPlanner, InvestmentAdvisor, Real Estate Expert
  *   Telegram (Binary-style) + Slack (Marie-style) + optional CLI
  *   BinDrive via utarus (npm run webapp)
@@ -14,7 +14,7 @@
  * Optional channels (enable any subset):
  *   TELEGRAM_BOT_TOKEN + TELEGRAM_ADMIN_IDS
  *   SLACK_BOT_TOKEN + SLACK_APP_TOKEN + SLACK_SIGNING_SECRET + SLACK_ADMIN_IDS
- * Multi-agent (WebUI): @ peers; bare → Invester orchestrator
+ * Multi-agent (WebUI): @ peers; bare → WalletStreet orchestrator
  * Peers: Bookkeeper, FinancialPlanner, InvestmentAdvisor, RealEstateExpert, Factchecker
  */
 
@@ -78,13 +78,13 @@ async function main(): Promise<void> {
 
   ensureAdminUsersExist();
 
-  // Multi-local: Invester is default orchestrator (bare messages, billing, WebUI shell).
+  // Multi-local: WalletStreet is default orchestrator (bare messages, billing, WebUI shell).
   // Peer labels must be single @ tokens (no spaces) — WebUI inserts @label and the
   // mention parser only matches [A-Za-z0-9_-]+. Use CamelCase: @InvestmentAdvisor.
   const framework = createFramework({
     defaultAgentId: 'invage',
     agents: [
-      { id: 'invage', label: 'Invester', extension: invageExtension },
+      { id: 'invage', label: 'WalletStreet', extension: invageExtension },
       { id: 'bookkeeper', label: 'Bookkeeper', extension: bookkeeperExtension },
       { id: 'financial-planner', label: 'FinancialPlanner', extension: financialPlannerExtension },
       {
@@ -127,7 +127,7 @@ async function main(): Promise<void> {
   // Start before awaiting channel adapters so long-lived bot sockets do not
   // delay the first tick. Requires finite UTARUS_AGENT_RUN_TIMEOUT_MS.
   const { stop: stopTaskScheduler } = framework.startTaskScheduler();
-  console.log('[Invester] Task scheduler started');
+  console.log('[WalletStreet] Task scheduler started');
   process.on('SIGTERM', () => {
     stopTaskScheduler();
   });

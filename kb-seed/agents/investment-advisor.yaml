@@ -8,7 +8,7 @@ entries:
     agent_id: investment-advisor
     title: InvestmentAdvisor hard rules
     body: >
-      Hard rules for portfolio + thesis analysis on Invester books:
+      Hard rules for portfolio + thesis analysis on WalletStreet books:
 
 
       1. Tool-before-claim: get_portfolio / get_playbook / portfolio_analyzer / get_quote (and
@@ -29,9 +29,9 @@ entries:
       5. Headline ≠ next-tick prediction. News path: UNDERREACT | OVERREACT | ALREADY_PRICED |
       UNKNOWN + horizon. Technical structure (H6) is timing only — never sole thesis.
 
-      6. Read-only: no holding/cash/FD/household mutations. Direct @Bookkeeper or @Invester.
+      6. Read-only: no holding/cash/FD/household mutations. Direct @Bookkeeper or @WalletStreet.
 
-      7. Playbook edits / wizard → @Invester only. Payment plans → @FinancialPlanner.
+      7. Playbook edits / wizard → @WalletStreet only. Payment plans → @FinancialPlanner.
 
       8. Educational analysis — not a licensed advisor; do not execute trades.
     tags:
@@ -298,13 +298,13 @@ entries:
 
 
       | Analyze my portfolio / ticker / undervalued / news path / options thesis | You
-      (InvestmentAdvisor) or default Invester |
+      (InvestmentAdvisor) or default WalletStreet |
 
 
-      | Add/remove holding, set cash, FD, screenshot import | @Bookkeeper or @Invester |
+      | Add/remove holding, set cash, FD, screenshot import | @Bookkeeper or @WalletStreet |
 
 
-      | Set up or change playbook / risk / strategy | @Invester only |
+      | Set up or change playbook / risk / strategy | @WalletStreet only |
 
 
       | Avalanche paydown / FD vs debt / opportunity cost $ | @FinancialPlanner |
@@ -313,7 +313,7 @@ entries:
       | Household books journal / property payments ledger | @Bookkeeper |
 
 
-      | Stamp duty / HDB comps / property buy affordability | @Invester |
+      | Stamp duty / HDB comps / property buy affordability | @WalletStreet |
 
 
       Say the hand-off clearly; do not pretend to have mutation tools.
@@ -393,7 +393,7 @@ entries:
 
       1. Best tool-backed snapshot now (quote / analyzer / news path as needed).
 
-      2. create_task with instruction for host Invester to invoke_local_agent investment-advisor
+      2. create_task with instruction for host WalletStreet to invoke_local_agent investment-advisor
       with self-contained ticker, thesis, success criteria.
 
       3. delivery_channel=telegram when linked; confirm next_run_at from tool result.

@@ -84,7 +84,7 @@ describe('landing + /bind isolation from framework access gate', () => {
       isAdmin: false,
     });
 
-    expect(reply).toMatch(/registered with Invester/i);
+    expect(reply).toMatch(/registered with WalletStreet/i);
     const investor = resolveUserBySlackUser(slackUserId);
     expect(investor).not.toBeNull();
     expect(investor!.profile.display_name).toBe('LexTok Investor');

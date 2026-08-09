@@ -411,7 +411,7 @@ export function buildPaymentPlan(input: PaymentPlanInput): PaymentPlanResult {
     `3. Apply monthly surplus (${Math.max(0, monthly_surplus_for_debt).toFixed(2)} ${currency}) to #1 target in ${input.strategy} order`,
     '4. After each deposit maturity, re-check: if top debt APR > deposit implied yield + ~1pp, deploy principal to debt before re-locking',
     '5. Do not break fixed deposits early unless user provides break cost and net interest savings still positive',
-    '6. Portfolio holdings (equities/funds/options): not auto-sold for paydown — ask @Invester for MTM/tax/opportunity cost first',
+    '6. Portfolio holdings (equities/funds/options): not auto-sold for paydown — ask @WalletStreet for MTM/tax/opportunity cost first',
   ];
 
   // ── Simulate month by month ──────────────────────────────────────────

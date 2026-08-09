@@ -8,7 +8,7 @@ entries:
     agent_id: real-estate-expert
     title: Real Estate Expert hard rules
     body: >
-      Hard rules for physical property work on Invester books:
+      Hard rules for physical property work on WalletStreet books:
 
 
       1. Tool-before-claim: get_household before summarizing property/mortgage;
@@ -27,7 +27,7 @@ entries:
       6. Multi-unit listing shopping packs are out of scope — analyze a named unit/price instead.
 
       7. Securities research → @InvestmentAdvisor. Pure cash/holding journal without property →
-      @Bookkeeper. Playbook wizard → @Invester.
+      @Bookkeeper. Playbook wizard → @WalletStreet.
 
       8. Educational only — not a licensed tax/property advisor.
     tags:
@@ -160,7 +160,7 @@ entries:
       | Avalanche paydown efficiency | @FinancialPlanner |
 
 
-      | Playbook methodology setup | @Invester |
+      | Playbook methodology setup | @WalletStreet |
     tags:
       - playbook
       - handoff

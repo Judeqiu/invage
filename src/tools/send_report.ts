@@ -128,7 +128,7 @@ export function createSendReportTool(): AgentTool {
           }
         } else if (p.html) {
           htmlBody = p.html;
-          subject = p.subject ?? 'Report from Invester';
+          subject = p.subject ?? 'Report from WalletStreet';
           kind = p.kind ?? 'analysis';
         } else {
           return fail(

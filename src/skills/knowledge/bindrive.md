@@ -1,4 +1,4 @@
-# BinDrive (InvesterDrive)
+# BinDrive (Wallet Street Drive)
 
 File portal for each Utarus user. Files live under `data/drive/<user-slug>/`.
 

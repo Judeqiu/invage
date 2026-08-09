@@ -1,6 +1,6 @@
 # SG Real-Estate Portfolio
 
-**Invester skill** for Singapore physical real estate as a **household portfolio sleeve** — comps, policy-aware buy costs, yield/LTV, mark quality, and allocation vs liquid portfolio / REITs.
+**WalletStreet skill** for Singapore physical real estate as a **household portfolio sleeve** — comps, policy-aware buy costs, yield/LTV, mark quality, and allocation vs liquid portfolio / REITs.
 
 Complements `family-treasury` (books + projections). Does **not** replace `investment-analysis` for listed REITs as securities. Not a listing shopper product (no multi-unit PropertyGuru packs, shortlist UX, layout, or interior design).
 
@@ -30,7 +30,7 @@ Complements `family-treasury` (books + projections). Does **not** replace `inves
 4. **Tool-before-claim** for sold prices, psf, and duty numbers.
 5. **Fail-fast** on missing rent (yield blocked), missing FX (cross-ccy LTV/allocation blocked), unlinked mortgage (LTV unknown unless user confirms free-and-clear).
 6. **Never auto-write** property marks from comps — recommend `update_property` only after user accepts.
-7. Still **Invester** — not conveyancing, IRAS filing, or bank underwriting.
+7. Still **WalletStreet** — not conveyancing, IRAS filing, or bank underwriting.
 
 ---
 

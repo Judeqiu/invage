@@ -4,7 +4,7 @@ import { renderGuidance, createGuidanceCommand } from '../src/guidance.js';
 describe('renderGuidance', () => {
   it('returns overview for empty args', () => {
     const text = renderGuidance('');
-    expect(text).toContain('Invester');
+    expect(text).toContain('WalletStreet');
     expect(text).toContain('/guidance');
     expect(text).toContain('portfolio');
     expect(text).toMatch(/value|undervalued|advanced/i);

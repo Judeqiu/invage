@@ -32,7 +32,7 @@ import { createOpportunityCostTool } from './opportunity_cost.js';
 import { createSubmitFactcheckVerdictTool } from './factcheck_verdict.js';
 
 /**
- * Default host (Invester) — orchestration + residual host domains only.
+ * Default host (WalletStreet) — orchestration + residual host domains only.
  *
  * **No books writes.** Portfolio / cash / FD / household ledger mutations are
  * Bookkeeper-only. Host may configure playbook and run read-side projections.

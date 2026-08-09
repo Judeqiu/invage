@@ -8,7 +8,7 @@ import {
 import { invageExtension } from '../src/extension.js';
 import { registerInvageSkills } from '../src/skills.js';
 
-describe('Invester default orchestrator', () => {
+describe('WalletStreet default orchestrator', () => {
   it('domain tools are residual host only (no peer craft)', () => {
     const names = new Set(createInvageTools().map((t) => t.name));
     expect(names.has('get_playbook')).toBe(true);

@@ -3,7 +3,7 @@
  *
  * Sole responsibility: journal, reconcile, and read household books
  * (cash, deposits, portfolio sleeve, property, liabilities, cash flows)
- * on the same user YAML managed by Invester. No market research persona.
+ * on the same user YAML managed by WalletStreet. No market research persona.
  */
 
 import type { DomainExtension, EnrichMessageContext, Skill } from 'utarus';
@@ -68,15 +68,15 @@ function registerBookkeeperSkills(): Skill[] {
 
 const BOOKKEEPER_SKILLS = registerBookkeeperSkills();
 
-const BOOKKEEPER_PURPOSE = `You are **Bookkeeper** — a local specialist on the Invester (Invage) host.
+const BOOKKEEPER_PURPOSE = `You are **Bookkeeper** — a local specialist on the WalletStreet (Invage) host.
 
 **Sole responsibility:** help the user **journal**, **reconcile**, and **read** the household books managed on this host (YAML + financial DB journals).
 
 **You are the only agent allowed to write/update books data** (portfolio, cash, deposits, holdings, household ledger, projection assumptions/scenarios, snapshots). Other peers are read-only on the books — they must hand journal work to you.
 
-You are **not** the investment analyst. Do not run undervalued screens, live valuation theses, news→price paths, playbook interviews, or market-theme research. For those, hand off to **@Invester** / **@InvestmentAdvisor** (or let the default agent consult them).
+You are **not** the investment analyst. Do not run undervalued screens, live valuation theses, news→price paths, playbook interviews, or market-theme research. For those, hand off to **@WalletStreet** / **@InvestmentAdvisor** (or let the default agent consult them).
 
-You may be **consulted** by Invester via \`invoke_local_agent\` — complete the journal/reconcile task with tools; do not bounce the user to @mention yourself.
+You may be **consulted** by WalletStreet via \`invoke_local_agent\` — complete the journal/reconcile task with tools; do not bounce the user to @mention yourself.
 
 ## What “the books” are
 
@@ -117,7 +117,7 @@ One household ledger per user:
 
 **In scope:** journal cash/deposits/holdings/property/debt/income-expense lines; set reporting currency and projection assumptions; reconcile gaps and broker screenshots into the books; read net worth from books; run projections only as book/decision checks with user data.
 
-**Out of scope as DIY craft** (hand off / route — not a brush-off): stock recommendations, live valuation theses, undervalued discovery, earnings/news path → InvestmentAdvisor; investment playbook setup → Invester; multi-unit property shopping → Real Estate Expert single-unit path; tax/legal advice as advice; trade execution.
+**Out of scope as DIY craft** (hand off / route — not a brush-off): stock recommendations, live valuation theses, undervalued discovery, earnings/news path → InvestmentAdvisor; investment playbook setup → WalletStreet; multi-unit property shopping → Real Estate Expert single-unit path; tax/legal advice as advice; trade execution.
 
 When the user lacks a document "later" or wants a re-reconcile after broker settles: journal what you can now + offer \`create_task\` for the follow-up.
 
@@ -177,7 +177,7 @@ export const bookkeeperExtension: DomainExtension = {
 
   skills: BOOKKEEPER_SKILLS,
 
-  // No billing / webUi — host default (Invester) owns shell, signup, Management.
+  // No billing / webUi — host default (WalletStreet) owns shell, signup, Management.
 
   async enrichMessage(ctx: EnrichMessageContext): Promise<string> {
     let investor: InvestorState | null = null;

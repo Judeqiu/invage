@@ -1,5 +1,5 @@
 /**
- * /guidance — teach users how to use Invester (skills + workflows).
+ * /guidance — teach users how to use WalletStreet (skills + workflows).
  *
  * Subcommands are free-text after the slash command, e.g.:
  *   /guidance
@@ -119,7 +119,7 @@ function normalizeSub(args: string): GuidanceSubcommand {
 
 const overview = (): string =>
   [
-    '*Invester — how to use this agent*',
+    '*WalletStreet — how to use this agent*',
     '',
     'I am your investment research + portfolio agent: holdings, 3-axis analysis, *advanced value screen* (cheap ∩ quality ∩ trap risk), market themes, and web research — then save reports.',
     '',
@@ -479,7 +479,7 @@ const reports = (): string =>
     '• Do not open Slack’s file preview for .html (it shows source); use the view link',
     '',
     '*Where files live*',
-    '• Your BinDrive folder on InvesterDrive (web portal + bot tools)',
+    '• Your BinDrive folder on Wallet Street Drive (web portal + bot tools)',
     '• HTML reports get a short-lived signed view link when configured',
     '',
     'Portal (deploy): often `http://host:3001` — login with your user auth token from onboarding.',
@@ -569,7 +569,7 @@ const admin = (): string =>
 
 const chat = (): string =>
   [
-    '*How to talk to Invester*',
+    '*How to talk to WalletStreet*',
     '',
     '• Be concrete: ticker, shares, avg cost, category',
     '• One job per message when possible ("analyze" then "save report")',
@@ -692,7 +692,7 @@ export function createGuidanceCommand(): {
   return {
     name: 'guidance',
     description:
-      'How to use Invester: portfolio, playbook, 3-axis analysis, value screen, research, reports',
+      'How to use WalletStreet: portfolio, playbook, 3-axis analysis, value screen, research, reports',
     adminOnly: false,
     usageHint:
       '[start|portfolio|playbook|analysis|value|research|reports|skills|property|tasks|admin|chat]',

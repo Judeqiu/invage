@@ -1,4 +1,4 @@
-# Invage (Invester) — Portfolio Analyst Agent
+# Invage (WalletStreet) — Portfolio Analyst Agent
 
 Invage is a **domain agent** for investment portfolio analysis. It is built the same way as [Binary](https://github.com/Judeqiu/binary):
 
@@ -54,7 +54,7 @@ Edit `.env`:
 
 ```env
 DEEPSEEK_API_KEY=sk-...
-UTARUS_AGENT_NAME=Invester
+UTARUS_AGENT_NAME=Wallet Street
 UTARUS_LOADED_BY_HOST=1
 # Prefer ABSOLUTE path (relative ./data lands under node_modules/utarus)
 UTARUS_DATA_ROOT=/absolute/path/to/invage/data

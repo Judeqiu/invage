@@ -50,7 +50,7 @@ describe('InvestmentAdvisor local agent', () => {
     expect(investmentAdvisorExtension.purpose).toMatch(/agent KB|search_kb/i);
     expect(investmentAdvisorExtension.purpose).toMatch(/@Bookkeeper/);
     expect(investmentAdvisorExtension.purpose).toMatch(/@FinancialPlanner/);
-    expect(investmentAdvisorExtension.purpose).toMatch(/@Invester/);
+    expect(investmentAdvisorExtension.purpose).toMatch(/@WalletStreet/);
     expect(investmentAdvisorExtension.purpose).toMatch(/Never invent|never invent/i);
     expect(investmentAdvisorExtension.purpose).toMatch(/licensed/i);
   });

@@ -237,7 +237,7 @@ entries:
 
 
       What not to do: invent penalties/yields; silent FX; freehand opportunity cost; SOFT as HARD
-      fee; stock-picking (@Invester).
+      fee; stock-picking (@WalletStreet).
     tags:
       - playbook
       - recipes
@@ -262,7 +262,7 @@ entries:
       1. optimize_payment_plan (or build_payment_plan if config pinned) + estimate_opportunity_cost
       with what books allow today.
 
-      2. create_task so host Invester re-consults financial-planner after that date with ids + criteria.
+      2. create_task so host WalletStreet re-consults financial-planner after that date with ids + criteria.
 
       3. Prefer telegram delivery when linked. Confirm next_run_at from tool result only.
 
