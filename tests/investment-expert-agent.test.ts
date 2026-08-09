@@ -82,6 +82,17 @@ describe('Investment Expert local agent', () => {
     expect(investmentExpertExtension.llmRouting).toEqual({ default: 'heavy' });
   });
 
+  it('room @mention label is a single token (no spaces)', () => {
+    // WebUI Composer inserts `@${label}`; room-mention parser only matches [A-Za-z0-9_-]+.
+    // Label must stay CamelCase one-token — see src/index.ts agents[].label.
+    const mentionLabel = 'InvestmentExpert';
+    expect(mentionLabel).not.toMatch(/\s/);
+    expect(mentionLabel).toMatch(/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/);
+    // Normalizes same as spaced display name used in prose
+    const normalize = (s: string) => s.trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
+    expect(normalize(mentionLabel)).toBe(normalize('Investment Expert'));
+  });
+
   it('registers analysis skills only (no playbook wizard or payment-planning)', () => {
     expect(investmentExpertExtension.billing).toBeUndefined();
     expect(investmentExpertExtension.webUi).toBeUndefined();

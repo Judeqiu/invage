@@ -27,7 +27,7 @@ It does **not** mutate books, run the playbook wizard, or design payment plans.
 |-------|--------|
 | Agent id | `investment-expert` |
 | Label | Investment Expert |
-| Mention | `@InvestmentExpert` |
+| Mention | `@InvestmentExpert` (label must be one token — no spaces; WebUI @ insert + room parser) |
 | LLM routing | `{ default: 'heavy' }` |
 | Billing / webUi | None (host default owns shell) |
 

@@ -77,7 +77,8 @@ async function main(): Promise<void> {
   ensureAdminUsersExist();
 
   // Multi-local: Invester is default orchestrator (bare messages, billing, WebUI shell).
-  // Peers: @Bookkeeper / @Accountant / @InvestmentExpert / @RealEstateExpert.
+  // Peer labels must be single @ tokens (no spaces) — WebUI inserts @label and the
+  // mention parser only matches [A-Za-z0-9_-]+. Use CamelCase: @InvestmentExpert.
   const framework = createFramework({
     defaultAgentId: 'invage',
     agents: [
@@ -86,12 +87,12 @@ async function main(): Promise<void> {
       { id: 'accountant', label: 'Accountant', extension: accountantExtension },
       {
         id: 'investment-expert',
-        label: 'Investment Expert',
+        label: 'InvestmentExpert',
         extension: investmentExpertExtension,
       },
       {
         id: 'real-estate-expert',
-        label: 'Real Estate Expert',
+        label: 'RealEstateExpert',
         extension: realEstateExpertExtension,
       },
     ],
