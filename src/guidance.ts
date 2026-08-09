@@ -491,7 +491,7 @@ const skills = (): string =>
     '',
     'I load skills on demand (specialist knowledge). You don\'t call them by name — just ask; I load the right one.',
     '',
-    '• *investment-analysis* — portfolio 3-axis + stock evaluation + undervalued + **news→path** + **indices** + **HK/China** + **options**',
+    '• *investment-analysis* — portfolio 3-axis + stock evaluation + **research pack (H1–H6)** + undervalued + **news→path** + **indices** + **HK/China** + **options**',
     '  ↳ Part A: Laggards / Overpriced / Buy opportunities',
     '  ↳ Part B: full name evaluation (industry lens, valuation, moat)',
     '  ↳ Part C: advanced value funnel (cheap ∩ quality ∩ trap + thesis)',

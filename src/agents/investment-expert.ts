@@ -43,13 +43,13 @@ function registerInvestmentExpertSkills(): Skill[] {
       id: 'investment-analysis',
       name: 'Investment Analysis',
       description:
-        'Investment research methods: 3-axis holdings review, single-name evaluation, idea discovery (cheap ∩ quality ∩ trap), news→price-path, index-relative, multi-market (US/HK/CN), options structure, buy/sell/hold. Load by capability fit when this agent is researching; full recipes also in agent KB (search_kb). Not keyword-matched.',
+        'Investment research methods: 3-axis holdings review, single-name evaluation, research analyst pack (full breakdown, statement deep dive, valuation under/fair/over, industry/competitive, risk scenarios, technical structure secondary), idea discovery (cheap ∩ quality ∩ trap), news→price-path, index-relative, multi-market (US/HK/CN), options structure, buy/sell/hold. Load by capability fit when this agent is researching; full recipes also in agent KB (search_kb). Not keyword-matched.',
     },
     {
       id: 'firecrawl',
       name: 'Firecrawl',
       description:
-        'Load for live web research: Yahoo key-stats/news/options, SEC/HKEX/CNINFO filings, Finviz screens, IR, Reuters/CNBC, macro. Pair with investment-analysis Part D/F/G. Prefer portfolio_analyzer for quotes.',
+        'Load for live web research: Yahoo key-stats/news/financials/options, SEC/HKEX/CNINFO filings, Finviz screens, IR, peers, chart/history text, Reuters/CNBC, macro. Pair with investment-analysis Part D/F/G/H (statements, peers, technical structure). Prefer portfolio_analyzer for quotes.',
     },
     {
       id: 'bindrive',
@@ -80,10 +80,11 @@ You may be **consulted** by Invester via \`invoke_local_agent\` — answer the s
 
 1. **Portfolio thesis** — 3-axis classification (laggard / overpriced / opportunity), P/L vs cost, concentration vs playbook caps
 2. **Single-name deep dives** — fundamentals, valuation, quality, trap gate, Street targets when available
-3. **Undervalued discovery** — cheap ∩ quality ∩ not a trap; tilted by playbook philosophy and markets
-4. **News → price-path** — underreaction / overreaction / already priced; PEAD-style horizons — never next-tick prophecy
-5. **Options structure** — after underlying analysis; never invent premium/IV/Greeks
-6. **Playbook-filtered language** — BUY/SELL/size only through buy_criteria / sell_criteria, risk profile, position/sector limits; free cash only is dry powder
+3. **Research analyst pack (Part H)** — structured products: full stock breakdown, financial statement deep dive, valuation assessment (UNDER/FAIR/OVER), industry & competitive analysis, risk scenario mapping, technical structure (secondary/timing only). Default open-ended ticker research → full breakdown (H1)
+4. **Undervalued discovery** — cheap ∩ quality ∩ not a trap; tilted by playbook philosophy and markets
+5. **News → price-path** — underreaction / overreaction / already priced; PEAD-style horizons — never next-tick prophecy
+6. **Options structure** — after underlying analysis; never invent premium/IV/Greeks
+7. **Playbook-filtered language** — BUY/SELL/size only through buy_criteria / sell_criteria, risk profile, position/sector limits; free cash only is dry powder
 
 ## What you do not do
 
@@ -121,7 +122,7 @@ You may be **consulted** by Invester via \`invoke_local_agent\` — answer the s
 
 Your durable playbook lives in **agent KB** (\`data/kb/agents/investment-expert.yaml\`). On portfolio review / ticker thesis / undervalued / news-path / options work: call \`search_kb\` (or \`list_kb\` scope=agent) **this turn** for hard rules, recipes, and hand-offs before freehand. Private KB = user facts; agent = **your** persona only.
 
-Load skill \`investment-analysis\` for full Parts A–G. Load \`firecrawl\` for news/filings/screens/options chain. Load \`bindrive\` when saving reports.
+Load skill \`investment-analysis\` for full Parts A–H (include Part H research packs for single-name products). Load \`firecrawl\` for news/filings/statements/peers/screens/options chain/chart text. Load \`bindrive\` when saving reports.
 
 ${HELP_FIRST_AND_ASYNC_TASKS}`;
 
@@ -161,7 +162,7 @@ function investmentExpertContextPrefix(
     `Playbook: ${pbOneLiner} (${configured ? 'user-configured' : 'default balanced'}). ${channelHint} ` +
     `Read-only books — mutations → @Bookkeeper; playbook edits → @Invester; paydown → @Accountant. ` +
     `Help-first: partial now + create_task for observe/follow-up (instruction must re-consult investment-expert). Prefer telegram delivery when linked. ` +
-    `Load investment-analysis; search_kb for recipes; tool-before-claim.]\n`
+    `Load investment-analysis Parts A–H; search_kb for recipes (incl. research pack H1–H6); tool-before-claim.]\n`
   );
 }
 

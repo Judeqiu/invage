@@ -55,6 +55,22 @@ describe('Investment Expert local agent', () => {
     expect(investmentExpertExtension.purpose).toMatch(/licensed/i);
   });
 
+  it('purpose owns research analyst pack (Part H)', () => {
+    expect(investmentExpertExtension.purpose).toMatch(/Research analyst pack|Part H/i);
+    expect(investmentExpertExtension.purpose).toMatch(/full stock breakdown|Full stock breakdown/i);
+    expect(investmentExpertExtension.purpose).toMatch(/valuation assessment|UNDER\/FAIR\/OVER/i);
+    expect(investmentExpertExtension.purpose).toMatch(/risk scenario/i);
+    expect(investmentExpertExtension.purpose).toMatch(/technical structure/i);
+    expect(investmentExpertExtension.purpose).toMatch(/Parts A–H|Parts A-H|Part H/i);
+  });
+
+  it('investment-analysis skill description covers Part H products', () => {
+    const skill = investmentExpertExtension.skills.find((s) => s.id === 'investment-analysis');
+    expect(skill).toBeDefined();
+    expect(skill!.description).toMatch(/research analyst pack|full breakdown/i);
+    expect(skill!.description).toMatch(/valuation under\/fair\/over|statement deep dive/i);
+  });
+
   it('purpose requires help-first and create_task for deferred observation', () => {
     expect(investmentExpertExtension.purpose).toMatch(/Help-first/i);
     expect(investmentExpertExtension.purpose).toMatch(/create_task/);

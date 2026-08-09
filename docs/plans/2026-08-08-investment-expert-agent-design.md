@@ -39,6 +39,7 @@ It does **not** mutate books, run the playbook wizard, or design payment plans.
 
 - Holdings review: 3-axis, P/L, concentration vs playbook caps  
 - Single-name valuation / quality / trap gates (investment-analysis Parts B–C)  
+- Research analyst pack (Part H): full breakdown, statement deep dive, valuation under/fair/over, industry & competitive, risk scenarios, technical structure (secondary)  
 - Undervalued discovery tilted by playbook markets / philosophy  
 - News → price-path (Part D) with Firecrawl  
 - Options structure (Part G) — never invent premiums/Greeks  
@@ -82,7 +83,7 @@ Framework-supplied (Utarus): Firecrawl, agent/user KB tools, BinDrive as needed.
 
 | Skill id | Role |
 |----------|------|
-| `investment-analysis` | Core SOTA recipes (Parts A–G) |
+| `investment-analysis` | Core SOTA recipes (Parts A–H; H = research analyst pack) |
 | `firecrawl` | News, filings, screens, options chain text |
 | `bindrive` | Save/share reports |
 
@@ -104,9 +105,10 @@ Bodies from existing `src/skills/knowledge/*.md`. No `playbook-setup`, `family-t
 1. Hard rules (tool-before-claim, fail-fast, playbook filters, educational disclaimer)  
 2. Tools map  
 3. Playbook application  
-4. Recipes (portfolio sweep, single ticker, undervalued, news path, options, concentration)  
+4. Recipes (portfolio sweep, single ticker→H1, undervalued, news path, options, concentration, research pack)  
 5. Hand-off matrix  
-6. Output templates (short pointers)
+6. Output templates (short pointers)  
+7. Research analyst pack Part H (H1–H6 product map)
 
 **YAGNI:** case-rehearsal / stakeholder council not in v1.
 

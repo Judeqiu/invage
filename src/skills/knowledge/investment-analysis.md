@@ -9,8 +9,9 @@
 5. **Index relative framework** — evaluate names vs a wide range of market / sector / style / regional indices (Part E)
 6. **Multi-market equities** — US + HK + China A/H dual listings, ticker conventions, local sources (Part F)
 7. **Options evaluation** — calls/puts structure, moneyness, IV, Greeks *when sourced*, strategy gates (Part G)
+8. **Research analyst pack (Part H)** — six structured single-name products: full breakdown, statement deep dive, valuation assessment, industry/competitive, risk scenarios, technical structure (secondary)
 
-Load for portfolio analysis, stock evaluation, **options / call / put analysis**, **finding undervalued stocks**, **HK/China listings**, **index-relative value**, **news impact / trend after news**, earnings reaction, screens, value traps, P/E·PEG·ROE·P/B, analyst targets, buy/sell/hold, DCF/multiples, moat/value/growth, or "what should I do with my stocks".
+Load for portfolio analysis, stock evaluation, **equity research breakdown**, **financial statement deep dive**, **valuation fairness (under/fair/over)**, **industry/competitive analysis**, **downside risk scenarios**, **chart/technical structure (timing only)**, **options / call / put analysis**, **finding undervalued stocks**, **HK/China listings**, **index-relative value**, **news impact / trend after news**, earnings reaction, screens, value traps, P/E·PEG·ROE·P/B, analyst targets, buy/sell/hold, DCF/multiples, moat/value/growth, or "what should I do with my stocks".
 
 For news/filings/IR/key-statistics/Finviz/HKEX/China sources and options-chain pages, also load **`firecrawl`**. For saving reports, use **`bindrive`**.
 
@@ -178,11 +179,11 @@ When the user pastes a broker screenshot or list that includes **funds**, classi
 
 **Portfolio:** `get_portfolio` → `portfolio_analyzer` (channel user) → 3-axis below. Use the analyzer **CASH & NAV** block for dry powder, cash weight vs target, and short-put cover. If cash is "not recorded" and the user is discussing deployable capital or rebalance, ask once for cash amount + currency and `set_cash` — do not invent 0. For "which holdings look undervalued?" also run **Part C gate** on each candidate.
 
-**Single ticker:** `portfolio_analyzer` with `tickers=TICKER` → Part B (+ Part C undervalued verdict if asked or if recommending buy).
+**Single ticker:** `portfolio_analyzer` with `tickers=TICKER` → Part B (+ Part C undervalued verdict if asked or if recommending buy). Broad "analyze TICKER" / research-note depth → **Part H full pack** (H1) or the specific H product requested.
 
 **Find undervalued / screen:** Part C discovery → short list → `portfolio_analyzer` on each → Part B deep dive on top names → thesis gate.
 
-**Deep dive:** above + Firecrawl (Yahoo key-statistics/analysis, Finviz, `TICKER 10-K site:sec.gov`, company IR).
+**Deep dive:** above + Firecrawl (Yahoo key-statistics/analysis, Finviz, `TICKER 10-K site:sec.gov`, company IR). Statement / industry / risk / valuation *products* → Part H recipes on the same tool spine.
 
 **News / "will this move the stock?" / earnings reaction:** Load **`firecrawl`** + **`investment-analysis` Part D** → primary source scrape → `portfolio_analyzer` on ticker → path hypothesis + value gate. Never invent the news content.
 
@@ -965,6 +966,199 @@ When playbook or user intent is HK/China:
 
 ---
 
+## Part H — Research analyst pack (structured single-name products)
+
+**Goal:** Deliver six **research products** as consistent, tool-grounded packs — not freehand sell-side prose. Each pack reuses Parts B–C (and E/F when relevant). **Part C trap/cheapness gates still bind** before accumulate language. Playbook still filters BUY/SELL/size.
+
+**Doctrine**
+
+1. **Tool-before-claim** — `portfolio_analyzer` (and `get_portfolio` if held) first; Firecrawl for narrative, peers, filings, statement tables, chart text.
+2. **Fail fast** — never invent competitors, line-item statements, S/R levels, RSI/MACD, scenario % drawdowns, or “industry CAGR” without a source.
+3. **Label depth** — Path A = analyzer metrics only; Path B = analyzer + Firecrawl. State which path you ran.
+4. **Technicals are secondary (H6)** — timing/context only; never sole thesis; never override trap FAIL or broken fundamentals.
+5. **Compose freely** — user can ask one product or the full pack; default for open-ended single-name research is **H1 Full breakdown** (includes short H3 valuation + H5 risks).
+
+### H0 — Intent → product (capability fit)
+
+Select by **what the user needs decided**, not by synonym tables:
+
+| Capability need | Product | Core spine |
+|-----------------|---------|------------|
+| Whole-company research note / “break this stock down” | **H1 Full stock breakdown** | B.1–B.2 + H3 short + H5 short + C if action |
+| IS/BS/CF quality, margins, leverage, cash conversion, red flags | **H2 Financial statement deep dive** | B.2 + Firecrawl statements when possible |
+| Under / fair / over vs earnings, growth, industry | **H3 Valuation assessment** | B.3–4 + C2–C4 + value screen |
+| Peers, industry trends, growth drivers, threats | **H4 Industry & competitive** | B.1 industry lens + Firecrawl peers/IR |
+| Downside map: macro / disruption / management / financial | **H5 Risk scenario mapping** | Trap + invalidators + explicit scenarios |
+| Trend, S/R, momentum, breakout zones from price data | **H6 Technical structure** | Secondary only; sourced price series or chart scrape |
+| Open “analyze TICKER” with research depth | **H1** (default) | Full H1 template |
+| “Is it cheap / undervalued?” only | Part C Recipe 2 **or** H3 | Prefer H3 when fairness language requested |
+| Portfolio action on holdings | Part A first | Then H1/H3 on names that need depth |
+
+If the ask is incomplete (no ticker), one short clarification — then execute.
+
+### H1 — Full stock breakdown
+
+**Role:** Senior equity research–style structured note.
+
+**Run order**
+
+```text
+1. portfolio_analyzer tickers=TICKER  (+ get_portfolio if held → Part A)
+2. Industry lens (Part B.1) — prefer Path B Firecrawl: company IR / 10-K business + risk factors
+3. Fill sections below — mark any section "not verified this run" rather than invent
+4. H3 valuation (short form) + Part C gates if action language
+5. H5 risks (at least 3 material risks with impact direction)
+6. Recommendation through playbook + educational disclaimer
+```
+
+**Required sections (in order)**
+
+| Section | Content | Source rule |
+|---------|---------|-------------|
+| Snapshot | Price, currency, sector, mkt cap if present, Street median/high | Analyzer |
+| Business model | What they sell; who pays; how money is made | Firecrawl IR/10-K preferred; else "business narrative not scraped" + sector only |
+| Revenue drivers | Units, pricing, mix, segments if sourced | Filings/IR only — no invented mix % |
+| Competitive position | Moat type (if argued), relative strength | Sourced peers or "peers not compared this run" |
+| Recent financial performance | Growth, margins, ROE/ROA, FCF signals | Analyzer; Path B for multi-year trends |
+| Major risk factors | 3–5 material risks | 10-K risks when scraped + H5 buckets |
+| Valuation (short) | H3 one-liner: UNDER/FAIR/OVER/INSUFFICIENT | H3 |
+| Action | Playbook-filtered; Part C if accumulate | Numbers required |
+
+Output: template **Full stock breakdown** below.
+
+### H2 — Financial statement deep dive
+
+**Role:** Growth trends, profit margins, debt, cash generation, red flags — from **statements or honest metric proxies**.
+
+**Path A (default when no scrape):** analyzer fields only — revenue/earnings growth, gross/op/profit margins, total cash/debt, D/E, current ratio, OCF/FCF when present. Explicit line: **“Snapshot metrics only — full IS/BS/CF not scraped this run.”**
+
+**Path B (when user wants deep dive or Path A is thin):** load **`firecrawl`** → Yahoo financials / key-statistics and/or primary filing (10-K, annual report, HKEX/CNINFO per Part F). Extract only numbers visible in tool output.
+
+| Focus | Look for | Red flags |
+|-------|----------|-----------|
+| Income | Revenue trend, margin trend, earnings quality | One-off gains driving NI; collapsing margins |
+| Balance sheet | Net debt, liquidity, leverage, goodwill if sourced | Rising D/E + falling profitability; going-concern language |
+| Cash flow | OCF vs NI; FCF; capex intensity; buybacks/dividends | OCF << NI persistently; FCF negative without growth thesis |
+
+**Do not** paste user financial data as truth without cross-check when tools can verify. If the user pastes statements, treat as **user-provided inputs**, label them, and still run analyzer for live multiples when possible.
+
+Output: template **Statement deep dive**.
+
+### H3 — Valuation assessment
+
+**Role:** Explicit **UNDERVALUED | FAIRLY_VALUED | OVERVALUED | INSUFFICIENT_DATA** from earnings, growth, industry context — **no speculation beyond tool evidence**.
+
+**Run order**
+
+```text
+1. portfolio_analyzer → value screen + multiples + Street targets
+2. Industry-fit primary yardstick (Part B.1 / C1.b) + 1 supporting
+3. C2 cheapness + quality/health read
+4. Peer or sector context when Firecrawl/peers available — else "not compared this run"
+5. Map to fairness label (below)
+6. C3 trap gate before any UNDERVALUED + accumulate language
+7. C4 thesis if recommending buy on valuation
+```
+
+**Fairness map (composite — not a single PE law)**
+
+| Label | When |
+|-------|------|
+| **UNDERVALUED** | Cheapness YES on fit yardstick(s) **and** quality not WEAK **and** trap PASS (or WATCH only if user asked fairness *not* action — then say “cheap on multiples, trap incomplete”) |
+| **FAIRLY_VALUED** | MIXED cheapness or multiples in band for growth/quality; Street near fair |
+| **OVERVALUED** | Cheapness NO / stretched multiples vs growth; and/or price ≫ median with no quality offset |
+| **INSUFFICIENT_DATA** | Too few metrics; no industry lens possible; analyzer failed |
+
+Street upside alone never produces **UNDERVALUED**. Prefer valuation **range** language over one magic price. Absolute DCF only if data supports (Part B.3) — else multiples + label.
+
+Output: template **Valuation assessment**.
+
+### H4 — Industry & competitive analysis
+
+**Role:** Industry structure, competitors, trends, growth drivers, long-term threats.
+
+**Run order**
+
+```text
+1. portfolio_analyzer — sector, size, growth metrics
+2. Part E primary benchmark for the listing region (context, not intrinsic value)
+3. Firecrawl: company IR competition section, 10-K competition/risks, and/or peer list (Finviz/Yahoo peers)
+4. Fill: key competitors (named only if sourced), market trends, growth drivers, threats
+5. Link threats to H5 / trap gate if action follows
+```
+
+**Hard rules**
+
+- Never invent a competitor set from training memory alone — scrape or say **“competitors not verified this run.”**
+- Trends/drivers/threats that are **hypotheses** must be labeled; prefer filing language.
+- Industry-default valuation lens (Part B.1) stated once.
+
+Output: template **Industry & competitive**.
+
+### H5 — Risk scenario mapping
+
+**Role:** Structured **downside** scenarios with impact direction — not a risk-factor dump and not fake VaR.
+
+**Required buckets (all four — “none identified in tools” is allowed per bucket)**
+
+| Bucket | Examples | Impact language |
+|--------|----------|-----------------|
+| **Macro** | rates, FX, recession, liquidity | thesis stress / multiple compression direction |
+| **Industry disruption** | tech substitute, regulation, cyclical trough | moat / volume / margin path |
+| **Management / capital allocation** | dilution, value-destructive M&A, governance | quality / NAV path |
+| **Financial** | leverage, refinancing, FCF hole, covenant | solvency / trap FAIL risk |
+
+For each scenario: **trigger → mechanism → performance impact (qualitative or sourced range) → what would falsify**.  
+Do **not** invent precise “−37% in 6 months” unless a model or source supports it.  
+If held: note interaction with Part A (deep loss, average-down only if trap PASS).
+
+Output: template **Risk scenario map**.
+
+### H6 — Technical structure evaluation (secondary / timing only)
+
+**Role:** Price structure as **timing context** after fundamentals — never sole BUY/SELL thesis.
+
+**When to run:** user explicitly wants chart/trend/support-resistance/momentum/breakout structure, or asks for entry timing after a fundamental pack.
+
+**Data paths**
+
+| Path | How | Rule |
+|------|-----|------|
+| User-pasted prices/OHLC | Use only those points; label **user-provided** | Do not silently mix with live quote without saying so |
+| Firecrawl chart / history page | Extract visible highs/lows/trend only | Cite URL; no invented RSI |
+| Live quote only | State **structure not computed** — give spot + 1d change if present | Do not invent S/R from memory |
+
+**Cover when data allows:** trend direction (up/down/range), support/resistance zones (sourced), momentum signals (only if RSI/MACD/etc. appear in scrape or user data), possible breakout/breakdown areas (hypothesis, low confidence if data thin).
+
+**Gates**
+
+- Technical BUY never overrides Part C trap FAIL or OVERVALUED without stating conflict.
+- Prefer: “fundamentals first; technicals suggest wait/breakout watch.”
+- Confidence max **med** for structure from partial data; **low** if only a few prices.
+
+Output: template **Technical structure**.
+
+### H7 — Full pack (all products, single ticker)
+
+When the user wants comprehensive research in one pass:
+
+```text
+H1 (includes short H3 + H5) → expand H2 if statements available → H4 peers if scrape OK → H6 only if asked or price series present
+```
+
+Keep chat scannable: use section headers; put long tables in `save_report` HTML when useful. Always list **Gaps**.
+
+### H8 — What not to do (research pack)
+
+- Freehand a “senior analyst” essay without analyzer numbers  
+- Claim UNDERVALUED without yardstick + trap discipline  
+- Invent competitors, 10-K risks, or multi-year statement rows  
+- Fake precise scenario drawdowns or technical levels  
+- Let H6 alone drive accumulate language  
+- Skip playbook filters on action lines  
+
+---
+
 ## Output templates
 
 ### Portfolio position (3-axis)
@@ -1072,6 +1266,95 @@ Use the **Benchmark context** one-liner in Part E3 whenever discussing performan
 
 Use the **Options verdict** block in Part G6.
 
+### Full stock breakdown (Part H1)
+
+```text
+{TICKER} — Full breakdown
+  Snapshot: price … | ccy … | sector … | mkt cap … | median … (upside …%) | high …
+  Path: A metrics-only | B + Firecrawl | mixed
+  Business model: …
+  Revenue drivers: … (or not verified)
+  Competitive position: … | peers: sourced … / not verified
+  Recent financials: growth … | margins … | ROE … | FCF/OCF … | quality flags …
+  Major risks: (1) … (2) … (3) …
+  Valuation (H3): UNDERVALUED|FAIRLY_VALUED|OVERVALUED|INSUFFICIENT_DATA — …
+  Part C: cheapness … | trap … | thesis …
+  If held: cost … | P/L …% | 3-axis …
+  Action: … | conviction low|med|high | playbook note …
+  Gaps: …
+```
+
+### Statement deep dive (Part H2)
+
+```text
+{TICKER} — Statement deep dive
+  Path: A snapshot metrics | B statements scraped (URLs …)
+  Income: revenue trend … | margins … | earnings quality …
+  Balance sheet: cash … | debt … | D/E … | liquidity … | other …
+  Cash flow: OCF … | FCF … | vs NI … | capex/returns …
+  Growth trends: …
+  Red flags: … (or none evidenced)
+  Gaps: …
+```
+
+### Valuation assessment (Part H3)
+
+```text
+{TICKER} valuation assessment
+  Verdict: UNDERVALUED | FAIRLY_VALUED | OVERVALUED | INSUFFICIENT_DATA
+  Yardstick(s): … (industry fit)
+  Earnings / growth: PE … | fwd PE … | PEG … | rev/earn growth … (tool numbers)
+  Industry / peer: … or not compared this run
+  Street: median $… (…%) | high $…
+  Quality/health: …
+  Trap gate: PASS|WATCH|FAIL — …
+  Reasoning: … (evidence only; no speculation)
+  Action implication: … (WATCH if gates incomplete)
+  Gaps: …
+```
+
+### Industry & competitive (Part H4)
+
+```text
+{TICKER} — Industry & competitive
+  Industry / cycle: … | valuation lens: …
+  Benchmark context: … (Part E one-liner)
+  Key competitors: … (sourced URLs/tools) | not verified
+  Market trends: …
+  Growth drivers: …
+  Threats (long-term): …
+  Implication for {TICKER}: …
+  Gaps: …
+```
+
+### Risk scenario map (Part H5)
+
+```text
+{TICKER} — Risk scenario map
+  Macro: trigger … → impact … → falsify …
+  Industry disruption: …
+  Management: …
+  Financial: …
+  Highest-priority downside: …
+  Interaction with trap gate: …
+  If held: average-down stance …
+  Gaps: …
+```
+
+### Technical structure (Part H6)
+
+```text
+{TICKER} — Technical structure (secondary)
+  Data: user-pasted | Firecrawl chart/history (URL) | live quote only
+  Trend: up|down|range|not computed
+  Support / resistance: … or not verified
+  Momentum: … or unavailable (not invented)
+  Breakout / breakdown zones: … (hypothesis)
+  Vs fundamentals: confirm|conflict|n/a — …
+  Timing note: … | Confidence: low|med
+  Gaps: …
+```
+
 ---
 
 ## Recommendation language
@@ -1087,6 +1370,11 @@ Use the **Options verdict** block in Part G6.
 | Hard earnings surprise, UNDERREACT regime, gates OK | PEAD-watch or measured add — not "guaranteed up" |
 | Soft headline / mega-cap first print | Avoid chase; re-value when full info in |
 | Incomplete data | Watch — no size-up; list gaps |
+| H3 UNDERVALUED + trap PASS + thesis | Accumulate language OK (with risks) |
+| H3 UNDERVALUED but trap WATCH/FAIL | No size-up; explain trap |
+| H3 FAIRLY_VALUED | Hold / core or wait for better entry — not “cheap” |
+| H3 OVERVALUED | Trim / wait / avoid new risk-on size |
+| H6 bullish structure only | Timing note only — not a fundamental BUY |
 | HK/China name, targets missing | Fundamentals + local index context; no fake Street median |
 | Long call/put, gates pass, premium known | Defined-risk framing + max loss; not “free leverage” |
 | Options data missing | WATCH on contract; still may analyze underlying only |
@@ -1112,6 +1400,9 @@ Use the **Options verdict** block in Part G6.
 - Invent options premiums, IV, or Greeks
 - Recommend options without strike/expiry (or explicit “structure-only, no live chain”)
 - Confuse SSE Composite `000001.SS` with Shenzhen stock `000001.SZ`
+- Invent competitors, statement line items, S/R levels, or scenario drawdown percentages
+- Lead with technical structure (H6) when the user asked for fundamental research only
+- Freehand Part H sections without `portfolio_analyzer` numbers
 
 ---
 

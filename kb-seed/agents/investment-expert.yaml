@@ -12,20 +12,22 @@ entries:
 
 
       1. Tool-before-claim: get_portfolio / get_playbook / portfolio_analyzer / get_quote (and
-      Firecrawl when news/filings) this turn before market or book claims.
+      Firecrawl when news/filings/peers/statements/chart text) this turn before market or book
+      claims.
 
       2. Fail-fast — never invent prices, PE/PEG/ROE/P/B, Street targets, filings, IPO status,
-      options premiums, IV, or Greeks. Missing data → "not verified" or quote tool error.
+      options premiums, IV, Greeks, competitors, statement line items, S/R levels, or precise
+      scenario drawdowns. Missing data → "not verified" or quote tool error.
 
       3. Every BUY/SELL/accumulate line must pass playbook buy_criteria / sell_criteria and risk
       profile. Size vs NAV; deploy free cash only (not FD principal). Cap at position_limit_pct /
       sector_exposure_pct or explicitly flag breach.
 
       4. Cheap alone is not undervalued: require cheapness yardstick + quality/health + trap gate
-      + thesis (why cheap / what closes gap / kill criteria).
+      + thesis (why cheap / what closes gap / kill criteria). H3 UNDERVALUED uses the same gates.
 
       5. Headline ≠ next-tick prediction. News path: UNDERREACT | OVERREACT | ALREADY_PRICED |
-      UNKNOWN + horizon.
+      UNKNOWN + horizon. Technical structure (H6) is timing only — never sole thesis.
 
       6. Read-only: no holding/cash/FD/household mutations. Direct @Bookkeeper or @Invester.
 
@@ -152,15 +154,15 @@ entries:
       5. Rank actions with numbers + playbook filter
 
 
-      ### Recipe 2 — Single ticker deep dive
+      ### Recipe 2 — Single ticker deep dive (default → Part H1)
 
       1. portfolio_analyzer tickers=TICKER (+ get_portfolio if held)
 
-      2. Industry lens + composite valuation
+      2. Prefer Part H research pack: open-ended analyze → H1 full breakdown
 
-      3. Cheapness + trap + thesis if buy language
+      3. Industry lens + composite valuation (H3) + cheapness + trap + thesis if buy
 
-      4. Optional Firecrawl key-statistics / filings
+      4. Firecrawl for IR/filings/peers/statements when depth needs Path B
 
 
       ### Recipe 3 — Undervalued discovery
@@ -203,6 +205,11 @@ entries:
       2. get_playbook caps and cash_target_pct
 
       3. Flag breaches and free-cash vs target; no auto-trades
+
+
+      ### Recipe 7 — Research analyst pack (Part H)
+
+      See KB entry "Research analyst pack (Part H)" — H1–H6 products.
     tags:
       - playbook
       - recipes
@@ -212,7 +219,72 @@ entries:
     domain_tag: investment-analysis
     refs: []
     created_at: 2026-08-08T12:00:00.000Z
-    updated_at: 2026-08-08T12:00:00.000Z
+    updated_at: 2026-08-09T12:00:00.000Z
+  - id: a3000001-0001-4000-8000-000000000008
+    scope: agent
+    owner_slug: system-seed
+    agent_id: investment-expert
+    title: Research analyst pack (Part H)
+    body: >
+      Six structured single-name research products (skill investment-analysis Part H).
+      Tool-before-claim; fail-fast; Part C gates still bind; playbook filters action.
+      Path A = portfolio_analyzer metrics; Path B = + Firecrawl. Label path and gaps.
+
+
+      ### H1 Full stock breakdown (default open-ended ticker research)
+
+      Snapshot → business model → revenue drivers → competitive position → recent
+      financials → major risks → short H3 valuation → action. Peers/business narrative
+      only if sourced; else "not verified".
+
+
+      ### H2 Financial statement deep dive
+
+      Income / balance sheet / cash flow: growth, margins, debt, cash generation, red
+      flags. Path A = snapshot metrics only (say so). Path B = scrape Yahoo financials
+      or 10-K/HKEX/CNINFO. Never invent line items.
+
+
+      ### H3 Valuation assessment
+
+      Explicit verdict: UNDERVALUED | FAIRLY_VALUED | OVERVALUED | INSUFFICIENT_DATA.
+      Yardstick from industry fit + earnings/growth + peer/sector when available.
+      Street upside alone ≠ UNDERVALUED. Trap PASS required before accumulate on value.
+
+
+      ### H4 Industry & competitive
+
+      Competitors (sourced only), market trends, growth drivers, long-term threats.
+      Part E benchmark for region. Never invent competitor lists from memory.
+
+
+      ### H5 Risk scenario mapping
+
+      Always cover four buckets: macro | industry disruption | management | financial.
+      Each: trigger → mechanism → impact direction → falsifier. No fake precise drawdowns.
+
+
+      ### H6 Technical structure (secondary / timing only)
+
+      Trend, S/R, momentum, breakout zones only from user prices or Firecrawl chart/history.
+      Live quote alone → "structure not computed". Never sole thesis; never override trap FAIL.
+
+
+      ### Compose
+
+      Full pack: H1 (+ expand H2/H4) → H6 only if chart asked or price series present.
+      Use skill output templates. Optional save_report for long notes.
+    tags:
+      - playbook
+      - recipes
+      - research-pack
+      - investment-analysis
+    source: invage-seed
+    provenance: system
+    domain_tag: investment-analysis
+    refs: []
+    created_at: 2026-08-09T12:00:00.000Z
+    updated_at: 2026-08-09T12:00:00.000Z
   - id: a3000001-0001-4000-8000-000000000005
     scope: agent
     owner_slug: system-seed
@@ -275,6 +347,22 @@ entries:
       Action …
 
 
+      Valuation (H3):
+
+      Verdict UNDERVALUED|FAIRLY_VALUED|OVERVALUED|INSUFFICIENT_DATA — yardstick … | trap … |
+      evidence …
+
+
+      Full breakdown (H1): Snapshot | Business | Drivers | Competitive | Financials | Risks |
+      Valuation | Action | Gaps
+
+
+      Risk map (H5): Macro | Disruption | Management | Financial — each trigger→impact→falsify
+
+
+      Technical (H6 secondary): Trend | S/R | Momentum | vs fundamentals | confidence low|med
+
+
       News path:
 
       Regime UNDERREACT|OVERREACT|ALREADY_PRICED|UNKNOWN | Horizon … | Facts … | Action … |
@@ -291,7 +379,7 @@ entries:
     domain_tag: investment-analysis
     refs: []
     created_at: 2026-08-08T12:00:00.000Z
-    updated_at: 2026-08-08T12:00:00.000Z
+    updated_at: 2026-08-09T12:00:00.000Z
   - id: a3000001-0001-4000-8000-000000000007
     scope: agent
     owner_slug: system-seed

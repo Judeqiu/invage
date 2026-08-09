@@ -6,7 +6,7 @@ For **quotes, PE, analyst targets on holdings**, prefer `portfolio_analyzer` / m
 
 ## When to load
 
-Load for: web search, earnings news, 10-K/10-Q, **HKEX / China A-share filings**, guidance, sector news, competitor landscape, macro (Fed, CPI, PBOC, HKMA), company IR, **options chains / IV pages**, multi-market screens, or any fact not already returned by portfolio/Yahoo tools.
+Load for: web search, earnings news, 10-K/10-Q, **HKEX / China A-share filings**, guidance, sector news, competitor landscape, **financial statements pages**, chart/history text (Part H6 secondary), macro (Fed, CPI, PBOC, HKMA), company IR, **options chains / IV pages**, multi-market screens, or any fact not already returned by portfolio/Yahoo tools.
 
 ## Tool API
 
@@ -172,6 +172,19 @@ When the user wants **undervalued discovery**, EV/EBIT, FCF, ROIC, or peer cheap
 3. Extract only visible: expiry list, strike, bid/ask or last, IV if shown, volume/OI if shown.
 4. If page empty / geo-blocked / no chain for HK-A name → **options chain not verified** — do not invent.
 5. Pair with investment-analysis Part G verdict template.
+
+### C5. Research analyst pack (supports investment-analysis Part H)
+
+| Part H product | Firecrawl path |
+|----------------|----------------|
+| **H1** business / risks | IR + 10-K business description / risk factors (Part F for HK/CN) |
+| **H2** statements | Yahoo `/financials` if available, `/key-statistics`, or primary annual report — extract only visible rows |
+| **H3** peers/context | Finviz/Yahoo peers or sector comps after analyzer multiples |
+| **H4** competitive | IR competition section + peer search; **never invent competitor list** |
+| **H5** risks | 10-K risk factors + recent hard news |
+| **H6** technical (secondary) | Chart/history page text only; extract highs/lows/trend if shown — **never invent RSI/S/R** |
+
+Yahoo extras when useful: `https://finance.yahoo.com/quote/{TICKER}/financials`, `/balance-sheet`, `/cash-flow`, `/chart` (structure text only if present).
 
 ### D. Macro / rates impact on portfolio
 
