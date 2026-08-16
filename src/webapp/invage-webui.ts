@@ -1,8 +1,8 @@
 /**
  * Invage DomainExtension.webUi — Dashboard tab + chat empty-state guidance.
  *
- * Nav "Dashboard" → iframe route → static page under domain-assets
- * that fetches live data from /api/domain/invage/dashboard.
+ * Nav "Dashboard" / "Watch List" → iframe routes → static pages under
+ * domain-assets that fetch /api/domain/invage/dashboard|watchlist.
  *
  * chatEmptyState: WebUI-only hero on new / empty conversations
  * (utarus SPA manifest → ChatPage).
@@ -87,6 +87,13 @@ export function createInvageWebUi(): DomainWebUiExtension {
         icon: 'layout-dashboard',
         order: 10,
       },
+      {
+        id: 'watchlist',
+        label: 'Watch List',
+        path: '/watchlist',
+        icon: 'star',
+        order: 11,
+      },
     ],
     routes: [
       {
@@ -94,6 +101,12 @@ export function createInvageWebUi(): DomainWebUiExtension {
         pageKind: 'iframe',
         iframeSrc: '/domain-assets/invage/dashboard/index.html',
         title: 'Portfolio Dashboard',
+      },
+      {
+        path: '/watchlist',
+        pageKind: 'iframe',
+        iframeSrc: '/domain-assets/invage/watchlist/index.html',
+        title: 'Watch List',
       },
     ],
     apiRouters: [

@@ -138,6 +138,7 @@ playbook:
     markets: [US]              # also: HK, CN/China for multi-market discovery
     sectors: []
     themes: []
+    products: []               # named interest list (not holdings)
 ```
 
 | Field | Role in agent guidance |
@@ -147,9 +148,11 @@ playbook:
 | `risk` / allocation caps | BUY bar, take-profit speed, sizing language |
 | `buy_sell` | Hard criteria before BUY/SELL wording |
 | `rebalancing` | When to flag rebalance / concentration drift |
-| `watchlists` | Default discovery universe when no ticker is named (`US`, `HK`, `CN`/`China`, …) |
+| `watchlists` | Discovery universe (`markets` / `sectors` / `themes`) plus named `products` (interest list, not holdings) |
 
-**Tools:** `get_playbook`, `update_playbook` (channel-bound like portfolio tools).
+**Tools:** `get_playbook`, `update_playbook` (universe only), `add_watch_product`, `remove_watch_product` (named products). Channel-bound like portfolio tools.
+
+Named `products` are Yahoo-quotable `equity` or `fund` symbols (`symbol`, `instrument`, `added_at`, optional `note`). Unique symbol. They never post to the books ledger and never appear as portfolio lots. WebUI **Watch List** tab: `GET /api/domain/invage/watchlist`.
 
 **Guided setup skill:** `playbook-setup` — patient one-question-at-a-time wizard (user-initiated only). Knowledge: `src/skills/knowledge/playbook-setup.md`.
 

@@ -36,7 +36,7 @@ It is **not** a brokerage account and does **not** place trades.
 | **Allocation** | max position % · cash target % · max sector % | Concentration guards when sizing suggestions |
 | **Buy & sell rules** | free-text criteria + AI style | Hard constraints before BUY/SELL wording |
 | **Rebalancing** | `monthly` · `quarterly` · `threshold` (+ drift pp) | When to flag rebalance / concentration drift |
-| **Watchlists** | markets · sectors · themes | Default universe for undervalued / theme discovery |
+| **Watchlists** | markets · sectors · themes · products | Discovery universe; named products are an interest list (not holdings) |
 
 ---
 
@@ -88,6 +88,7 @@ playbook:
     markets: [US]
     sectors: []
     themes: []
+    products: []
 ```
 
 Invalid enums or out-of-range percents **fail fast** (no silent clamp beyond documented sync of position/sector caps). See [Data Model](data-model.html).
@@ -98,8 +99,10 @@ Invalid enums or out-of-range percents **fail fast** (no silent clamp beyond doc
 
 | Tool | Purpose |
 |------|---------|
-| `get_playbook` | Resolve effective playbook (defaults filled). Reports whether user-configured or default. |
-| `update_playbook` | Partial update of any axis. Channel-bound via `telegram_user_id` or `slack_user_id`. |
+| `get_playbook` | Resolve effective playbook (defaults filled). Reports whether user-configured or default. Includes named products. |
+| `update_playbook` | Partial update of methodology axes and universe lists (`markets` / `sectors` / `themes`). Does **not** replace `products`. |
+| `add_watch_product` | Append one Yahoo-quotable symbol (`equity` or `fund`). Duplicate fails. |
+| `remove_watch_product` | Remove by symbol. Missing fails. |
 
 Examples of fields on `update_playbook`: `strategy`, `philosophy`, `risk_profile`, `max_position_pct`, `max_sector_pct`, `cash_target_pct`, `buy_criteria`, `sell_criteria`, `ai_recommendation_style`, `rebalance_mode`, `rebalance_threshold_pct`, `markets`, `sectors`, `themes`.
 

@@ -33,6 +33,8 @@ describe('InvestmentAdvisor local agent', () => {
       'transfer_cash',
       'add_deposit',
       'update_playbook',
+      'add_watch_product',
+      'remove_watch_product',
       'get_household',
       'build_payment_plan',
       'estimate_opportunity_cost',

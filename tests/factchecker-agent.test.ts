@@ -44,6 +44,8 @@ describe('Factchecker local agent', () => {
       'transfer_cash',
       'post_opening_balance',
       'update_playbook',
+      'add_watch_product',
+      'remove_watch_product',
       'optimize_payment_plan',
       'save_report',
       'send_report',

@@ -13,6 +13,8 @@ describe('WalletStreet default orchestrator', () => {
     const names = new Set(createInvageTools().map((t) => t.name));
     expect(names.has('get_playbook')).toBe(true);
     expect(names.has('update_playbook')).toBe(true);
+    expect(names.has('add_watch_product')).toBe(true);
+    expect(names.has('remove_watch_product')).toBe(true);
     expect(names.has('get_household')).toBe(true);
 
     for (const forbidden of [

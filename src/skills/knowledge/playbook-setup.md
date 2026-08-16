@@ -255,7 +255,9 @@ Call `update_playbook` with the chosen criteria strings.
 2. **Sectors you care about** — e.g. Technology, Healthcare (or none). → `sectors`  
 3. **Themes** — e.g. AI, energy transition, aging (or none). → `themes`  
 
-Accept free text; split on commas; store clean strings. Empty array = no bias beyond defaults.  
+Accept free text; split on commas; store clean strings. Empty array = no bias beyond defaults.
+
+**Named products** (AAPL, 2800.HK, …) are **not** this step. They are an interest list on `watchlists.products`, added with `add_watch_product` / removed with `remove_watch_product`. Do not stuff tickers into `markets` / `sectors` / `themes`. The WebUI **Watch List** tab shows universe chips plus those named products.  
 If they say “global” or “Asia,” map to something concrete (e.g. `US, HK, China`) and confirm before save.
 
 ---
@@ -387,7 +389,8 @@ Then offer next steps (optional, one line): “analyze my portfolio”, “find 
 
 | Tool | Use |
 |------|-----|
-| `get_playbook` | Baseline + “explain my settings” |
-| `update_playbook` | Persist any subset of fields after confirmed answers |
+| `get_playbook` | Baseline + “explain my settings” (includes named products) |
+| `update_playbook` | Persist methodology / universe fields after confirmed answers |
+| `add_watch_product` / `remove_watch_product` | Named interest-list products — not part of the 7-step universe question |
 
 Channel: `telegram_user_id` **or** `slack_user_id` from context only.

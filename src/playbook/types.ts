@@ -56,10 +56,23 @@ export interface RiskManagement {
   sector_exposure_pct: number;
 }
 
+export const WATCH_INSTRUMENTS = ['equity', 'fund'] as const;
+export type WatchInstrument = (typeof WATCH_INSTRUMENTS)[number];
+
+/** Named product on the playbook watch list. Not a holding — no units, cost, or ledger. */
+export interface WatchProduct {
+  symbol: string;
+  instrument: WatchInstrument;
+  added_at: string;
+  note?: string;
+}
+
 export interface Watchlists {
   markets: string[];
   sectors: string[];
   themes: string[];
+  /** Yahoo-quotable names the user is tracking. Default []. */
+  products: WatchProduct[];
 }
 
 /**
@@ -119,5 +132,6 @@ export const DEFAULT_PLAYBOOK: InvestmentPlaybook = {
     markets: ['US'],
     sectors: [],
     themes: [],
+    products: [],
   },
 };

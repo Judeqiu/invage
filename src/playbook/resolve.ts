@@ -16,6 +16,7 @@ import {
   type Strategy,
   type Watchlists,
 } from './types.js';
+import { parseWatchProducts } from './watch-products.js';
 
 function isStrategy(v: unknown): v is Strategy {
   return typeof v === 'string' && (STRATEGIES as readonly string[]).includes(v);
@@ -188,6 +189,10 @@ export function resolvePlaybook(raw: unknown): InvestmentPlaybook {
       wlRaw.themes !== undefined
         ? stringList(wlRaw.themes, 'watchlists.themes')
         : [...d.watchlists.themes],
+    products:
+      wlRaw.products !== undefined
+        ? parseWatchProducts(wlRaw.products)
+        : [...d.watchlists.products],
   };
 
   return {
@@ -217,6 +222,7 @@ export function applyPlaybookPatch(
       markets: patch.watchlists?.markets ?? current.watchlists.markets,
       sectors: patch.watchlists?.sectors ?? current.watchlists.sectors,
       themes: patch.watchlists?.themes ?? current.watchlists.themes,
+      products: patch.watchlists?.products ?? current.watchlists.products,
     },
   };
 
@@ -258,6 +264,11 @@ export function formatPlaybookSummary(pb: InvestmentPlaybook): string {
   }
   if (pb.watchlists.themes.length) {
     lines.push(`  Themes: ${pb.watchlists.themes.join(', ')}`);
+  }
+  if (pb.watchlists.products.length) {
+    lines.push(
+      `  Watch products: ${pb.watchlists.products.map((p) => p.symbol).join(', ')}`,
+    );
   }
   return lines.join('\n');
 }
