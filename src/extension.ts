@@ -44,12 +44,13 @@ const SPECIALIST_TABLE = `| Peer | id | Capability — route when intent fits |
 | **Bookkeeper** | \`bookkeeper\` | Ledger integrity: journal, import/reconcile, cash/FD sleeves, holding mutations |
 | **FinancialPlanner** | \`financial-planner\` | Payment efficiency: multi-combination paydown search (min HARD cost / max gain), deposit-vs-debt, opportunity-cost math |
 | **InvestmentAdvisor** | \`investment-advisor\` | Securities research & recommendations: portfolio evaluation, idea discovery, single-name thesis, news→path, options, live marks, analysis reports |
+| **AIDeal** | \`aideal\` | Aideal Investment production: sleeve index vs sector ETF, weekly five-section pack, Gmail-safe newsletter. Not generic thesis craft |
 | **Real Estate Expert** | \`real-estate-expert\` | Physical property: comps, stamp duties, yield/LTV, home marks, property ledger, second-property all-in, SG RE affordability with duties, URA car parks |
 | **Factchecker** | \`factchecker\` | Integrity audit of material claims before final host answer: re-run tools, \`submit_factcheck_verdict\` PASS/FAIL/PASS_WITH_CAVEATS, propose REDO — does **not** craft plans/theses/journals |`;
 
 const PEER_RETURN_LADDER = `**Peer-return ladder (mandatory — overrides "synthesize NOW" inject when material claims exist):**
 On every return from a peer (implicit return or handoff back), follow **in order** — do not jump to final synthesis early:
-1. **Continue craft** — if plan / intent still has remaining craft specialists (Bookkeeper / FinancialPlanner / InvestmentAdvisor / RealEstateExpert), hand off or invoke the **next** peer. Do **not** Factcheck mid multi-peer craft. Specialist bubbles are provisional.
+1. **Continue craft** — if plan / intent still has remaining craft specialists (Bookkeeper / FinancialPlanner / InvestmentAdvisor / AIDeal / RealEstateExpert), hand off or invoke the **next** peer. Do **not** Factcheck mid multi-peer craft. Specialist bubbles are provisional.
 2. **Residual claim-producing tools** — when all craft is done (or none), run residual host tools that produce user-visible numbers **before** audit (\`run_projection\`, household reads, playbook when it affects numbers).
 3. **Always-last Factcheck** — if material claims / user-visible money fields will appear in the final answer, call \`invoke_local_agent\` → **Factchecker** **once** with a **structured claim list** (copy tool field names + values from residual/peer tool results this turn), \`redo_count\`, and user channel ids. Keep the task short — Factchecker re-runs tools; do not paste essays. Deliverable for claim chains = **audited synthesis** — missing until this step completes (or explicit skip: pure chitchat / no claim-producing work / no user-visible money fields).
 4. **Synthesize** only after Factcheck **PASS** or **PASS_WITH_CAVEATS** (or skip). **No new material $/%/dates/balances** after PASS that were not in the audited claim set — if you need new residual numbers, re-invoke Factchecker. **Do not invoke Factchecker twice** for the same claim set.
@@ -115,6 +116,7 @@ Pure residual path with user-visible numbers (no craft peer) still ends with Fac
 - **Any books write/update** (portfolio CRUD, cash/FD, household ledger, scenarios, snapshots) → **Bookkeeper only**
 - Debt paydown / opportunity-cost schedules → **FinancialPlanner** (reads books; does not journal)
 - Quotes, valuation, securities discovery/thesis, news path, options → **InvestmentAdvisor**
+- Aideal sleeve index / weekly pack / production newsletter → **AIDeal**
 - Property comps, duties, yield, RE research, car parks → **Real Estate Expert** (property **marks/payments** still → **Bookkeeper**)
 - Integrity audit of material claims → **Factchecker** (always-last; you do not freehand re-audit)
 - Do not claim “I can handle that myself” when a peer owns the capability

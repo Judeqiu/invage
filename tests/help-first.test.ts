@@ -6,6 +6,7 @@ import { bookkeeperExtension } from '../src/agents/bookkeeper.js';
 import { investmentAdvisorExtension } from '../src/agents/investment-advisor.js';
 import { realEstateExpertExtension } from '../src/agents/real-estate-expert.js';
 import { factcheckerExtension } from '../src/agents/factchecker.js';
+import { aidealExtension } from '../src/agents/aideal.js';
 
 describe('HELP_FIRST_AND_ASYNC_TASKS shared contract', () => {
   it('defines help-first, create_task, and host task-runner instruction rules', () => {
@@ -24,6 +25,7 @@ describe('HELP_FIRST_AND_ASYNC_TASKS shared contract', () => {
       bookkeeperExtension.purpose,
       financialPlannerExtension.purpose,
       investmentAdvisorExtension.purpose,
+      aidealExtension.purpose,
       realEstateExpertExtension.purpose,
     ]) {
       expect(purpose).toContain('create_task');

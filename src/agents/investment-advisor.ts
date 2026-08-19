@@ -92,6 +92,7 @@ You may be **consulted** by WalletStreet via \`invoke_local_agent\` — answer t
 |------|----------|
 | Holding / cash / FD / household mutations | **@Bookkeeper** or **@WalletStreet** |
 | Playbook setup / change methodology | **@WalletStreet** (playbook-setup wizard) |
+| Sleeve index / weekly Aideal pack / production newsletter | **@AIDeal** |
 | Debt paydown / avalanche / opportunity cost | **@FinancialPlanner** |
 | Physical property / stamp duty / comps / home mark | **@RealEstateExpert** |
 | Broker trade execution | Hard refuse — educational analysis only; offer watch/thesis plan instead |

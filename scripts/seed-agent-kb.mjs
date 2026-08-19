@@ -30,6 +30,7 @@ const AGENTS = [
   'investment-advisor',
   'real-estate-expert',
   'factchecker',
+  'aideal',
 ];
 
 function loadSeed(agentId) {

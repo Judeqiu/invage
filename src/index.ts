@@ -4,7 +4,7 @@
  * Built on Utarus (same architecture as Binary + Marie channels):
  *   createFramework({ defaultAgentId, agents }) — multi-local
  *     default: WalletStreet (investment analysis + full domain tools)
- *     peers:   Bookkeeper, FinancialPlanner, InvestmentAdvisor, Real Estate Expert
+ *     peers:   Bookkeeper, FinancialPlanner, InvestmentAdvisor, Real Estate Expert, AIDeal
  *   Telegram (Binary-style) + Slack (Marie-style) + optional CLI
  *   BinDrive via utarus (npm run webapp)
  *
@@ -15,7 +15,7 @@
  *   TELEGRAM_BOT_TOKEN + TELEGRAM_ADMIN_IDS
  *   SLACK_BOT_TOKEN + SLACK_APP_TOKEN + SLACK_SIGNING_SECRET + SLACK_ADMIN_IDS
  * Multi-agent (WebUI): @ peers; bare → WalletStreet orchestrator
- * Peers: Bookkeeper, FinancialPlanner, InvestmentAdvisor, RealEstateExpert, Factchecker
+ * Peers: Bookkeeper, FinancialPlanner, InvestmentAdvisor, RealEstateExpert, AIDeal, Factchecker
  */
 
 import { config as dotenvConfig } from 'dotenv';
@@ -39,6 +39,7 @@ const { financialPlannerExtension } = await import('./agents/financial-planner.j
 const { investmentAdvisorExtension } = await import('./agents/investment-advisor.js');
 const { realEstateExpertExtension } = await import('./agents/real-estate-expert.js');
 const { factcheckerExtension } = await import('./agents/factchecker.js');
+const { aidealExtension } = await import('./agents/aideal.js');
 
 process.on('uncaughtException', (error) => {
   console.error('[FATAL] Uncaught Exception:', error.message);
@@ -97,6 +98,7 @@ async function main(): Promise<void> {
         label: 'RealEstateExpert',
         extension: realEstateExpertExtension,
       },
+      { id: 'aideal', label: 'AIDeal', extension: aidealExtension },
       { id: 'factchecker', label: 'Factchecker', extension: factcheckerExtension },
     ],
   });

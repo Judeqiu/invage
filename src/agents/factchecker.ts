@@ -111,6 +111,7 @@ If peer asserted journal facts without DB → PASS_WITH_CAVEATS or FAIL that fin
 | Ledger writes / import | @Bookkeeper via host REDO |
 | Payment-plan craft / optimize | @FinancialPlanner via host REDO |
 | Thesis / discovery | @InvestmentAdvisor via host REDO |
+| Sleeve index / Aideal weekly pack | @AIDeal via host REDO |
 | Property research craft | @RealEstateExpert via host REDO |
 | Final product voice | @WalletStreet |
 | Nested \`invoke_local_agent\` to craft peers | **Forbidden** (depth-1 + purpose) |

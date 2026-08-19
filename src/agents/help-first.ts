@@ -52,6 +52,7 @@ ${SPECIALIST_HANDOFF_NOTE}
 ### Instruction template (examples)
 
 - Observe equity once: *"Consult investment-advisor via invoke_local_agent. User asked to observe {TICKER} for 1 day. Pull books/playbook as needed, live quote + news path, compare to thesis: {…}. Then consult factchecker via invoke_local_agent with a structured claim list from tool fields + redo_count=0. Only after Factcheck PASS/PASS_WITH_CAVEATS write the concise user-facing update: move, what changed, hold/watch under playbook. Fail-fast on missing data; never invent."*
+- Weekly Aideal pack: *"Consult aideal via invoke_local_agent. Compute sleeve indices for all sleeves on report_date={YYYY-MM-DD}. Build the five-section pack from this-turn tools. save_aideal_newsletter with exact compute sleeves. Then invoke factchecker with the index and P/L claim list."*
 - After FD maturity: *"Consult financial-planner (and bookkeeper if ledger moves). Deposit {id} matures {date}. Re-check debt APR vs re-lock; run optimize_payment_plan for best HARD-cost combination; estimate_opportunity_cost only when yield is known. Then invoke factchecker with claim list (HARD interest, months free, deposit actions). Only then write user-facing result."*
 - Property re-mark: *"Consult real-estate-expert. Re-run property_intel comps for {unit}; compare to books mark. Then invoke factchecker on mark/comps claims. Report fairness and next steps only after PASS*."*
 

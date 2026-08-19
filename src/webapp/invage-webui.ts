@@ -29,7 +29,7 @@ export const INVAGE_CHAT_EMPTY_STATE = {
   title: 'Your investment analyst — with household books',
   body: [
     'I analyze portfolios (live marks, playbook, undervalued screens) and can keep household books for cash flow and big decisions like buying a house.',
-    'Use the Dashboard tab for portfolio value. For family net worth or 5-year cash flow, set treasury data then ask me to project.',
+    'Use the Dashboard tab for portfolio value and the Watch List tab for playbook names. Bookkeeper journals the ledger; InvestmentAdvisor researches; AIDeal runs the Aideal sleeve pack; Factchecker audits numbers before the final answer.',
   ],
   bullets: [
     'Import or add holdings (equity / fund / options) · set free cash and fixed deposits',
@@ -61,6 +61,11 @@ export const INVAGE_CHAT_EMPTY_STATE = {
       label: 'Can we buy a house?',
       message:
         'Help me run a house affordability scenario. First check what household data I already have, then ask only for the missing purchase details.',
+    },
+    {
+      label: 'Aideal sleeve pack',
+      message:
+        'Run the Aideal sleeve scorecard for today (all sleeves) and tell me what lots are missing category tags.',
     },
   ],
   footer:

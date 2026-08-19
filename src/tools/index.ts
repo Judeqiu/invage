@@ -30,6 +30,11 @@ import {
 } from './payment_plan.js';
 import { createOpportunityCostTool } from './opportunity_cost.js';
 import { createSubmitFactcheckVerdictTool } from './factcheck_verdict.js';
+import {
+  createComputeSleeveIndexTool,
+  createListAidealSleevesTool,
+  createSaveAidealNewsletterTool,
+} from './aideal.js';
 
 /**
  * Default host (WalletStreet) — orchestration + residual host domains only.
@@ -100,6 +105,22 @@ export function createRealEstateExpertTools(): AgentTool[] {
     ...createHouseholdReadTools(),
     ...createProjectionReadTools(),
     createGetPortfolioTool(),
+  ];
+}
+
+/**
+ * AIDeal — named-portfolio production (sleeve index, weekly pack, newsletter).
+ * Read-only books. No ledger writes. No generic thesis DIY (that is InvestmentAdvisor).
+ */
+export function createAidealTools(): AgentTool[] {
+  return [
+    createListAidealSleevesTool(),
+    createComputeSleeveIndexTool(),
+    createSaveAidealNewsletterTool(),
+    createGetPortfolioTool(),
+    createQuoteTool(),
+    createPortfolioAnalyzerTool(),
+    createSaveReportTool(),
   ];
 }
 
