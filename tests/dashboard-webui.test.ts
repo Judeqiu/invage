@@ -147,8 +147,31 @@ describe('createInvageWebUi', () => {
     const route = webUi.routes?.find((r) => r.path === '/dashboard');
     expect(route?.pageKind).toBe('iframe');
     expect(route?.iframeSrc).toContain('/domain-assets/invage/dashboard');
-    expect(webUi.apiRouters?.length).toBe(1);
+    expect(webUi.apiRouters?.length).toBe(2);
     expect(existsSync(join(invageWebUiStaticDir(), 'dashboard', 'index.html'))).toBe(true);
     expect(existsSync(join(invageWebUiStaticDir(), 'dashboard', 'app.js'))).toBe(true);
+  });
+
+  it('registers Brokers nav and iframe page', () => {
+    const webUi = createInvageWebUi();
+    expect(webUi.nav?.some((n) => n.id === 'brokers' && n.path === '/brokers')).toBe(true);
+    const route = webUi.routes?.find((r) => r.path === '/brokers');
+    expect(route?.pageKind).toBe('iframe');
+    expect(route?.iframeSrc).toBe('/domain-assets/invage/brokers/index.html');
+    expect(existsSync(join(invageWebUiStaticDir(), 'brokers', 'index.html'))).toBe(true);
+    expect(existsSync(join(invageWebUiStaticDir(), 'brokers', 'app.js'))).toBe(true);
+  });
+
+  it('registers Positions, Trades, Insights report pages', () => {
+    const webUi = createInvageWebUi();
+    for (const id of ['positions', 'trades', 'insights']) {
+      expect(webUi.nav?.some((n) => n.id === id && n.path === `/${id}`)).toBe(true);
+      const route = webUi.routes?.find((r) => r.path === `/${id}`);
+      expect(route?.iframeSrc).toBe(`/domain-assets/invage/${id}/index.html`);
+      expect(existsSync(join(invageWebUiStaticDir(), id, 'index.html'))).toBe(true);
+      expect(existsSync(join(invageWebUiStaticDir(), id, 'app.js'))).toBe(true);
+    }
+    expect(existsSync(join(invageWebUiStaticDir(), 'report.css'))).toBe(true);
+    expect(existsSync(join(invageWebUiStaticDir(), 'report.js'))).toBe(true);
   });
 });

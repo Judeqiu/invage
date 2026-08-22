@@ -4,9 +4,13 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Watch List</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../report.css" />
   <style>
     :root {
-      --bg: #f4f6f9;
+      --bg: var(--background);
       --surface: #ffffff;
       --ink: #0f172a;
       --ink-muted: #64748b;
@@ -29,16 +33,16 @@
       -webkit-font-smoothing: antialiased;
     }
     .header {
-      background: linear-gradient(135deg, #0f172a 0%, #1e293b 55%, #0f172a 100%);
-      color: #fff;
+      background: transparent;
+      color: var(--ink);
       padding: 1.25rem 1.5rem 1.1rem;
-      text-align: center;
+      text-align: left;
       position: sticky;
       top: 0;
       z-index: 100;
-      border-bottom: 1px solid rgba(255,255,255,0.06);
+      border-bottom: 1px solid var(--border);
     }
-    .header h1 { font-size: 1.35rem; font-weight: 650; letter-spacing: -0.02em; }
+    .header h1 { font-family: var(--font-serif); font-size: 1.85rem; font-weight: 400; letter-spacing: -0.02em; }
     .header .subtitle { font-size: 0.8125rem; opacity: 0.72; margin-top: 0.3rem; }
     .controls {
       background: var(--surface);

@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Trades</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../report.css" />
+</head>
+<body>
+  <div class="page">
+    <div class="breadcrumb label-eyebrow">Trades / Open options on the books</div>
+    <div class="hero">
+      <div class="label-eyebrow" id="eyebrow">Journal</div>
+      <h1>Every option lot, from the books.</h1>
+      <p>Open option holdings only — there is no separate fill journal yet. Closed/assigned/rolled history is not invented. Premium is book avg vs mark per contract.</p>
+    </div>
+    <div id="error" class="error" hidden></div>
+    <div class="filters" id="filters"></div>
+    <div id="table"></div>
+  </div>
+  <script src="../report.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
