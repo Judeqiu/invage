@@ -181,6 +181,32 @@ log:
 
 Every mutation appends to `log[]`. The agent never manually logs — the framework handles it.
 
+### Broker connections
+
+Optional top-level `broker_connections` on the same user file. Key = connector id from the Invage catalog (`ibkr` in v1). Secrets (Flex token) live here — the Settings GET never returns the token.
+
+```yaml
+broker_connections:
+  ibkr:
+    enabled: true
+    credentials:
+      token: "123456789123456789"
+      activity_query_id: "111222"
+    last_sync:
+      at: "2026-08-22T04:12:00.000Z"
+      ok: true
+      as_of: "2026-08-21"
+      account_id: "U1234567"
+      lots_upserted: 12
+      lots_removed: 1
+      not_imported:   # omitted when empty; each skipped lot/cash row
+        - "ES: assetCategory FUT is not imported (supported: STK, ETF, OPT, FUND)"
+```
+
+Legacy `ibkr_flex` is accepted on **read** only. The first Settings save, `configure_ibkr_flex`, or Flex sync (including a failed sync) writes `broker_connections` and **deletes** `ibkr_flex`. Both keys present is an error. Unknown connector or credential keys fail on read. **Disable does not delete** holdings tagged `channel: ibkr`.
+
+Flex apply is a **channel snapshot** of what mapped: every ISO Cash Report sleeve on `ibkr` (IBKR `BASE_SUMMARY` is dropped, not stored), every mappable STK/ETF/OPT/FUND lot. Unsupported rows are listed in `last_sync.not_imported` and are **not** invented as holdings. Missing Open Positions / Cash Report wrappers, or zero importable cash sleeves, fail the catalog parser (no wipe). CSV or other unexpected text is archived under `drive/<slug>/broker-raw/<connector>/`. A declarative `csv_tables` spec may be stored at `drive/<slug>/broker-parsers/<connector>.json` (host-interpreted, never eval) and used on the next sync. LLM-produced `BrokerStatement` JSON applies through the same path.
+
 ---
 
 ## Layer 3: Portfolio Holdings

@@ -49,7 +49,19 @@ function registerBookkeeperSkills(): Skill[] {
       id: 'bookkeeping',
       name: 'Bookkeeping',
       description:
-        'Journal/reconcile/read books. Load for cash/deposits/holdings ledger, fund import (instrument=fund), gaps. Full recipes in agent KB (search_kb). Tools: get_household, get_portfolio, post_opening_balance, post_adjustment, transfer_cash, holding CRUD. Never set absolute cash. Not stock picking.',
+        'Journal/reconcile/read books. Load for cash/deposits/holdings ledger, fund import (instrument=fund), gaps. Full recipes in agent KB (search_kb). Tools: get_household, get_portfolio, post_opening_balance, post_adjustment, transfer_cash, holding CRUD. Broker ingest → broker-integration skill. Never set absolute cash. Not stock picking.',
+    },
+    {
+      id: 'broker-integration',
+      name: 'Broker integration',
+      description:
+        'Read-only ingest from a catalog brokerage connector onto its channel. IBKR (ibkr) is the shipped channel. Load by capability fit when books should match a broker statement, Flex sync fails to parse, CSV/XML format is unexpected, or the user wants to connect/refresh/reconcile IBKR or another catalog connector. Tools: configure_ibkr_flex, sync_ibkr_flex, read_broker_raw, save_broker_parser, parse_broker_raw, apply_broker_statement. Catalog parser first; on parse failure the agent reads raw text and writes a csv_tables spec or BrokerStatement — never eval, never invent numbers. Quote not_imported.',
+    },
+    {
+      id: 'ibkr-flex',
+      name: 'IBKR Flex sync',
+      description:
+        'IBKR is catalog connector ibkr. Load broker-integration. Tools remain configure_ibkr_flex and sync_ibkr_flex.',
     },
     {
       id: 'family-treasury',
@@ -72,7 +84,9 @@ const BOOKKEEPER_PURPOSE = `You are **Bookkeeper** — a local specialist on the
 
 **Sole responsibility:** help the user **journal**, **reconcile**, and **read** the household books managed on this host (YAML + financial DB journals).
 
-**You are the only agent allowed to write/update books data** (portfolio, cash, deposits, holdings, household ledger, projection assumptions/scenarios, snapshots). Other peers are read-only on the books — they must hand journal work to you.
+**You are the only agent allowed to write/update books data** (portfolio, cash, deposits, holdings, household ledger, projection assumptions/scenarios, snapshots, IBKR Flex ingest). Other peers are read-only on the books — they must hand journal work to you.
+
+**Brokers:** Load skill **broker-integration**. IBKR is catalog \`ibkr\`. Connect in Settings → Brokers or \`configure_ibkr_flex\`. Call \`sync_ibkr_flex\` anytime the channel is on. If the catalog parser fails, read archived raw, generate a \`csv_tables\` spec or BrokerStatement from the text, never invent numbers. Quote \`not_imported\`. Never echo the token.
 
 You are **not** the investment analyst. Do not run undervalued screens, live valuation theses, news→price paths, playbook interviews, or market-theme research. For those, hand off to **@WalletStreet** / **@InvestmentAdvisor** (or let the default agent consult them).
 

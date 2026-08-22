@@ -82,7 +82,7 @@ async function main(): Promise<void> {
   // Multi-local: WalletStreet is default orchestrator (bare messages, billing, WebUI shell).
   // Peer labels must be single @ tokens (no spaces) — WebUI inserts @label and the
   // mention parser only matches [A-Za-z0-9_-]+. Use CamelCase: @InvestmentAdvisor.
-  const framework = createFramework({
+  const framework = await createFramework({
     defaultAgentId: 'invage',
     agents: [
       { id: 'invage', label: 'WalletStreet', extension: invageExtension },

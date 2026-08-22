@@ -217,6 +217,23 @@ export interface FixedDeposit {
   label?: string;
 }
 
+export interface BrokerConnectionLastSync {
+  at: string;
+  ok: boolean;
+  as_of?: string;
+  account_id?: string;
+  lots_upserted?: number;
+  lots_removed?: number;
+  not_imported?: string[];
+  error?: string;
+}
+
+export interface BrokerConnection {
+  enabled: boolean;
+  credentials: Record<string, string>;
+  last_sync?: BrokerConnectionLastSync;
+}
+
 export interface InvestorState extends UserState {
   portfolio?: Record<string, Holding>;
   /** Optional recorded cash; omit entirely when unknown. Single or multi-channel. */
@@ -225,6 +242,11 @@ export interface InvestorState extends UserState {
   deposits?: FixedDeposit[];
   /** Optional per-user investment playbook; missing → DEFAULT_PLAYBOOK via getPlaybook. */
   playbook?: Partial<InvestmentPlaybook> | InvestmentPlaybook;
+  /**
+   * Per-connector ingest config. Key = connector id (catalog).
+   * Unknown keys fail on read.
+   */
+  broker_connections?: Record<string, BrokerConnection>;
 }
 
 export function getPortfolio(state: InvestorState): Record<string, Holding> {

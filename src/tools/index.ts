@@ -35,6 +35,13 @@ import {
   createListAidealSleevesTool,
   createSaveAidealNewsletterTool,
 } from './aideal.js';
+import {
+  createApplyBrokerStatementTool,
+  createParseBrokerRawTool,
+  createReadBrokerRawTool,
+  createSaveBrokerParserTool,
+} from './broker_ingest.js';
+import { createConfigureIbkrFlexTool, createSyncIbkrFlexTool } from './ibkr_flex.js';
 
 /**
  * Default host (WalletStreet) — orchestration + residual host domains only.
@@ -60,6 +67,12 @@ export function createBookkeeperTools(): AgentTool[] {
     ...createHouseholdTools(),
     ...createProjectionTools(),
     ...createSnapshotTool(),
+    createConfigureIbkrFlexTool(),
+    createSyncIbkrFlexTool(),
+    createReadBrokerRawTool(),
+    createSaveBrokerParserTool(),
+    createParseBrokerRawTool(),
+    createApplyBrokerStatementTool(),
   ];
 }
 

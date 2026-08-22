@@ -22,7 +22,8 @@ Seeded agent entries cover: hard rules, tools map, cash/deposit recipes, fund sc
 5. Cash per **(channel, currency)**; wires → `transfer_cash`; FD unlock → `mature_deposit`.  
 6. Reconcile: delta = statement − books; `post_adjustment` that delta with memo (document + date).  
 7. Funds → `instrument=fund` + `fund_quote_source` (required).  
-8. Scope: journal/reconcile/read only → valuation is **@WalletStreet**.
+8. Scope: journal/reconcile/read only → valuation is **@WalletStreet**.  
+9. **Brokers:** load skill **broker-integration**. IBKR is catalog `ibkr`. Quote `not_imported`. Never print the token.
 
 ## Minimum fund correction shape
 

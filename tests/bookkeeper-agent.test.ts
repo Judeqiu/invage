@@ -86,7 +86,12 @@ describe('Bookkeeper local agent', () => {
     const skillIds = bookkeeperExtension.skills.map((s) => s.id);
     expect(skillIds).toContain('bookkeeping');
     expect(skillIds).toContain('family-treasury');
+    expect(skillIds).toContain('broker-integration');
+    expect(skillIds).toContain('ibkr-flex');
     expect(skillIds).not.toContain('investment-analysis');
+    const broker = bookkeeperExtension.skills.find((s) => s.id === 'broker-integration');
+    expect(broker?.description).toMatch(/csv_tables|apply_broker_statement/);
+    expect(broker?.description).toMatch(/ibkr/);
     const bookkeeping = bookkeeperExtension.skills.find((s) => s.id === 'bookkeeping');
     expect(bookkeeping?.description).toMatch(/agent KB|search_kb|fund/i);
   });
