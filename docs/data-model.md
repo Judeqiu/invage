@@ -207,6 +207,27 @@ Legacy `ibkr_flex` is accepted on **read** only. The first Settings save, `confi
 
 Flex apply is a **channel snapshot** of what mapped: every ISO Cash Report sleeve on `ibkr` (IBKR `BASE_SUMMARY` is dropped, not stored), every mappable STK/ETF/OPT/FUND lot. Unsupported rows are listed in `last_sync.not_imported` and are **not** invented as holdings. Missing Open Positions / Cash Report wrappers, or zero importable cash sleeves, fail the catalog parser (no wipe). CSV or other unexpected text is archived under `drive/<slug>/broker-raw/<connector>/`. A declarative `csv_tables` spec may be stored at `drive/<slug>/broker-parsers/<connector>.json` (host-interpreted, never eval) and used on the next sync. LLM-produced `BrokerStatement` JSON applies through the same path.
 
+**IBKR Activity Statement (monthly PDF / full Flex Activity) vs v1 snapshot.** Checked against a live July 2026 statement (`U9410780`, margin, base USD). v1 ingest is **end-of-day lots + free cash on one connector**. The PDF is a **period pack**. Do not jam the extra sections into `portfolio` / `cash` by inventing fields.
+
+| Statement section | Fits today | Future home (do not overload lots) |
+|---|---|---|
+| Open Positions stocks (AMD, BAC, …) | `instrument: equity` + `channel: ibkr`, key `TICKER@ibkr` | — |
+| Open Positions equity/index options (short puts/calls, mult 100) | `instrument: option` + side from signed qty; key `AMD-P-350-20260821-S@ibkr`. IBKR **mark is per share**; store **premium $ per contract** = mark × multiplier | — |
+| Cash Report ending cash (USD) | `cash[]` slot `(ibkr, USD)` | Settled vs available: second slot or `settled_amount` on the same sleeve — **not** a second currency |
+| Cash Report commissions / interest / other fees / sales tax / FX translation | Not on the lot | Books `journal_entry` (`type: trade` / `correction` / income-expense lines) with `external_ref` = Flex row id |
+| Trades (fills, T. Price / C. Price, comm, codes O/C/P/Ep, US/Eastern time) | Not stored as a blotter | Journal lines + optional `ibkr_flex` Trade rows; YAML `add_holding` remains **blended avg**, not FIFO lots |
+| Realized S/T–L/T P/L, wash-sale / cost adj. | Not modeled | Tax-lot table keyed by Flex `transactionId` / `tradeID`. **Do not** split `avg_price` into ST/LT on the holding |
+| Change in NAV / TWR | Not SoR | Derive from snapshots + journals. Do not persist IBKR TWR as household NAV |
+| Interest accruals (NAV line, ≠ cash) | No | Accrual sleeve or journal memo; **do not** add into `cash.amount` until settled |
+| Forex cash (e.g. SGD 0) | Empty ISO sleeve allowed only if Cash Report has a real currency row | Same `(channel, currency)` cash identity |
+| **Collateral / Securities Right to Use / SYEP / stock loan** (NAV long collateral vs short SRP; Open Positions “Collateral for Customer Borrowing”, “Not Segregated”) | **Gap.** Same ticker must stay **one lot**. Pledged/lent qty is not extra `units` | On the holding: `encumbered_units` + `encumbrance` (`pledged` \| `lent_syep` \| `right_to_use`) **or** a child lot key `PATH@ibkr#lent`. Double-counting pledged PATH as a second position is an error |
+| Margin / buying power / SMA | Not on books | Optional live metrics blob on `broker_connections.ibkr`; never invent from cash |
+| Futures | `not_imported` today | New `instrument` or skip until a futures lot type exists |
+| Second IBKR account | One FlexStatement per connector | New catalog id / channel (`ibkr-ira`), not a keyword split of `ibkr` |
+| `Financial Instrument Information` (conid, listing, multiplier) | Flex `raw` only; not on `Holding` | Optional `broker_ref.conid` on the lot when we stop throwing extra attributes away |
+
+v1 remains correct for this PDF’s **economic snapshot**: long stock + short options + USD cash on `ibkr`. The statement’s **stock-loan/collateral** and **fill/tax-lot** layers are why a later Flex Trades/SYEP ingest must extend the model explicitly rather than stuffing numbers into `units` or `avg_price`.
+
 ---
 
 ## Layer 3: Portfolio Holdings
