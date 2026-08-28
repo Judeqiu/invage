@@ -8,8 +8,7 @@ import {
   readBrokerRawFile,
   saveBrokerParserSpec,
 } from '../brokers/parser-store.js';
-import { assertBrokerStatement } from '../brokers/statement.js';
-import { formatFlexSkip } from '../ibkr/flex-parse.js';
+import { assertBrokerStatement, formatBrokerSkip } from '../brokers/statement.js';
 import { channelIdParams, resolveInvestorFromChannel, type ChannelIds } from './channel.js';
 
 function ok<T>(text: string, details: T): AgentToolResult<T> {
@@ -111,9 +110,9 @@ export function createParseBrokerRawTool(): AgentTool {
         const saved = spec ?? loadBrokerParserSpec(slug, id);
         if (!saved) throw new Error(`No parser spec for "${id}". Call save_broker_parser first.`);
         const got = readBrokerRawFile(slug, id, p.path);
-        const statement = runCsvTablesSpec(got.text, saved);
+        const statement = runCsvTablesSpec(got.text, saved, getBrokerConnector(id).channel);
         return ok(
-          `Parsed ${id} raw via csv_tables: account ${statement.accountId}, cash ${statement.cash.length} sleeve(s), positions ${statement.openPositions.length}. Call apply_broker_statement to write books.`,
+          `Parsed ${id} raw via csv_tables: account ${statement.account_id}, cash ${statement.cash.length} sleeve(s), lots ${statement.lots.length}. Call apply_broker_statement to write books.`,
           { path: got.path, statement },
         );
       } catch (e) {
@@ -128,13 +127,17 @@ export function createApplyBrokerStatementTool(): AgentTool {
     name: 'apply_broker_statement',
     label: 'Apply broker statement',
     description:
-      'Apply a validated BrokerStatement (accountId, fromDate, toDate, cash[], openPositions[]) onto the catalog connector channel. Same apply path as catalog sync. Use after LLM-reading raw text or parse_broker_raw. Never invent numbers.',
+      'Apply a validated BrokerStatement (account_id, as_of, cash[].amount, lots[].holding) onto the catalog connector channel. Same apply path as catalog sync. This is the books snapshot — not Flex/CSV vendor rows. Use after LLM-reading raw text or parse_broker_raw. Never invent numbers.',
     parameters: Type.Object({
       ...channelIdParams,
       connector_id: Type.String({ description: 'Catalog connector id (e.g. ibkr).' }),
       statement: Type.Object(
         {},
-        { additionalProperties: true, description: 'BrokerStatement JSON from parse_broker_raw or LLM extract of archived raw.' },
+        {
+          additionalProperties: true,
+          description:
+            'Public BrokerStatement: account_id, as_of, cash[{currency,amount}], lots[{ticker,currency,holding}]. Not Flex openPositions/endingCash.',
+        },
       ),
     }),
     execute: async (_id, raw) => {
@@ -145,13 +148,13 @@ export function createApplyBrokerStatementTool(): AgentTool {
         const applied = await applyBrokerStatement(state, p.connector_id.trim(), doc);
         const skip =
           applied.skipped.length > 0
-            ? [`Not imported (${applied.skipped.length}):`, ...applied.skipped.map((s) => `- ${formatFlexSkip(s)}`)]
+            ? [`Not imported (${applied.skipped.length}):`, ...applied.skipped.map((s) => `- ${formatBrokerSkip(s)}`)]
             : [];
         return ok(
           [
             `Applied ${p.connector_id.trim()} statement account ${applied.accountId} as of ${applied.asOf}.`,
             `Lots upserted: ${applied.lotsUpserted}. Lots removed: ${applied.lotsRemoved}.`,
-            `Cash: ${applied.cash.map((c) => `${c.currency} ${c.endingCash}`).join(', ')}`,
+            `Cash: ${applied.cash.map((c) => `${c.currency} ${c.amount}`).join(', ')}`,
             ...skip,
           ].join('\n'),
           {

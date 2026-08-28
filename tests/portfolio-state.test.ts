@@ -40,6 +40,7 @@ const {
   setPortfolio,
   updatePlaybook,
   assertCashBalance,
+  assertBrokerConnectionMetrics,
   assertFixedDeposit,
   normalizeCashes,
   normalizeDeposits,
@@ -204,6 +205,44 @@ describe('portfolio-state', () => {
     });
     expect(noChannel.channel).toBeUndefined();
 
+    const withSettlement = assertCashBalance({
+      amount: 10000,
+      currency: 'USD',
+      updated_at: '2026-07-28',
+      channel: 'ibkr',
+      settled_amount: 9800,
+      accrued_interest: 12.5,
+    });
+    expect(withSettlement.settled_amount).toBe(9800);
+    expect(withSettlement.accrued_interest).toBe(12.5);
+    expect(() =>
+      assertCashBalance({
+        amount: 10,
+        currency: 'USD',
+        updated_at: '2026-07-28',
+        settled_amount: -1,
+      }),
+    ).toThrow(/settled_amount/);
+
+    const metrics = assertBrokerConnectionMetrics({
+      as_of: '2026-07-31',
+      currency: 'usd',
+      buying_power: 50000,
+      maintenance_margin: 12000,
+    });
+    expect(metrics.currency).toBe('USD');
+    expect(metrics.buying_power).toBe(50000);
+    expect(() =>
+      assertBrokerConnectionMetrics({
+        as_of: '2026-07-31',
+        currency: 'USD',
+        sma: 1,
+      }),
+    ).toThrow(/unknown field "sma"/);
+    expect(() =>
+      assertBrokerConnectionMetrics({ as_of: '2026-07-31', currency: 'USD' }),
+    ).toThrow(/buying_power, excess_liquidity, and\/or maintenance_margin/);
+
     const state = loadState('alice');
     setCash(state, {
       amount: 200,
@@ -304,6 +343,36 @@ describe('portfolio-state', () => {
     // Cash should only move by the new lot cost (−5 × 541.88), not wipe prior basis
     const delta = cashDeltaForHoldingChange(existing, next);
     expect(delta).toBeCloseTo(-(5 * 541.88), 10);
+  });
+
+  it('accumulateHoldingBuy keeps existing encumbrance and broker_ref', () => {
+    const existing = {
+      instrument: 'equity' as const,
+      avg_price: 10,
+      units: 100,
+      channel: 'ibkr',
+      encumbrance: { kind: 'lent' as const, units: 40 },
+      broker_ref: { native_id: '123', listing_exchange: 'NASDAQ' },
+    };
+    const purchase = {
+      instrument: 'equity' as const,
+      avg_price: 11,
+      units: 10,
+      channel: 'ibkr',
+    };
+    const next = accumulateHoldingBuy(existing, purchase);
+    expect(next.units).toBe(110);
+    expect(next.encumbrance).toEqual({ kind: 'lent', units: 40 });
+    expect(next.broker_ref).toEqual({ native_id: '123', listing_exchange: 'NASDAQ' });
+  });
+
+  it('accumulateHoldingBuy refuses to merge purchase encumbrance', () => {
+    expect(() =>
+      accumulateHoldingBuy(
+        { avg_price: 10, units: 10 },
+        { avg_price: 11, units: 1, encumbrance: { kind: 'pledged', units: 1 } },
+      ),
+    ).toThrow(/does not merge encumbrance or broker_ref/);
   });
 
   it('accumulateHoldingBuy fails on instrument mismatch', () => {

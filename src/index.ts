@@ -3,8 +3,8 @@
  *
  * Built on Utarus (same architecture as Binary + Marie channels):
  *   createFramework({ defaultAgentId, agents }) — multi-local
- *     default: WalletStreet (investment analysis + full domain tools)
- *     peers:   Bookkeeper, FinancialPlanner, InvestmentAdvisor, Real Estate Expert, AIDeal
+ *     default: product host (orchestrator)
+ *     peers:   INVAGE_PRODUCT_PROFILE=full | consultant (see src/agents/roster.ts)
  *   Telegram (Binary-style) + Slack (Marie-style) + optional CLI
  *   BinDrive via utarus (npm run webapp)
  *
@@ -15,7 +15,7 @@
  *   TELEGRAM_BOT_TOKEN + TELEGRAM_ADMIN_IDS
  *   SLACK_BOT_TOKEN + SLACK_APP_TOKEN + SLACK_SIGNING_SECRET + SLACK_ADMIN_IDS
  * Multi-agent (WebUI): @ peers; bare → WalletStreet orchestrator
- * Peers: Bookkeeper, FinancialPlanner, InvestmentAdvisor, RealEstateExpert, AIDeal, Factchecker
+ * Peers: see INVAGE_PRODUCT_PROFILE (full vs consultant)
  */
 
 import { config as dotenvConfig } from 'dotenv';
@@ -33,13 +33,9 @@ const { ensureAdminUsersExist } = await import('./admin-bootstrap.js');
 ensureAdminUsersExist();
 
 const { createFramework, config } = await import('utarus');
-const { invageExtension } = await import('./extension.js');
-const { bookkeeperExtension } = await import('./agents/bookkeeper.js');
-const { financialPlannerExtension } = await import('./agents/financial-planner.js');
-const { investmentAdvisorExtension } = await import('./agents/investment-advisor.js');
-const { realEstateExpertExtension } = await import('./agents/real-estate-expert.js');
-const { factcheckerExtension } = await import('./agents/factchecker.js');
-const { aidealExtension } = await import('./agents/aideal.js');
+const { productHostLabel } = await import('./product-name.js');
+const { HOST_AGENT_ID, readProductProfile } = await import('./agents/roster.js');
+const { buildFrameworkAgentList } = await import('./agents/framework-agents.js');
 
 process.on('uncaughtException', (error) => {
   console.error('[FATAL] Uncaught Exception:', error.message);
@@ -54,6 +50,7 @@ function validateConfig(): void {
   const missing: string[] = [];
   if (!config.deepseek.apiKey) missing.push('DEEPSEEK_API_KEY');
   if (!config.agent.name) missing.push('UTARUS_AGENT_NAME');
+  if (!process.env.INVAGE_PRODUCT_PROFILE?.trim()) missing.push('INVAGE_PRODUCT_PROFILE');
   if (missing.length > 0) {
     console.error(`Missing required environment variables: ${missing.join(', ')}`);
     console.error('Copy .env.example to .env and fill in the values.');
@@ -79,29 +76,18 @@ async function main(): Promise<void> {
 
   ensureAdminUsersExist();
 
-  // Multi-local: WalletStreet is default orchestrator (bare messages, billing, WebUI shell).
+  // Multi-local: product host is default orchestrator (bare messages, billing, WebUI shell).
   // Peer labels must be single @ tokens (no spaces) — WebUI inserts @label and the
   // mention parser only matches [A-Za-z0-9_-]+. Use CamelCase: @InvestmentAdvisor.
+  const profile = readProductProfile();
+  const agents = buildFrameworkAgentList(profile);
   const framework = await createFramework({
-    defaultAgentId: 'invage',
-    agents: [
-      { id: 'invage', label: 'WalletStreet', extension: invageExtension },
-      { id: 'bookkeeper', label: 'Bookkeeper', extension: bookkeeperExtension },
-      { id: 'financial-planner', label: 'FinancialPlanner', extension: financialPlannerExtension },
-      {
-        id: 'investment-advisor',
-        label: 'InvestmentAdvisor',
-        extension: investmentAdvisorExtension,
-      },
-      {
-        id: 'real-estate-expert',
-        label: 'RealEstateExpert',
-        extension: realEstateExpertExtension,
-      },
-      { id: 'aideal', label: 'AIDeal', extension: aidealExtension },
-      { id: 'factchecker', label: 'Factchecker', extension: factcheckerExtension },
-    ],
+    defaultAgentId: HOST_AGENT_ID,
+    agents,
   });
+  console.log(
+    `[${productHostLabel()}] product profile=${profile} agents=${agents.map((a) => a.id).join(',')}`,
+  );
 
   // ── Web UI (Utarus-owned: chat SPA + BinDrive + admin + web onboard) ──
   // Chat needs the in-memory agent pool in this process. Invage only adds
@@ -129,7 +115,7 @@ async function main(): Promise<void> {
   // Start before awaiting channel adapters so long-lived bot sockets do not
   // delay the first tick. Requires finite UTARUS_AGENT_RUN_TIMEOUT_MS.
   const { stop: stopTaskScheduler } = framework.startTaskScheduler();
-  console.log('[WalletStreet] Task scheduler started');
+  console.log(`[${productHostLabel()}] Task scheduler started`);
   process.on('SIGTERM', () => {
     stopTaskScheduler();
   });

@@ -24,6 +24,12 @@ import {
   type InvestorState,
 } from '../state/portfolio-state.js';
 import { HELP_FIRST_AND_ASYNC_TASKS } from './help-first.js';
+import { PEER_L10N } from './peer-l10n.js';
+import { productHostLabel } from '../product-name.js';
+import { readProductProfile, specialistHandoffLabel } from './roster.js';
+
+const HOST_LABEL = productHostLabel();
+const PROFILE = readProductProfile();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -43,7 +49,7 @@ function registerInvestmentAdvisorSkills(): Skill[] {
       id: 'investment-analysis',
       name: 'Investment Analysis',
       description:
-        'Investment research methods: 3-axis holdings review, single-name evaluation, research analyst pack (full breakdown, statement deep dive, valuation under/fair/over, industry/competitive, risk scenarios, technical structure secondary), idea discovery (cheap ∩ quality ∩ trap), news→price-path, index-relative, multi-market (US/HK/CN), options structure, buy/sell/hold. Load by capability fit when this agent is researching; full recipes also in agent KB (search_kb). Not keyword-matched.',
+        'Investment research methods: 3-axis holdings review, single-name evaluation, research analyst pack (full breakdown, statement deep dive, valuation under/fair/over, industry/competitive, risk scenarios, technical structure secondary), idea discovery (cheap ∩ quality ∩ trap), news→price-path, index-relative, multi-market (US/HK/CN), buy/sell/hold. Listed options structure → OptionsExpert. Load by capability fit when this agent is researching; full recipes also in agent KB (search_kb). Not keyword-matched.',
     },
     {
       id: 'firecrawl',
@@ -83,18 +89,18 @@ You may be **consulted** by WalletStreet via \`invoke_local_agent\` — answer t
 3. **Research analyst pack (Part H)** — structured products: full stock breakdown, financial statement deep dive, valuation assessment (UNDER/FAIR/OVER), industry & competitive analysis, risk scenario mapping, technical structure (secondary/timing only). Default open-ended ticker research → full breakdown (H1)
 4. **Undervalued discovery** — cheap ∩ quality ∩ not a trap; tilted by playbook philosophy and markets
 5. **News → price-path** — underreaction / overreaction / already priced; PEAD-style horizons — never next-tick prophecy
-6. **Options structure** — after underlying analysis; never invent premium/IV/Greeks
-7. **Playbook-filtered language** — BUY/SELL/size only through buy_criteria / sell_criteria, risk profile, position/sector limits; free cash only is dry powder
+6. **Playbook-filtered language** — BUY/SELL/size only through buy_criteria / sell_criteria, risk profile, position/sector limits; free cash only is dry powder
 
 ## What you do not do
 
 | Need | Hand off |
 |------|----------|
-| Holding / cash / FD / household mutations | **@Bookkeeper** or **@WalletStreet** |
-| Playbook setup / change methodology | **@WalletStreet** (playbook-setup wizard) |
-| Sleeve index / weekly Aideal pack / production newsletter | **@AIDeal** |
-| Debt paydown / avalanche / opportunity cost | **@FinancialPlanner** |
-| Physical property / stamp duty / comps / home mark | **@RealEstateExpert** |
+| Holding / cash / FD / household mutations | ${specialistHandoffLabel(PROFILE, 'bookkeeper', HOST_LABEL)} or **@${HOST_LABEL}** |
+| Playbook setup / change methodology | **@${HOST_LABEL}** (playbook-setup wizard) |
+| Sleeve index / weekly Aideal pack / production newsletter | ${specialistHandoffLabel(PROFILE, 'aideal', HOST_LABEL)} |
+| Debt paydown / avalanche / opportunity cost | ${specialistHandoffLabel(PROFILE, 'financial-planner', HOST_LABEL)} |
+| Physical property / stamp duty / comps / home mark | ${specialistHandoffLabel(PROFILE, 'real-estate-expert', HOST_LABEL)} |
+| Listed calls/puts, chain, IV/premium, covered call / protective put | ${specialistHandoffLabel(PROFILE, 'options-expert', HOST_LABEL)} |
 | Broker trade execution | Hard refuse — educational analysis only; offer watch/thesis plan instead |
 | Needs time (observe, post-earnings, re-check) | **Now** best partial answer + \`create_task\` for follow-up (host re-runs WalletStreet → re-consults you) |
 
@@ -161,13 +167,14 @@ function investmentAdvisorContextPrefix(
     `[InvestmentAdvisor context: user "${investor.user.slug}" (${investor.profile.display_name}). ` +
     `Holdings lots: ${n}. ${cashHint} ` +
     `Playbook: ${pbOneLiner} (${configured ? 'user-configured' : 'default balanced'}). ${channelHint} ` +
-    `Read-only books — mutations → @Bookkeeper; playbook edits → @WalletStreet; paydown → @FinancialPlanner. ` +
+    `Read-only books — mutations → @Bookkeeper; playbook edits → @${HOST_LABEL}; paydown → ${specialistHandoffLabel(PROFILE, 'financial-planner', HOST_LABEL)}. ` +
     `Help-first: partial now + create_task for observe/follow-up (instruction must re-consult investment-advisor). Prefer telegram delivery when linked. ` +
     `Load investment-analysis Parts A–H; search_kb for recipes (incl. research pack H1–H6); tool-before-claim.]\n`
   );
 }
 
 export const investmentAdvisorExtension: DomainExtension = {
+  l10n: PEER_L10N,
   purpose: INVESTMENT_ADVISOR_PURPOSE,
 
   tools: () => createInvestmentAdvisorTools(),

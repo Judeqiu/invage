@@ -20,10 +20,24 @@ Settings → Brokers uses the same store. Off refuses pull; lots stay. `not_impo
 2. If that throws: raw is archived. **Do not stop at the error text.**
 3. `read_broker_raw` for connector `ibkr`. Read the text. Produce either:
    - a `csv_tables` spec (headers + column map + `skipCurrencies` such as `BASE_SUMMARY`), `save_broker_parser`, then `sync_ibkr_flex` or `parse_broker_raw` + `apply_broker_statement`; or
-   - a **BrokerStatement** JSON (`accountId`, `fromDate`, `toDate`, `cash[]`, `openPositions[]`) taken only from the raw, then `apply_broker_statement`.
+   - a **BrokerStatement** JSON (`account_id`, `as_of`, `cash[].amount`, `lots[].holding`) taken only from the raw, then `apply_broker_statement`. Never submit Flex `openPositions` / `endingCash`.
 4. If a field is not in the raw, omit it or list it in `skipped` — never guess cost, qty, or cash.
 
 Fatal without apply: channel off, missing creds, Flex HTTP, empty cash sleeves. Partial: unsupported lots listed in `not_imported`.
+
+## Public extras (any broker — omit when unknown)
+
+YAML types are **the only store**. IBKR Flex/CSV is mapped in memory and discarded. Do not store vendor field names (`conid`, `sma`, `lent_syep`, `endingCash`). Map `conid` → `broker_ref.native_id`.
+
+| Idea | Public field | Rule |
+|------|----------------|------|
+| Shares pledged / on loan / RTU | `holding.encumbrance` `{ kind: pledged\|lent\|right_to_use, units }` | Same lot; `units` ≤ holding; not a second key |
+| Broker instrument id | `holding.broker_ref.native_id` | String; not the ticker. Optional `listing_exchange` |
+| Settled ≠ available cash | `cash.settled_amount` | Same `(channel, currency)` sleeve as `amount` |
+| Accrued interest | `cash.accrued_interest` | Do not add into `amount` until settled |
+| Buying power / excess / maint. | `broker_connections.<id>.metrics` | `as_of` + `currency` + ≥1 number; never invent from cash |
+
+v1 catalog ingest writes lots + `cash.amount` only. Do not invent extras. Later ingest may set them. `add_holding` does not merge encumbrance; `update_holding` preserves existing extras.
 
 IBKR activity is prior-day. Marks stay Yahoo.
 
@@ -40,7 +54,7 @@ IBKR activity is prior-day. Marks stay Yahoo.
       "fromDate": "FromDate",
       "toDate": "ToDate",
       "currency": "CurrencyPrimary",
-      "endingCash": "EndingCash"
+      "amount": "EndingCash"
     }
   },
   "positions": {

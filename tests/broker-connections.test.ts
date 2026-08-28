@@ -163,6 +163,72 @@ describe('broker_connections store', () => {
     const view = publicCatalog(state)[0];
     expect(view.credentials.token).toEqual({ configured: true });
   });
+
+  it('reads existing connection YAML without metrics or extras', () => {
+    const state = investor({
+      broker_connections: {
+        ibkr: {
+          enabled: true,
+          credentials: { token: TOKEN, activity_query_id: '1612545' },
+          last_sync: {
+            at: '2026-08-22T04:12:00.000Z',
+            ok: true,
+            as_of: '2026-08-21',
+            account_id: 'U20877136',
+            lots_upserted: 0,
+            lots_removed: 0,
+          },
+        },
+      },
+    });
+    const conn = readBrokerConnections(state).ibkr;
+    expect(conn.enabled).toBe(true);
+    expect(conn.metrics).toBeUndefined();
+    expect(conn.last_sync?.account_id).toBe('U20877136');
+    expect(publicCatalog(state)[0].status).toBe('connected');
+  });
+
+  it('parses and preserves optional metrics; rejects unknown keys', () => {
+    const state = investor({
+      broker_connections: {
+        ibkr: {
+          enabled: true,
+          credentials: { token: TOKEN, activity_query_id: '111' },
+          metrics: {
+            as_of: '2026-07-31',
+            currency: 'USD',
+            buying_power: 25000,
+            excess_liquidity: 8000,
+            maintenance_margin: 3000,
+          },
+        },
+      },
+    });
+    expect(readBrokerConnections(state).ibkr.metrics).toEqual({
+      as_of: '2026-07-31',
+      currency: 'USD',
+      buying_power: 25000,
+      excess_liquidity: 8000,
+      maintenance_margin: 3000,
+    });
+    patchBrokerConnection(state, 'ibkr', { credentials: { activity_query_id: '222' } });
+    expect(readBrokerConnections(state).ibkr.metrics?.buying_power).toBe(25000);
+    expect(readBrokerConnections(state).ibkr.credentials.activity_query_id).toBe('222');
+
+    expect(() =>
+      readBrokerConnections(
+        investor({
+          broker_connections: {
+            ibkr: {
+              enabled: false,
+              credentials: {},
+              sma: 1,
+            },
+          },
+        } as InvestorState),
+      ),
+    ).toThrow(/unknown field "sma"/);
+  });
 });
 
 describe('createInvageWebUi brokers section', () => {

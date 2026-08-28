@@ -1,6 +1,16 @@
-import type { Holding } from '../market/types.js';
-import { assertHolding, buildHoldingKey, buildOptionKey } from '../market/position-value.js';
-import type { FlexOpenPosition, FlexSkip } from './flex-parse.js';
+import type { Holding, HoldingBrokerRef } from '../market/types.js';
+import {
+  assertHolding,
+  buildHoldingKey,
+  buildOptionKey,
+  holdingBaseKey,
+} from '../market/position-value.js';
+import type {
+  BrokerCashSleeve,
+  BrokerSkip,
+  BrokerStatement,
+} from '../brokers/statement.js';
+import type { FlexOpenPosition, FlexSkip, FlexStatementDoc } from './flex-parse.js';
 
 export const IBKR_CHANNEL = 'ibkr';
 
@@ -61,6 +71,47 @@ function skipPosition(pos: FlexOpenPosition, reason: string): FlexSkip {
   };
 }
 
+function brokerRefFromFlex(pos: FlexOpenPosition): HoldingBrokerRef | undefined {
+  const ref: HoldingBrokerRef = {};
+  if (pos.conid?.trim()) ref.native_id = pos.conid.trim();
+  if (pos.listingExchange?.trim()) ref.listing_exchange = pos.listingExchange.trim();
+  if (ref.native_id == null && ref.listing_exchange == null) return undefined;
+  return ref;
+}
+
+function withFlexIdentity(holding: Holding, pos: FlexOpenPosition): Holding {
+  const broker_ref = brokerRefFromFlex(pos);
+  if (broker_ref) holding.broker_ref = broker_ref;
+  return holding;
+}
+
+export function brokerSkipFromFlex(skip: FlexSkip): BrokerSkip {
+  const out: BrokerSkip = { kind: skip.kind, reason: skip.reason };
+  if (skip.symbol) out.symbol = skip.symbol;
+  if (skip.currency) out.currency = skip.currency;
+  return out;
+}
+
+export function mapFlexDocToStatement(doc: FlexStatementDoc, channel: string): BrokerStatement {
+  const { lots, skipped: mapSkipped } = holdingsFromOpenPositions(doc.openPositions, channel);
+  const cash: BrokerCashSleeve[] = doc.cash.map((row) => ({
+    currency: row.currency,
+    amount: row.endingCash,
+  }));
+  return {
+    account_id: doc.accountId,
+    as_of: doc.toDate,
+    from_date: doc.fromDate,
+    cash,
+    lots: lots.map((lot) => ({
+      ticker: holdingBaseKey(lot.mapKey),
+      currency: lot.currency,
+      holding: lot.holding,
+    })),
+    skipped: [...doc.skipped, ...mapSkipped].map(brokerSkipFromFlex),
+  };
+}
+
 export function holdingsFromOpenPositions(
   rows: FlexOpenPosition[],
   channel: string,
@@ -84,12 +135,15 @@ export function holdingsFromOpenPositions(
         }
         const ticker = yahooSymbolFromFlex(pos);
         const mapKey = buildHoldingKey(ticker, channel);
-        const holding: Holding = {
-          instrument: 'equity',
-          units: pos.quantity,
-          avg_price: avgPrice(pos, pos.quantity, 1, false),
-          channel,
-        };
+        const holding: Holding = withFlexIdentity(
+          {
+            instrument: 'equity',
+            units: pos.quantity,
+            avg_price: avgPrice(pos, pos.quantity, 1, false),
+            channel,
+          },
+          pos,
+        );
         assertHolding(mapKey, holding);
         lot = { mapKey, holding, currency: pos.currency };
       } else if (cat === 'OPT') {
@@ -120,22 +174,25 @@ export function holdingsFromOpenPositions(
         if (mark == null) {
           throw new Error('option missing markPrice');
         }
-        const holding: Holding = {
-          instrument: 'option',
-          units,
-          avg_price: avgPrice(pos, units, multiplier, true),
-          channel,
-          option: {
-            right,
-            side,
-            strike: pos.strike,
-            expiry,
-            multiplier,
-            underlying,
-            settlement: 'physical',
-            mark,
+        const holding: Holding = withFlexIdentity(
+          {
+            instrument: 'option',
+            units,
+            avg_price: avgPrice(pos, units, multiplier, true),
+            channel,
+            option: {
+              right,
+              side,
+              strike: pos.strike,
+              expiry,
+              multiplier,
+              underlying,
+              settlement: 'physical',
+              mark,
+            },
           },
-        };
+          pos,
+        );
         assertHolding(mapKey, holding);
         lot = { mapKey, holding, currency: pos.currency };
       } else if (cat === 'FUND' || cat === 'FND' || cat === 'BILL' || cat === 'BOND') {
@@ -145,17 +202,20 @@ export function holdingsFromOpenPositions(
         const ticker = yahooSymbolFromFlex(pos);
         const mapKey = buildHoldingKey(ticker, channel);
         if (pos.markPrice == null) throw new Error('fund/bond missing markPrice');
-        const holding: Holding = {
-          instrument: 'fund',
-          units: pos.quantity,
-          avg_price: avgPrice(pos, pos.quantity, 1, false),
-          channel,
-          fund: {
-            quote_source: 'manual',
-            mark: pos.markPrice,
-            name: pos.symbol,
+        const holding: Holding = withFlexIdentity(
+          {
+            instrument: 'fund',
+            units: pos.quantity,
+            avg_price: avgPrice(pos, pos.quantity, 1, false),
+            channel,
+            fund: {
+              quote_source: 'manual',
+              mark: pos.markPrice,
+              name: pos.symbol,
+            },
           },
-        };
+          pos,
+        );
         assertHolding(mapKey, holding);
         lot = { mapKey, holding, currency: pos.currency };
       } else {

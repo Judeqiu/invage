@@ -4,24 +4,32 @@
  */
 
 import { saveState } from 'utarus';
-import { applyFlexStatement, type FlexApplyResult } from '../ibkr/flex-apply.js';
+import { applyFlexStatement } from '../ibkr/flex-apply.js';
+import { formatBrokerSkip, type BrokerApplyResult } from './statement.js';
 import {
   createFlexTransport,
   fetchFlexStatement,
   type FlexTransport,
 } from '../ibkr/flex-client.js';
 import type { IbkrFlexConfig } from '../ibkr/flex-config.js';
-import { formatFlexSkip, parseFlexQueryXml } from '../ibkr/flex-parse.js';
+import { parseFlexQueryXml } from '../ibkr/flex-parse.js';
 import { applyBrokerStatement } from './apply-statement.js';
 import { runCsvTablesSpec } from './csv-tables.js';
 import { archiveBrokerRaw, loadBrokerParserSpec } from './parser-store.js';
-import type { InvestorState } from '../state/portfolio-state.js';
+import {
+  assertBrokerConnectionMetrics,
+  type BrokerConnection,
+  type BrokerConnectionLastSync,
+  type InvestorState,
+} from '../state/portfolio-state.js';
 import {
   BROKER_CATALOG,
   getBrokerConnector,
   type BrokerConnectorDef,
   type CredentialFieldDef,
 } from './catalog.js';
+
+export type { BrokerConnection, BrokerConnectionLastSync };
 
 export class ChannelOffError extends Error {
   readonly errorCode = 'channel_off' as const;
@@ -57,23 +65,6 @@ export class UnknownConnectorError extends Error {
     super(`Unknown broker connector "${id}".`);
     this.name = 'UnknownConnectorError';
   }
-}
-
-export interface BrokerConnectionLastSync {
-  at: string;
-  ok: boolean;
-  as_of?: string;
-  account_id?: string;
-  lots_upserted?: number;
-  lots_removed?: number;
-  not_imported?: string[];
-  error?: string;
-}
-
-export interface BrokerConnection {
-  enabled: boolean;
-  credentials: Record<string, string>;
-  last_sync?: BrokerConnectionLastSync;
 }
 
 export type BrokerConnectionStatus = 'off' | 'needs_credentials' | 'connected' | 'error';
@@ -208,6 +199,12 @@ function parseLastSync(raw: unknown, ctx: string): BrokerConnectionLastSync {
 function parseStoredConnection(id: string, raw: unknown): BrokerConnection {
   const def = getBrokerConnector(id);
   const o = asRecord(raw, `broker_connections.${id}`);
+  const allowedKeys = new Set(['enabled', 'credentials', 'last_sync', 'metrics']);
+  for (const k of Object.keys(o)) {
+    if (!allowedKeys.has(k)) {
+      throw new Error(`broker_connections.${id}: unknown field "${k}".`);
+    }
+  }
   if (typeof o.enabled !== 'boolean') {
     throw new Error(`broker_connections.${id}.enabled must be a boolean.`);
   }
@@ -228,6 +225,12 @@ function parseStoredConnection(id: string, raw: unknown): BrokerConnection {
   const conn: BrokerConnection = { enabled: o.enabled, credentials };
   if (o.last_sync != null) {
     conn.last_sync = parseLastSync(o.last_sync, `broker_connections.${id}.last_sync`);
+  }
+  if (o.metrics != null) {
+    conn.metrics = assertBrokerConnectionMetrics(
+      o.metrics,
+      `broker_connections.${id}.metrics`,
+    );
   }
   return conn;
 }
@@ -417,6 +420,7 @@ export function patchBrokerConnection(
     credentials: nextCreds,
   };
   if (existing?.last_sync) next.last_sync = existing.last_sync;
+  if (existing?.metrics) next.metrics = existing.metrics;
   map[id] = next;
   persistBrokerConnections(state, map);
   return { view: publicConnectorView(def, next), persisted: true, tokenSet };
@@ -476,7 +480,7 @@ export async function syncBrokerConnection(
   state: InvestorState,
   id: string,
   transport?: FlexTransport,
-): Promise<{ view: PublicConnectorView; applied: FlexApplyResult }> {
+): Promise<{ view: PublicConnectorView; applied: BrokerApplyResult }> {
   const slug = state.user.slug;
   if (!slug) throw new Error('Investor state has no user.slug.');
   const key = inflightKey(slug, id);
@@ -501,7 +505,7 @@ export async function syncBrokerConnection(
         { token, queryId },
         transport ?? createFlexTransport(),
       );
-      let applied: FlexApplyResult;
+      let applied: BrokerApplyResult;
       try {
         const doc = parseFlexQueryXml(xml);
         applied = await applyFlexStatement(state, doc, xml);
@@ -514,8 +518,12 @@ export async function syncBrokerConnection(
           throw new Error(message);
         }
         try {
-          const generated = runCsvTablesSpec(xml.toString('utf8'), spec);
-          applied = await applyBrokerStatement(state, id, generated, xml);
+          applied = await applyBrokerStatement(
+            state,
+            id,
+            runCsvTablesSpec(xml.toString('utf8'), spec, def.channel),
+            xml,
+          );
         } catch (specErr) {
           throw new Error(
             `${specErr instanceof Error ? specErr.message : String(specErr)} Raw archived at ${rawPath}. Catalog parse: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}`,
@@ -531,7 +539,7 @@ export async function syncBrokerConnection(
         lots_removed: applied.lotsRemoved,
       };
       if (applied.skipped.length > 0) {
-        last_sync.not_imported = applied.skipped.map(formatFlexSkip);
+        last_sync.not_imported = applied.skipped.map(formatBrokerSkip);
       }
       writeLastSync(state, id, last_sync, secrets);
       const map = readBrokerConnections(state);
@@ -564,6 +572,7 @@ export function writeIbkrConnectionFromTool(state: InvestorState, cfg: IbkrFlexC
     credentials,
   };
   if (prev?.last_sync) next.last_sync = prev.last_sync;
+  if (prev?.metrics) next.metrics = prev.metrics;
   map.ibkr = next;
   persistBrokerConnections(state, map);
   void def;

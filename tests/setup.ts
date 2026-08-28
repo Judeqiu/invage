@@ -12,6 +12,9 @@ import { join } from 'path';
 const TEST_DATA_ROOT = mkdtempSync(join(tmpdir(), 'invage-test-'));
 
 process.env.UTARUS_LOADED_BY_HOST = '1';
+process.env.UTARUS_AGENT_NAME = process.env.UTARUS_AGENT_NAME?.trim() || 'Wallet Street';
+process.env.INVAGE_PRODUCT_PROFILE =
+  process.env.INVAGE_PRODUCT_PROFILE?.trim() || 'full';
 process.env.UTARUS_DATA_ROOT = TEST_DATA_ROOT;
 process.env.INVAGE_PUBLIC_LANDING_URL = 'https://test.example.com/onboard';
 process.env.INVAGE_ONBOARD_TOKEN_TTL_MIN = '15';

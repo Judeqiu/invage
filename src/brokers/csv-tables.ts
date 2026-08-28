@@ -3,7 +3,8 @@
  * No eval. Missing required columns fail.
  */
 
-import type { FlexCashRow, FlexOpenPosition, FlexSkip } from '../ibkr/flex-parse.js';
+import { mapFlexDocToStatement } from '../ibkr/flex-map.js';
+import type { FlexCashRow, FlexOpenPosition, FlexSkip, FlexStatementDoc } from '../ibkr/flex-parse.js';
 import type { BrokerStatement } from './statement.js';
 
 export interface CsvColumnMap {
@@ -119,8 +120,22 @@ export function assertCsvTablesSpec(raw: unknown): CsvTablesParserSpec {
   };
   const cash = map(o.cash, 'cash');
   const positions = map(o.positions, 'positions');
-  for (const key of ['accountId', 'fromDate', 'toDate', 'currency', 'endingCash']) {
-    if (!cash.columns[key]) throw new Error(`Broker parser spec.cash.columns.${key} is required.`);
+  if (cash.columns.endingCash != null) {
+    if (cash.columns.amount != null && cash.columns.amount !== cash.columns.endingCash) {
+      throw new Error(
+        'Broker parser spec.cash.columns cannot set both amount and endingCash to different headers.',
+      );
+    }
+    cash.columns.amount = cash.columns.endingCash;
+    delete cash.columns.endingCash;
+  }
+  for (const key of ['accountId', 'fromDate', 'toDate', 'currency', 'amount']) {
+    if (!cash.columns[key]) {
+      throw new Error(
+        `Broker parser spec.cash.columns.${key} is required ` +
+          `(map the broker CSV header onto public field "${key}"; cash amount is "amount", not endingCash).`,
+      );
+    }
   }
   for (const key of ['symbol', 'quantity', 'currency', 'assetCategory']) {
     if (!positions.columns[key]) throw new Error(`Broker parser spec.positions.columns.${key} is required.`);
@@ -133,7 +148,12 @@ export function assertCsvTablesSpec(raw: unknown): CsvTablesParserSpec {
   };
 }
 
-export function runCsvTablesSpec(text: string, spec: CsvTablesParserSpec): BrokerStatement {
+export function runCsvTablesSpec(
+  text: string,
+  spec: CsvTablesParserSpec,
+  channel: string,
+): BrokerStatement {
+  if (!channel.trim()) throw new Error('csv_tables: channel is required (catalog connector channel).');
   const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
   const tables: { role: 'cash' | 'positions'; headers: string[]; rows: string[][] }[] = [];
   let current: { role: 'cash' | 'positions'; headers: string[]; rows: string[][] } | null = null;
@@ -170,13 +190,13 @@ export function runCsvTablesSpec(text: string, spec: CsvTablesParserSpec): Broke
   for (const row of cashTable.rows) {
     const ccy = cell(cashIdx, row, cashCols.currency, 'cash').toUpperCase();
     if (skipCcy.has(ccy)) continue;
-    const endingRaw = cell(cashIdx, row, cashCols.endingCash, 'cash');
+    const endingRaw = cell(cashIdx, row, cashCols.amount, 'cash');
     const ending = Number(endingRaw);
     if (!Number.isFinite(ending)) {
-      throw new Error(`CSV parser: endingCash is not a number (${endingRaw})`);
+      throw new Error(`CSV parser: amount is not a number (${endingRaw})`);
     }
     if (ending < 0) {
-      skipped.push({ kind: 'cash', currency: ccy, reason: 'endingCash < 0 is not stored' });
+      skipped.push({ kind: 'cash', currency: ccy, reason: 'amount < 0 is not stored' });
       continue;
     }
     if (!/^[A-Z]{3,4}$/.test(ccy)) {
@@ -236,7 +256,7 @@ export function runCsvTablesSpec(text: string, spec: CsvTablesParserSpec): Broke
   }
   if (!accountId) throw new Error('CSV parser: accountId is required.');
   if (!fromDate || !toDate) throw new Error('CSV parser: fromDate and toDate are required on the cash table.');
-  return {
+  const flexDoc: FlexStatementDoc = {
     accountId,
     fromDate: ymd(fromDate, 'fromDate'),
     toDate: ymd(toDate, 'toDate'),
@@ -244,6 +264,7 @@ export function runCsvTablesSpec(text: string, spec: CsvTablesParserSpec): Broke
     cash,
     skipped,
   };
+  return mapFlexDocToStatement(flexDoc, channel.trim());
 }
 
 function ymd(raw: string, field: string): string {

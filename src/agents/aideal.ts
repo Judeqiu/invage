@@ -22,9 +22,11 @@ import {
   type InvestorState,
 } from '../state/portfolio-state.js';
 import { HELP_FIRST_AND_ASYNC_TASKS } from './help-first.js';
+import { PEER_L10N } from './peer-l10n.js';
 import { AIDEAL_SLEEVES } from '../aideal/sleeves.js';
+import { productHostLabel } from '../product-name.js';
 
-const HOST_LABEL = 'WalletStreet';
+const HOST_LABEL = productHostLabel();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -131,6 +133,7 @@ function aidealContextPrefix(investor: InvestorState, ctx: EnrichMessageContext)
 }
 
 export const aidealExtension: DomainExtension = {
+  l10n: PEER_L10N,
   purpose: AIDEAL_PURPOSE,
 
   tools: () => createAidealTools(),

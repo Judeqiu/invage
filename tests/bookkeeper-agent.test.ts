@@ -10,6 +10,12 @@ describe('Bookkeeper local agent', () => {
     expect(names).toContain('get_portfolio');
     expect(names).toContain('post_opening_balance');
     expect(names).toContain('post_adjustment');
+    expect(names).toContain('start_recon');
+    expect(names).toContain('get_recon');
+    expect(names).toContain('source_recon_channel');
+    expect(names).toContain('decide_recon_line');
+    expect(names).toContain('apply_recon_channel');
+    expect(names).toContain('skip_recon_channel');
     expect(names).not.toContain('set_cash');
     expect(names).toContain('transfer_cash');
     expect(names).toContain('mature_deposit');
@@ -30,6 +36,8 @@ describe('Bookkeeper local agent', () => {
     expect(book.has('post_adjustment')).toBe(true);
     expect(invage.has('add_holding')).toBe(false);
     expect(invage.has('post_adjustment')).toBe(false);
+    expect(invage.has('start_recon')).toBe(false);
+    expect(book.has('start_recon')).toBe(true);
     expect(invage.has('set_cash')).toBe(false);
     // Host may read household; must not write books
     expect(book.has('get_household')).toBe(true);
@@ -78,6 +86,8 @@ describe('Bookkeeper local agent', () => {
     expect(bookkeeperExtension.purpose).toMatch(/fund_quote_source/);
     expect(bookkeeperExtension.purpose).toMatch(/adjust_cash=false/);
     expect(bookkeeperExtension.purpose).toMatch(/Screenshot fund reconcile/i);
+    expect(bookkeeperExtension.purpose).toMatch(/start_recon/);
+    expect(bookkeeperExtension.purpose).toMatch(/source_recon_channel/);
     expect(bookkeeperExtension.purpose).toMatch(/agent KB|search_kb/i);
     expect(bookkeeperExtension.purpose).toMatch(/Help-first/i);
     expect(bookkeeperExtension.purpose).toMatch(/create_task/);

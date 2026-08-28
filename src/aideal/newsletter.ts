@@ -4,6 +4,7 @@
  */
 
 import type { SleeveIndexResult } from './index-math.js';
+import { productDisplayName } from '../product-name.js';
 
 export interface AidealNewsletterSectionRow {
   ticker: string;
@@ -89,7 +90,7 @@ export function buildAidealNewsletterHtml(input: AidealNewsletterInput): string 
 <table width="800" align="center" cellpadding="0" cellspacing="0" bgcolor="#ffffff">
 <tr bgcolor="#1a365d"><td style="padding:20px;color:#ffffff;">
   <div style="font-size:22px;font-weight:bold;">${esc(title)}</div>
-  <div style="font-size:13px;color:#e2e8f0;">Report date ${esc(input.reportDate)} · Wallet Street / AIDeal</div>
+  <div style="font-size:13px;color:#e2e8f0;">Report date ${esc(input.reportDate)} · ${esc(productDisplayName())} / AIDeal</div>
 </td></tr>
 <tr><td style="padding:16px;">
 <table width="100%" cellpadding="0" cellspacing="0">

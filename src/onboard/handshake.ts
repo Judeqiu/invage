@@ -17,6 +17,7 @@ import {
   resolveUserBySlug,
 } from 'utarus';
 import type { InvestorState } from '../state/portfolio-state.js';
+import { productHostLabel } from '../product-name.js';
 import { findToken, isExpired, markUsed, tokenTtlMinutes } from './token-store.js';
 
 const DATA_ROOT = resolveDataRoot();
@@ -77,7 +78,7 @@ export async function handleBind(args: BindArgs): Promise<BindResult> {
   }
   if (entry.status === 'rejected') {
     return {
-      reply: 'This onboarding link has been rejected. Contact the WalletStreet team.',
+      reply: `This onboarding link has been rejected. Contact the ${productHostLabel()} team.`,
     };
   }
   if (isExpired(entry)) {
@@ -117,12 +118,14 @@ export async function handleBind(args: BindArgs): Promise<BindResult> {
         contactEmail: entry.email_submitted,
         source: 'invite',
         web: false,
+        language: 'en',
       })
     : await ensureChannelUser({
         displayName: entry.display_name,
         contactEmail: entry.email_submitted,
         source: 'invite',
         web: true,
+        language: 'en',
       });
 
   // Annotate user YAML with onboard audit fields (reload + save).
@@ -156,7 +159,7 @@ export async function handleBind(args: BindArgs): Promise<BindResult> {
 
   return {
     reply:
-      `Hi *${entry.display_name}*! You're now registered with WalletStreet as \`${userResult.slug}\`.\n` +
+      `Hi *${entry.display_name}*! You're now registered with ${productHostLabel()} as \`${userResult.slug}\`.\n` +
       passwordLine +
       `\nYou can start right away — add holdings, ask for a portfolio review, or research a ticker. ` +
       `Try \`/guidance start\` for a short how-to.`,

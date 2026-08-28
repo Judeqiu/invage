@@ -11,6 +11,8 @@
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import type { DomainWebUiExtension } from 'utarus';
+import { productDisplayName } from '../product-name.js';
+import { type ProductProfileId, readProductProfile } from '../agents/roster.js';
 import { readFlexEgressIpv4 } from '../brokers/egress.js';
 import { createBrokerConnectionsRouter } from './broker-api.js';
 import { createDashboardApiRouter } from './dashboard-api.js';
@@ -74,19 +76,49 @@ export const INVAGE_CHAT_EMPTY_STATE = {
     'Tables, code, and BinDrive reports render inline. Select text to quote it into your next message. Educational analysis only — not licensed financial advice.',
 } as const;
 
+export function chatEmptyStateFor(profile: ProductProfileId): {
+  title: string;
+  body: string[];
+  bullets: string[];
+  starters: Array<{ label: string; message: string }>;
+  footer: string;
+} {
+  if (profile === 'consultant') {
+    return {
+      title: INVAGE_CHAT_EMPTY_STATE.title,
+      body: [
+        'I analyze portfolios (live marks, playbook, undervalued screens) and can keep household books for cash flow and big decisions.',
+        'Use the Dashboard tab for portfolio value, Watch List for playbook names, and Brokers to connect Interactive Brokers Flex. Bookkeeper journals the ledger; InvestmentAdvisor researches securities; OptionsExpert reads listed calls/puts; Factchecker audits numbers before the final answer.',
+      ],
+      bullets: [...INVAGE_CHAT_EMPTY_STATE.bullets],
+      starters: [
+        ...INVAGE_CHAT_EMPTY_STATE.starters.filter((s) => s.label !== 'Aideal sleeve pack'),
+        {
+          label: 'Options insight',
+          message:
+            'If I have option lots, analyse those contracts. Otherwise show the listed call/put chain on my largest equity (or SPY) for the nearest expiry: moneyness, time value, and defined vs undefined risk. Do not invent IV or Greeks.',
+        },
+      ],
+      footer: INVAGE_CHAT_EMPTY_STATE.footer,
+    };
+  }
+  return {
+    title: INVAGE_CHAT_EMPTY_STATE.title,
+    body: [...INVAGE_CHAT_EMPTY_STATE.body],
+    bullets: [...INVAGE_CHAT_EMPTY_STATE.bullets],
+    starters: INVAGE_CHAT_EMPTY_STATE.starters.map((s) => ({ ...s })),
+    footer: INVAGE_CHAT_EMPTY_STATE.footer,
+  };
+}
+
 export function createInvageWebUi(): DomainWebUiExtension {
   readFlexEgressIpv4();
+  const empty = chatEmptyStateFor(readProductProfile());
   return {
     agentKey: 'invage',
-    productName: 'Wallet Street',
-    defaultPath: '/',
-    chatEmptyState: {
-      title: INVAGE_CHAT_EMPTY_STATE.title,
-      body: [...INVAGE_CHAT_EMPTY_STATE.body],
-      bullets: [...INVAGE_CHAT_EMPTY_STATE.bullets],
-      starters: INVAGE_CHAT_EMPTY_STATE.starters.map((s) => ({ ...s })),
-      footer: INVAGE_CHAT_EMPTY_STATE.footer,
-    },
+    productName: productDisplayName(),
+    defaultPath: '/dashboard',
+    chatEmptyState: empty,
     nav: [
       {
         id: 'dashboard',

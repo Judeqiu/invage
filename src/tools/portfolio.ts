@@ -4,6 +4,7 @@ import { saveState } from 'utarus';
 import type { FundSpec, Holding, OptionSpec } from '../market/types.js';
 import {
   assertHolding,
+  attachHoldingCustody,
   buildHoldingKey,
   buildOptionKey,
   formatOptionLabel,
@@ -1623,14 +1624,17 @@ export function createPortfolioTools(): AgentTool[] {
             ...(p.option_side != null ? { side: p.option_side } : {}),
             ...(p.option_right != null ? { right: p.option_right } : {}),
           };
-          next = {
-            instrument: 'option',
-            avg_price: p.avg_price ?? existing.avg_price,
-            units: p.units ?? existing.units,
-            category: p.category ?? existing.category,
-            option: nextOption,
-            ...(channel != null ? { channel } : {}),
-          };
+          next = attachHoldingCustody(
+            {
+              instrument: 'option',
+              avg_price: p.avg_price ?? existing.avg_price,
+              units: p.units ?? existing.units,
+              category: p.category ?? existing.category,
+              option: nextOption,
+              ...(channel != null ? { channel } : {}),
+            },
+            existing,
+          );
           assertHolding(nextKey, next);
         } else if (isFundHolding(existing)) {
           if (!existing.fund) {
@@ -1681,14 +1685,17 @@ export function createPortfolioTools(): AgentTool[] {
           if (p.product_class != null) {
             nextFund.product_class = p.product_class;
           }
-          next = {
-            instrument: 'fund',
-            avg_price: p.avg_price ?? existing.avg_price,
-            units: p.units ?? existing.units,
-            category: p.category ?? existing.category,
-            fund: nextFund,
-            ...(channel != null ? { channel } : {}),
-          };
+          next = attachHoldingCustody(
+            {
+              instrument: 'fund',
+              avg_price: p.avg_price ?? existing.avg_price,
+              units: p.units ?? existing.units,
+              category: p.category ?? existing.category,
+              fund: nextFund,
+              ...(channel != null ? { channel } : {}),
+            },
+            existing,
+          );
           assertHolding(nextKey, next);
         } else {
           if (
@@ -1708,13 +1715,16 @@ export function createPortfolioTools(): AgentTool[] {
               `Holding ${oldKey} is equity. To convert to a fund or option, remove it and add_holding with the new instrument.`,
             );
           }
-          next = {
-            instrument: 'equity',
-            avg_price: p.avg_price ?? existing.avg_price,
-            units: p.units ?? existing.units,
-            category: p.category ?? existing.category,
-            ...(channel != null ? { channel } : {}),
-          };
+          next = attachHoldingCustody(
+            {
+              instrument: 'equity',
+              avg_price: p.avg_price ?? existing.avg_price,
+              units: p.units ?? existing.units,
+              category: p.category ?? existing.category,
+              ...(channel != null ? { channel } : {}),
+            },
+            existing,
+          );
           assertHolding(nextKey, next);
         }
 

@@ -27,6 +27,7 @@ import {
   type HouseholdInvestorState,
 } from '../state/household-state.js';
 import { HELP_FIRST_AND_ASYNC_TASKS } from './help-first.js';
+import { PEER_L10N } from './peer-l10n.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -168,6 +169,7 @@ function realEstateExpertContextPrefix(
 }
 
 export const realEstateExpertExtension: DomainExtension = {
+  l10n: PEER_L10N,
   purpose: REAL_ESTATE_EXPERT_PURPOSE,
 
   tools: () => createRealEstateExpertTools(),

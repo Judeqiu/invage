@@ -34,7 +34,7 @@ function render(dash) {
       '<div class="metric-card empty">No actions — the books have no positions to reconcile.</div>';
     el.s4.innerHTML = sectionHead('Section 04', 'Your personal edge');
     el.edge.innerHTML =
-      '<div class="metric-card empty">No closed-trade statistics. Wallet Street does not invent win rates or DTE edges.</div>';
+      '<div class="metric-card empty">No closed-trade statistics. This product does not invent win rates or DTE edges.</div>';
     el.s5.innerHTML = sectionHead('Section 05', 'Emotion vs profitability');
     el.emotion.innerHTML =
       '<div class="metric-card empty">No emotion journal on these books.</div>';

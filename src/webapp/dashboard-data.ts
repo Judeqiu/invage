@@ -8,6 +8,9 @@
  */
 
 import { loadState } from 'utarus';
+import { getBrokerConnector } from '../brokers/catalog.js';
+import { readBrokerConnections } from '../brokers/connections.js';
+import type { BrokerConnectionMetrics } from '../state/portfolio-state.js';
 import {
   equityQuoteSymbols,
   fetchFxRates,
@@ -61,6 +64,10 @@ export interface DashboardPayload {
    * UI shows a banner; NAV may exclude unpriced cash or use book cost for marks.
    */
   warnings?: DashboardIssue[];
+  /** Live equity quotes used for option ITM checks. Omit when none. */
+  equityPrices?: Record<string, number>;
+  /** Optional margin snapshot keyed by holding channel. Omit when none recorded. */
+  connectionMetrics?: Record<string, BrokerConnectionMetrics>;
 }
 
 /** Fetch SPY adjusted closes at snapshot dates + current price. Soft-fails to null. */
@@ -315,7 +322,27 @@ export async function loadDashboardForSlug(
     benchmark = null;
   }
 
-  return {
+  let connectionMetrics: Record<string, BrokerConnectionMetrics> | undefined;
+  try {
+    const conns = readBrokerConnections(state);
+    const mapped: Record<string, BrokerConnectionMetrics> = {};
+    for (const [id, conn] of Object.entries(conns)) {
+      if (conn.metrics == null) continue;
+      const ch = getBrokerConnector(id).channel;
+      mapped[ch] = conn.metrics;
+    }
+    if (Object.keys(mapped).length > 0) connectionMetrics = mapped;
+  } catch (e) {
+    warnings.push({
+      code: 'connection_metrics_unread',
+      message:
+        (e instanceof Error ? e.message : String(e)) +
+        ' Margin / buying-power cards will show unknown.',
+      severity: 'warning',
+    });
+  }
+
+  const out: DashboardPayload = {
     slug,
     displayName,
     generatedAt,
@@ -324,4 +351,7 @@ export async function loadDashboardForSlug(
     benchmark,
     warnings: model.live.issues,
   };
+  if (Object.keys(market.prices).length > 0) out.equityPrices = market.prices;
+  if (connectionMetrics) out.connectionMetrics = connectionMetrics;
+  return out;
 }

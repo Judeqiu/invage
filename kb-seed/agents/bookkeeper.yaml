@@ -67,6 +67,7 @@ entries:
       | Liabilities / cash_flows | add_liability / add_cash_flow / … |
       | Projections (book checks) | run_projection / compare_scenarios |
       | Audit | save_snapshot |
+      | Channel recon walk | start_recon / get_recon / source_recon_channel / decide_recon_line / apply_recon_channel / skip_recon_channel |
       | Agent corpus | list_kb / search_kb / get_kb (scope agent = this playbook) |
     tags:
       - playbook

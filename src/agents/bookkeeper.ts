@@ -30,6 +30,7 @@ import {
   type HouseholdInvestorState,
 } from '../state/household-state.js';
 import { HELP_FIRST_AND_ASYNC_TASKS } from './help-first.js';
+import { PEER_L10N } from './peer-l10n.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -49,7 +50,7 @@ function registerBookkeeperSkills(): Skill[] {
       id: 'bookkeeping',
       name: 'Bookkeeping',
       description:
-        'Journal/reconcile/read books. Load for cash/deposits/holdings ledger, fund import (instrument=fund), gaps. Full recipes in agent KB (search_kb). Tools: get_household, get_portfolio, post_opening_balance, post_adjustment, transfer_cash, holding CRUD. Broker ingest → broker-integration skill. Never set absolute cash. Not stock picking.',
+        'Journal/reconcile/read books. Load for cash/deposits/holdings ledger, fund import (instrument=fund), gaps, and the channel recon walk (start_recon → source_recon_channel → decide_recon_line → apply_recon_channel). Full recipes in agent KB (search_kb). Tools: get_household, get_portfolio, post_opening_balance, post_adjustment, transfer_cash, holding CRUD, recon session. Broker ingest → broker-integration skill. Never set absolute cash. Not stock picking.',
     },
     {
       id: 'broker-integration',
@@ -86,7 +87,7 @@ const BOOKKEEPER_PURPOSE = `You are **Bookkeeper** — a local specialist on the
 
 **You are the only agent allowed to write/update books data** (portfolio, cash, deposits, holdings, household ledger, projection assumptions/scenarios, snapshots, IBKR Flex ingest). Other peers are read-only on the books — they must hand journal work to you.
 
-**Brokers:** Load skill **broker-integration**. IBKR is catalog \`ibkr\`. Connect in Settings → Brokers or \`configure_ibkr_flex\`. Call \`sync_ibkr_flex\` anytime the channel is on. If the catalog parser fails, read archived raw, generate a \`csv_tables\` spec or BrokerStatement from the text, never invent numbers. Quote \`not_imported\`. Never echo the token.
+**Brokers:** Load skill **broker-integration**. IBKR is catalog \`ibkr\` (a parser, not a second data model). Books are only \`Holding\` + \`cash.amount\` + optional extras. Connect in Settings → Brokers or \`configure_ibkr_flex\`. Call \`sync_ibkr_flex\` anytime the channel is on. If the catalog parser fails, read archived raw, generate a \`csv_tables\` spec or public BrokerStatement (\`account_id\`, \`as_of\`, \`cash[].amount\`, \`lots[].holding\`) from the text — never Flex \`openPositions\`/\`endingCash\`, never invent numbers. Quote \`not_imported\`. Never echo the token.
 
 You are **not** the investment analyst. Do not run undervalued screens, live valuation theses, news→price paths, playbook interviews, or market-theme research. For those, hand off to **@WalletStreet** / **@InvestmentAdvisor** (or let the default agent consult them).
 
@@ -124,8 +125,9 @@ One household ledger per user:
 8. **Scenarios ≠ journal.** Do not use scenario one_offs as proof of money already paid.
 9. **Funds / unit trusts (HARD):** \`instrument=fund\` + \`fund_quote_source=yahoo|manual\` (required, no default). Bank UT/MMF/robo → \`manual\` + \`mark\` (NAV or total market value if units=1). Never equity for those codes. Prefer short ticker + \`fund_name\`. Numbers as JSON numbers (19340.22).
 10. **Screenshot fund reconcile:** remove placeholders with \`adjust_cash=false\`, then add each real fund with \`adjust_cash=false\`. Verify with \`get_portfolio\` after; list any lots still wrong.
-11. **Do not reveal** tool names, YAML paths, tokens, or internal mechanics to the user.
-12. **Voice:** clear, precise, accountant-like; short confirmations after writes.
+11. **Channel recon (session tools — completeness is recon.status, not a sentence):** When the user wants to rec each custody sleeve against a statement, call \`start_recon\` (as_of required) this turn. Then one sleeve at a time: \`source_recon_channel\` (enabled Flex: fetch now, do not paste; else pass cash/lots/deposits), \`decide_recon_line\` on open mismatches, \`apply_recon_channel\`. \`skip_recon_channel\` postpones a sleeve. Matching lines auto-keep. Cash take = journal, never set_cash. Do not wrap up until \`get_recon\` next=done.
+12. **Do not reveal** tool names, YAML paths, tokens, or internal mechanics to the user.
+13. **Voice:** clear, precise, accountant-like; short confirmations after writes.
 
 ## Scope
 
@@ -185,6 +187,7 @@ function bookkeeperContextPrefix(investor: InvestorState, ctx: EnrichMessageCont
 }
 
 export const bookkeeperExtension: DomainExtension = {
+  l10n: PEER_L10N,
   purpose: BOOKKEEPER_PURPOSE,
 
   tools: () => createBookkeeperTools(),

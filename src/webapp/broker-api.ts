@@ -17,7 +17,8 @@ import {
 } from '../brokers/connections.js';
 import { readFlexEgressIpv4 } from '../brokers/egress.js';
 import { FlexHttpError } from '../ibkr/flex-client.js';
-import { formatFlexSkip, FlexProtocolError } from '../ibkr/flex-parse.js';
+import { FlexProtocolError } from '../ibkr/flex-parse.js';
+import { formatBrokerSkip } from '../brokers/statement.js';
 import type { InvestorState } from '../state/portfolio-state.js';
 
 function connectorIdParam(req: Request): string {
@@ -166,7 +167,7 @@ export function createBrokerConnectionsRouter(): Router {
           as_of: applied.asOf,
           account_id: applied.accountId,
           cash: applied.cash,
-          not_imported: applied.skipped.map(formatFlexSkip),
+          not_imported: applied.skipped.map(formatBrokerSkip),
         },
       });
     } catch (e) {

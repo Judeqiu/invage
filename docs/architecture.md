@@ -203,13 +203,13 @@ How invage wires into utarus, by concern:
 
 | Concern | Utarus exports used | Invage adds |
 |---|---|---|
-| Boot | `createFramework({ extension })` | `invageExtension` |
+| Boot | `createFramework({ defaultAgentId, agents })` | `invageExtension` as host; peers from `INVAGE_PRODUCT_PROFILE` (`full` \| `consultant`) via `src/agents/roster.ts` |
 | Per-turn context | `enrichMessage(ctx)` hook | `investorContextPrefix(investor, ctx)` |
 | User lookup | `resolveUserBySlackUser` / `resolveUserByTelegramUser` / (gap: by slug) | Wraps in `resolveInvestorFromChannel` for tool params |
 | Onboarding (instant) | `redeemInviteInstantly`, `ensureChannelUser` | — (uses utarus) |
 | Onboarding (QR / BIND) | — | `onboard/handshake.ts` + `/bind` Slack command |
 | State I/O | `loadState` / `saveState` | Wraps to add `portfolio` + `playbook` fields |
-| Tools | `AgentTool` interface | `tools/{portfolio,playbook,portfolio_analyzer,snapshot,save_report,send_report}.ts` |
+| Tools | `AgentTool` interface | `tools/{portfolio,playbook,portfolio_analyzer,snapshot,save_report,send_report,recon}.ts` |
 | Skills | `Skill` interface + `use_skill` tool | `skills.ts` registers 3 investor knowledge docs |
 | Channels | Telegram, Slack, CLI built-in | WebUI (today: invage-local; future: utarus-shared) |
 | Files | BinDrive portal + `/api/files/*` | `save_report` writes there |

@@ -29,6 +29,7 @@ describe('WalletStreet default orchestrator', () => {
       'send_report',
       'property_intel',
       'ura_carpark',
+      'options_insight',
     ]) {
       expect(names.has(forbidden), forbidden).toBe(false);
     }

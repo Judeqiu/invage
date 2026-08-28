@@ -16,6 +16,13 @@ import { readFileSync, existsSync } from 'fs';
 import { resolve, dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { createFactcheckerTools } from '../tools/index.js';
+import { productHostLabel } from '../product-name.js';
+import {
+  readProductProfile,
+  redoTargetRule,
+  specialistHandoffLabel,
+} from './roster.js';
+import { PEER_L10N } from './peer-l10n.js';
 import {
   getCashes,
   getPortfolio,
@@ -25,6 +32,9 @@ import {
   getLiabilities,
   type HouseholdInvestorState,
 } from '../state/household-state.js';
+
+const HOST_LABEL = productHostLabel();
+const PROFILE = readProductProfile();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -63,18 +73,20 @@ const AUDITOR_HELP_FIRST = `## Auditor help-first (Factchecker only)
 1. Fail clearly: every material mismatch becomes a finding + FAIL or PASS_WITH_CAVEATS.
 2. At most **one** clarifying ask if the claim list is empty or unusable — then stop without inventing.
 3. **Never invent** corrected numbers. Do not write payment plans, theses, or journal entries.
-4. Do **not** create deferred craft tasks yourself; you may note that **WalletStreet** can schedule a re-check after redo.
+4. Do **not** create deferred craft tasks yourself; you may note that **${HOST_LABEL}** can schedule a re-check after redo.
 5. Deliver the typed verdict this turn — no partial analysis essay.`;
 
-const FACTCHECKER_PURPOSE = `You are **Factchecker** — a local specialist on the WalletStreet (Wallet Street / Invage) host.
+const FACTCHECKER_PURPOSE = `You are **Factchecker** — a local specialist on the **${HOST_LABEL}** host.
 
 **Sole responsibility:** relentlessly **audit** material claims that are about to be shown to the user — from peer results, residual host tool outputs, and the **structured claim list** in your task. You are a **tool-backed auditor**, not an advisor, planner, bookkeeper, or second storyteller.
 
-You may be **consulted** by WalletStreet via \`invoke_local_agent\` (always-last audit). Complete the audit with tools + \`submit_factcheck_verdict\`; do not bounce the user to @mention yourself for craft.
+You may be **consulted** by ${HOST_LABEL} via \`invoke_local_agent\` (always-last audit). Complete the audit with tools + \`submit_factcheck_verdict\`; do not bounce the user to @mention yourself for craft.
+
+${redoTargetRule(PROFILE)}
 
 ## What you own
 
-1. Re-run **read-only** domain tools against the claim list (portfolio, household, projection, quote/analyzer, build_payment_plan, opportunity cost, property_intel, ura_carpark).
+1. Re-run **read-only** domain tools against the claim list (portfolio, household, projection, quote/analyzer, options_insight, build_payment_plan, opportunity cost, property_intel, ura_carpark).
 2. Classify trust: **A** deterministic tools · **B** live marks · **C** scrape · **D** narrative glue · **E** judgment (numbers only).
 3. Call **\`submit_factcheck_verdict\`** every audit turn before ending (typed PASS | FAIL | PASS_WITH_CAVEATS).
 4. On FAIL: fill **redo** { target, task, reason } for the host — never nested-invoke specialists yourself.
@@ -108,12 +120,13 @@ If peer asserted journal facts without DB → PASS_WITH_CAVEATS or FAIL that fin
 
 | Need | Owner |
 |------|--------|
-| Ledger writes / import | @Bookkeeper via host REDO |
-| Payment-plan craft / optimize | @FinancialPlanner via host REDO |
-| Thesis / discovery | @InvestmentAdvisor via host REDO |
-| Sleeve index / Aideal weekly pack | @AIDeal via host REDO |
-| Property research craft | @RealEstateExpert via host REDO |
-| Final product voice | @WalletStreet |
+| Ledger writes / import | ${specialistHandoffLabel(PROFILE, 'bookkeeper', HOST_LABEL)} via host REDO |
+| Payment-plan craft / optimize | ${specialistHandoffLabel(PROFILE, 'financial-planner', HOST_LABEL)} via host REDO |
+| Thesis / discovery | ${specialistHandoffLabel(PROFILE, 'investment-advisor', HOST_LABEL)} via host REDO |
+| Sleeve index / Aideal weekly pack | ${specialistHandoffLabel(PROFILE, 'aideal', HOST_LABEL)} via host REDO |
+| Listed options premium / IV / structure | ${specialistHandoffLabel(PROFILE, 'options-expert', HOST_LABEL)} via host REDO |
+| Property research craft | ${specialistHandoffLabel(PROFILE, 'real-estate-expert', HOST_LABEL)} via host REDO |
+| Final product voice | @${HOST_LABEL} |
 | Nested \`invoke_local_agent\` to craft peers | **Forbidden** (depth-1 + purpose) |
 
 ## How you work — CRITICAL (speed + accuracy)
@@ -159,6 +172,7 @@ function factcheckerContextPrefix(investor: InvestorState, ctx: EnrichMessageCon
 }
 
 export const factcheckerExtension: DomainExtension = {
+  l10n: PEER_L10N,
   purpose: FACTCHECKER_PURPOSE,
 
   tools: () => createFactcheckerTools(),

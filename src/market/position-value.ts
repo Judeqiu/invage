@@ -22,7 +22,77 @@
  * Short call delivery if assigned = multiplier × units shares.
  */
 
-import type { FundSpec, Holding, OptionSpec } from './types.js';
+import type { FundSpec, Holding, HoldingBrokerRef, HoldingEncumbrance, OptionSpec } from './types.js';
+
+const ENCUMBRANCE_KINDS = new Set(['pledged', 'lent', 'right_to_use']);
+
+export function assertHoldingEncumbrance(
+  key: string,
+  holdingUnits: number,
+  raw: unknown,
+): HoldingEncumbrance {
+  if (raw == null || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new Error(`Holding ${key}: encumbrance must be an object { kind, units }.`);
+  }
+  const o = raw as Record<string, unknown>;
+  for (const k of Object.keys(o)) {
+    if (k !== 'kind' && k !== 'units') {
+      throw new Error(`Holding ${key}: unknown encumbrance field "${k}".`);
+    }
+  }
+  if (typeof o.kind !== 'string' || !ENCUMBRANCE_KINDS.has(o.kind)) {
+    throw new Error(
+      `Holding ${key}: encumbrance.kind must be pledged|lent|right_to_use.`,
+    );
+  }
+  if (typeof o.units !== 'number' || !Number.isFinite(o.units) || !(o.units > 0)) {
+    throw new Error(`Holding ${key}: encumbrance.units must be a finite number > 0.`);
+  }
+  if (o.units > holdingUnits) {
+    throw new Error(
+      `Holding ${key}: encumbrance.units (${o.units}) cannot exceed holding.units (${holdingUnits}).`,
+    );
+  }
+  return { kind: o.kind as HoldingEncumbrance['kind'], units: o.units };
+}
+
+export function assertHoldingBrokerRef(key: string, raw: unknown): HoldingBrokerRef {
+  if (raw == null || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new Error(`Holding ${key}: broker_ref must be an object.`);
+  }
+  const o = raw as Record<string, unknown>;
+  for (const k of Object.keys(o)) {
+    if (k !== 'native_id' && k !== 'listing_exchange') {
+      throw new Error(`Holding ${key}: unknown broker_ref field "${k}".`);
+    }
+  }
+  const ref: HoldingBrokerRef = {};
+  if (o.native_id != null) {
+    if (typeof o.native_id !== 'string' || !o.native_id.trim()) {
+      throw new Error(`Holding ${key}: broker_ref.native_id must be a non-empty string when set.`);
+    }
+    ref.native_id = o.native_id.trim();
+  }
+  if (o.listing_exchange != null) {
+    if (typeof o.listing_exchange !== 'string' || !o.listing_exchange.trim()) {
+      throw new Error(
+        `Holding ${key}: broker_ref.listing_exchange must be a non-empty string when set.`,
+      );
+    }
+    ref.listing_exchange = o.listing_exchange.trim();
+  }
+  if (ref.native_id == null && ref.listing_exchange == null) {
+    throw new Error(`Holding ${key}: broker_ref needs native_id and/or listing_exchange.`);
+  }
+  return ref;
+}
+
+/** Copy optional custody fields so economic merges do not drop statement extras. */
+export function attachHoldingCustody(target: Holding, source: Holding): Holding {
+  if (source.encumbrance != null) target.encumbrance = source.encumbrance;
+  if (source.broker_ref != null) target.broker_ref = source.broker_ref;
+  return target;
+}
 
 /**
  * Optional broker/source tag for multi-broker portfolios.
@@ -521,6 +591,12 @@ export function assertHolding(key: string, h: Holding): void {
     if (h.fund != null) {
       throw new Error(`Holding ${key}: fund fields present but instrument is not "fund".`);
     }
+  }
+  if (h.encumbrance != null) {
+    h.encumbrance = assertHoldingEncumbrance(key, h.units, h.encumbrance);
+  }
+  if (h.broker_ref != null) {
+    h.broker_ref = assertHoldingBrokerRef(key, h.broker_ref);
   }
 }
 

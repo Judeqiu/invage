@@ -42,6 +42,8 @@ import {
   createSaveBrokerParserTool,
 } from './broker_ingest.js';
 import { createConfigureIbkrFlexTool, createSyncIbkrFlexTool } from './ibkr_flex.js';
+import { createOptionsInsightTool } from './options_insight.js';
+import { createReconTools } from './recon.js';
 
 /**
  * Default host (WalletStreet) — orchestration + residual host domains only.
@@ -73,6 +75,7 @@ export function createBookkeeperTools(): AgentTool[] {
     createSaveBrokerParserTool(),
     createParseBrokerRawTool(),
     createApplyBrokerStatementTool(),
+    ...createReconTools(),
   ];
 }
 
@@ -103,6 +106,20 @@ export function createInvestmentAdvisorTools(): AgentTool[] {
     createGetPlaybookTool(),
     createQuoteTool(),
     createPortfolioAnalyzerTool(),
+    createSaveReportTool(),
+  ];
+}
+
+/**
+ * OptionsExpert — listed call/put insight. Read-only books. No mutations.
+ */
+export function createOptionsExpertTools(): AgentTool[] {
+  return [
+    createGetPortfolioTool(),
+    createGetPlaybookTool(),
+    createQuoteTool(),
+    createPortfolioAnalyzerTool(),
+    createOptionsInsightTool(),
     createSaveReportTool(),
   ];
 }
@@ -140,7 +157,7 @@ export function createAidealTools(): AgentTool[] {
 /**
  * Factchecker — read-only re-check tools + typed verdict submit.
  * No mutations, no optimize_payment_plan, no snapshots, no save_report.
- * Exact set (18): tests assert name equality.
+ * Exact set: tests assert name equality.
  */
 export function createFactcheckerTools(): AgentTool[] {
   return [
@@ -155,6 +172,7 @@ export function createFactcheckerTools(): AgentTool[] {
     createOpportunityCostTool(),
     createPropertyIntelTool(),
     createUraCarparkTool(),
+    createOptionsInsightTool(),
     createSubmitFactcheckVerdictTool(),
   ];
 }

@@ -143,6 +143,7 @@ describe('createInvageWebUi', () => {
   it('registers dashboard nav, iframe route, API, and static dir', () => {
     const webUi = createInvageWebUi();
     expect(webUi.agentKey).toBe('invage');
+    expect(webUi.defaultPath).toBe('/dashboard');
     expect(webUi.nav?.some((n) => n.path === '/dashboard')).toBe(true);
     const route = webUi.routes?.find((r) => r.path === '/dashboard');
     expect(route?.pageKind).toBe('iframe');

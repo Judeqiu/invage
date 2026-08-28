@@ -29,6 +29,7 @@ const {
   buildWebApp,
   startWebApp,
 } = await import('utarus');
+const { productHostLabel } = await import('../product-name.js');
 const { onboardRouter } = await import('../onboard/api.js');
 const { createFaviconRouter } = await import('./favicon.js');
 
@@ -71,7 +72,7 @@ if (isMain) {
   }
   app.listen(port, () => {
     console.log(
-      `[WalletStreetDrive] listening on http://localhost:${port} (BinDrive + landing /api/onboard/register)`,
+      `[${productHostLabel()}Drive] listening on http://localhost:${port} (BinDrive + landing /api/onboard/register)`,
     );
   });
 }

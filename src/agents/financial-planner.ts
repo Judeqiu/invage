@@ -33,6 +33,7 @@ import {
   type HouseholdInvestorState,
 } from '../state/household-state.js';
 import { HELP_FIRST_AND_ASYNC_TASKS } from './help-first.js';
+import { PEER_L10N } from './peer-l10n.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -201,6 +202,7 @@ function financialPlannerContextPrefix(investor: InvestorState, ctx: EnrichMessa
 }
 
 export const financialPlannerExtension: DomainExtension = {
+  l10n: PEER_L10N,
   purpose: FINANCIAL_PLANNER_PURPOSE,
 
   tools: () => createFinancialPlannerTools(),

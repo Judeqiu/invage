@@ -70,7 +70,7 @@ export function createSyncIbkrFlexTool(): AgentTool {
         const { applied } = await syncBrokerConnection(state, IBKR_CHANNEL);
         const cashLine =
           applied.cash.length > 0
-            ? `Cash: ${applied.cash.map((c) => `${c.currency} ${c.endingCash}`).join(', ')}`
+            ? `Cash: ${applied.cash.map((c) => `${c.currency} ${c.amount}`).join(', ')}`
             : 'No importable CashReport sleeves.';
         const skipLines =
           applied.skipped.length > 0

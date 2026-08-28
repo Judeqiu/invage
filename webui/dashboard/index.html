@@ -604,6 +604,97 @@
     }
     .hidden { display: none !important; }
 
+    .crumb { margin-bottom: 1.25rem; }
+    .hero-row {
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+    @media (min-width: 768px) {
+      .hero-row {
+        flex-direction: row;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 2rem;
+      }
+    }
+    .hero-copy { min-width: 0; }
+    .hero-copy h1 {
+      margin-top: 0.75rem;
+      font-family: var(--font-serif);
+      font-size: 2.15rem;
+      font-weight: 400;
+      line-height: 1.15;
+      color: var(--ink);
+    }
+    .hero-copy h1 .muted { color: var(--muted-foreground); }
+    .hero-copy p.lead {
+      margin-top: 1rem;
+      max-width: 42rem;
+      font-size: 0.875rem;
+      color: var(--muted-foreground);
+    }
+    .date-nav { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-top: 1.25rem; }
+    .date-nav button, .date-nav input[type="date"] {
+      border-radius: 0.4rem;
+      border: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
+      background: color-mix(in oklab, var(--card) 40%, transparent);
+      color: var(--foreground);
+      padding: 0.35rem 0.7rem;
+      font-size: 0.875rem;
+    }
+    .date-nav input[type="date"] { font-family: var(--font-mono); }
+    .date-nav button:disabled { opacity: 0.4; cursor: not-allowed; }
+    .date-nav .ghost {
+      border-color: transparent;
+      background: transparent;
+      color: var(--muted-foreground);
+    }
+    .broker-pills {
+      display: flex;
+      gap: 0.5rem;
+      overflow-x: auto;
+      margin: 0.75rem -1rem 0;
+      padding: 0 1rem;
+    }
+    @media (min-width: 640px) { .broker-pills { margin-left: 0; margin-right: 0; padding: 0; } }
+    .nav-card { width: 100%; }
+    @media (min-width: 768px) { .nav-card { width: auto; min-width: 220px; } }
+    .metric-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 0.5rem;
+    }
+    .metric-sub.up { color: var(--success); }
+    .metric-sub.down { color: var(--danger); }
+    .help-dot {
+      flex-shrink: 0;
+      width: 1.15rem;
+      height: 1.15rem;
+      border-radius: 999px;
+      border: 1px solid color-mix(in oklab, var(--border) 80%, transparent);
+      background: var(--background);
+      color: var(--muted-foreground);
+      font-size: 0.62rem;
+      line-height: 1;
+      cursor: help;
+    }
+    .kpi-row { display: grid; gap: 0.75rem; grid-template-columns: 1fr 1fr; margin-top: 1.5rem; }
+    @media (min-width: 900px) { .kpi-row { grid-template-columns: repeat(4, 1fr); } }
+    .section-kicker {
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--muted-foreground);
+      margin-top: 2.5rem;
+    }
+    .section-kicker + h2 { margin-top: 0.35rem; }
+    .status-line { min-height: 1.1em; font-size: 0.75rem; color: var(--muted-foreground); margin: 0.5rem 0 0; }
+    .status-line.error { color: var(--danger); }
+    .controls-hidden { display: none !important; }
+
     .divider {
       height: 1px;
       background: var(--border);
@@ -625,51 +716,59 @@
   </style>
 </head>
 <body>
-  <div class="header">
-    <h1>Portfolio Dashboard</h1>
-    <div class="subtitle" id="subtitle">Loading…</div>
-  </div>
+  <div class="page">
+  <div class="crumb label-eyebrow">Dashboard / Portfolio overview</div>
 
-  <div class="controls">
-    <div class="date-selector">
-      <label for="dateSelect">Data Date</label>
-      <select id="dateSelect">
-        <option value="">Loading dates…</option>
-      </select>
-    </div>
-    <div class="date-selector">
-      <label for="channelSelect">Channel</label>
-      <select id="channelSelect">
-        <option value="merged">All (merged)</option>
-      </select>
-    </div>
-    <span id="statusBadge" class="live-badge">LIVE</span>
-    <div class="actions">
-      <label class="auto-label">
-        <input type="checkbox" id="autoRefresh" />
-        Auto 60s
-      </label>
-      <button type="button" class="primary" id="refreshBtn">Refresh</button>
-    </div>
-  </div>
-  <p class="status" id="status"></p>
+  <div id="loading" class="loading">Loading portfolio data…</div>
+  <div id="error" class="error-box hidden">Failed to load data.</div>
+  <p class="status-line" id="status"></p>
 
-  <div class="container">
-    <div id="loading" class="loading">Loading portfolio data…</div>
-    <div id="error" class="error-box hidden">Failed to load data.</div>
-    <div id="dashboard" class="hidden">
+  <div id="dashboard" class="hidden">
       <div id="warningsBanner" class="warnings-banner" role="status"></div>
 
-      <!-- ========== HIGH-LEVEL ========== -->
-      <div class="level-label overview">Overview</div>
-      <section class="section" id="overviewSection" aria-label="Portfolio overview">
-        <div class="section-head">
-          <div class="section-title">Portfolio snapshot</div>
-          <p class="section-meta" id="overviewMeta"></p>
+      <section class="hero-row" aria-label="Portfolio snapshot">
+        <div class="hero-copy">
+          <div class="label-eyebrow" id="deskEyebrow">Multi-broker</div>
+          <h1>Portfolio snapshot<br /><span class="muted" id="heroDate">—</span></h1>
+          <p class="lead" id="heroLead">Unified view across connected brokers. Pick a date to replay numbers captured at that day's close.</p>
+          <div class="date-nav">
+            <button type="button" id="datePrev" aria-label="Previous day">←</button>
+            <input type="date" id="dateInput" />
+            <button type="button" id="dateNext" aria-label="Next day">→</button>
+            <button type="button" class="ghost" id="dateLatest">Latest</button>
+            <button type="button" class="refresh" id="refreshBtn">Refresh</button>
+            <label class="auto-label"><input type="checkbox" id="autoRefresh" /> Auto 60s</label>
+          </div>
+          <div class="broker-pills" id="channelPills"></div>
         </div>
-        <div class="kpi-grid" id="kpiGrid"></div>
-        <div class="channel-strip hidden" id="channelStrip"></div>
+        <div class="metric-card nav-card">
+          <div class="metric-head">
+            <div class="label-eyebrow">Portfolio value</div>
+            <button type="button" class="help-dot" title="NAV = positions MTM + recorded free cash + fixed-deposit principal. Missing cash is not treated as zero.">?</button>
+          </div>
+          <div class="metric-value" id="navValue">—</div>
+          <div class="metric-sub" id="navDelta"></div>
+        </div>
       </section>
+
+      <div class="kpi-row" id="kpiRow"></div>
+
+      <p class="section-kicker">Section 01</p>
+      <div class="section-gap">
+        <h2><span class="bar"></span>Expiry calendar &amp; assignment risk</h2>
+        <p id="expiryLead">
+          Short option assignment size from books (strike × multiplier × contracts). Assignment probability is not modeled — high-risk here means in-the-money vs a live underlying quote, or unknown if that quote is missing.
+        </p>
+      </div>
+      <div class="kpi-row" id="expiryRow"></div>
+
+      <select id="dateSelect" class="controls-hidden" aria-hidden="true"></select>
+      <select id="channelSelect" class="controls-hidden" aria-hidden="true"></select>
+      <span id="statusBadge" class="controls-hidden"></span>
+      <span id="subtitle" class="controls-hidden"></span>
+      <div id="kpiGrid" class="controls-hidden"></div>
+      <div id="channelStrip" class="controls-hidden"></div>
+      <p id="overviewMeta" class="controls-hidden"></p>
 
       <section class="section" aria-label="Allocation">
         <div class="section-head">

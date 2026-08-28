@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { parseFlexQueryXml } from '../src/ibkr/flex-parse.js';
 import { holdingsFromOpenPositions, yahooSymbolFromFlex } from '../src/ibkr/flex-map.js';
 import { replaceChannelCash, replaceChannelHoldings } from '../src/ibkr/flex-apply.js';
+import { assertHolding } from '../src/market/position-value.js';
+import { getCashes, type InvestorState } from '../src/state/portfolio-state.js';
 import { FlexHttpError, fetchFlexStatement } from '../src/ibkr/flex-client.js';
 import { createBookkeeperTools } from '../src/tools/index.js';
 
@@ -128,6 +130,7 @@ describe('holdingsFromOpenPositions', () => {
       units: 10,
       avg_price: 150,
       channel: 'ibkr',
+      broker_ref: { native_id: '265598', listing_exchange: 'NASDAQ' },
     });
     expect(lots[1].holding.instrument).toBe('option');
     expect(lots[1].holding.units).toBe(2);
@@ -209,8 +212,8 @@ describe('holdingsFromOpenPositions', () => {
         { amount: 9, currency: 'USD', updated_at: '2026-08-01', channel: 'ibkr' },
       ],
       [
-        { currency: 'USD', endingCash: 10000 },
-        { currency: 'HKD', endingCash: 50 },
+        { currency: 'USD', amount: 10000 },
+        { currency: 'HKD', amount: 50 },
       ],
       'ibkr',
       '2026-08-20',
@@ -220,6 +223,69 @@ describe('holdingsFromOpenPositions', () => {
       { amount: 10000, currency: 'USD', updated_at: '2026-08-20', channel: 'ibkr' },
       { amount: 50, currency: 'HKD', updated_at: '2026-08-20', channel: 'ibkr' },
     ]);
+  });
+
+  it('does not invalidate or wipe existing non-ibkr YAML books', () => {
+    const portfolio: InvestorState['portfolio'] = {
+      TSLA: { avg_price: 238.755, units: 68, channel: 'cmbyonglong', instrument: 'equity' },
+      'PHILLIPUSDMMF@tiger': {
+        instrument: 'fund',
+        avg_price: 0.998774,
+        units: 41673.25,
+        channel: 'tiger',
+        fund: { quote_source: 'manual', mark: 1.0, name: 'Phillip USD MMF' },
+      },
+      'IBM-P-185-20260828-S': {
+        instrument: 'option',
+        avg_price: 223,
+        units: 1,
+        channel: 'jude_futu',
+        option: {
+          right: 'put',
+          side: 'short',
+          strike: 185,
+          expiry: '2026-08-28',
+          multiplier: 100,
+          underlying: 'IBM',
+          settlement: 'physical',
+          mark: 223,
+        },
+      },
+      'AAPL@ibkr': { instrument: 'equity', avg_price: 10, units: 1, channel: 'ibkr' },
+    };
+    for (const [key, h] of Object.entries(portfolio!)) {
+      expect(() => assertHolding(key, h)).not.toThrow();
+    }
+
+    const state: InvestorState = {
+      user: { id: 'u1', slug: 'alice', created_at: '2026-01-01' },
+      profile: { display_name: 'Alice', contact_email: 'a@example.com' },
+      log: [],
+      portfolio,
+      cash: [
+        { amount: 13350.89, currency: 'USD', updated_at: '2026-07-30', channel: 'jude_futu' },
+        { amount: 10000, currency: 'USD', updated_at: '2026-08-08', channel: 'ibkr' },
+      ],
+    };
+    const cashes = getCashes(state);
+    expect(cashes).toHaveLength(2);
+    expect(cashes.every((c) => c.settled_amount == null && c.accrued_interest == null)).toBe(true);
+
+    const doc = parseFlexQueryXml(SAMPLE);
+    const { lots } = holdingsFromOpenPositions(doc.openPositions, 'ibkr');
+    const { next } = replaceChannelHoldings(portfolio!, lots, 'ibkr');
+    expect(next.TSLA?.units).toBe(68);
+    expect(next['PHILLIPUSDMMF@tiger']?.units).toBe(41673.25);
+    expect(next['IBM-P-185-20260828-S']?.option?.side).toBe('short');
+    expect(next['AAPL@ibkr']?.units).toBe(10);
+    expect(next['AAPL@ibkr']?.broker_ref).toEqual({
+      native_id: '265598',
+      listing_exchange: 'NASDAQ',
+    });
+
+    const nextCash = replaceChannelCash(cashes, [{ currency: 'USD', amount: 4200.5 }], 'ibkr', '2026-08-17');
+    expect(nextCash.find((c) => c.channel === 'jude_futu')?.amount).toBe(13350.89);
+    expect(nextCash.find((c) => c.channel === 'ibkr')?.amount).toBe(4200.5);
   });
 });
 

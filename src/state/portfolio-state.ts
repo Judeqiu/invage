@@ -25,6 +25,7 @@
 import type { UserState } from 'utarus';
 import type { Holding, InstrumentKind } from '../market/types.js';
 import {
+  attachHoldingCustody,
   isEquityHolding,
   isFundHolding,
   isOptionHolding,
@@ -89,6 +90,11 @@ export function accumulateHoldingBuy(existing: Holding, purchase: Holding): Hold
 
   const category = purchase.category ?? existing.category;
   const channel = purchase.channel ?? existing.channel;
+  if (purchase.encumbrance != null || purchase.broker_ref != null) {
+    throw new Error(
+      'accumulateHoldingBuy does not merge encumbrance or broker_ref. Use update_holding.',
+    );
+  }
 
   if (exKind === 'option') {
     if (!existing.option || !purchase.option) {
@@ -101,24 +107,27 @@ export function accumulateHoldingBuy(existing: Holding, purchase: Holding): Hold
       purchase.option.mark !== purchase.avg_price
         ? purchase.option.mark
         : existing.option.mark;
-    return {
-      instrument: 'option',
-      avg_price,
-      units: totalUnits,
-      category,
-      ...(channel != null ? { channel } : {}),
-      option: {
-        ...existing.option,
-        mark,
-        // Prefer purchase quote_source / underlying_mark when provided on the buy.
-        ...(purchase.option.quote_source != null
-          ? { quote_source: purchase.option.quote_source }
-          : {}),
-        ...(purchase.option.underlying_mark != null
-          ? { underlying_mark: purchase.option.underlying_mark }
-          : {}),
+    return attachHoldingCustody(
+      {
+        instrument: 'option',
+        avg_price,
+        units: totalUnits,
+        category,
+        ...(channel != null ? { channel } : {}),
+        option: {
+          ...existing.option,
+          mark,
+          // Prefer purchase quote_source / underlying_mark when provided on the buy.
+          ...(purchase.option.quote_source != null
+            ? { quote_source: purchase.option.quote_source }
+            : {}),
+          ...(purchase.option.underlying_mark != null
+            ? { underlying_mark: purchase.option.underlying_mark }
+            : {}),
+        },
       },
-    };
+      existing,
+    );
   }
 
   if (exKind === 'fund') {
@@ -139,24 +148,30 @@ export function accumulateHoldingBuy(existing: Holding, purchase: Holding): Hold
       mark:
         purchase.fund.mark != null ? purchase.fund.mark : existing.fund.mark,
     };
-    return {
-      instrument: 'fund',
+    return attachHoldingCustody(
+      {
+        instrument: 'fund',
+        avg_price,
+        units: totalUnits,
+        category,
+        ...(channel != null ? { channel } : {}),
+        fund,
+      },
+      existing,
+    );
+  }
+
+  // equity
+  return attachHoldingCustody(
+    {
+      instrument: 'equity',
       avg_price,
       units: totalUnits,
       category,
       ...(channel != null ? { channel } : {}),
-      fund,
-    };
-  }
-
-  // equity
-  return {
-    instrument: 'equity',
-    avg_price,
-    units: totalUnits,
-    category,
-    ...(channel != null ? { channel } : {}),
-  };
+    },
+    existing,
+  );
 }
 
 /**
@@ -184,6 +199,16 @@ export interface CashBalance {
    * Omit or empty when unassigned — no silent default.
    */
   channel?: string;
+  /**
+   * Settled cash when the broker reports it separately from available cash.
+   * Omit = unknown — not equal to `amount`. NAV / dry powder still use `amount`.
+   */
+  settled_amount?: number;
+  /**
+   * Interest accrued but not yet in `amount`. Omit = unknown.
+   * Do not add into `amount` until it settles.
+   */
+  accrued_interest?: number;
 }
 
 /** YAML may store one object (legacy) or an array (multi-channel). */
@@ -228,13 +253,29 @@ export interface BrokerConnectionLastSync {
   error?: string;
 }
 
+/**
+ * Optional margin / buying-power snapshot from any broker.
+ * Omit the whole object when unknown. Never invent from cash.
+ */
+export interface BrokerConnectionMetrics {
+  as_of: string;
+  currency: string;
+  buying_power?: number;
+  excess_liquidity?: number;
+  maintenance_margin?: number;
+}
+
 export interface BrokerConnection {
   enabled: boolean;
   credentials: Record<string, string>;
   last_sync?: BrokerConnectionLastSync;
+  /** Optional live margin/buying-power snapshot. Omit when unknown. Never invent from cash. */
+  metrics?: BrokerConnectionMetrics;
 }
 
 export interface InvestorState extends UserState {
+  /** Bookkeeper channel recon session. Omit when none. Unknown keys fail on read. */
+  recon?: import('../recon/types.js').ChannelReconSession;
   portfolio?: Record<string, Holding>;
   /** Optional recorded cash; omit entirely when unknown. Single or multi-channel. */
   cash?: CashStorage;
@@ -321,6 +362,70 @@ export function assertCashBalance(raw: unknown): CashBalance {
     updated_at: c.updated_at,
   };
   if (channel != null) result.channel = channel;
+  if (c.settled_amount != null) {
+    if (typeof c.settled_amount !== 'number' || !Number.isFinite(c.settled_amount) || c.settled_amount < 0) {
+      throw new Error('cash.settled_amount must be a finite number ≥ 0 when set.');
+    }
+    result.settled_amount = c.settled_amount;
+  }
+  if (c.accrued_interest != null) {
+    if (
+      typeof c.accrued_interest !== 'number' ||
+      !Number.isFinite(c.accrued_interest) ||
+      c.accrued_interest < 0
+    ) {
+      throw new Error('cash.accrued_interest must be a finite number ≥ 0 when set.');
+    }
+    result.accrued_interest = c.accrued_interest;
+  }
+  return result;
+}
+
+const METRICS_NUMBER_KEYS = ['buying_power', 'excess_liquidity', 'maintenance_margin'] as const;
+
+/** Fail-fast validation for optional broker margin snapshot. */
+export function assertBrokerConnectionMetrics(
+  raw: unknown,
+  ctx = 'metrics',
+): BrokerConnectionMetrics {
+  if (raw == null || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new Error(`${ctx} must be an object.`);
+  }
+  const o = raw as Record<string, unknown>;
+  const allowed = new Set(['as_of', 'currency', ...METRICS_NUMBER_KEYS]);
+  for (const k of Object.keys(o)) {
+    if (!allowed.has(k)) {
+      throw new Error(`${ctx}: unknown field "${k}".`);
+    }
+  }
+  if (typeof o.as_of !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(o.as_of)) {
+    throw new Error(`${ctx}.as_of must be YYYY-MM-DD.`);
+  }
+  if (typeof o.currency !== 'string' || o.currency.trim().length === 0) {
+    throw new Error(`${ctx}.currency is required (e.g. USD) — no silent default.`);
+  }
+  const currency = o.currency.trim().toUpperCase();
+  if (!/^[A-Z]{3,4}$/.test(currency)) {
+    throw new Error(`${ctx}.currency must be a 3–4 letter code (got "${o.currency}").`);
+  }
+  const result: BrokerConnectionMetrics = { as_of: o.as_of, currency };
+  for (const key of METRICS_NUMBER_KEYS) {
+    const v = o[key];
+    if (v == null) continue;
+    if (typeof v !== 'number' || !Number.isFinite(v) || v < 0) {
+      throw new Error(`${ctx}.${key} must be a finite number ≥ 0 when set.`);
+    }
+    result[key] = v;
+  }
+  if (
+    result.buying_power == null &&
+    result.excess_liquidity == null &&
+    result.maintenance_margin == null
+  ) {
+    throw new Error(
+      `${ctx} needs buying_power, excess_liquidity, and/or maintenance_margin.`,
+    );
+  }
   return result;
 }
 

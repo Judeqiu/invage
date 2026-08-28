@@ -1,5 +1,5 @@
 /**
- * /guidance — teach users how to use WalletStreet (skills + workflows).
+ * /guidance — teach users how to use this product (skills + workflows).
  *
  * Subcommands are free-text after the slash command, e.g.:
  *   /guidance
@@ -8,6 +8,8 @@
  *   /guidance value
  *   /guidance research
  */
+
+import { productDisplayName } from './product-name.js';
 
 export const GUIDANCE_SUBCOMMANDS = [
   'start',
@@ -479,7 +481,7 @@ const reports = (): string =>
     '• Do not open Slack’s file preview for .html (it shows source); use the view link',
     '',
     '*Where files live*',
-    '• Your BinDrive folder on Wallet Street Drive (web portal + bot tools)',
+    `• Your BinDrive folder on ${productDisplayName()} Drive (web portal + bot tools)`,
     '• HTML reports get a short-lived signed view link when configured',
     '',
     'Portal (deploy): often `http://host:3001` — login with your user auth token from onboarding.',

@@ -7,6 +7,7 @@ import { investmentAdvisorExtension } from '../src/agents/investment-advisor.js'
 import { realEstateExpertExtension } from '../src/agents/real-estate-expert.js';
 import { factcheckerExtension } from '../src/agents/factchecker.js';
 import { aidealExtension } from '../src/agents/aideal.js';
+import { optionsExpertExtension } from '../src/agents/options-expert.js';
 
 describe('HELP_FIRST_AND_ASYNC_TASKS shared contract', () => {
   it('defines help-first, create_task, and host task-runner instruction rules', () => {
@@ -27,6 +28,7 @@ describe('HELP_FIRST_AND_ASYNC_TASKS shared contract', () => {
       investmentAdvisorExtension.purpose,
       aidealExtension.purpose,
       realEstateExpertExtension.purpose,
+      optionsExpertExtension.purpose,
     ]) {
       expect(purpose).toContain('create_task');
       expect(purpose).toMatch(/Help-first/i);
