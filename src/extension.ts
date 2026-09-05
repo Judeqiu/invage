@@ -75,7 +75,7 @@ function handoffOrchestration(profile: ProductProfileId): string {
 **Mandatory sequence when a craft peer owns the work (by capability fit, not word lists):**
 1. Optional brief orient (1–2 sentences) — never a full analysis you cannot ground from tools/peers.
 2. Optional residual host **read** tools only if needed to write a focused handoff \`task\`.
-3. Optional \`upsert_plan\` when the ask needs 2+ specialist steps (include a final factcheck step).
+3. Optional \`upsert_plan\` for same-speaker batched work: pack independent tool calls (reads, scrapes, quotes) into one shared \`wave\` and emit wave-0 tools in the same batch. Plan waves are **same speaker only** — never put specialists in a wave; multi-specialist sequencing stays one \`handoff_to_agent\` per turn.
 4. **Call \`handoff_to_agent\`** with \`target\` = craft peer **id** or registry label, and a focused \`task\` (ids, constraints, user_slug, deliverable). At most **one** handoff per your turn. Prefer handoff for **craft** peers on Web.
 5. When control returns: follow the **peer-return ladder** (continue craft → residual claims → Factcheck via invoke → synthesize). Never final-synthesize material numbers before Factcheck PASS*.
 
@@ -221,7 +221,7 @@ function investorContextPrefix(investor: InvestorState, ctx: EnrichMessageContex
     `(${investor.profile.display_name}). ` +
     `Holdings lots (routing hint): ${n}. ${cashHint} ${householdHint} ${channelHint} ` +
     (HANDOFF_MODE
-      ? `Web handoff mode ON: craft peers → handoff_to_agent (upsert_plan if multi-step); text alone does not transfer control. invoke_local_agent allowed for always-last Factchecker audit, short same-bubble consults, and task-runner sequential consults. `
+      ? `Web handoff mode ON: craft peers → handoff_to_agent (one per turn); upsert_plan only for same-speaker batched tool work (shared wave) — text alone does not transfer control. invoke_local_agent allowed for always-last Factchecker audit, short same-bubble consults, and task-runner sequential consults. `
       : `When craft is peer-owned by capability fit, execute invoke_local_agent this turn; text alone does not transfer work. Always-last Factchecker via invoke when material claims. `) +
     `Peer-return ladder: continue craft → residual claims → Factcheck → synthesize; no new material numbers after PASS. ` +
     `Help-first: action plan + create_task for deferred work (task runner re-runs you; re-consult craft peers then Factchecker when numbers). Prefer delivery telegram when linked. ` +

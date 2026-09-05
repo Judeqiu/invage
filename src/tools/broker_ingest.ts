@@ -8,6 +8,7 @@ import {
   readBrokerRawFile,
   saveBrokerParserSpec,
 } from '../brokers/parser-store.js';
+import { listBrokerTriageCases, publicTriageSummary } from '../brokers/triage.js';
 import { assertBrokerStatement, formatBrokerSkip } from '../brokers/statement.js';
 import { channelIdParams, resolveInvestorFromChannel, type ChannelIds } from './channel.js';
 
@@ -16,6 +17,37 @@ function ok<T>(text: string, details: T): AgentToolResult<T> {
 }
 function fail(text: string): AgentToolResult<null> {
   return { content: [{ type: 'text' as const, text }], details: null };
+}
+
+export function createListBrokerTriageTool(): AgentTool {
+  return {
+    name: 'list_broker_triage',
+    label: 'List broker ingest triage',
+    description:
+      'List failed broker-statement archives (inventory + error, no raw body). Use after catalog parse fails, then read_broker_raw for the chosen case.',
+    parameters: Type.Object({
+      ...channelIdParams,
+      connector_id: Type.Optional(Type.String({ description: 'Catalog connector id. Omit to list every connector.' })),
+    }),
+    execute: async (_id, raw) => {
+      const p = raw as ChannelIds & { connector_id?: string };
+      try {
+        const state = resolveInvestorFromChannel(p);
+        const slug = state.user.slug;
+        if (!slug) throw new Error('Investor state has no user.slug.');
+        const cases = listBrokerTriageCases(slug, p.connector_id?.trim());
+        const summaries = cases.map((c) => publicTriageSummary(c, slug));
+        return ok(
+          summaries.length === 0
+            ? 'No broker triage cases.'
+            : `Broker triage (${summaries.length}). Next: read_broker_raw with path = raw_path. Do not invent numbers.`,
+          { cases: summaries },
+        );
+      } catch (e) {
+        return fail(e instanceof Error ? e.message : String(e));
+      }
+    },
+  };
 }
 
 export function createReadBrokerRawTool(): AgentTool {

@@ -109,14 +109,81 @@ describe('parseFlexQueryXml', () => {
     expect(doc.skipped.some((s) => s.currency === 'BASE_SUMMARY')).toBe(false);
   });
 
-  it('fails when CashReport is only BASE_SUMMARY', () => {
+  it('fails when CashReport is only BASE_SUMMARY and EquitySummaryInBase is absent', () => {
     const xml = SAMPLE.replace(
       /<CashReport>[\s\S]*<\/CashReport>/,
       `<CashReport>
         <CashReportCurrency accountId="U1234567" currency="BASE_SUMMARY" endingCash="12723" />
       </CashReport>`,
     );
-    expect(() => parseFlexQueryXml(xml)).toThrow(/CashReport has no currency rows/);
+    expect(() => parseFlexQueryXml(xml)).toThrow(/BASE_SUMMARY/);
+  });
+
+  it('reads OpenPosition position as quantity (IBKR XML attribute for Quantity)', () => {
+    const xml = SAMPLE.replaceAll('quantity="', 'position="');
+    const doc = parseFlexQueryXml(xml);
+    expect(doc.openPositions[0]?.quantity).toBe(10);
+    expect(doc.openPositions[1]?.quantity).toBe(-2);
+  });
+
+  it('fails when quantity and position both exist and disagree', () => {
+    const xml = SAMPLE.replace(
+      'quantity="10"',
+      'quantity="10" position="11"',
+    );
+    expect(() => parseFlexQueryXml(xml)).toThrow(/quantity and position/);
+  });
+
+  it('maps BASE_SUMMARY-only CashReport using EquitySummaryInBase currency on toDate', () => {
+    const xml = SAMPLE.replace(
+      /<CashReport>[\s\S]*<\/CashReport>/,
+      `<EquitySummaryInBase>
+        <EquitySummaryByReportDateInBase accountId="U1234567" reportDate="20260817" cash="4200.50" currency="USD" />
+      </EquitySummaryInBase>
+      <CashReport>
+        <CashReportCurrency accountId="U1234567" currency="BASE_SUMMARY" endingCash="4200.50" />
+      </CashReport>`,
+    );
+    const doc = parseFlexQueryXml(xml);
+    expect(doc.cash).toEqual([{ currency: 'USD', endingCash: 4200.5 }]);
+  });
+
+  it('parses a Flex query that uses position + BASE_SUMMARY + EquitySummaryInBase (IBKR field set)', () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<FlexQueryResponse queryName="Activity" type="AF">
+  <FlexStatements count="1">
+    <FlexStatement accountId="U1234567" fromDate="20260903" toDate="20260903">
+      <EquitySummaryInBase>
+        <EquitySummaryByReportDateInBase accountId="U1234567" reportDate="20260903" cash="176625.393771106" currency="USD" />
+      </EquitySummaryInBase>
+      <OpenPositions>
+        <OpenPosition accountId="U1234567" symbol="AMD" assetCategory="STK" position="1700" markPrice="456.16" positionValue="775472" costBasisMoney="268233.645727" currency="USD" multiplier="1" />
+        <OpenPosition accountId="U1234567" symbol="AMD   260918P00230000" assetCategory="OPT" position="-2" strike="230" expiry="20260918" putCall="P" underlyingSymbol="AMD" markPrice="0.0042" costBasisMoney="-3708.387992" currency="USD" multiplier="100" />
+      </OpenPositions>
+      <CashReport>
+        <CashReportCurrency accountId="U1234567" currency="BASE_SUMMARY" endingCash="176625.393771106" />
+      </CashReport>
+    </FlexStatement>
+  </FlexStatements>
+</FlexQueryResponse>`;
+    const doc = parseFlexQueryXml(xml);
+    expect(doc.cash).toEqual([{ currency: 'USD', endingCash: 176625.393771106 }]);
+    expect(doc.openPositions.map((p) => p.quantity)).toEqual([1700, -2]);
+    const { lots } = holdingsFromOpenPositions(doc.openPositions, 'ibkr');
+    expect(lots.map((l) => l.mapKey)).toEqual(['AMD@ibkr', 'AMD-P-230-20260918-S@ibkr']);
+  });
+
+  it('fails BASE_SUMMARY-only when EquitySummaryInBase cash disagrees', () => {
+    const xml = SAMPLE.replace(
+      /<CashReport>[\s\S]*<\/CashReport>/,
+      `<EquitySummaryInBase>
+        <EquitySummaryByReportDateInBase accountId="U1234567" reportDate="20260817" cash="1" currency="USD" />
+      </EquitySummaryInBase>
+      <CashReport>
+        <CashReportCurrency accountId="U1234567" currency="BASE_SUMMARY" endingCash="4200.50" />
+      </CashReport>`,
+    );
+    expect(() => parseFlexQueryXml(xml)).toThrow(/disagrees/);
   });
 });
 
@@ -294,6 +361,7 @@ describe('Bookkeeper tools', () => {
     const names = createBookkeeperTools().map((t) => t.name);
     expect(names).toContain('configure_ibkr_flex');
     expect(names).toContain('sync_ibkr_flex');
+    expect(names).toContain('list_broker_triage');
     expect(names).toContain('read_broker_raw');
     expect(names).toContain('save_broker_parser');
     expect(names).toContain('parse_broker_raw');

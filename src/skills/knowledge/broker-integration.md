@@ -7,7 +7,8 @@ Never invent numbers. Never echo Flex tokens. Select by catalog id + capability,
 ## Tools
 
 - `configure_ibkr_flex` / `sync_ibkr_flex` — IBKR Flex Web Service (XML catalog parser). Call sync anytime the channel is on.
-- `read_broker_raw` — archived raw after catalog parse fails.
+- `list_broker_triage` — failed ingest cases (error + inventory: tags, cash currencies, `position` vs `quantity`). No raw body.
+- `read_broker_raw` — archived raw after catalog parse fails (case dir, `case.yaml`, or `raw.xml`).
 - `save_broker_parser` — persist a **declarative** `csv_tables` spec (host interprets; **no eval**).
 - `parse_broker_raw` — run that spec against archived raw → BrokerStatement (does not write books).
 - `apply_broker_statement` — same apply path as catalog sync.
@@ -17,11 +18,13 @@ Settings → Brokers uses the same store. Off refuses pull; lots stay. `not_impo
 ## Parse pipeline
 
 1. **Catalog parser** (IBKR: Flex XML Open Positions + Cash Report).
-2. If that throws: raw is archived. **Do not stop at the error text.**
-3. `read_broker_raw` for connector `ibkr`. Read the text. Produce either:
+2. If that throws: a **triage case** is written under `drive/<slug>/broker-raw/<connector>/<id>/` (`raw.xml` + `case.yaml` inventory). **Do not stop at the error text.**
+3. `list_broker_triage` then `read_broker_raw` for connector `ibkr` (path = `raw_path` from the case). Read the text. Produce either:
    - a `csv_tables` spec (headers + column map + `skipCurrencies` such as `BASE_SUMMARY`), `save_broker_parser`, then `sync_ibkr_flex` or `parse_broker_raw` + `apply_broker_statement`; or
    - a **BrokerStatement** JSON (`account_id`, `as_of`, `cash[].amount`, `lots[].holding`) taken only from the raw, then `apply_broker_statement`. Never submit Flex `openPositions` / `endingCash`.
 4. If a field is not in the raw, omit it or list it in `skipped` — never guess cost, qty, or cash.
+
+IBKR Flex XML (catalog parser): Open Positions **Quantity** is often the attribute `position` (not `quantity`). `quantity` on `<Trade>` is a different section. Cash Report `BASE_SUMMARY` is base-currency total — not an ISO sleeve. Per-currency Cash Report rows are preferred; if the query only sent BASE_SUMMARY, Equity Summary In Base `currency` + `cash` on `toDate` must match `endingCash` or the parse fails.
 
 Fatal without apply: channel off, missing creds, Flex HTTP, empty cash sleeves. Partial: unsupported lots listed in `not_imported`.
 

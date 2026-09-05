@@ -56,7 +56,7 @@ function registerBookkeeperSkills(): Skill[] {
       id: 'broker-integration',
       name: 'Broker integration',
       description:
-        'Read-only ingest from a catalog brokerage connector onto its channel. IBKR (ibkr) is the shipped channel. Load by capability fit when books should match a broker statement, Flex sync fails to parse, CSV/XML format is unexpected, or the user wants to connect/refresh/reconcile IBKR or another catalog connector. Tools: configure_ibkr_flex, sync_ibkr_flex, read_broker_raw, save_broker_parser, parse_broker_raw, apply_broker_statement. Catalog parser first; on parse failure the agent reads raw text and writes a csv_tables spec or BrokerStatement — never eval, never invent numbers. Quote not_imported.',
+        'Read-only ingest from a catalog brokerage connector onto its channel. IBKR (ibkr) is the shipped channel. Load by capability fit when books should match a broker statement, Flex sync fails to parse, CSV/XML format is unexpected, or the user wants to connect/refresh/reconcile IBKR or another catalog connector. Tools: configure_ibkr_flex, sync_ibkr_flex, list_broker_triage, read_broker_raw, save_broker_parser, parse_broker_raw, apply_broker_statement. Catalog parser first; on parse failure a triage case (inventory + raw) is archived — list_broker_triage then read_broker_raw, then csv_tables spec or BrokerStatement. Never eval, never invent numbers. Quote not_imported.',
     },
     {
       id: 'ibkr-flex',

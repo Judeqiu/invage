@@ -5,8 +5,8 @@ File portal for each Utarus user. Files live under `data/drive/<user-slug>/`.
 ## Auth
 
 - Each user has `user.auth_token` in their YAML (created by invite redeem / init_user).
-- BinDrive tools require `owner_slug` + that `auth_token`.
-- Prefer `get_user` / resolve from Telegram context, then pass slug + auth_token — never invent tokens.
+- BinDrive tools take `token` (that `auth_token`) — identity comes from the token; there is no `owner_slug` arg (utarus ≥ v3.0.0-beta.76).
+- Prefer `get_user` / resolve from Telegram context to obtain the auth_token — never invent tokens.
 
 ## Portfolio reports
 

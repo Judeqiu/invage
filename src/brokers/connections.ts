@@ -15,7 +15,8 @@ import type { IbkrFlexConfig } from '../ibkr/flex-config.js';
 import { parseFlexQueryXml } from '../ibkr/flex-parse.js';
 import { applyBrokerStatement } from './apply-statement.js';
 import { runCsvTablesSpec } from './csv-tables.js';
-import { archiveBrokerRaw, loadBrokerParserSpec } from './parser-store.js';
+import { loadBrokerParserSpec } from './parser-store.js';
+import { archiveBrokerTriage } from './triage.js';
 import {
   assertBrokerConnectionMetrics,
   type BrokerConnection,
@@ -511,11 +512,21 @@ export async function syncBrokerConnection(
         applied = await applyFlexStatement(state, doc, xml);
       } catch (parseErr) {
         const asOf = new Date().toISOString().slice(0, 10);
-        const rawPath = archiveBrokerRaw(slug, id, xml, asOf);
+        const parseMessage = parseErr instanceof Error ? parseErr.message : String(parseErr);
+        const triage = archiveBrokerTriage({
+          slug,
+          connectorId: id,
+          body: xml,
+          asOf,
+          error: parseMessage,
+        });
+        const inv = triage.case.inventory;
+        const invLine = `triage ${id}/${triage.case.id} looks_like=${inv.looks_like} cash_currencies=${inv.cash_currencies.join(',') || '(none)'} position_qty_attr=${inv.position_qty_attr}`;
         const spec = loadBrokerParserSpec(slug, id);
         if (!spec) {
-          const message = `${parseErr instanceof Error ? parseErr.message : String(parseErr)} Raw archived at ${rawPath}. Load broker-integration: read_broker_raw, generate a csv_tables parser (save_broker_parser), or apply_broker_statement from the text.`;
-          throw new Error(message);
+          throw new Error(
+            `${parseMessage} ${invLine}. Raw at ${triage.rawPath}. list_broker_triage then read_broker_raw, or save_broker_parser / apply_broker_statement.`,
+          );
         }
         try {
           applied = await applyBrokerStatement(
@@ -526,7 +537,7 @@ export async function syncBrokerConnection(
           );
         } catch (specErr) {
           throw new Error(
-            `${specErr instanceof Error ? specErr.message : String(specErr)} Raw archived at ${rawPath}. Catalog parse: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}`,
+            `${specErr instanceof Error ? specErr.message : String(specErr)} ${invLine}. Raw at ${triage.rawPath}. Catalog parse: ${parseMessage}`,
           );
         }
       }

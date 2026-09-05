@@ -8,6 +8,14 @@ export class FlexProtocolError extends Error {
   }
 }
 
+/** Row-level conflict that must abort the whole Flex parse (not skip the lot). */
+export class FlexFatalParseError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'FlexFatalParseError';
+  }
+}
+
 export interface FlexOpenPosition {
   accountId: string;
   currency: string;
@@ -135,8 +143,15 @@ export function looksLikeCsv(text: string): boolean {
 }
 
 function parseOpenPosition(row: Record<string, string>): FlexOpenPosition {
-  const quantity = attrNumber(row, 'quantity');
-  if (quantity == null) throw new Error('IBKR Flex OpenPosition: missing quantity');
+  const fromQuantity = attrNumber(row, 'quantity');
+  const fromPosition = attrNumber(row, 'position');
+  if (fromQuantity != null && fromPosition != null && fromQuantity !== fromPosition) {
+    throw new FlexFatalParseError(
+      `IBKR Flex OpenPosition ${row.symbol ?? '?'}: quantity and position disagree (${fromQuantity} vs ${fromPosition})`,
+    );
+  }
+  const quantity = fromQuantity ?? fromPosition;
+  if (quantity == null) throw new Error('IBKR Flex OpenPosition: missing quantity (or position)');
   const pos: FlexOpenPosition = {
     accountId: requireAttr(row, 'accountId', 'OpenPosition'),
     currency: requireAttr(row, 'currency', 'OpenPosition').toUpperCase(),
@@ -164,6 +179,65 @@ function parseOpenPosition(row: Record<string, string>): FlexOpenPosition {
   if (row.underlyingSymbol) pos.underlyingSymbol = row.underlyingSymbol;
   if (row.conid) pos.conid = row.conid;
   return pos;
+}
+
+function reportDateMatches(reportDate: string, toDate: string): boolean {
+  const ymd = ymdFromIbkr(reportDate, 'EquitySummaryInBase reportDate');
+  return ymd === toDate;
+}
+
+/**
+ * IBKR Cash Report always includes a BASE_SUMMARY row in the account base
+ * currency. Per-currency rows are optional in the Flex Query. When they are
+ * absent, Equity Summary In Base carries the ISO code (`currency`) and a
+ * `cash` figure that must equal CashReport endingCash.
+ */
+function resolveBaseSummaryCash(
+  xml: string,
+  toDate: string,
+  baseSummary: FlexCashRow,
+): FlexCashRow {
+  const inner = extractSectionInner(xml, 'EquitySummaryInBase');
+  if (inner == null) {
+    throw new Error(
+      'IBKR Flex CashReport is BASE_SUMMARY only (no per-currency rows). Include Currency-level Cash Report in the Flex Query, or include Equity Summary In Base with currency so base cash can be booked.',
+    );
+  }
+  const matches: Array<{ currency: string; cash: number; reportDate: string }> = [];
+  for (const row of xmlSelfClosingTags(inner, 'EquitySummaryByReportDateInBase')) {
+    const reportDate = row.reportDate?.trim();
+    if (!reportDate || !reportDateMatches(reportDate, toDate)) continue;
+    const currency = row.currency?.trim().toUpperCase();
+    const cash = attrNumber(row, 'cash');
+    if (!currency || cash == null) {
+      throw new Error(
+        `IBKR Flex EquitySummaryInBase reportDate ${reportDate}: missing currency or cash.`,
+      );
+    }
+    if (!/^[A-Z]{3,4}$/.test(currency) || currency === 'BASE_SUMMARY') {
+      throw new Error(
+        `IBKR Flex EquitySummaryInBase reportDate ${reportDate}: currency must be an ISO code, got "${currency}".`,
+      );
+    }
+    matches.push({ currency, cash, reportDate });
+  }
+  if (matches.length === 0) {
+    throw new Error(
+      `IBKR Flex CashReport is BASE_SUMMARY only; EquitySummaryInBase has no row for toDate ${toDate}.`,
+    );
+  }
+  if (matches.length > 1) {
+    throw new Error(
+      `IBKR Flex EquitySummaryInBase has ${matches.length} rows for toDate ${toDate}.`,
+    );
+  }
+  const eq = matches[0];
+  if (eq.cash !== baseSummary.endingCash) {
+    throw new Error(
+      `IBKR Flex BASE_SUMMARY endingCash ${baseSummary.endingCash} disagrees with EquitySummaryInBase cash ${eq.cash} (${eq.currency} on ${eq.reportDate}).`,
+    );
+  }
+  return { currency: eq.currency, endingCash: baseSummary.endingCash };
 }
 
 function parseCashRow(row: Record<string, string>): FlexCashRow {
@@ -217,9 +291,11 @@ export function parseFlexQueryXml(xml: string | Buffer): FlexStatementDoc {
     try {
       openPositions.push(parseOpenPosition(row));
     } catch (e) {
+      if (e instanceof FlexFatalParseError) throw e;
+      const reason = e instanceof Error ? e.message : String(e);
       const skip: FlexSkip = {
         kind: 'position',
-        reason: e instanceof Error ? e.message : String(e),
+        reason,
       };
       if (row.symbol) skip.symbol = row.symbol;
       if (row.assetCategory) skip.assetCategory = row.assetCategory;
@@ -228,10 +304,17 @@ export function parseFlexQueryXml(xml: string | Buffer): FlexStatementDoc {
   }
   const cash: FlexCashRow[] = [];
   const seenCcy = new Set<string>();
+  let baseSummary: FlexCashRow | undefined;
   for (const row of xmlSelfClosingTags(cashInner, 'CashReportCurrency')) {
     try {
       const parsed = parseCashRow(row);
-      if (parsed.currency === 'BASE_SUMMARY') continue;
+      if (parsed.currency === 'BASE_SUMMARY') {
+        if (baseSummary) {
+          throw new FlexFatalParseError('IBKR Flex CashReport has more than one BASE_SUMMARY row.');
+        }
+        baseSummary = parsed;
+        continue;
+      }
       if (!/^[A-Z]{3,4}$/.test(parsed.currency)) {
         skipped.push({
           kind: 'cash',
@@ -259,6 +342,7 @@ export function parseFlexQueryXml(xml: string | Buffer): FlexStatementDoc {
       seenCcy.add(parsed.currency);
       cash.push(parsed);
     } catch (e) {
+      if (e instanceof FlexFatalParseError) throw e;
       const skip: FlexSkip = {
         kind: 'cash',
         reason: e instanceof Error ? e.message : String(e),
@@ -268,7 +352,11 @@ export function parseFlexQueryXml(xml: string | Buffer): FlexStatementDoc {
     }
   }
   if (cash.length === 0) {
-    throw new Error('IBKR Flex CashReport has no currency rows.');
+    if (!baseSummary) {
+      throw new Error('IBKR Flex CashReport has no currency rows.');
+    }
+    const resolved = resolveBaseSummaryCash(text, toDate, baseSummary);
+    cash.push(resolved);
   }
   const doc: FlexStatementDoc = {
     accountId,

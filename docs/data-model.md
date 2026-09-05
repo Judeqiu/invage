@@ -241,7 +241,34 @@ Missing `recon` = no open session. Unknown keys fail on read. Cash `take` posts 
 
 **One books snapshot.** YAML stores only public types: `Holding`, `cash.amount` (optional `settled_amount` / `accrued_interest`), `broker_connections.<id>` (credentials, `last_sync`, optional `metrics`). IBKR Flex XML/CSV is a **parser**, not a second schema: `conid` → `broker_ref.native_id`, Cash Report ending cash → `cash.amount`. Apply is `applyBrokerStatement` for every connector. Do not persist `openPositions`, `endingCash`, `assetCategory`, or `conid`.
 
-Catalog apply is a **channel snapshot** of what mapped: every ISO cash sleeve on that channel (IBKR `BASE_SUMMARY` is dropped), every mappable lot as a `Holding`. Unsupported rows are listed in `last_sync.not_imported` and are **not** invented as holdings. Missing Open Positions / Cash Report wrappers, or zero importable cash sleeves, fail the catalog parser (no wipe). CSV or other unexpected text is archived under `drive/<slug>/broker-raw/<connector>/`. A declarative `csv_tables` spec maps **CSV headers → public fields** (`amount`, not `endingCash`) at `drive/<slug>/broker-parsers/<connector>.json`. LLM `BrokerStatement` is `{ account_id, as_of, cash[].amount, lots[].holding }` — same apply path.
+Catalog apply is a **channel snapshot** of what mapped: every ISO cash sleeve on that channel, every mappable lot as a `Holding`. IBKR Flex `CashReportCurrency` with `currency: BASE_SUMMARY` is **not** an ISO sleeve — drop it when per-currency rows exist. When the query only returns BASE_SUMMARY, the catalog parser books that `endingCash` in the ISO code from `EquitySummaryByReportDateInBase` for the statement `toDate`, and **fails** if that section is missing or `cash` disagrees with BASE_SUMMARY `endingCash`. Open Positions quantity is XML `quantity` or `position` (IBKR docs label “Quantity”; Flex XML often uses `position`). Unsupported rows are listed in `last_sync.not_imported` and are **not** invented as holdings. Missing Open Positions / Cash Report wrappers, or zero importable cash sleeves, fail the catalog parser (no wipe).
+
+**Triage (parse failure).** Each failed catalog parse writes a case, not a loose dump:
+
+```
+drive/<slug>/broker-raw/<connector>/<id>/
+  raw.xml          # or raw.txt (CSV / unknown)
+  case.yaml        # error + inventory; unknown keys fail
+```
+
+```yaml
+id: "2026-09-04T22-52-05-319Z"
+connector: ibkr
+at: "2026-09-04T22:52:05.319Z"
+as_of: "2026-09-04"
+account_id: "U1234567"    # omit when not in the raw
+error: "IBKR Flex CashReport is BASE_SUMMARY only …"
+status: open
+inventory:
+  looks_like: flex_xml     # flex_xml | csv | unknown
+  tags: { OpenPosition: 141, CashReportCurrency: 1 }
+  cash_currencies: [BASE_SUMMARY]
+  position_qty_attr: position  # quantity | position | both | missing | none
+raw_rel: raw.xml
+raw_bytes: 51752
+```
+
+`list_broker_triage` returns this inventory (no raw body). `read_broker_raw` returns the bytes. Legacy flat `*.txt` files in the connector folder are still readable as latest raw. A declarative `csv_tables` spec maps **CSV headers → public fields** (`amount`, not `endingCash`) at `drive/<slug>/broker-parsers/<connector>.json`. LLM `BrokerStatement` is `{ account_id, as_of, cash[].amount, lots[].holding }` — same apply path.
 
 **Broker statement vs v1 snapshot (any connector).** v1 ingest writes **end-of-day lots + free cash on one channel**. A monthly/activity statement is a **period pack**. Extra layers live on the public types below — omit the field when that broker does not report it. Do not invent a second map key, a second currency, or a silent 0.
 

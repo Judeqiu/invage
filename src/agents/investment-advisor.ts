@@ -61,7 +61,7 @@ function registerInvestmentAdvisorSkills(): Skill[] {
       id: 'bindrive',
       name: 'BinDrive',
       description:
-        'Load when saving or sharing portfolio analysis reports. Prefer save_report for analysis HTML; use owner_slug + auth_token with bindrive_* tools.',
+        'Load when saving or sharing portfolio analysis reports. Prefer save_report for analysis HTML; use the user auth_token as the token arg with bindrive_* tools.',
     },
   ];
   const skills: Skill[] = [];

@@ -37,6 +37,7 @@ import {
 } from './aideal.js';
 import {
   createApplyBrokerStatementTool,
+  createListBrokerTriageTool,
   createParseBrokerRawTool,
   createReadBrokerRawTool,
   createSaveBrokerParserTool,
@@ -71,6 +72,7 @@ export function createBookkeeperTools(): AgentTool[] {
     ...createSnapshotTool(),
     createConfigureIbkrFlexTool(),
     createSyncIbkrFlexTool(),
+    createListBrokerTriageTool(),
     createReadBrokerRawTool(),
     createSaveBrokerParserTool(),
     createParseBrokerRawTool(),

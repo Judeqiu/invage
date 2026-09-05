@@ -227,9 +227,9 @@ function booksOverlay(
         const o = h.option!;
         const live = insight.economics.premiumPerContract;
         const dir = o.side === 'short' ? -1 : 1;
-        const pl = Number((dir * (live - o.avg_price) * h.units).toFixed(2));
+        const pl = Number((dir * (live - h.avg_price) * h.units).toFixed(2));
         return (
-          `BOOKS lot ${key}: ${o.side} ${h.units} ct @ avg ${o.avg_price}/ct ` +
+          `BOOKS lot ${key}: ${o.side} ${h.units} ct @ avg ${h.avg_price}/ct ` +
           `stored mark ${o.mark} | live mark ${live} | MTM P/L vs cost ${pl} ${insight.currency} ` +
           `(does not rewrite YAML).`
         );
@@ -256,7 +256,7 @@ function booksLotsSummary(p: ChannelIds, underlying: string): string | null {
     lots
       .map(([key, h]) => {
         const o = h.option!;
-        return `  ${key}: ${o.side} ${o.right} K=${o.strike} ${o.expiry} units=${h.units} avg=${o.avg_price}`;
+        return `  ${key}: ${o.side} ${o.right} K=${o.strike} ${o.expiry} units=${h.units} avg=${h.avg_price}`;
       })
       .join('\n')
   );
