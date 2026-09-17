@@ -1,29 +1,31 @@
+import { randomUUID } from 'node:crypto';
+import { useTestDatabase, createInvestorFixture } from './helpers/database.js';
+import { loadInvestor, saveInvestor } from '../src/state/investor-store.js';
 /**
  * Regression: add_holding instrument=fund for a brand-new key must not throw
  * "Cannot read properties of undefined" when preserving prior fund fields.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'fs';
+import { mkdtempSync, rmSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { stringify } from 'yaml';
+
+const testDatabase = await useTestDatabase();
 
 const dataRoot = mkdtempSync(join(tmpdir(), 'invage-add-fund-'));
 process.env.UTARUS_LOADED_BY_HOST = '1';
 process.env.UTARUS_DATA_ROOT = dataRoot;
 
-const { loadState, saveState } = await import('utarus');
+
 const { createPortfolioTools } = await import('../src/tools/portfolio.js');
 const { getPortfolio } = await import('../src/state/portfolio-state.js');
 
 const SLUG = 'fundbooker';
 
-beforeAll(() => {
+beforeAll(async () => {
   mkdirSync(join(dataRoot, 'users'), { recursive: true });
-  writeFileSync(
-    join(dataRoot, 'users', `${SLUG}.yaml`),
-    stringify({
-      user: {
+  await createInvestorFixture({
+      user: { id: randomUUID(),
         slug: SLUG,
         created_at: '2026-08-08',
         telegram_user_ids: [],
@@ -47,9 +49,7 @@ beforeAll(() => {
       ],
       treasury: { reporting_currency: 'USD', updated_at: '2026-08-08' },
       log: [],
-    }),
-    'utf8',
-  );
+    });
 });
 
 afterAll(() => {
@@ -80,7 +80,8 @@ describe('add_holding new fund lot', () => {
     expect(text).toMatch(/Added fund OCBCPM@ocbc/i);
     expect(text).toMatch(/adjust_cash=false|Cash ledger/i);
 
-    const state = loadState(SLUG);
+    const stateSnapshot = await loadInvestor(SLUG);
+    const state = stateSnapshot.state;
     const port = getPortfolio(state as never);
     expect(port['OCBCPM@ocbc']).toMatchObject({
       instrument: 'fund',
@@ -113,7 +114,8 @@ describe('add_holding new fund lot', () => {
 
   it('does not debit multi-ccy cash when adjust_cash=false on new fund', async () => {
     const add = createPortfolioTools().find((t) => t.name === 'add_holding')!;
-    const before = loadState(SLUG);
+    const beforeSnapshot = await loadInvestor(SLUG);
+    const before = beforeSnapshot.state;
     const result = await add.execute('t3', {
       user_slug: SLUG,
       ticker: 'OCBCRI',
@@ -129,9 +131,10 @@ describe('add_holding new fund lot', () => {
     const text = result.content.map((c) => ('text' in c ? c.text : '')).join('');
     expect(text).toMatch(/Added fund OCBCRI@ocbc/i);
 
-    const after = loadState(SLUG);
+    const afterSnapshot = await loadInvestor(SLUG);
+    const after = afterSnapshot.state;
     // cash YAML should be unchanged amounts
     expect(JSON.stringify(after.cash)).toBe(JSON.stringify(before.cash));
-    saveState(after);
+    await saveInvestor(afterSnapshot);
   });
 });

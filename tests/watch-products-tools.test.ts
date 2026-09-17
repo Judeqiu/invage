@@ -1,14 +1,17 @@
+import { useTestDatabase, createInvestorFixture } from './helpers/database.js';
+import { loadInvestor } from '../src/state/investor-store.js';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'fs';
+import { mkdtempSync, rmSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { stringify } from 'yaml';
+
+const testDatabase = await useTestDatabase();
 
 const dataRoot = mkdtempSync(join(tmpdir(), 'invage-watch-tools-'));
 process.env.UTARUS_LOADED_BY_HOST = '1';
 process.env.UTARUS_DATA_ROOT = dataRoot;
 
-const { loadState } = await import('utarus');
+
 const { createPlaybookTools } = await import('../src/tools/playbook.js');
 const { getPlaybook } = await import('../src/state/portfolio-state.js');
 
@@ -24,11 +27,9 @@ function textOf(result: { content: Array<{ type: string; text?: string }> }): st
   return result.content.map((c) => ('text' in c ? (c.text ?? '') : '')).join('');
 }
 
-beforeAll(() => {
+beforeAll(async () => {
   mkdirSync(join(dataRoot, 'users'), { recursive: true });
-  writeFileSync(
-    join(dataRoot, 'users', `${SLUG}.yaml`),
-    stringify({
+  await createInvestorFixture({
       user: {
         id: '00000000-0000-4000-8000-000000000041',
         slug: SLUG,
@@ -38,9 +39,7 @@ beforeAll(() => {
       },
       profile: { display_name: 'Watcher', contact_email: 'w@example.com' },
       log: [{ ts: '2026-08-16', action: 'created' }],
-    }),
-    'utf-8',
-  );
+    });
 });
 
 afterAll(() => {
@@ -59,7 +58,7 @@ describe('add_watch_product / remove_watch_product', () => {
       note: 'waiting for pullback',
     });
     expect(textOf(added)).toMatch(/Added AAPL/);
-    const afterAdd = getPlaybook(loadState(SLUG));
+    const afterAdd = getPlaybook((await loadInvestor(SLUG)).state);
     expect(afterAdd.watchlists.products).toEqual([
       {
         symbol: 'AAPL',
@@ -79,7 +78,7 @@ describe('add_watch_product / remove_watch_product', () => {
 
     const removed = await remove.execute('t3', { user_slug: SLUG, symbol: 'AAPL' });
     expect(textOf(removed)).toMatch(/Removed AAPL/);
-    expect(getPlaybook(loadState(SLUG)).watchlists.products).toEqual([]);
+    expect(getPlaybook((await loadInvestor(SLUG)).state).watchlists.products).toEqual([]);
 
     const missing = await remove.execute('t4', { user_slug: SLUG, symbol: 'AAPL' });
     expect(textOf(missing)).toMatch(/not on the list/);

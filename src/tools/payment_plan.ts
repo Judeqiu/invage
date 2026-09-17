@@ -62,10 +62,10 @@ type BooksPlanContext = {
  * Load liabilities, cash, deposits, cash-flows into PaymentPlanBaseInput.
  * Fail-fast on mixed currency / missing reporting currency.
  */
-function loadPaymentPlanBaseFromBooks(
+async function loadPaymentPlanBaseFromBooks(
   ids: ChannelIds & { as_of?: string; currency?: string },
-): BooksPlanContext | AgentToolResult<null> {
-  const investor = resolveInvestorFromChannel(ids) as InvestorState;
+): Promise<BooksPlanContext | AgentToolResult<null>> {
+  const { state: investor } = await resolveInvestorFromChannel(ids);
   const hh = investor as HouseholdInvestorState;
   const asOf = ids.as_of?.trim() || todayYmd();
   const treasury = hh.treasury != null ? getTreasury(hh) : null;
@@ -250,7 +250,7 @@ export function createPaymentPlanTool(): AgentTool {
           extra_monthly?: number;
           max_months?: number;
         };
-        const loaded = loadPaymentPlanBaseFromBooks(ids);
+        const loaded = await loadPaymentPlanBaseFromBooks(ids);
         if (isFailResult(loaded)) return loaded;
         const plan = buildPaymentPlan({
           ...loaded.base,
@@ -369,7 +369,7 @@ export function createOptimizePaymentPlanTool(): AgentTool {
           extra_monthly_candidates?: number[];
           max_months?: number;
         };
-        const loaded = loadPaymentPlanBaseFromBooks(ids);
+        const loaded = await loadPaymentPlanBaseFromBooks(ids);
         if (isFailResult(loaded)) return loaded;
 
         let strategies: PaydownStrategy[];

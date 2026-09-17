@@ -1,20 +1,21 @@
+import { useTestDatabase, createInvestorFixture } from './helpers/database.js';
+import { loadInvestor, saveInvestor } from '../src/state/investor-store.js';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'fs';
+import { mkdtempSync, rmSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { stringify } from 'yaml';
 
 /**
  * resolveDataRoot() snapshots UTARUS_DATA_ROOT at first utarus import and
  * requires an absolute path for host-project data. Set env before importing.
  */
+const testDatabase = await useTestDatabase();
+
 const dataRoot = mkdtempSync(join(tmpdir(), 'invage-test-'));
 process.env.UTARUS_LOADED_BY_HOST = '1';
 process.env.UTARUS_DATA_ROOT = dataRoot;
 
 const {
-  loadState,
-  saveState,
   resolveUserByTelegramUser,
 } = await import('utarus');
 const {
@@ -58,12 +59,10 @@ const {
 } = await import('../src/state/portfolio-state.js');
 
 describe('portfolio-state', () => {
-  beforeAll(() => {
+  beforeAll(async () => {
     const usersDir = join(dataRoot, 'users');
     mkdirSync(usersDir, { recursive: true });
-    writeFileSync(
-      join(usersDir, 'alice.yaml'),
-      stringify({
+    await createInvestorFixture({
         user: {
           id: '00000000-0000-4000-8000-000000000001',
           slug: 'alice',
@@ -76,75 +75,82 @@ describe('portfolio-state', () => {
         portfolio: {
           AAPL: { avg_price: 200, units: 5, category: 'SL Technology S1' },
         },
-      }),
-      'utf-8',
-    );
+      });
   });
 
   afterAll(() => {
     rmSync(dataRoot, { recursive: true, force: true });
   });
 
-  it('loads portfolio and resolves by telegram id', () => {
-    const state = loadState('alice');
+  it('loads portfolio and resolves by telegram id', async () => {
+    const stateSnapshot = await loadInvestor('alice');
+    const state = stateSnapshot.state;
     expect(state.profile.display_name).toBe('Alice');
     expect(getPortfolio(state).AAPL?.units).toBe(5);
 
-    const byTg = resolveUserByTelegramUser(111);
+    const byTg = (await resolveUserByTelegramUser(111));
     expect(byTg?.user.slug).toBe('alice');
-    expect(resolveUserByTelegramUser(999)).toBeNull();
+    expect((await resolveUserByTelegramUser(999))).toBeNull();
   });
 
-  it('saves portfolio mutations', () => {
-    const state = loadState('alice');
+  it('saves portfolio mutations', async () => {
+    const stateSnapshot = await loadInvestor('alice');
+    const state = stateSnapshot.state;
     const portfolio = getPortfolio(state);
     portfolio.MSFT = { avg_price: 300, units: 2 };
     setPortfolio(state, portfolio);
     state.log.push({ ts: '2026-06-28', action: 'holding_added', ticker: 'MSFT' });
-    saveState(state);
+    await saveInvestor(stateSnapshot);
 
-    const reloaded = loadState('alice');
+    const reloadedSnapshot = await loadInvestor('alice');
+    const reloaded = reloadedSnapshot.state;
     expect(getPortfolio(reloaded).MSFT?.units).toBe(2);
   });
 
-  it('resolves default playbook when none stored', () => {
-    const state = loadState('alice');
+  it('resolves default playbook when none stored', async () => {
+    const stateSnapshot = await loadInvestor('alice');
+    const state = stateSnapshot.state;
     const pb = getPlaybook(state);
     expect(pb.risk.profile).toBe('balanced');
     expect(pb.philosophy).toBe('value_investing');
   });
 
-  it('persists playbook updates', () => {
-    const state = loadState('alice');
+  it('persists playbook updates', async () => {
+    const stateSnapshot = await loadInvestor('alice');
+    const state = stateSnapshot.state;
     updatePlaybook(state, {
       risk: { profile: 'conservative' },
       philosophy: 'dividend_investing',
     });
     state.log.push({ ts: '2026-06-28', action: 'playbook_updated' });
-    saveState(state);
+    await saveInvestor(stateSnapshot);
 
-    const reloaded = loadState('alice');
+    const reloadedSnapshot = await loadInvestor('alice');
+    const reloaded = reloadedSnapshot.state;
     const pb = getPlaybook(reloaded);
     expect(pb.risk.profile).toBe('conservative');
     expect(pb.philosophy).toBe('dividend_investing');
   });
 
-  it('returns null cash when never recorded (does not invent 0)', () => {
-    const state = loadState('alice');
+  it('returns null cash when never recorded (does not invent 0)', async () => {
+    const stateSnapshot = await loadInvestor('alice');
+    const state = stateSnapshot.state;
     expect(getCash(state)).toBeNull();
   });
 
-  it('persists cash balance and strategy metrics', () => {
-    const state = loadState('alice');
+  it('persists cash balance and strategy metrics', async () => {
+    const stateSnapshot = await loadInvestor('alice');
+    const state = stateSnapshot.state;
     setCash(state, {
       amount: 12500,
       currency: 'USD',
       updated_at: '2026-07-28',
     });
     state.log.push({ ts: '2026-07-28', action: 'cash_set', amount: 12500, currency: 'USD' });
-    saveState(state);
+    await saveInvestor(stateSnapshot);
 
-    const reloaded = loadState('alice');
+    const reloadedSnapshot = await loadInvestor('alice');
+    const reloaded = reloadedSnapshot.state;
     const cash = getCash(reloaded);
     expect(cash).toEqual({
       amount: 12500,
@@ -158,15 +164,16 @@ describe('portfolio-state', () => {
     expect(metrics.cashVsTargetPp).toBeCloseTo(15, 5);
   });
 
-  it('clearCash removes record so cash is unknown again', () => {
-    const state = loadState('alice');
+  it('clearCash removes record so cash is unknown again', async () => {
+    const stateSnapshot = await loadInvestor('alice');
+    const state = stateSnapshot.state;
     setCash(state, { amount: 100, currency: 'HKD', updated_at: '2026-07-28' });
     clearCash(state);
-    saveState(state);
-    expect(getCash(loadState('alice'))).toBeNull();
+    await saveInvestor(stateSnapshot);
+    expect(getCash((await loadInvestor('alice')).state)).toBeNull();
   });
 
-  it('assertCashBalance fails fast on invalid input', () => {
+  it('assertCashBalance fails fast on invalid input', async () => {
     expect(() => assertCashBalance({ amount: -1, currency: 'USD', updated_at: '2026-07-28' })).toThrow(
       /≥ 0/,
     );
@@ -181,7 +188,7 @@ describe('portfolio-state', () => {
     ).toThrow(/channel/);
   });
 
-  it('cash and holdings support optional channel; empty means unassigned', () => {
+  it('cash and holdings support optional channel; empty means unassigned', async () => {
     expect(normalizeOptionalChannel(undefined, 'channel')).toBeUndefined();
     expect(normalizeOptionalChannel('', 'channel')).toBeUndefined();
     expect(normalizeOptionalChannel('  ', 'channel')).toBeUndefined();
@@ -243,7 +250,8 @@ describe('portfolio-state', () => {
       assertBrokerConnectionMetrics({ as_of: '2026-07-31', currency: 'USD' }),
     ).toThrow(/buying_power, excess_liquidity, and\/or maintenance_margin/);
 
-    const state = loadState('alice');
+    const stateSnapshot = await loadInvestor('alice');
+    const state = stateSnapshot.state;
     setCash(state, {
       amount: 200,
       currency: 'USD',
@@ -253,9 +261,10 @@ describe('portfolio-state', () => {
     const portfolio = getPortfolio(state);
     portfolio.TSLA = { avg_price: 250, units: 4, channel: 'webull' };
     setPortfolio(state, portfolio);
-    saveState(state);
+    await saveInvestor(stateSnapshot);
 
-    const reloaded = loadState('alice');
+    const reloadedSnapshot = await loadInvestor('alice');
+    const reloaded = reloadedSnapshot.state;
     expect(getCash(reloaded)?.channel).toBe('moomoo');
     expect(getPortfolio(reloaded).TSLA?.channel).toBe('webull');
 
@@ -266,14 +275,14 @@ describe('portfolio-state', () => {
     expect(afterDelta.cash?.amount).toBe(150);
   });
 
-  it('cashStrategyMetrics leaves weight null when cash unknown', () => {
+  it('cashStrategyMetrics leaves weight null when cash unknown', async () => {
     const m = cashStrategyMetrics(null, 10000, 5);
     expect(m.totalNav).toBe(10000);
     expect(m.cashWeightPct).toBeNull();
     expect(m.cashVsTargetPp).toBeNull();
   });
 
-  it('cashDeployedForHolding: equity and option long/short', () => {
+  it('cashDeployedForHolding: equity and option long/short', async () => {
     expect(cashDeployedForHolding({ avg_price: 100, units: 10 })).toBe(1000);
     expect(
       cashDeployedForHolding({
@@ -311,7 +320,7 @@ describe('portfolio-state', () => {
     ).toBe(-265);
   });
 
-  it('cashDeltaForHoldingChange: open buy deducts, close credits', () => {
+  it('cashDeltaForHoldingChange: open buy deducts, close credits', async () => {
     const equity = { avg_price: 50, units: 20 }; // 1000 deployed
     expect(cashDeltaForHoldingChange(null, equity)).toBe(-1000);
     expect(cashDeltaForHoldingChange(equity, null)).toBe(1000);
@@ -319,7 +328,7 @@ describe('portfolio-state', () => {
     expect(cashDeltaForHoldingChange(equity, { avg_price: 50, units: 40 })).toBe(-1000);
   });
 
-  it('accumulateHoldingBuy blends equity cost and cash delta is this-trade only', () => {
+  it('accumulateHoldingBuy blends equity cost and cash delta is this-trade only', async () => {
     // META: 7 @ 601.97 + buy 5 @ 541.88 → 12 blended (user bug: was replace→5)
     const existing = {
       instrument: 'equity' as const,
@@ -345,7 +354,7 @@ describe('portfolio-state', () => {
     expect(delta).toBeCloseTo(-(5 * 541.88), 10);
   });
 
-  it('accumulateHoldingBuy keeps existing encumbrance and broker_ref', () => {
+  it('accumulateHoldingBuy keeps existing encumbrance and broker_ref', async () => {
     const existing = {
       instrument: 'equity' as const,
       avg_price: 10,
@@ -366,7 +375,7 @@ describe('portfolio-state', () => {
     expect(next.broker_ref).toEqual({ native_id: '123', listing_exchange: 'NASDAQ' });
   });
 
-  it('accumulateHoldingBuy refuses to merge purchase encumbrance', () => {
+  it('accumulateHoldingBuy refuses to merge purchase encumbrance', async () => {
     expect(() =>
       accumulateHoldingBuy(
         { avg_price: 10, units: 10 },
@@ -375,7 +384,7 @@ describe('portfolio-state', () => {
     ).toThrow(/does not merge encumbrance or broker_ref/);
   });
 
-  it('accumulateHoldingBuy fails on instrument mismatch', () => {
+  it('accumulateHoldingBuy fails on instrument mismatch', async () => {
     expect(() =>
       accumulateHoldingBuy(
         { avg_price: 100, units: 1 },
@@ -389,7 +398,7 @@ describe('portfolio-state', () => {
     ).toThrow(/Cannot add fund onto existing equity/);
   });
 
-  it('accumulateHoldingBuy blends fund units and keeps quote_source', () => {
+  it('accumulateHoldingBuy blends fund units and keeps quote_source', async () => {
     const existing = {
       instrument: 'fund' as const,
       avg_price: 1.0,
@@ -410,7 +419,7 @@ describe('portfolio-state', () => {
     expect(next.fund?.name).toBe('MMF');
   });
 
-  it('accumulateHoldingBuy blends option contracts and keeps existing mark when buy mark=premium', () => {
+  it('accumulateHoldingBuy blends option contracts and keeps existing mark when buy mark=premium', async () => {
     const existing = {
       instrument: 'option' as const,
       avg_price: 265,
@@ -449,7 +458,7 @@ describe('portfolio-state', () => {
     expect(cashDeltaForHoldingChange(existing, next)).toBeCloseTo(200, 10);
   });
 
-  it('applyCashDelta deducts and fails when insufficient', () => {
+  it('applyCashDelta deducts and fails when insufficient', async () => {
     const cash = { amount: 500, currency: 'USD', updated_at: '2026-07-28' };
     const ok = applyCashDelta(cash, -200, '2026-07-28', true);
     expect(ok.adjusted).toBe(true);
@@ -466,8 +475,9 @@ describe('portfolio-state', () => {
     expect(unknown.cash).toBeNull();
   });
 
-  it('set_cash upserts by channel without overwriting other channels', () => {
-    const state = loadState('alice');
+  it('set_cash upserts by channel without overwriting other channels', async () => {
+    const stateSnapshot = await loadInvestor('alice');
+    const state = stateSnapshot.state;
     clearCash(state);
     setCash(state, {
       amount: 12448.47,
@@ -481,9 +491,10 @@ describe('portfolio-state', () => {
       updated_at: '2026-07-29',
       channel: 'cmbyonglong',
     });
-    saveState(state);
+    await saveInvestor(stateSnapshot);
 
-    const reloaded = loadState('alice');
+    const reloadedSnapshot = await loadInvestor('alice');
+    const reloaded = reloadedSnapshot.state;
     const cashes = getCashes(reloaded);
     expect(cashes).toHaveLength(2);
     expect(findCashForChannel(cashes, 'jude_futu')?.amount).toBe(12448.47);
@@ -505,7 +516,7 @@ describe('portfolio-state', () => {
     expect(findCashForChannel(getCashes(reloaded), 'cmbyonglong')?.amount).toBe(38758.91);
   });
 
-  it('normalizeCashes accepts legacy single object and rejects duplicate channel+currency', () => {
+  it('normalizeCashes accepts legacy single object and rejects duplicate channel+currency', async () => {
     expect(normalizeCashes(null)).toEqual([]);
     expect(
       normalizeCashes({ amount: 1, currency: 'USD', updated_at: '2026-07-29', channel: 'a' }),
@@ -518,7 +529,7 @@ describe('portfolio-state', () => {
     ).toThrow(/Duplicate cash/);
   });
 
-  it('lossless: multi-ccy free cash on same channel + round-trip', () => {
+  it('lossless: multi-ccy free cash on same channel + round-trip', async () => {
     expect(cashSlotKey('dbs')).toBe('dbs');
     expect(cashBalanceKey('dbs', 'usd')).toBe('dbs@USD');
     const multi = normalizeCashes([
@@ -530,7 +541,8 @@ describe('portfolio-state', () => {
     expect(findCashForSlot(multi, 'dbs', 'USD')?.amount).toBe(10000);
     expect(() => findCashForChannel(multi, 'dbs')).toThrow(/Ambiguous/);
 
-    const state = loadState('alice');
+    const stateSnapshot = await loadInvestor('alice');
+    const state = stateSnapshot.state;
     setCashes(state, multi);
     setCash(state, {
       amount: 8000,
@@ -543,8 +555,9 @@ describe('portfolio-state', () => {
     expect(findCashForSlot(after, 'dbs', 'USD')?.amount).toBe(8000);
   });
 
-  it('transferCash double-entry conserves currency total', () => {
-    const state = loadState('alice');
+  it('transferCash double-entry conserves currency total', async () => {
+    const stateSnapshot = await loadInvestor('alice');
+    const state = stateSnapshot.state;
     setCashes(state, [
       { amount: 10000, currency: 'USD', updated_at: '2026-08-08', channel: 'dbs' },
       { amount: 30515.65, currency: 'SGD', updated_at: '2026-08-08', channel: 'dbs' },
@@ -566,8 +579,9 @@ describe('portfolio-state', () => {
     expect(usdTotal).toBe(10000);
   });
 
-  it('matureDeposit unlocks principal into matching free-cash currency', () => {
-    const state = loadState('alice');
+  it('matureDeposit unlocks principal into matching free-cash currency', async () => {
+    const stateSnapshot = await loadInvestor('alice');
+    const state = stateSnapshot.state;
     clearCash(state);
     setCash(state, {
       amount: 30515.65,
@@ -599,7 +613,7 @@ describe('portfolio-state', () => {
     expect(findCashForSlot(getCashes(state), 'dbs', 'SGD')?.amount).toBe(30515.65);
   });
 
-  it('applyCashDelta only touches the matching channel slot', () => {
+  it('applyCashDelta only touches the matching channel slot', async () => {
     const cashes = [
       { amount: 1000, currency: 'USD', updated_at: '2026-07-29', channel: 'jude_futu' },
       { amount: 5000, currency: 'USD', updated_at: '2026-07-29', channel: 'cmbyonglong' },
@@ -616,7 +630,7 @@ describe('portfolio-state', () => {
     );
   });
 
-  it('applyCashDelta with adjust_cash=false does not throw on multi-ccy channel', () => {
+  it('applyCashDelta with adjust_cash=false does not throw on multi-ccy channel', async () => {
     const cashes = [
       { amount: 30515.65, currency: 'SGD', updated_at: '2026-07-31', channel: 'dbs' },
       { amount: 395635.93, currency: 'USD', updated_at: '2026-08-08', channel: 'dbs' },
@@ -635,8 +649,9 @@ describe('portfolio-state', () => {
     expect(ocbc.cash?.amount).toBe(9809.97);
   });
 
-  it('clearCash can clear one channel or all', () => {
-    const state = loadState('alice');
+  it('clearCash can clear one channel or all', async () => {
+    const stateSnapshot = await loadInvestor('alice');
+    const state = stateSnapshot.state;
     setCashes(state, [
       { amount: 10, currency: 'USD', updated_at: '2026-07-29', channel: 'a' },
       { amount: 20, currency: 'USD', updated_at: '2026-07-29', channel: 'b' },
@@ -649,7 +664,7 @@ describe('portfolio-state', () => {
     expect(getCash(state)).toBeNull();
   });
 
-  it('totalCash converts multi-currency with FX rates', () => {
+  it('totalCash converts multi-currency with FX rates', async () => {
     const total = totalCash(
       [
         { amount: 100, currency: 'USD', updated_at: '2026-07-29', channel: 'a' },
@@ -662,7 +677,7 @@ describe('portfolio-state', () => {
     expect(total!.amount).toBeCloseTo(100 + 74, 10);
   });
 
-  it('totalCash fails multi-currency without FX', () => {
+  it('totalCash fails multi-currency without FX', async () => {
     expect(() =>
       totalCash([
         { amount: 100, currency: 'USD', updated_at: '2026-07-29', channel: 'a' },
@@ -671,7 +686,7 @@ describe('portfolio-state', () => {
     ).toThrow(/reporting_currency|live FX|currencies/);
   });
 
-  it('cashStrategyMetrics sums multi-channel cash', () => {
+  it('cashStrategyMetrics sums multi-channel cash', async () => {
     const m = cashStrategyMetrics(
       [
         { amount: 100, currency: 'USD', updated_at: '2026-07-29', channel: 'a' },
@@ -686,7 +701,7 @@ describe('portfolio-state', () => {
     expect(m.cashes).toHaveLength(2);
   });
 
-  it('assertFixedDeposit validates required fields fail-fast', () => {
+  it('assertFixedDeposit validates required fields fail-fast', async () => {
     const valid = {
       id: 'fd-1',
       amount: 50000,
@@ -717,7 +732,7 @@ describe('portfolio-state', () => {
     expect(() => assertFixedDeposit({ ...valid, channel: 1 })).toThrow(/channel/);
   });
 
-  it('normalizeDeposits rejects duplicate ids; allows multi per channel', () => {
+  it('normalizeDeposits rejects duplicate ids; allows multi per channel', async () => {
     expect(normalizeDeposits(null)).toEqual([]);
     const a = {
       id: 'fd-a',
@@ -743,8 +758,9 @@ describe('portfolio-state', () => {
     expect(() => normalizeDeposits([a, { ...b, id: 'fd-a' }])).toThrow(/Duplicate deposit id/);
   });
 
-  it('upsert/remove/clear deposits persist multi per channel', () => {
-    const state = loadState('alice');
+  it('upsert/remove/clear deposits persist multi per channel', async () => {
+    const stateSnapshot = await loadInvestor('alice');
+    const state = stateSnapshot.state;
     const d1 = assertFixedDeposit({
       id: 'fd-1',
       amount: 10000,
@@ -787,7 +803,7 @@ describe('portfolio-state', () => {
     expect(getDeposits(state)).toHaveLength(0);
   });
 
-  it('generateDepositId is unique and includes channel/date', () => {
+  it('generateDepositId is unique and includes channel/date', async () => {
     const id = generateDepositId('jude_futu', '2026-07-01', []);
     expect(id).toMatch(/^fd-jude_futu-20260701/);
     const id2 = generateDepositId('jude_futu', '2026-07-01', [{ id } as never]);

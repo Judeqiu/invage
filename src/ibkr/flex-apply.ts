@@ -1,3 +1,4 @@
+import { saveInvestor, type InvestorSnapshot } from '../state/investor-store.js';
 /**
  * IBKR Flex XML adapter. Maps vendor rows into the public BrokerStatement
  * then applies through the shared books path. Flex types are not stored.
@@ -19,7 +20,7 @@ export {
   replaceChannelHoldings,
 } from '../brokers/apply-statement.js';
 
-function archiveXml(slug: string, xml: Buffer, asOf: string): string {
+export function archiveXml(slug: string, xml: Buffer, asOf: string): string {
   const dir = join(resolveDataRoot(), 'drive', slug, 'ibkr-flex');
   mkdirSync(dir, { recursive: true });
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -29,12 +30,13 @@ function archiveXml(slug: string, xml: Buffer, asOf: string): string {
 }
 
 export async function applyFlexStatement(
-  state: InvestorState,
+  snapshot: InvestorSnapshot,
   doc: FlexStatementDoc,
   rawXml?: Buffer,
 ): Promise<BrokerApplyResult> {
+  const { state } = snapshot;
   const statement = mapFlexDocToStatement(doc, IBKR_CHANNEL);
-  const applied = await applyBrokerStatement(state, IBKR_CHANNEL, statement, rawXml);
+  const applied = await applyBrokerStatement(snapshot, IBKR_CHANNEL, statement, rawXml);
   const slug = state.user.slug;
   if (rawXml && slug) {
     applied.archivePath = archiveXml(slug, rawXml, applied.asOf);

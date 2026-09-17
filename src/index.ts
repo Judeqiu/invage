@@ -1,198 +1,82 @@
-/**
- * Invage (WalletStreet) — AI portfolio analyst host.
- *
- * Built on Utarus (same architecture as Binary + Marie channels):
- *   createFramework({ defaultAgentId, agents }) — multi-local
- *     default: product host (orchestrator)
- *     peers:   INVAGE_PRODUCT_PROFILE=full | consultant (see src/agents/roster.ts)
- *   Telegram (Binary-style) + Slack (Marie-style) + optional CLI
- *   BinDrive via utarus (npm run webapp)
- *
- * Required env:
- *   DEEPSEEK_API_KEY
- *   UTARUS_AGENT_NAME
- * Optional channels (enable any subset):
- *   TELEGRAM_BOT_TOKEN + TELEGRAM_ADMIN_IDS
- *   SLACK_BOT_TOKEN + SLACK_APP_TOKEN + SLACK_SIGNING_SECRET + SLACK_ADMIN_IDS
- * Multi-agent (WebUI): @ peers; bare → WalletStreet orchestrator
- * Peers: see INVAGE_PRODUCT_PROFILE (full vs consultant)
- */
-
+/** Invage personal-mode host. Database lifetime encloses all framework work. */
 import { config as dotenvConfig } from 'dotenv';
-import { resolve, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import type { Framework } from 'utarus';
+import { openDatabaseRuntime, bindDatabaseRuntime } from 'utarus/database';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-dotenvConfig({ path: resolve(__dirname, '../.env') });
-
-// Host already loaded env; do not load utarus package .env.
+dotenvConfig({ path: resolve(dirname(fileURLToPath(import.meta.url)), '../.env') });
 process.env.UTARUS_LOADED_BY_HOST = '1';
 
-const { ensureAdminUsersExist } = await import('./admin-bootstrap.js');
-ensureAdminUsersExist();
-
-const { createFramework, config } = await import('utarus');
-const { productHostLabel } = await import('./product-name.js');
-const { HOST_AGENT_ID, readProductProfile } = await import('./agents/roster.js');
-const { buildFrameworkAgentList } = await import('./agents/framework-agents.js');
-
-process.on('uncaughtException', (error) => {
-  console.error('[FATAL] Uncaught Exception:', error.message);
-  console.error(error.stack);
-});
-
-process.on('unhandledRejection', (reason) => {
-  console.error('[FATAL] Unhandled Rejection:', reason);
-});
-
-function validateConfig(): void {
-  const missing: string[] = [];
-  if (!config.deepseek.apiKey) missing.push('DEEPSEEK_API_KEY');
-  if (!config.agent.name) missing.push('UTARUS_AGENT_NAME');
-  if (!process.env.INVAGE_PRODUCT_PROFILE?.trim()) missing.push('INVAGE_PRODUCT_PROFILE');
-  if (missing.length > 0) {
-    console.error(`Missing required environment variables: ${missing.join(', ')}`);
-    console.error('Copy .env.example to .env and fill in the values.');
-    process.exit(1);
-  }
-}
-
-function slackConfigured(): boolean {
-  return !!(config.slack.botToken && config.slack.appToken && config.slack.signingSecret);
-}
-
-function backgroundOnly(): boolean {
-  return (
-    process.env.TELEGRAM_ONLY === 'true' ||
-    process.env.SLACK_ONLY === 'true' ||
-    process.env.BOT_ONLY === 'true'
-  );
-}
-
 async function main(): Promise<void> {
-  console.log(`${config.agent.name} starting...`);
-  validateConfig();
-
-  ensureAdminUsersExist();
-
-  // Multi-local: product host is default orchestrator (bare messages, billing, WebUI shell).
-  // Peer labels must be single @ tokens (no spaces) — WebUI inserts @label and the
-  // mention parser only matches [A-Za-z0-9_-]+. Use CamelCase: @InvestmentAdvisor.
-  const profile = readProductProfile();
-  const agents = buildFrameworkAgentList(profile);
-  const framework = await createFramework({
-    defaultAgentId: HOST_AGENT_ID,
-    agents,
-  });
-  console.log(
-    `[${productHostLabel()}] product profile=${profile} agents=${agents.map((a) => a.id).join(',')}`,
-  );
-
-  // ── Web UI (Utarus-owned: chat SPA + BinDrive + admin + web onboard) ──
-  // Chat needs the in-memory agent pool in this process. Invage only adds
-  // the landing-page register route.
-  if (process.env.WEBAPP_PORT) {
-    const { onboardRouter } = await import('./onboard/api.js');
-    const { createFaviconRouter } = await import('./webapp/favicon.js');
-    const port = parseInt(process.env.WEBAPP_PORT, 10);
-    if (!Number.isFinite(port) || port <= 0) {
-      throw new Error(`WEBAPP_PORT must be a positive integer, got "${process.env.WEBAPP_PORT}".`);
-    }
-    framework.startWebApp({
-      port,
-      extraRouters: [
+  const database = await openDatabaseRuntime({ env: process.env, mode: 'personal', onError: error => { throw error; } });
+  const release = bindDatabaseRuntime(database);
+  let framework: Framework | undefined;
+  let stopping: Promise<void> | undefined;
+  let startup: Promise<void>;
+  const stop = (error?: unknown): Promise<void> => {
+    if (error !== undefined) { console.error('[FATAL]', error); process.exitCode = 1; }
+    if (!stopping) stopping = (async () => {
+      try { await startup; } catch (error) { console.error('[Startup]', error); process.exitCode = 1; }
+      try { if (framework) await framework.stop(); }
+      finally { release(); await database.close(); }
+    })();
+    return stopping;
+  };
+  const signal = () => { void stop().catch(error => { console.error('[Shutdown]', error); process.exitCode = 1; }); };
+  const observe = (handle: { closed: Promise<void> }) => {
+    void handle.closed.then(() => stop(), error => stop(error)).catch(error => { console.error('[Shutdown]', error); process.exitCode = 1; });
+  };
+  process.once('SIGTERM', signal);
+  process.once('SIGINT', signal);
+  startup = (async () => {
+    const { createFramework, config } = await import('utarus');
+    const { ensureAdminUsersExist } = await import('./admin-bootstrap.js');
+    const { HOST_AGENT_ID, readProductProfile } = await import('./agents/roster.js');
+    const { buildFrameworkAgentList } = await import('./agents/framework-agents.js');
+    if (!config.deepseek.apiKey) throw new Error('DEEPSEEK_API_KEY is required');
+    if (!config.agent.name) throw new Error('UTARUS_AGENT_NAME is required');
+    await ensureAdminUsersExist();
+    const profile = readProductProfile();
+    const agents = buildFrameworkAgentList(profile);
+    framework = await createFramework({ database, defaultAgentId: HOST_AGENT_ID, agents });
+    if (stopping) return;
+    console.log(`[Invage] profile=${profile} agents=${agents.map(agent => agent.id).join(',')}`);
+    if (process.env.WEBAPP_PORT) {
+      const port = Number(process.env.WEBAPP_PORT);
+      if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid WEBAPP_PORT');
+      const { onboardRouter } = await import('./onboard/api.js');
+      const { createFaviconRouter } = await import('./webapp/favicon.js');
+      observe(await framework.startWebApp({ port, extraRouters: [
         { path: '/', router: createFaviconRouter() },
         { path: '/api/onboard', router: onboardRouter },
-      ],
-    });
-  } else {
-    console.log('WEBAPP_PORT not set — WebUI chat interface disabled.');
-  }
-
-  // ── Task scheduler (process-local 30s tick; catch-up overdue active tasks) ──
-  // Must be started explicitly — createFramework does not auto-start it.
-  // Start before awaiting channel adapters so long-lived bot sockets do not
-  // delay the first tick. Requires finite UTARUS_AGENT_RUN_TIMEOUT_MS.
-  const { stop: stopTaskScheduler } = framework.startTaskScheduler();
-  console.log(`[${productHostLabel()}] Task scheduler started`);
-  process.on('SIGTERM', () => {
-    stopTaskScheduler();
-  });
-  process.on('SIGINT', () => {
-    stopTaskScheduler();
-  });
-
-  const botPromises: Promise<void>[] = [];
-
-  // ── Telegram (Binary-style) ──────────────────────────────────────────
-  if (!config.telegram.botToken) {
-    console.log('TELEGRAM_BOT_TOKEN not set — Telegram interface disabled.');
-  } else if (process.env.SLACK_ONLY === 'true') {
-    console.log('SLACK_ONLY=true — Telegram interface disabled.');
-  } else {
-    console.log('Starting Telegram interface...');
-    const p = framework.startTelegram();
-    botPromises.push(
-      p.catch((err) => {
-        console.error('[Telegram] Failed:', err instanceof Error ? err.message : err);
-        throw err;
-      }),
-    );
-  }
-
-  // ── Slack (Marie-style Socket Mode via Utarus) ───────────────────────
-  if (!slackConfigured()) {
-    console.log('Slack tokens not set — Slack interface disabled.');
-  } else if (process.env.TELEGRAM_ONLY === 'true') {
-    console.log('TELEGRAM_ONLY=true — Slack interface disabled.');
-  } else {
-    console.log('Starting Slack interface...');
-    const p = framework.startSlack();
-    botPromises.push(
-      p.catch((err) => {
-        console.error('[Slack] Failed:', err instanceof Error ? err.message : err);
-        throw err;
-      }),
-    );
-  }
-
-  if (backgroundOnly()) {
-    if (botPromises.length === 0) {
-      console.error(
-        '[FATAL] BOT_ONLY / TELEGRAM_ONLY / SLACK_ONLY set but no chat interface is configured.',
-      );
-      process.exit(1);
+      ] }));
     }
-    console.log('Background mode — CLI disabled. Bots are running.');
-    // Keep process alive until a bot interface exits (systemd Restart=on-failure).
-    // If one channel dies, fail the process so the unit restarts both cleanly.
-    try {
-      await Promise.all(botPromises);
-    } catch (err) {
-      console.error(
-        '[FATAL] A chat interface exited:',
-        err instanceof Error ? err.message : err,
-      );
-      process.exit(1);
+    if (stopping) return;
+    framework.startTaskScheduler();
+    if (process.env.WEB_ONLY === 'true') {
+      if (!process.env.WEBAPP_PORT) throw new Error('WEB_ONLY requires WEBAPP_PORT');
+      return;
     }
-    return;
-  }
-
-  // Non-background: bots run in parallel; failures are non-fatal so CLI still works.
-  for (const p of botPromises) {
-    p.catch((err) => {
-      console.error(
-        '[Chat interface] stopped:',
-        err instanceof Error ? err.message : err,
-      );
-    });
-  }
-
-  await framework.startCli();
+    let channels = 0;
+    if (config.telegram.botToken && process.env.SLACK_ONLY !== 'true') {
+      observe(await framework.startTelegram()); channels++;
+    }
+    if (stopping) return;
+    if (config.slack.botToken && config.slack.appToken && config.slack.signingSecret && process.env.TELEGRAM_ONLY !== 'true') {
+      observe(await framework.startSlack()); channels++;
+    }
+    if (stopping) return;
+    const background = ['BOT_ONLY', 'TELEGRAM_ONLY', 'SLACK_ONLY'].some(name => process.env[name] === 'true');
+    if (background) {
+      if (channels === 0) throw new Error('Background mode requires a configured chat channel');
+    } else {
+      const userSlug = process.env.UTARUS_CLI_USER_SLUG;
+      if (!userSlug?.trim()) throw new Error('UTARUS_CLI_USER_SLUG is required for CLI');
+      observe(await framework.startCli({ userSlug }));
+    }
+  })();
+  try { await startup; } catch (error) { await stop(error); }
 }
 
-main().catch((error) => {
-  console.error('[FATAL] Failed to start Invage:', error);
-  process.exit(1);
-});
+main().catch(error => { console.error('[FATAL] Invage startup/shutdown failed', error); process.exitCode = 1; });

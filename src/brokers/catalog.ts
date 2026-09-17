@@ -34,7 +34,7 @@ export const BROKER_CATALOG: readonly BrokerConnectorDef[] = [
     displayName: 'Interactive Brokers',
     channel: IBKR_CHANNEL,
     capability:
-      'Read-only IBKR Flex Web Service. Pulls Open Positions and Cash Report into channel ibkr. Cannot trade or submit orders. Activity data is prior-day; dashboard marks stay Yahoo.',
+      'Read-only IBKR Flex Web Service. Pulls Open Positions and Cash Report into channel ibkr and imports option execution history when Trades is included. Cannot trade or submit orders. Activity data is prior-day; dashboard marks stay Yahoo.',
     credentialFields: [
       {
         id: 'token',
@@ -48,7 +48,7 @@ export const BROKER_CATALOG: readonly BrokerConnectorDef[] = [
         label: 'Activity Flex Query ID',
         type: 'text',
         required: true,
-        help: 'Info icon on the Flex Queries list. Query must include Open Positions and Cash Report, format XML. Multi-currency cash is imported; BASE_SUMMARY is dropped.',
+        help: 'Info icon on the Flex Queries list. Query must include Open Positions and Cash Report, format XML. Include Trades at Executions level for the option journal: accountId, tradeID, conid, dateTime (YYYYMMDD;HHMMSS), assetCategory, levelOfDetail, buySell, openCloseIndicator, quantity, multiplier, underlyingSymbol, putCall, strike, expiry (YYYYMMDD), currency, proceeds, ibCommission and ibCommissionCurrency. Multi-currency cash is imported; BASE_SUMMARY is dropped.',
       },
       {
         id: 'tradeconf_query_id',

@@ -1,23 +1,22 @@
+import { useTestDatabase, createInvestorFixture } from './helpers/database.js';
+import { loadInvestor, saveInvestor } from '../src/state/investor-store.js';
 /**
  * Books of record integration tests against local Postgres.
- * Requires: Postgres running + INVAGE_BOOKS_DATABASE_URL (set below if unset).
+ * Requires UTARUS_TEST_DATABASE_URL naming the dedicated test admin database.
  */
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { mkdirSync, rmSync, writeFileSync } from 'fs';
+import { mkdirSync, rmSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { stringify } from 'yaml';
 import { randomUUID } from 'crypto';
+
+const testDatabase = await useTestDatabase({ books: true });
 
 const dataRoot = join(tmpdir(), `invage-books-test-${process.pid}`);
 mkdirSync(join(dataRoot, 'users'), { recursive: true });
 process.env.UTARUS_LOADED_BY_HOST = '1';
 process.env.UTARUS_DATA_ROOT = dataRoot;
-// Non-superuser so FORCE RLS applies (superuser always bypasses RLS).
-process.env.INVAGE_BOOKS_DATABASE_URL =
-  process.env.INVAGE_BOOKS_DATABASE_URL ??
-  'postgresql://invage_app:invage_dev_only@localhost:5432/invage_books';
 
 const {
   migrateBooks,
@@ -46,7 +45,7 @@ const {
   return { ...books, ...accounts };
 });
 
-const { loadState, saveState } = await import('utarus');
+
 const { getCashes, getDeposits, setCash, setCashes, setPortfolio } = await import(
   '../src/state/portfolio-state.js'
 );
@@ -54,44 +53,25 @@ const { getCashes, getDeposits, setCash, setCashes, setPortfolio } = await impor
 const HOUSEHOLD_ID = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
 const SLUG = 'books-test';
 
-/** Admin wipe (superuser) — invage_app cannot skip append-only triggers. */
-async function wipeHousehold(id: string): Promise<void> {
+/** Rebuild only this file's disposable books schema between fixtures. */
+async function wipeHousehold(_id: string): Promise<void> {
+  const { closePool, migrateBooks } = await import('../src/books/index.js');
+  await closePool();
   const pg = await import('pg');
-  const admin = new pg.default.Client({
-    connectionString:
-      process.env.INVAGE_BOOKS_ADMIN_URL ??
-      'postgresql://zhengqingqiu@localhost:5432/invage_books',
-  });
-  await admin.connect();
+  const client = new pg.default.Client({ connectionString: testDatabase.booksUrl });
+  await client.connect();
   try {
-    // Avoid ALTER TRIGGER race with parallel suites; replica role skips user triggers.
-    await admin.query('BEGIN');
-    await admin.query(`SELECT set_config('session_replication_role', 'replica', true)`);
-    await admin.query('DELETE FROM audit_events WHERE household_id = $1::uuid', [id]);
-    await admin.query('DELETE FROM journal_lines WHERE household_id = $1::uuid', [id]);
-    await admin.query('DELETE FROM journal_entries WHERE household_id = $1::uuid', [id]);
-    await admin.query('DELETE FROM deposit_meta WHERE household_id = $1::uuid', [id]);
-    await admin.query('DELETE FROM position_meta WHERE household_id = $1::uuid', [id]);
-    await admin.query('DELETE FROM account_balances WHERE household_id = $1::uuid', [id]);
-    await admin.query('DELETE FROM accounts WHERE household_id = $1::uuid', [id]);
-    await admin.query('DELETE FROM households WHERE id = $1::uuid', [id]);
-    await admin.query('COMMIT');
-  } catch (e) {
-    try {
-      await admin.query('ROLLBACK');
-    } catch {
-      /* ignore */
-    }
-    throw e;
+    await client.query('DROP SCHEMA public CASCADE');
+    await client.query('CREATE SCHEMA public');
   } finally {
-    await admin.end();
+    await client.end();
   }
+  await migrateBooks();
 }
 
-function writeUserYaml(): void {
-  writeFileSync(
-    join(dataRoot, 'users', `${SLUG}.yaml`),
-    stringify({
+async function createUserFixture(): Promise<void> {
+  await testDatabase.clearUsers();
+  await createInvestorFixture({
       user: {
         id: HOUSEHOLD_ID,
         slug: SLUG,
@@ -101,39 +81,24 @@ function writeUserYaml(): void {
       },
       profile: { display_name: 'Books Test', contact_email: 'books@test.local' },
       log: [{ ts: '2026-08-01', action: 'created' }],
-    }),
-    'utf-8',
-  );
+    });
 }
 
 describe('books ledger', () => {
-  beforeAll(async () => {
-    writeUserYaml();
-    // Schema/role grants as superuser
-    const prev = process.env.INVAGE_BOOKS_DATABASE_URL;
-    process.env.INVAGE_BOOKS_DATABASE_URL =
-      process.env.INVAGE_BOOKS_ADMIN_URL ??
-      'postgresql://zhengqingqiu@localhost:5432/invage_books';
-    await closePool();
-    await migrateBooks();
-    await closePool();
-    process.env.INVAGE_BOOKS_DATABASE_URL = prev;
-    await closePool();
-  });
 
   beforeEach(async () => {
     await wipeHousehold(HOUSEHOLD_ID);
-    writeUserYaml();
+    await createUserFixture();
   });
 
   afterAll(async () => {
-    await wipeHousehold(HOUSEHOLD_ID).catch(() => undefined);
     await closePool();
     rmSync(dataRoot, { recursive: true, force: true });
   });
 
   it('set_cash + transfer conserves currency and rebuilds from journal', async () => {
-    const state = loadState(SLUG) as import('../src/state/portfolio-state.js').InvestorState;
+    const stateSnapshot = await loadInvestor(SLUG);
+    const state = stateSnapshot.state;
 
     await booksPostOpeningBalance(state, {
       amount: 10000,
@@ -169,7 +134,7 @@ describe('books ledger', () => {
       requestId: 't-xfer',
     });
 
-    saveState(state);
+    await saveInvestor(stateSnapshot);
     const cashes = getCashes(state);
     const dbsUsd = cashes.find((c) => c.channel === 'dbs' && c.currency === 'USD');
     const ibkrUsd = cashes.find((c) => c.channel === 'ibkr' && c.currency === 'USD');
@@ -199,7 +164,8 @@ describe('books ledger', () => {
   });
 
   it('rejects unbalanced post and insufficient cash transfer', async () => {
-    const state = loadState(SLUG) as import('../src/state/portfolio-state.js').InvestorState;
+    const stateSnapshot = await loadInvestor(SLUG);
+    const state = stateSnapshot.state;
     await booksPostOpeningBalance(state, {
       amount: 100,
       currency: 'USD',
@@ -246,7 +212,8 @@ describe('books ledger', () => {
   });
 
   it('append-only: UPDATE journal_entries fails', async () => {
-    const state = loadState(SLUG) as import('../src/state/portfolio-state.js').InvestorState;
+    const stateSnapshot = await loadInvestor(SLUG);
+    const state = stateSnapshot.state;
     await booksPostOpeningBalance(state, {
       amount: 1,
       currency: 'USD',
@@ -267,7 +234,8 @@ describe('books ledger', () => {
   });
 
   it('idempotent request_id does not double-post', async () => {
-    const state = loadState(SLUG) as import('../src/state/portfolio-state.js').InvestorState;
+    const stateSnapshot = await loadInvestor(SLUG);
+    const state = stateSnapshot.state;
     await booksPostOpeningBalance(state, {
       amount: 2000,
       currency: 'USD',
@@ -307,7 +275,8 @@ describe('books ledger', () => {
   });
 
   it('deposit open + mature_deposit double-entry (incident-class path)', async () => {
-    const state = loadState(SLUG) as import('../src/state/portfolio-state.js').InvestorState;
+    const stateSnapshot = await loadInvestor(SLUG);
+    const state = stateSnapshot.state;
     await booksPostOpeningBalance(state, {
       amount: 60000,
       currency: 'USD',
@@ -359,7 +328,8 @@ describe('books ledger', () => {
   });
 
   it('imports multi-currency fixture losslessly', async () => {
-    const state = loadState(SLUG) as import('../src/state/portfolio-state.js').InvestorState;
+    const stateSnapshot = await loadInvestor(SLUG);
+    const state = stateSnapshot.state;
     setCashes(state, [
       { amount: 30515.65, currency: 'SGD', updated_at: '2026-08-08', channel: 'dbs' },
       { amount: 10000, currency: 'USD', updated_at: '2026-08-08', channel: 'dbs' },
@@ -386,7 +356,7 @@ describe('books ledger', () => {
         channel: 'ibkr',
       },
     });
-    saveState(state);
+    await saveInvestor(stateSnapshot);
 
     const result = await booksImportState(state, { force: true });
     expect(result.cashSlots).toBe(3);
@@ -418,7 +388,8 @@ describe('books ledger', () => {
   });
 
   it('holding open debits cash and stays balanced', async () => {
-    const state = loadState(SLUG) as import('../src/state/portfolio-state.js').InvestorState;
+    const stateSnapshot = await loadInvestor(SLUG);
+    const state = stateSnapshot.state;
     await booksPostOpeningBalance(state, {
       amount: 20000,
       currency: 'USD',
@@ -448,7 +419,8 @@ describe('books ledger', () => {
   });
 
   it('RLS blocks other household when GUC set', async () => {
-    const state = loadState(SLUG) as import('../src/state/portfolio-state.js').InvestorState;
+    const stateSnapshot = await loadInvestor(SLUG);
+    const state = stateSnapshot.state;
     await booksPostOpeningBalance(state, {
       amount: 42,
       currency: 'USD',

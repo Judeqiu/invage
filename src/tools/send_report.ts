@@ -100,7 +100,8 @@ export function createSendReportTool(): AgentTool {
             return fail(`Invalid kind "${String(p.kind)}". Use "analysis" or "dashboard".`);
           }
 
-          const state = resolveInvestorFromChannel(p);
+          const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
           const portfolio = getPortfolio(state);
           if (Object.keys(portfolio).length === 0) {
             return fail('No portfolio saved. Use add_holding to build a portfolio first.');

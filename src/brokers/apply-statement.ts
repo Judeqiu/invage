@@ -1,10 +1,12 @@
+import { saveInvestor, type InvestorSnapshot } from '../state/investor-store.js';
+import { mergeOptionExecutions } from './option-executions.js';
 /**
  * Channel snapshot apply — writes only public books types
  * (Holding, CashBalance, optional connection metrics).
  * Connector id selects the catalog channel; it does not choose a vendor schema.
  */
 
-import { saveState } from 'utarus';
+
 import {
   booksPostAdjustment,
   booksPostHoldingClose,
@@ -116,13 +118,23 @@ function writeConnectionMetrics(state: InvestorState, connectorId: string, state
 }
 
 export async function applyBrokerStatement(
-  state: InvestorState,
+  snapshot: InvestorSnapshot,
   connectorId: string,
   doc: BrokerStatement,
   _raw?: Buffer,
+  beforeSave?: (result: BrokerApplyResult) => void,
 ): Promise<BrokerApplyResult> {
+  const { state } = snapshot;
   const def = getBrokerConnector(connectorId);
   const channel = def.channel;
+  // Validate all incoming history before ledger writes or snapshot mutation.
+  const executions = doc.option_executions === undefined ? undefined : mergeOptionExecutions(
+    state.option_executions === undefined ? [] : state.option_executions,
+    doc.option_executions,
+  );
+  if (doc.option_executions?.some(row => row.channel !== channel || row.account_id !== doc.account_id)) {
+    throw new Error('Execution channel/account differs from broker statement');
+  }
   const stamped = stampLots(doc.lots, channel);
   const portfolio = { ...getPortfolio(state) };
   const { next, removedKeys } = replaceChannelHoldings(portfolio, stamped, channel);
@@ -207,6 +219,7 @@ export async function applyBrokerStatement(
     setCashes(state, replaceChannelCash(getCashes(state), doc.cash, channel, today));
   }
   writeConnectionMetrics(state, connectorId, doc);
+  if (executions !== undefined) state.option_executions = executions;
 
   state.log.push({
     ts: today,
@@ -217,9 +230,7 @@ export async function applyBrokerStatement(
     removed,
     not_imported: doc.skipped.length,
   });
-  saveState(state);
-
-  return {
+  const result: BrokerApplyResult = {
     accountId: doc.account_id,
     asOf: today,
     channel,
@@ -228,4 +239,7 @@ export async function applyBrokerStatement(
     cash: doc.cash,
     skipped: doc.skipped,
   };
+  if (beforeSave) beforeSave(result);
+  await saveInvestor(snapshot);
+  return result;
 }

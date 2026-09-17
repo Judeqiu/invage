@@ -3,7 +3,7 @@
  * Quote misses become per-row quoteError — never invent 0.
  */
 
-import { loadState } from 'utarus';
+import { loadInvestor } from '../state/investor-store.js';
 import { fetchPriceSnapshots, type YahooPriceSnapshot } from '../market/fetch-prices.js';
 import { getPlaybook, type InvestorState } from '../state/portfolio-state.js';
 import type { WatchInstrument, WatchProduct } from '../playbook/index.js';
@@ -97,7 +97,7 @@ export async function loadWatchlistForSlug(
   slug: string,
   quoteOverride?: Record<string, WatchQuoteOverride>,
 ): Promise<WatchlistPayload> {
-  const state = loadState(slug) as InvestorState;
+  const state = (await loadInvestor(slug)).state;
   const playbook = getPlaybook(state);
   const generatedAt = new Date().toISOString();
   const products = [...playbook.watchlists.products].sort((a, b) =>

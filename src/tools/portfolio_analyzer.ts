@@ -166,7 +166,8 @@ export function createPortfolioAnalyzerTool(): AgentTool {
         let cashFxNote = '';
 
         if (params.telegram_user_id != null || params.slack_user_id || params.user_slug) {
-          const state = resolveInvestorFromChannel(params);
+          const snapshot = await resolveInvestorFromChannel(params);
+        const { state } = snapshot;
           holdings = getPortfolio(state);
           if (Object.keys(holdings).length === 0) {
             return fail('No portfolio saved. Use add_holding to build a portfolio first.');

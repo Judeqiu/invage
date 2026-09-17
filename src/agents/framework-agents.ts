@@ -4,6 +4,8 @@
  */
 
 import type { DomainExtension } from 'utarus';
+import { createBoundBinDriveTools } from '../tools/bindrive.js';
+import { createRawDataTools } from '../tools/raw_data.js';
 import { invageExtension } from '../extension.js';
 import { productHostLabel } from '../product-name.js';
 import { aidealExtension } from './aideal.js';
@@ -51,5 +53,20 @@ export function buildFrameworkAgentList(
     label: PEER_CATALOG[id].label,
     extension: PEER_EXTENSIONS[id],
   }));
-  return [host, ...peers];
+  return [host, ...peers].map(entry => ({
+    ...entry,
+    extension: {
+      ...entry.extension,
+      tools: async (userSlug, isAdmin, incognito) => {
+        const original = entry.extension.tools;
+        const tools = typeof original === 'function'
+          ? await original(userSlug, isAdmin, incognito) : original;
+        return [
+          ...tools,
+          ...createBoundBinDriveTools(userSlug, incognito),
+          ...(incognito === true ? [] : createRawDataTools(userSlug)),
+        ];
+      },
+    },
+  }));
 }

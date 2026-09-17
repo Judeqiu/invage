@@ -1,6 +1,6 @@
 import { Type } from 'typebox';
 import type { AgentTool, AgentToolResult } from '@earendil-works/pi-agent-core';
-import { saveState } from 'utarus';
+import { saveInvestor } from '../state/investor-store.js';
 import {
   applyReconChannel,
   decideReconLine,
@@ -79,9 +79,10 @@ export function createReconTools(): AgentTool[] {
     async execute(_id, raw) {
       const p = raw as ChannelIds & { as_of: string; channel?: string; restart?: boolean };
       try {
-        const state = resolveInvestorFromChannel(p);
+        const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
         startRecon(state, { as_of: p.as_of, channel: p.channel, restart: p.restart === true });
-        saveState(state);
+        await saveInvestor(snapshot);
         const view = getRecon(state);
         return ok(formatView(view), view);
       } catch (e) {
@@ -99,7 +100,8 @@ export function createReconTools(): AgentTool[] {
     parameters: Type.Object({ ...channelIdParams }),
     async execute(_id, raw) {
       try {
-        const state = resolveInvestorFromChannel(raw as ChannelIds);
+        const snapshot = await resolveInvestorFromChannel(raw as ChannelIds);
+        const { state } = snapshot;
         const view = getRecon(state);
         return ok(formatView(view), view);
       } catch (e) {
@@ -161,7 +163,8 @@ export function createReconTools(): AgentTool[] {
         deposits?: ReconStatement['deposits'];
       };
       try {
-        const state = resolveInvestorFromChannel(p);
+        const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
         const view = getRecon(state);
         const channel = p.channel != null ? cashSlotKey(p.channel) : view.current_channel;
         const pasted = p.cash != null || p.lots != null || p.deposits != null;
@@ -174,7 +177,7 @@ export function createReconTools(): AgentTool[] {
         } else {
           await sourceReconConnector(state, channel);
         }
-        saveState(state);
+        await saveInvestor(snapshot);
         const next = getRecon(state);
         return ok(formatView(next), next);
       } catch (e) {
@@ -197,12 +200,13 @@ export function createReconTools(): AgentTool[] {
     async execute(_id, raw) {
       const p = raw as ChannelIds & { line_id: string; decision: string };
       try {
-        const state = resolveInvestorFromChannel(p);
+        const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
         if (p.decision !== 'keep' && p.decision !== 'take' && p.decision !== 'skip') {
           throw new Error('decision must be keep, take, or skip.');
         }
         decideReconLine(state, p.line_id, p.decision as ReconLineDecision);
-        saveState(state);
+        await saveInvestor(snapshot);
         const view = getRecon(state);
         return ok(formatView(view), view);
       } catch (e) {
@@ -224,11 +228,12 @@ export function createReconTools(): AgentTool[] {
     async execute(_id, raw) {
       const p = raw as ChannelIds & { channel?: string };
       try {
-        const state = resolveInvestorFromChannel(p);
+        const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
         const view = getRecon(state);
         const channel = p.channel != null ? cashSlotKey(p.channel) : view.current_channel;
         await applyReconChannel(state, channel);
-        saveState(state);
+        await saveInvestor(snapshot);
         const next = getRecon(state);
         return ok(formatView(next), next);
       } catch (e) {
@@ -249,11 +254,12 @@ export function createReconTools(): AgentTool[] {
     async execute(_id, raw) {
       const p = raw as ChannelIds & { channel?: string };
       try {
-        const state = resolveInvestorFromChannel(p);
+        const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
         const view = getRecon(state);
         const channel = p.channel != null ? cashSlotKey(p.channel) : view.current_channel;
         skipReconChannel(state, channel);
-        saveState(state);
+        await saveInvestor(snapshot);
         const next = getRecon(state);
         return ok(formatView(next), next);
       } catch (e) {

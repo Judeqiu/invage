@@ -220,11 +220,11 @@ export const financialPlannerExtension: DomainExtension = {
   async enrichMessage(ctx: EnrichMessageContext): Promise<string> {
     let investor: InvestorState | null = null;
     if (ctx.telegramUserId != null) {
-      investor = resolveUserByTelegramUser(ctx.telegramUserId) as InvestorState | null;
+      investor = await resolveUserByTelegramUser(ctx.telegramUserId) as InvestorState | null;
     } else if (ctx.slackUserId) {
-      investor = resolveUserBySlackUser(ctx.slackUserId) as InvestorState | null;
+      investor = await resolveUserBySlackUser(ctx.slackUserId) as InvestorState | null;
     } else if (ctx.userSlug) {
-      investor = resolveUserBySlug(ctx.userSlug) as InvestorState | null;
+      investor = await resolveUserBySlug(ctx.userSlug) as InvestorState | null;
     }
 
     if (investor) {

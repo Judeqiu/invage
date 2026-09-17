@@ -1,3 +1,4 @@
+import { getDatabaseRuntime } from 'utarus/database';
 /**
  * Handshake logic for the /bind <token> command (Slack + WebUI).
  *
@@ -10,9 +11,9 @@ import { mkdirSync } from 'fs';
 import { join } from 'path';
 import {
   resolveDataRoot,
-  ensureChannelUser,
-  loadState,
-  saveState,
+  blankState,
+  hashPassword,
+  generateMemorablePassword,
   resolveUserBySlackUser,
   resolveUserBySlug,
 } from 'utarus';
@@ -89,7 +90,7 @@ export async function handleBind(args: BindArgs): Promise<BindResult> {
 
   // Already-registered Slack user → bind token for audit, stop.
   if (slackUserId) {
-    const existing = resolveUserBySlackUser(slackUserId);
+    const existing = await resolveUserBySlackUser(slackUserId);
     if (existing) {
       markUsed(token, slackUserId, existing.user.slug);
       return {
@@ -101,7 +102,7 @@ export async function handleBind(args: BindArgs): Promise<BindResult> {
 
   // Already-authenticated WebUI user → mark token used for this session, stop.
   if (web && userSlug) {
-    const existing = resolveUserBySlug(userSlug);
+    const existing = await resolveUserBySlug(userSlug);
     if (existing) {
       markUsed(token, `web:${userSlug}`, existing.user.slug);
       return {
@@ -111,34 +112,21 @@ export async function handleBind(args: BindArgs): Promise<BindResult> {
     }
   }
 
-  const userResult = slackUserId
-    ? await ensureChannelUser({
-        slackUserId,
-        displayName: entry.display_name,
-        contactEmail: entry.email_submitted,
-        source: 'invite',
-        web: false,
-        language: 'en',
-      })
-    : await ensureChannelUser({
-        displayName: entry.display_name,
-        contactEmail: entry.email_submitted,
-        source: 'invite',
-        web: true,
-        language: 'en',
-      });
-
-  // Annotate user YAML with onboard audit fields (reload + save).
-  const state = loadState(userResult.slug) as InvestorState;
+  // A validated BIND token is this domain's registration authority. It is not
+  // a framework INV invitation and must not be mislabeled as demo registration.
+  const slug = `onboard-${token.slice(5).toLowerCase()}`;
+  const presetPassword = generateMemorablePassword();
+  const state = blankState({ slug, displayName: entry.display_name, contactEmail: entry.email_submitted, language: 'en' }) as InvestorState;
+  state.user.password_hash = await hashPassword(presetPassword);
+  if (slackUserId !== undefined) state.user.slack_user_ids = [slackUserId];
+  state.portfolio = {};
   state.log.push({
-    ts: new Date().toISOString().slice(0, 10),
-    action: 'qr_onboard_bound',
-    token,
-    slack_user_id: slackUserId,
-    web: web === true ? true : undefined,
+    ts: new Date().toISOString().slice(0, 10), action: 'qr_onboard_bound', token,
+    ...(slackUserId === undefined ? {} : { slack_user_id: slackUserId }),
+    ...(web === true ? { web: true } : {}),
   });
-  if (!state.portfolio) state.portfolio = {};
-  saveState(state);
+  await getDatabaseRuntime().registration.register({ state, mail: null, invitation: null });
+  const userResult = { slug, presetPassword };
 
   const drivePath = join(DRIVE_DIR, userResult.slug);
   mkdirSync(drivePath, { recursive: true });

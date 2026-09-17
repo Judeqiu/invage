@@ -1,3 +1,5 @@
+import { parseFlexOptionExecutions } from './flex-executions.js';
+
 export class FlexProtocolError extends Error {
   constructor(
     public readonly code: string,
@@ -55,6 +57,7 @@ export function formatFlexSkip(skip: FlexSkip): string {
 }
 
 export interface FlexStatementDoc {
+  optionExecutions?: import('../brokers/option-executions.js').OptionExecution[];
   accountId: string;
   fromDate: string;
   toDate: string;
@@ -368,5 +371,7 @@ export function parseFlexQueryXml(xml: string | Buffer): FlexStatementDoc {
   };
   if (stAttrs.whenGenerated) doc.whenGenerated = stAttrs.whenGenerated;
   if (stAttrs.period) doc.period = stAttrs.period;
+  const executions = parseFlexOptionExecutions(text);
+  if (executions !== undefined) doc.optionExecutions = executions;
   return doc;
 }

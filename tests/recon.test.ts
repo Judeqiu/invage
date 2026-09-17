@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { saveState } from 'utarus';
+import { createState } from 'utarus';
+import { useTestDatabase } from './helpers/database.js';
+
+await useTestDatabase();
 import type { InvestorState } from '../src/state/portfolio-state.js';
 import {
   applyReconChannel,
@@ -197,10 +200,10 @@ describe('skip and paste compare', () => {
 describe('recon tools', () => {
   it('start_recon then get_recon through the Bookkeeper tools', async () => {
     const state = investor({
-      user: { id: 'u-recon-tool', slug: 'recon-tool', created_at: '2026-01-01' },
+      user: { id: 'de519d1a-d3a7-4a9d-a941-d1520b7a6174', slug: 'recon-tool', created_at: '2026-01-01' },
       cash: { amount: 10, currency: 'USD', updated_at: '2026-08-01', channel: 'ibkr' },
     });
-    saveState(state);
+    await createState(state);
     const tools = createReconTools();
     const start = tools.find((t) => t.name === 'start_recon');
     const get = tools.find((t) => t.name === 'get_recon');

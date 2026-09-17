@@ -7,7 +7,7 @@
  * book cost with an explicit warning.
  */
 
-import { loadState } from 'utarus';
+import { loadInvestor } from '../state/investor-store.js';
 import { getBrokerConnector } from '../brokers/catalog.js';
 import { readBrokerConnections } from '../brokers/connections.js';
 import type { BrokerConnectionMetrics } from '../state/portfolio-state.js';
@@ -185,7 +185,7 @@ export async function loadDashboardForSlug(
 
   let state: InvestorState;
   try {
-    state = loadState(slug) as InvestorState;
+    state = (await loadInvestor(slug)).state;
   } catch (e) {
     throw e; // auth / missing user still hard-fails
   }

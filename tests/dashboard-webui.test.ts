@@ -1,8 +1,10 @@
+import { useTestDatabase, createInvestorFixture } from './helpers/database.js';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { stringify } from 'yaml';
+
+const testDatabase = await useTestDatabase();
 
 const dataRoot = mkdtempSync(join(tmpdir(), 'invage-dash-webui-'));
 process.env.UTARUS_LOADED_BY_HOST = '1';
@@ -15,12 +17,10 @@ const { createInvageWebUi, invageWebUiStaticDir } = await import(
 const { existsSync } = await import('fs');
 
 describe('loadDashboardForSlug', () => {
-  beforeAll(() => {
+  beforeAll(async () => {
     const usersDir = join(dataRoot, 'users');
     mkdirSync(usersDir, { recursive: true });
-    writeFileSync(
-      join(usersDir, 'alice.yaml'),
-      stringify({
+    await createInvestorFixture({
         user: {
           id: '00000000-0000-4000-8000-000000000011',
           slug: 'alice',
@@ -33,12 +33,8 @@ describe('loadDashboardForSlug', () => {
         portfolio: {
           AAPL: { avg_price: 100, units: 10 },
         },
-      }),
-      'utf-8',
-    );
-    writeFileSync(
-      join(usersDir, 'bob.yaml'),
-      stringify({
+      });
+    await createInvestorFixture({
         user: {
           id: '00000000-0000-4000-8000-000000000021',
           slug: 'bob',
@@ -48,12 +44,8 @@ describe('loadDashboardForSlug', () => {
         },
         profile: { display_name: 'Bob', contact_email: 'b@example.com' },
         log: [{ ts: '2026-06-27', action: 'created' }],
-      }),
-      'utf-8',
-    );
-    writeFileSync(
-      join(usersDir, 'carol.yaml'),
-      stringify({
+      });
+    await createInvestorFixture({
         user: {
           id: '00000000-0000-4000-8000-000000000031',
           slug: 'carol',
@@ -66,9 +58,7 @@ describe('loadDashboardForSlug', () => {
         portfolio: {
           MSFT: { avg_price: 200, units: 5 },
         },
-      }),
-      'utf-8',
-    );
+      });
 
     const drive = join(dataRoot, 'drive', 'alice');
     mkdirSync(drive, { recursive: true });
@@ -140,7 +130,7 @@ describe('loadDashboardForSlug', () => {
 });
 
 describe('createInvageWebUi', () => {
-  it('registers dashboard nav, iframe route, API, and static dir', () => {
+  it('registers dashboard nav, iframe route, API, and static dir', async () => {
     const webUi = createInvageWebUi();
     expect(webUi.agentKey).toBe('invage');
     expect(webUi.defaultPath).toBe('/dashboard');
@@ -153,7 +143,7 @@ describe('createInvageWebUi', () => {
     expect(existsSync(join(invageWebUiStaticDir(), 'dashboard', 'app.js'))).toBe(true);
   });
 
-  it('registers Brokers nav and iframe page', () => {
+  it('registers Brokers nav and iframe page', async () => {
     const webUi = createInvageWebUi();
     expect(webUi.nav?.some((n) => n.id === 'brokers' && n.path === '/brokers')).toBe(true);
     const route = webUi.routes?.find((r) => r.path === '/brokers');
@@ -163,7 +153,7 @@ describe('createInvageWebUi', () => {
     expect(existsSync(join(invageWebUiStaticDir(), 'brokers', 'app.js'))).toBe(true);
   });
 
-  it('registers Positions, Trades, Insights report pages', () => {
+  it('registers Positions, Trades, Insights report pages', async () => {
     const webUi = createInvageWebUi();
     for (const id of ['positions', 'trades', 'insights']) {
       expect(webUi.nav?.some((n) => n.id === id && n.path === `/${id}`)).toBe(true);

@@ -337,14 +337,14 @@ export const invageExtension: DomainExtension = {
   async enrichMessage(ctx: EnrichMessageContext): Promise<string> {
     let investor: InvestorState | null = null;
     if (ctx.telegramUserId != null) {
-      investor = resolveUserByTelegramUser(ctx.telegramUserId) as InvestorState | null;
+      investor = await resolveUserByTelegramUser(ctx.telegramUserId) as InvestorState | null;
     } else if (ctx.slackUserId) {
-      investor = resolveUserBySlackUser(ctx.slackUserId) as InvestorState | null;
+      investor = await resolveUserBySlackUser(ctx.slackUserId) as InvestorState | null;
     } else if (ctx.userSlug) {
       // Web channel: no chat-platform id, but the gate resolves the slug
       // from the session and passes it through. Without this branch the
       // agent gets a bare prompt with no user context and re-onboards.
-      investor = resolveUserBySlug(ctx.userSlug) as InvestorState | null;
+      investor = await resolveUserBySlug(ctx.userSlug) as InvestorState | null;
     }
 
     if (investor) {

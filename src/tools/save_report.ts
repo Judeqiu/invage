@@ -63,7 +63,8 @@ export function createSaveReportTool(): AgentTool {
           return fail(`Invalid kind "${String(p.kind)}". Use "analysis" or "dashboard".`);
         }
 
-        const state = resolveInvestorFromChannel(p);
+        const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
         const portfolio = getPortfolio(state);
         if (Object.keys(portfolio).length === 0) {
           return fail('No portfolio saved. Use add_holding to build a portfolio first.');
@@ -107,7 +108,7 @@ export function createSaveReportTool(): AgentTool {
         mkdirSync(driveDir, { recursive: true });
         writeFileSync(join(driveDir, fileName), html, 'utf-8');
 
-        const signed = signedBinDriveViewUrl(state.user.slug, fileName, {
+        const signed = await signedBinDriveViewUrl(state.user.slug, fileName, {
           displayName: userName,
         });
         const ttlMin = Math.round(signed.expiresInMs / 60000);

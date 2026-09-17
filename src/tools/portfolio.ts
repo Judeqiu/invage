@@ -1,6 +1,6 @@
 import { Type } from 'typebox';
 import type { AgentTool, AgentToolResult } from '@earendil-works/pi-agent-core';
-import { saveState } from 'utarus';
+import { saveInvestor } from '../state/investor-store.js';
 import type { FundSpec, Holding, OptionSpec } from '../market/types.js';
 import {
   assertHolding,
@@ -680,7 +680,8 @@ export function createPortfolioTools(): AgentTool[] {
         if (p.units <= 0) return fail('units must be positive.');
 
         const instrument = p.instrument ?? 'equity';
-        const state = resolveInvestorFromChannel(p);
+        const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
         const portfolio = getPortfolio(state);
         const adjustCash = p.adjust_cash !== false;
         const channelProvided = Object.prototype.hasOwnProperty.call(raw, 'channel');
@@ -712,7 +713,7 @@ export function createPortfolioTools(): AgentTool[] {
             instrument: 'option',
             avg_price: p.avg_price,
             units: p.units,
-            category: p.category ?? portfolio[key]?.category,
+            ...((p.category ?? portfolio[key]?.category) === undefined ? {} : { category: p.category ?? portfolio[key]?.category }),
             option,
             ...(channel != null ? { channel } : {}),
           };
@@ -743,7 +744,7 @@ export function createPortfolioTools(): AgentTool[] {
             instrument: 'fund',
             avg_price: p.avg_price,
             units: p.units,
-            category: p.category ?? portfolio[key]?.category,
+            ...((p.category ?? portfolio[key]?.category) === undefined ? {} : { category: p.category ?? portfolio[key]?.category }),
             fund,
             ...(channel != null ? { channel } : {}),
           };
@@ -775,7 +776,7 @@ export function createPortfolioTools(): AgentTool[] {
             instrument: 'equity',
             avg_price: p.avg_price,
             units: p.units,
-            category: p.category ?? portfolio[key]?.category,
+            ...((p.category ?? portfolio[key]?.category) === undefined ? {} : { category: p.category ?? portfolio[key]?.category }),
             ...(channel != null ? { channel } : {}),
           };
           assertHolding(key, holding);
@@ -844,11 +845,11 @@ export function createPortfolioTools(): AgentTool[] {
           instrument,
           avg_price: purchase.avg_price,
           units: purchase.units,
-          category: p.category,
-          channel: holding.channel,
-          cash_delta: cashResult.adjusted ? cashResult.cashDelta : undefined,
-          cash_after: cashAfter?.amount,
-          cash_channel: cashResult.adjusted ? cashResult.cash?.channel : undefined,
+          ...((p.category) === undefined ? {} : { category: p.category }),
+          ...((holding.channel) === undefined ? {} : { channel: holding.channel }),
+          ...((cashResult.adjusted ? cashResult.cashDelta : undefined) === undefined ? {} : { cash_delta: cashResult.adjusted ? cashResult.cashDelta : undefined }),
+          ...((cashAfter?.amount) === undefined ? {} : { cash_after: cashAfter?.amount }),
+          ...((cashResult.adjusted ? cashResult.cash?.channel : undefined) === undefined ? {} : { cash_channel: cashResult.adjusted ? cashResult.cash?.channel : undefined }),
           ...(isAccumulate
             ? {
                 accumulated: true,
@@ -856,10 +857,10 @@ export function createPortfolioTools(): AgentTool[] {
                 position_units: holding.units,
               }
             : {}),
-          ...(instrument === 'option' ? { option: holding.option } : {}),
-          ...(instrument === 'fund' ? { fund: holding.fund } : {}),
+          ...(instrument === 'option' ? { ...((holding.option) === undefined ? {} : { option: holding.option }) } : {}),
+          ...(instrument === 'fund' ? { ...((holding.fund) === undefined ? {} : { fund: holding.fund }) } : {}),
         });
-        saveState(state);
+        await saveInvestor(snapshot);
 
         const cashLine = formatCashApplyNote(cashResult);
         const channelLine = holding.channel ? `Channel: ${holding.channel}\n` : '';
@@ -986,7 +987,8 @@ export function createPortfolioTools(): AgentTool[] {
     async execute(_id, raw) {
       const p = raw as ChannelIds & { ticker: string; channel?: string; adjust_cash?: boolean };
       try {
-        const state = resolveInvestorFromChannel(p);
+        const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
         const portfolio = getPortfolio(state);
         const adjustCash = p.adjust_cash !== false;
         const channelProvided = Object.prototype.hasOwnProperty.call(raw, 'channel');
@@ -1042,12 +1044,12 @@ export function createPortfolioTools(): AgentTool[] {
           avg_price: removed.avg_price,
           units: removed.units,
           instrument: removed.instrument ?? 'equity',
-          channel: removed.channel,
-          cash_delta: cashResult.adjusted ? cashResult.cashDelta : undefined,
-          cash_after: cashAfter?.amount,
-          cash_channel: cashResult.adjusted ? cashResult.cash?.channel : undefined,
+          ...((removed.channel) === undefined ? {} : { channel: removed.channel }),
+          ...((cashResult.adjusted ? cashResult.cashDelta : undefined) === undefined ? {} : { cash_delta: cashResult.adjusted ? cashResult.cashDelta : undefined }),
+          ...((cashAfter?.amount) === undefined ? {} : { cash_after: cashAfter?.amount }),
+          ...((cashResult.adjusted ? cashResult.cash?.channel : undefined) === undefined ? {} : { cash_channel: cashResult.adjusted ? cashResult.cash?.channel : undefined }),
         });
-        saveState(state);
+        await saveInvestor(snapshot);
 
         const kind = isOptionHolding(removed)
           ? 'option'
@@ -1130,7 +1132,8 @@ export function createPortfolioTools(): AgentTool[] {
         if (!p.memo?.trim() || p.memo.trim().length < 3) {
           return fail('memo is required (source document + reason, min 3 chars).');
         }
-        const state = resolveInvestorFromChannel(p);
+        const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
         const today = new Date().toISOString().slice(0, 10);
         const valueDate =
           p.value_date != null && String(p.value_date).trim().length > 0
@@ -1160,11 +1163,11 @@ export function createPortfolioTools(): AgentTool[] {
           action: 'journal_opening_balance',
           amount: posted.amount,
           currency: cash.currency,
-          channel: cash.channel,
+          ...((cash.channel) === undefined ? {} : { channel: cash.channel }),
           books_request_id: posted.requestId,
           memo: p.memo.trim(),
         });
-        saveState(state);
+        await saveInvestor(snapshot);
         const cashLive = await totalCashLive(posted.cashes, reportingCurrencyOf(state));
         return ok(
           `Journal opening_balance: +${posted.amount.toFixed(2)} ${cash.currency} ` +
@@ -1256,7 +1259,8 @@ export function createPortfolioTools(): AgentTool[] {
               `Use post_opening_balance for first open of a zero sleeve.`,
           );
         }
-        const state = resolveInvestorFromChannel(p);
+        const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
         const today = new Date().toISOString().slice(0, 10);
         const valueDate =
           p.value_date != null && String(p.value_date).trim().length > 0
@@ -1285,12 +1289,12 @@ export function createPortfolioTools(): AgentTool[] {
           amount: posted.delta,
           balance_after: posted.balanceAfter,
           currency: p.currency.trim().toUpperCase(),
-          channel: channel ?? undefined,
+          ...((channel ?? undefined) === undefined ? {} : { channel: channel ?? undefined }),
           books_request_id: posted.requestId,
           memo: p.memo.trim(),
           contra: contraRaw,
         });
-        saveState(state);
+        await saveInvestor(snapshot);
         const cashLive = await totalCashLive(posted.cashes, reportingCurrencyOf(state));
         const sign = posted.delta >= 0 ? '+' : '';
         return ok(
@@ -1363,7 +1367,8 @@ export function createPortfolioTools(): AgentTool[] {
             'Books of record required (INVAGE_BOOKS_DATABASE_URL). Cash is not deleted without journals.',
           );
         }
-        const state = resolveInvestorFromChannel(p);
+        const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
         const before = getCashes(state);
         if (before.length === 0) {
           return fail('No cash is recorded. Nothing to clear.');
@@ -1396,11 +1401,11 @@ export function createPortfolioTools(): AgentTool[] {
               action: 'journal_cash_cleared',
               amount: target.amount,
               currency: target.currency,
-              channel: target.channel,
+              ...((target.channel) === undefined ? {} : { channel: target.channel }),
               books_request_id: posted.requestId,
               memo,
             });
-            saveState(state);
+            await saveInvestor(snapshot);
             const remaining = getCashes(state);
             return ok(
               `Journaled clear of ${formatCashSlotLabel(target)} ` +
@@ -1427,11 +1432,11 @@ export function createPortfolioTools(): AgentTool[] {
           state.log.push({
             ts: today,
             action: 'journal_cash_cleared',
-            channel: ch ?? undefined,
+            ...((ch ?? undefined) === undefined ? {} : { channel: ch ?? undefined }),
             cash_slots: targets.length,
             memo,
           });
-          saveState(state);
+          await saveInvestor(snapshot);
           const remaining = getCashes(state);
           return ok(
             `Journaled clear of channel "${key || '(unassigned)'}" ` +
@@ -1454,7 +1459,7 @@ export function createPortfolioTools(): AgentTool[] {
           cash_slots: before.length,
           memo,
         });
-        saveState(state);
+        await saveInvestor(snapshot);
         return ok(
           `Journaled clear of all free-cash sleeves (${before.length}). Memo: ${memo}`,
           { cleared: before, cashes: getCashes(state) },
@@ -1577,7 +1582,8 @@ export function createPortfolioTools(): AgentTool[] {
         option_right?: 'call' | 'put';
       };
       try {
-        const state = resolveInvestorFromChannel(p);
+        const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
         const portfolio = getPortfolio(state);
         const adjustCash = p.adjust_cash !== false;
         const channelProvided = Object.prototype.hasOwnProperty.call(raw, 'channel');
@@ -1796,11 +1802,11 @@ export function createPortfolioTools(): AgentTool[] {
           ticker: nextKey,
           ...(nextKey !== oldKey ? { previous_ticker: oldKey } : {}),
           ...portfolio[nextKey],
-          cash_delta: cashResult.adjusted ? cashResult.cashDelta : undefined,
-          cash_after: cashAfter?.amount,
-          cash_channel: cashResult.adjusted ? cashResult.cash?.channel : undefined,
+          ...((cashResult.adjusted ? cashResult.cashDelta : undefined) === undefined ? {} : { cash_delta: cashResult.adjusted ? cashResult.cashDelta : undefined }),
+          ...((cashAfter?.amount) === undefined ? {} : { cash_after: cashAfter?.amount }),
+          ...((cashResult.adjusted ? cashResult.cash?.channel : undefined) === undefined ? {} : { cash_channel: cashResult.adjusted ? cashResult.cash?.channel : undefined }),
         });
-        saveState(state);
+        await saveInvestor(snapshot);
 
         const h = portfolio[nextKey];
         const cashLine = formatCashApplyNote(cashResult);
@@ -1887,7 +1893,8 @@ export function createPortfolioTools(): AgentTool[] {
       try {
         if (!p.confirm) return fail('Set confirm=true to clear the portfolio. Confirm with the user first.');
 
-        const state = resolveInvestorFromChannel(p);
+        const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
         const portfolio = getPortfolio(state);
         const count = Object.keys(portfolio).length;
 
@@ -1899,7 +1906,7 @@ export function createPortfolioTools(): AgentTool[] {
           action: 'portfolio_cleared',
           positions_removed: count,
         });
-        saveState(state);
+        await saveInvestor(snapshot);
 
         return ok(`Cleared portfolio — ${count} position${count === 1 ? '' : 's'} removed.`, {
           cleared: count,
@@ -1958,7 +1965,8 @@ export function createPortfolioTools(): AgentTool[] {
         adjust_cash?: boolean;
       };
       try {
-        const state = resolveInvestorFromChannel(p);
+        const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
         const today = new Date().toISOString().slice(0, 10);
         const channelProvided = Object.prototype.hasOwnProperty.call(raw, 'channel');
         const channel = channelProvided
@@ -2042,14 +2050,14 @@ export function createPortfolioTools(): AgentTool[] {
           amount: deposit.amount,
           interest: deposit.interest,
           currency: deposit.currency,
-          channel: deposit.channel,
+          ...((deposit.channel) === undefined ? {} : { channel: deposit.channel }),
           start_date: deposit.start_date,
           end_date: deposit.end_date,
           cash_adjusted: cashResult.adjusted,
           cash_delta: cashResult.adjusted ? cashResult.cashDelta : 0,
           ...(booksRequestId != null ? { books_request_id: booksRequestId } : {}),
         });
-        saveState(state);
+        await saveInvestor(snapshot);
 
         const cashNote = formatCashApplyNote(cashResult);
         return ok(
@@ -2122,7 +2130,8 @@ export function createPortfolioTools(): AgentTool[] {
       };
       try {
         if (!p.id?.trim()) return fail('id is required.');
-        const state = resolveInvestorFromChannel(p);
+        const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
         const existing = findDepositById(getDeposits(state), p.id);
         if (existing == null) {
           return fail(`Deposit id "${p.id.trim()}" not found.`);
@@ -2207,11 +2216,11 @@ export function createPortfolioTools(): AgentTool[] {
           amount: next.amount,
           interest: next.interest,
           currency: next.currency,
-          channel: next.channel,
+          ...((next.channel) === undefined ? {} : { channel: next.channel }),
           cash_adjusted: cashResult.adjusted,
           cash_delta: cashResult.adjusted ? cashResult.cashDelta : 0,
         });
-        saveState(state);
+        await saveInvestor(snapshot);
 
         const cashNote = formatCashApplyNote(cashResult);
         return ok(
@@ -2255,7 +2264,8 @@ export function createPortfolioTools(): AgentTool[] {
       const p = raw as ChannelIds & { id: string; adjust_cash?: boolean };
       try {
         if (!p.id?.trim()) return fail('id is required.');
-        const state = resolveInvestorFromChannel(p);
+        const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
         const existing = findDepositById(getDeposits(state), p.id);
         if (existing == null) {
           return fail(`Deposit id "${p.id.trim()}" not found.`);
@@ -2300,11 +2310,11 @@ export function createPortfolioTools(): AgentTool[] {
           amount: existing.amount,
           interest: existing.interest,
           currency: existing.currency,
-          channel: existing.channel,
+          ...((existing.channel) === undefined ? {} : { channel: existing.channel }),
           cash_adjusted: cashResult.adjusted,
           cash_delta: cashResult.adjusted ? cashResult.cashDelta : 0,
         });
-        saveState(state);
+        await saveInvestor(snapshot);
         const cashNote = formatCashApplyNote(cashResult);
         return ok(
           `Removed deposit ${existing.id} (principal ${existing.amount.toFixed(2)} ${existing.currency}).` +
@@ -2350,7 +2360,8 @@ export function createPortfolioTools(): AgentTool[] {
         if (!p.confirm) {
           return fail('Set confirm=true to clear fixed deposits. Confirm with the user first.');
         }
-        const state = resolveInvestorFromChannel(p);
+        const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
         const before = getDeposits(state);
         if (before.length === 0) {
           return fail('No fixed deposits recorded. Nothing to clear.');
@@ -2372,10 +2383,10 @@ export function createPortfolioTools(): AgentTool[] {
           state.log.push({
             ts: new Date().toISOString().slice(0, 10),
             action: 'deposits_cleared',
-            channel: ch,
+            ...((ch) === undefined ? {} : { channel: ch }),
             count: targets.length,
           });
-          saveState(state);
+          await saveInvestor(snapshot);
           const remaining = getDeposits(state);
           return ok(
             `Cleared ${targets.length} deposit(s) for channel "${key || '(unassigned)'}". ` +
@@ -2392,7 +2403,7 @@ export function createPortfolioTools(): AgentTool[] {
           action: 'deposits_cleared',
           count: before.length,
         });
-        saveState(state);
+        await saveInvestor(snapshot);
         return ok(
           `Cleared all fixed deposits (${before.length}).`,
           { cleared: before },
@@ -2446,7 +2457,8 @@ export function createPortfolioTools(): AgentTool[] {
         if (p.from_channel == null || p.to_channel == null) {
           return fail('from_channel and to_channel are required.');
         }
-        const state = resolveInvestorFromChannel(p);
+        const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
         const today = new Date().toISOString().slice(0, 10);
         const fromCh = normalizeOptionalChannel(p.from_channel, 'from_channel');
         const toCh = normalizeOptionalChannel(p.to_channel, 'to_channel');
@@ -2493,7 +2505,7 @@ export function createPortfolioTools(): AgentTool[] {
           to_channel: toCh ?? '',
           ...(booksRequestId != null ? { books_request_id: booksRequestId } : {}),
         });
-        saveState(state);
+        await saveInvestor(snapshot);
         const cashLive = await totalCashLive(result.cashes, reportingCurrencyOf(state));
         return ok(
           `Transferred ${p.amount.toFixed(2)} ${p.currency.trim().toUpperCase()}: ` +
@@ -2551,7 +2563,8 @@ export function createPortfolioTools(): AgentTool[] {
       };
       try {
         if (!p.id?.trim()) return fail('id is required.');
-        const state = resolveInvestorFromChannel(p);
+        const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
         const today = new Date().toISOString().slice(0, 10);
         const before = findDepositById(getDeposits(state), p.id);
         if (before == null) {
@@ -2604,13 +2617,13 @@ export function createPortfolioTools(): AgentTool[] {
           deposit_id: p.id.trim(),
           amount: result.unlocked,
           currency: before.currency,
-          channel: before.channel,
+          ...((before.channel) === undefined ? {} : { channel: before.channel }),
           remaining_principal: result.deposit?.amount ?? 0,
           removed: result.removed,
           cash_adjusted: result.cashAdjusted,
           ...(booksRequestId != null ? { books_request_id: booksRequestId } : {}),
         });
-        saveState(state);
+        await saveInvestor(snapshot);
         return ok(
           `Matured ${result.unlocked.toFixed(2)} ${before.currency} from deposit ${before.id}` +
             formatChannelTag(before.channel) +
@@ -2694,7 +2707,8 @@ export function createListJournalEntriesTool(): AgentTool {
             'Books of record not configured (set INVAGE_BOOKS_DATABASE_URL).',
           );
         }
-        const state = resolveInvestorFromChannel(p);
+        const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
         let limit = 20;
         if (p.limit != null) {
           if (typeof p.limit !== 'number' || !Number.isFinite(p.limit) || p.limit <= 0) {
@@ -2743,7 +2757,8 @@ export function createGetPortfolioTool(): AgentTool {
     async execute(_id, raw) {
       const p = raw as ChannelIds;
       try {
-        const state = resolveInvestorFromChannel(p);
+        const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
         const portfolio = getPortfolio(state);
         const cashes = getCashes(state);
         const deposits = getDeposits(state);

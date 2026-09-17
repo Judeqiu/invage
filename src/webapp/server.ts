@@ -1,3 +1,5 @@
+import { InteractiveLifecycle } from '../../node_modules/utarus/dist/lifecycle/interactive.js';
+import { trackHttpApp, listenHttp } from '../../node_modules/utarus/dist/lifecycle/http.js';
 /**
  * Invage webapp entry — thin domain layer on top of Utarus WebUI.
  *
@@ -65,14 +67,35 @@ const isMain =
     process.argv[1].endsWith('dist/webapp/server.js'));
 
 if (isMain) {
-  const app = buildAppWithOnboard();
-  const port = parseInt(process.env.WEBAPP_PORT || '3001', 10);
-  if (!Number.isFinite(port) || port <= 0) {
-    throw new Error(`WEBAPP_PORT must be a positive integer, got "${process.env.WEBAPP_PORT}".`);
+  const { openDatabaseRuntime, bindDatabaseRuntime } = await import('utarus/database');
+  const database = await openDatabaseRuntime({ env: process.env, mode: 'personal', onError: error => { throw error; } });
+  const release = bindDatabaseRuntime(database);
+  try {
+    const port = Number(process.env.WEBAPP_PORT);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('WEBAPP_PORT must be an explicit valid port');
+    const app = buildAppWithOnboard();
+    const work = new InteractiveLifecycle();
+    trackHttpApp(app, operation => work.run(operation));
+    const server = await listenHttp(app, port);
+    console.log(`[${productHostLabel()}Drive] listening on port ${port}`);
+    let stopping: Promise<void> | undefined;
+    const stop = () => {
+      if (!stopping) stopping = (async () => {
+        try {
+          const drained = work.stop();
+          const closed = new Promise<void>((resolve, reject) => { server.close(error => error ? reject(error) : resolve()); server.closeAllConnections(); });
+          const results = await Promise.allSettled([closed, drained]);
+          const errors = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected').map(r => r.reason);
+          if (errors.length) throw new AggregateError(errors, 'Drive shutdown failed');
+        } finally { release(); await database.close(); }
+      })();
+      void stopping.catch(error => { console.error('[Drive shutdown]', error); process.exitCode = 1; });
+    };
+    process.once('SIGTERM', stop);
+    process.once('SIGINT', stop);
+  } catch (error) {
+    release();
+    await database.close();
+    throw error;
   }
-  app.listen(port, () => {
-    console.log(
-      `[${productHostLabel()}Drive] listening on http://localhost:${port} (BinDrive + landing /api/onboard/register)`,
-    );
-  });
 }

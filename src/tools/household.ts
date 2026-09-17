@@ -4,7 +4,7 @@
 
 import { Type } from 'typebox';
 import type { AgentTool, AgentToolResult } from '@earendil-works/pi-agent-core';
-import { saveState } from 'utarus';
+import { saveInvestor } from '../state/investor-store.js';
 import {
   appendPropertyPayment,
   getCashFlows,
@@ -259,7 +259,8 @@ export function createHouseholdTools(): AgentTool[] {
     async execute(_id, raw) {
       const p = raw as ChannelIds;
       try {
-        const state = asHousehold(resolveInvestorFromChannel(p));
+        const snapshot = await resolveInvestorFromChannel(p);
+        const state = asHousehold(snapshot.state);
         const text = formatHouseholdSummary(state);
         return ok(text, {
           treasury: getTreasury(state),
@@ -288,7 +289,8 @@ export function createHouseholdTools(): AgentTool[] {
     async execute(_id, raw) {
       const p = raw as ChannelIds;
       try {
-        const state = asHousehold(resolveInvestorFromChannel(p));
+        const snapshot = await resolveInvestorFromChannel(p);
+        const state = asHousehold(snapshot.state);
         const treasury = getTreasury(state);
         const gaps = householdGaps(state);
         const text = treasury
@@ -315,7 +317,8 @@ export function createHouseholdTools(): AgentTool[] {
     async execute(_id, raw) {
       const p = raw as ChannelIds & { reporting_currency: string };
       try {
-        const state = asHousehold(resolveInvestorFromChannel(p));
+        const snapshot = await resolveInvestorFromChannel(p);
+        const state = asHousehold(snapshot.state);
         const today = todayYmd();
         setTreasury(state, {
           reporting_currency: p.reporting_currency,
@@ -326,7 +329,7 @@ export function createHouseholdTools(): AgentTool[] {
           action: 'treasury_set',
           reporting_currency: getTreasury(state)!.reporting_currency,
         });
-        saveState(state);
+        await saveInvestor(snapshot);
         const t = getTreasury(state)!;
         return ok(
           `Treasury reporting currency set to ${t.reporting_currency}.`,
@@ -363,7 +366,8 @@ export function createHouseholdTools(): AgentTool[] {
         mortgage_id?: string;
       };
       try {
-        const state = asHousehold(resolveInvestorFromChannel(p));
+        const snapshot = await resolveInvestorFromChannel(p);
+        const state = asHousehold(snapshot.state);
         const today = todayYmd();
         const existingProps = getProperties(state);
         let id: string;
@@ -387,7 +391,7 @@ export function createHouseholdTools(): AgentTool[] {
         if (p.mortgage_id != null) prop.mortgage_id = p.mortgage_id;
         upsertProperty(state, prop);
         state.log.push({ ts: today, action: 'property_added', id });
-        saveState(state);
+        await saveInvestor(snapshot);
         const saved = getProperties(state).find((x) => x.id === id)!;
         return ok(
           `Added property ${saved.id}: ${saved.value.toFixed(2)} ${saved.currency}` +
@@ -427,7 +431,8 @@ export function createHouseholdTools(): AgentTool[] {
         clear_mortgage_id?: boolean;
       };
       try {
-        const state = asHousehold(resolveInvestorFromChannel(p));
+        const snapshot = await resolveInvestorFromChannel(p);
+        const state = asHousehold(snapshot.state);
         const existing = getProperties(state).find((x) => x.id === p.id);
         if (existing == null) return fail(`Property id "${p.id}" not found.`);
         const today = todayYmd();
@@ -442,7 +447,7 @@ export function createHouseholdTools(): AgentTool[] {
         else if (p.mortgage_id != null) next.mortgage_id = p.mortgage_id;
         upsertProperty(state, next);
         state.log.push({ ts: today, action: 'property_updated', id: p.id });
-        saveState(state);
+        await saveInvestor(snapshot);
         return ok(`Property ${p.id} updated.`, { property: next });
       } catch (e) {
         return failFrom(e);
@@ -485,7 +490,8 @@ export function createHouseholdTools(): AgentTool[] {
         cash_channel?: string;
       };
       try {
-        const state = asHousehold(resolveInvestorFromChannel(p));
+        const snapshot = await resolveInvestorFromChannel(p);
+        const state = asHousehold(snapshot.state);
         const payment: PropertyPayment = {
           date: p.date,
           amount: p.amount,
@@ -566,11 +572,11 @@ export function createHouseholdTools(): AgentTool[] {
           amount: payment.amount,
           currency: saved.currency,
           date: payment.date,
-          label: payment.label,
+          ...((payment.label) === undefined ? {} : { label: payment.label }),
           paid_to_date: paid,
-          cash_channel: cashChannelRaw ?? undefined,
+          ...((cashChannelRaw ?? undefined) === undefined ? {} : { cash_channel: cashChannelRaw ?? undefined }),
         });
-        saveState(state);
+        await saveInvestor(snapshot);
 
         const cashNote =
           cashAfter != null
@@ -606,11 +612,12 @@ export function createHouseholdTools(): AgentTool[] {
     async execute(_id, raw) {
       const p = raw as ChannelIds & { id: string };
       try {
-        const state = asHousehold(resolveInvestorFromChannel(p));
+        const snapshot = await resolveInvestorFromChannel(p);
+        const state = asHousehold(snapshot.state);
         const removed = removeProperty(state, p.id);
         const today = todayYmd();
         state.log.push({ ts: today, action: 'property_removed', id: p.id });
-        saveState(state);
+        await saveInvestor(snapshot);
         return ok(`Removed property ${removed.id}.`, { property: removed });
       } catch (e) {
         return failFrom(e);
@@ -659,7 +666,8 @@ export function createHouseholdTools(): AgentTool[] {
         label?: string;
       };
       try {
-        const state = asHousehold(resolveInvestorFromChannel(p));
+        const snapshot = await resolveInvestorFromChannel(p);
+        const state = asHousehold(snapshot.state);
         const today = todayYmd();
         const existingLiab = getLiabilities(state);
         let id: string;
@@ -695,7 +703,7 @@ export function createHouseholdTools(): AgentTool[] {
         if (p.label != null) L.label = p.label;
         upsertLiability(state, L);
         state.log.push({ ts: today, action: 'liability_added', id });
-        saveState(state);
+        await saveInvestor(snapshot);
         const saved = getLiabilities(state).find((x) => x.id === id)!;
         return ok(
           `Added liability ${saved.id} [${saved.kind}]: principal ${saved.principal.toFixed(2)} ${saved.currency}, ` +
@@ -743,7 +751,8 @@ export function createHouseholdTools(): AgentTool[] {
         label?: string;
       };
       try {
-        const state = asHousehold(resolveInvestorFromChannel(p));
+        const snapshot = await resolveInvestorFromChannel(p);
+        const state = asHousehold(snapshot.state);
         const existing = getLiabilities(state).find((x) => x.id === p.id);
         if (existing == null) return fail(`Liability id "${p.id}" not found.`);
         const today = todayYmd();
@@ -768,7 +777,7 @@ export function createHouseholdTools(): AgentTool[] {
         if (p.label != null) next.label = p.label;
         upsertLiability(state, next);
         state.log.push({ ts: today, action: 'liability_updated', id: p.id });
-        saveState(state);
+        await saveInvestor(snapshot);
         return ok(`Liability ${p.id} updated.`, { liability: next });
       } catch (e) {
         return failFrom(e);
@@ -787,11 +796,12 @@ export function createHouseholdTools(): AgentTool[] {
     async execute(_id, raw) {
       const p = raw as ChannelIds & { id: string };
       try {
-        const state = asHousehold(resolveInvestorFromChannel(p));
+        const snapshot = await resolveInvestorFromChannel(p);
+        const state = asHousehold(snapshot.state);
         const removed = removeLiability(state, p.id);
         const today = todayYmd();
         state.log.push({ ts: today, action: 'liability_removed', id: p.id });
-        saveState(state);
+        await saveInvestor(snapshot);
         return ok(`Removed liability ${removed.id}.`, { liability: removed });
       } catch (e) {
         return failFrom(e);
@@ -830,7 +840,8 @@ export function createHouseholdTools(): AgentTool[] {
         category?: string;
       };
       try {
-        const state = asHousehold(resolveInvestorFromChannel(p));
+        const snapshot = await resolveInvestorFromChannel(p);
+        const state = asHousehold(snapshot.state);
         const today = todayYmd();
         const existingCf = getCashFlows(state);
         let id: string;
@@ -861,7 +872,7 @@ export function createHouseholdTools(): AgentTool[] {
         if (p.category != null) line.category = p.category;
         upsertCashFlow(state, line);
         state.log.push({ ts: today, action: 'cash_flow_added', id });
-        saveState(state);
+        await saveInvestor(snapshot);
         const saved = getCashFlows(state).find((x) => x.id === id)!;
         return ok(
           `Added cash flow ${saved.id} [${saved.kind}]: ${saved.amount.toFixed(2)} ${saved.currency}/${saved.frequency}`,
@@ -906,7 +917,8 @@ export function createHouseholdTools(): AgentTool[] {
         category?: string;
       };
       try {
-        const state = asHousehold(resolveInvestorFromChannel(p));
+        const snapshot = await resolveInvestorFromChannel(p);
+        const state = asHousehold(snapshot.state);
         const existing = getCashFlows(state).find((x) => x.id === p.id);
         if (existing == null) return fail(`Cash flow id "${p.id}" not found.`);
         const today = todayYmd();
@@ -925,7 +937,7 @@ export function createHouseholdTools(): AgentTool[] {
         if (p.category != null) next.category = p.category;
         upsertCashFlow(state, next);
         state.log.push({ ts: today, action: 'cash_flow_updated', id: p.id });
-        saveState(state);
+        await saveInvestor(snapshot);
         return ok(`Cash flow ${p.id} updated.`, { cash_flow: next });
       } catch (e) {
         return failFrom(e);
@@ -944,11 +956,12 @@ export function createHouseholdTools(): AgentTool[] {
     async execute(_id, raw) {
       const p = raw as ChannelIds & { id: string };
       try {
-        const state = asHousehold(resolveInvestorFromChannel(p));
+        const snapshot = await resolveInvestorFromChannel(p);
+        const state = asHousehold(snapshot.state);
         const removed = removeCashFlow(state, p.id);
         const today = todayYmd();
         state.log.push({ ts: today, action: 'cash_flow_removed', id: p.id });
-        saveState(state);
+        await saveInvestor(snapshot);
         return ok(`Removed cash flow ${removed.id}.`, { cash_flow: removed });
       } catch (e) {
         return failFrom(e);
@@ -964,7 +977,8 @@ export function createHouseholdTools(): AgentTool[] {
     async execute(_id, raw) {
       const p = raw as ChannelIds;
       try {
-        const state = asHousehold(resolveInvestorFromChannel(p));
+        const snapshot = await resolveInvestorFromChannel(p);
+        const state = asHousehold(snapshot.state);
         const lines = getCashFlows(state);
         if (lines.length === 0) {
           return ok('No cash flow lines.', { cash_flows: [] });
@@ -993,7 +1007,8 @@ export function createHouseholdTools(): AgentTool[] {
     async execute(_id, raw) {
       const p = raw as ChannelIds;
       try {
-        const state = asHousehold(resolveInvestorFromChannel(p));
+        const snapshot = await resolveInvestorFromChannel(p);
+        const state = asHousehold(snapshot.state);
         const a = getProjectionAssumptions(state);
         if (a == null) {
           return ok(
@@ -1041,7 +1056,8 @@ export function createHouseholdTools(): AgentTool[] {
         fx?: Record<string, number>;
       };
       try {
-        const state = asHousehold(resolveInvestorFromChannel(p));
+        const snapshot = await resolveInvestorFromChannel(p);
+        const state = asHousehold(snapshot.state);
         const today = todayYmd();
         const a: ProjectionAssumptions = {
           portfolio_return_annual_pct: p.portfolio_return_annual_pct,
@@ -1055,7 +1071,7 @@ export function createHouseholdTools(): AgentTool[] {
         if (p.fx != null) a.fx = p.fx;
         setProjectionAssumptions(state, a);
         state.log.push({ ts: today, action: 'projection_assumptions_set' });
-        saveState(state);
+        await saveInvestor(snapshot);
         const saved = getProjectionAssumptions(state)!;
         return ok(
           `Assumptions set: portfolio ${saved.portfolio_return_annual_pct}%/yr, inflation ${saved.inflation_annual_pct}%/yr.`,

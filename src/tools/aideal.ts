@@ -199,7 +199,8 @@ export function createComputeSleeveIndexTool(): AgentTool {
           if (explicit) {
             lots = explicit;
           } else {
-            const state = resolveInvestorFromChannel(p);
+            const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
             lots = lotsFromPortfolio(sleeve, getPortfolio(state));
           }
           if (lots.length === 0) {
@@ -308,7 +309,8 @@ export function createSaveAidealNewsletterTool(): AgentTool {
         buy_opportunities?: unknown;
       };
       try {
-        const state = resolveInvestorFromChannel(p);
+        const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
         const html = buildAidealNewsletterHtml({
           title: p.title,
           reportDate: p.report_date,
@@ -321,7 +323,7 @@ export function createSaveAidealNewsletterTool(): AgentTool {
         const driveDir = join(resolveDataRoot(), 'drive', state.user.slug);
         mkdirSync(driveDir, { recursive: true });
         writeFileSync(join(driveDir, fileName), html, 'utf-8');
-        const signed = signedBinDriveViewUrl(state.user.slug, fileName, {
+        const signed = await signedBinDriveViewUrl(state.user.slug, fileName, {
           displayName: state.profile.display_name,
         });
         const ttlMin = Math.round(signed.expiresInMs / 60000);

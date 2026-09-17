@@ -11,13 +11,19 @@
 </head>
 <body>
   <div class="page">
-    <div class="breadcrumb label-eyebrow">Trades / Open options on the books</div>
+    <div class="breadcrumb label-eyebrow">Trades / Option executions</div>
     <div class="hero">
       <div class="label-eyebrow" id="eyebrow">Journal</div>
-      <h1>Every option lot, from the books.</h1>
-      <p>Open option holdings only — there is no separate fill journal yet. Closed/assigned/rolled history is not invented. Premium is book avg vs mark per contract.</p>
+      <h1>Each trade, recorded separately.</h1>
+      <p>Individual option premiums and exact signed commissions. Times use the broker report’s clock. Totals cover imported executions only, not lifetime performance.</p>
     </div>
     <div id="error" class="error" hidden></div>
+    <div class="filters">
+      <button type="button" class="chip-btn on" id="journal-view">Execution journal</button>
+      <button type="button" class="chip-btn" id="positions-view">Open option positions</button>
+      <label class="chip-btn">Import historical Flex XML <input id="history-file" type="file" accept=".xml,application/xml" /></label>
+      <span id="import-result" role="status"></span>
+    </div>
     <div class="filters" id="filters"></div>
     <div id="table"></div>
   </div>

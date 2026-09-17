@@ -1,6 +1,6 @@
 import { Type } from 'typebox';
 import type { AgentTool, AgentToolResult } from '@earendil-works/pi-agent-core';
-import { saveState } from 'utarus';
+import { saveInvestor } from '../state/investor-store.js';
 import { syncBrokerConnection } from '../brokers/connections.js';
 import { writeIbkrFlexConfig } from '../ibkr/flex-config.js';
 import { IBKR_CHANNEL } from '../ibkr/flex-map.js';
@@ -36,13 +36,14 @@ export function createConfigureIbkrFlexTool(): AgentTool {
         tradeconf_query_id?: string;
       };
       try {
-        const state = resolveInvestorFromChannel(p);
+        const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
         writeIbkrFlexConfig(state, {
           token: p.token,
           activity_query_id: p.activity_query_id,
           tradeconf_query_id: p.tradeconf_query_id,
         });
-        saveState(state);
+        await saveInvestor(snapshot);
         return ok(
           `IBKR Flex configured for ${state.user.slug}. Channel tag: ${IBKR_CHANNEL}. Token stored (not shown). Run sync_ibkr_flex to pull Open Positions + Cash Report.`,
           { slug: state.user.slug, channel: IBKR_CHANNEL, activity_query_id: p.activity_query_id.trim() },
@@ -66,8 +67,9 @@ export function createSyncIbkrFlexTool(): AgentTool {
     execute: async (_id, raw) => {
       const p = raw as ChannelIds;
       try {
-        const state = resolveInvestorFromChannel(p);
-        const { applied } = await syncBrokerConnection(state, IBKR_CHANNEL);
+        const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
+        const { applied } = await syncBrokerConnection(snapshot, IBKR_CHANNEL);
         const cashLine =
           applied.cash.length > 0
             ? `Cash: ${applied.cash.map((c) => `${c.currency} ${c.amount}`).join(', ')}`

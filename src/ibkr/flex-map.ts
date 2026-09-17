@@ -109,6 +109,7 @@ export function mapFlexDocToStatement(doc: FlexStatementDoc, channel: string): B
       holding: lot.holding,
     })),
     skipped: [...doc.skipped, ...mapSkipped].map(brokerSkipFromFlex),
+    ...(doc.optionExecutions !== undefined ? { option_executions: doc.optionExecutions } : {}),
   };
 }
 

@@ -4,7 +4,7 @@
 
 import { Type } from 'typebox';
 import type { AgentTool, AgentToolResult } from '@earendil-works/pi-agent-core';
-import { saveState } from 'utarus';
+import { saveInvestor } from '../state/investor-store.js';
 import {
   assertSavedScenario,
   findScenarioById,
@@ -207,7 +207,8 @@ export function createProjectionTools(): AgentTool[] {
         assumption_overrides?: SavedScenario['assumption_overrides'];
       };
       try {
-        const state = asHousehold(resolveInvestorFromChannel(p));
+        const snapshot = await resolveInvestorFromChannel(p);
+        const state = asHousehold(snapshot.state);
         const today = todayYmd();
         const id =
           p.id?.trim() || generateHouseholdId('sc', getScenarios(state));
@@ -220,7 +221,7 @@ export function createProjectionTools(): AgentTool[] {
         });
         upsertScenario(state, scenario);
         state.log.push({ ts: today, action: 'scenario_saved', id });
-        saveState(state);
+        await saveInvestor(snapshot);
         return ok(
           `Scenario ${scenario.id} saved: ${scenario.label} (${scenario.events.length} event(s)).`,
           { scenario },
@@ -242,7 +243,8 @@ export function createProjectionTools(): AgentTool[] {
     async execute(_id, raw) {
       const p = raw as ChannelIds & { id: string };
       try {
-        const state = asHousehold(resolveInvestorFromChannel(p));
+        const snapshot = await resolveInvestorFromChannel(p);
+        const state = asHousehold(snapshot.state);
         const s = findScenarioById(getScenarios(state), p.id);
         if (s == null) return fail(`Scenario id "${p.id}" not found.`);
         return ok(JSON.stringify(s, null, 2), { scenario: s });
@@ -260,7 +262,8 @@ export function createProjectionTools(): AgentTool[] {
     async execute(_id, raw) {
       const p = raw as ChannelIds;
       try {
-        const state = asHousehold(resolveInvestorFromChannel(p));
+        const snapshot = await resolveInvestorFromChannel(p);
+        const state = asHousehold(snapshot.state);
         const list = getScenarios(state);
         if (list.length === 0) return ok('No saved scenarios.', { scenarios: [] });
         const text = list
@@ -284,11 +287,12 @@ export function createProjectionTools(): AgentTool[] {
     async execute(_id, raw) {
       const p = raw as ChannelIds & { id: string };
       try {
-        const state = asHousehold(resolveInvestorFromChannel(p));
+        const snapshot = await resolveInvestorFromChannel(p);
+        const state = asHousehold(snapshot.state);
         const removed = removeScenario(state, p.id);
         const today = todayYmd();
         state.log.push({ ts: today, action: 'scenario_deleted', id: p.id });
-        saveState(state);
+        await saveInvestor(snapshot);
         return ok(`Deleted scenario ${removed.id}.`, { scenario: removed });
       } catch (e) {
         return failFrom(e);
@@ -329,7 +333,8 @@ export function createProjectionTools(): AgentTool[] {
         portfolio_value?: number;
       };
       try {
-        const state = asHousehold(resolveInvestorFromChannel(p));
+        const snapshot = await resolveInvestorFromChannel(p);
+        const state = asHousehold(snapshot.state);
         const assumptions = getProjectionAssumptions(state);
         if (assumptions == null) {
           return fail(
@@ -397,7 +402,8 @@ export function createProjectionTools(): AgentTool[] {
         portfolio_value?: number;
       };
       try {
-        const state = asHousehold(resolveInvestorFromChannel(p));
+        const snapshot = await resolveInvestorFromChannel(p);
+        const state = asHousehold(snapshot.state);
         const assumptions = getProjectionAssumptions(state);
         if (assumptions == null) {
           return fail('projection_assumptions not set.');

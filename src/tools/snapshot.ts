@@ -52,7 +52,7 @@ export function createSnapshotTool(): AgentTool[] {
     async execute(_id, raw) {
       const p = raw as ChannelIds;
       try {
-        const state = resolveInvestorFromChannel(p);
+        const { state } = await resolveInvestorFromChannel(p);
 
         const portfolio = getPortfolio(state);
         if (Object.keys(portfolio).length === 0) {
@@ -211,7 +211,7 @@ export function createSnapshotTool(): AgentTool[] {
     async execute(_id, raw) {
       const p = raw as ChannelIds;
       try {
-        const state = resolveInvestorFromChannel(p);
+        const { state } = await resolveInvestorFromChannel(p);
         const files = loadSnapshotIndex(state.user.slug);
         if (files.length === 0) {
           return fail('No snapshots saved yet. Use save_snapshot first.');

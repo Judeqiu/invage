@@ -25,7 +25,7 @@ const CATALOG: RawSkill[] = [
     id: 'bindrive',
     name: 'BinDrive',
     description:
-      'Load when listing or managing the user file portal after specialists produce artifacts. Use the user auth_token (user.auth_token) as the token arg with bindrive_* tools. Analysis HTML is produced by specialists — orchestrator does not run research reports.',
+      'Load when listing or managing the user file portal after specialists produce artifacts. BinDrive authentication is automatic for the signed-in user; no token argument is needed. Analysis HTML is produced by specialists — orchestrator does not run research reports.',
   },
   {
     id: 'playbook-setup',

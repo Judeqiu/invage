@@ -1,6 +1,6 @@
 import { Type } from 'typebox';
 import type { AgentTool, AgentToolResult } from '@earendil-works/pi-agent-core';
-import { saveState } from 'utarus';
+import { saveInvestor } from '../state/investor-store.js';
 import {
   PHILOSOPHIES,
   REBALANCE_MODES,
@@ -45,7 +45,8 @@ export function createGetPlaybookTool(): AgentTool {
     async execute(_id, raw) {
       const p = raw as ChannelIds;
       try {
-        const state = resolveInvestorFromChannel(p);
+        const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
         const playbook = getPlaybook(state);
         const configured = state.playbook != null;
         const text =
@@ -135,7 +136,8 @@ export function createPlaybookTools(): AgentTool[] {
         themes?: string[];
       };
       try {
-        const state = resolveInvestorFromChannel(p);
+        const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
         const patch: PlaybookPatch = {};
 
         if (p.strategy != null) patch.strategy = p.strategy as Strategy;
@@ -213,7 +215,7 @@ export function createPlaybookTools(): AgentTool[] {
           action: 'playbook_updated',
           fields: Object.keys(patch),
         });
-        saveState(state);
+        await saveInvestor(snapshot);
 
         return ok(`Updated playbook.\n\n${formatPlaybookSummary(playbook)}`, {
           playbook,
@@ -243,7 +245,8 @@ export function createPlaybookTools(): AgentTool[] {
     async execute(_id, raw) {
       const p = raw as ChannelIds & { symbol: string; instrument: string; note?: string };
       try {
-        const state = resolveInvestorFromChannel(p);
+        const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
         const current = getPlaybook(state);
         const products = addWatchProduct(current.watchlists.products, {
           symbol: p.symbol,
@@ -262,7 +265,7 @@ export function createPlaybookTools(): AgentTool[] {
           action: 'watch_product_added',
           symbol: added.symbol,
         });
-        saveState(state);
+        await saveInvestor(snapshot);
         return ok(`Added ${added.symbol} to the watch list.\n\n${formatPlaybookSummary(playbook)}`, {
           playbook,
           added,
@@ -286,7 +289,8 @@ export function createPlaybookTools(): AgentTool[] {
     async execute(_id, raw) {
       const p = raw as ChannelIds & { symbol: string };
       try {
-        const state = resolveInvestorFromChannel(p);
+        const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
         const current = getPlaybook(state);
         const products = removeWatchProduct(current.watchlists.products, p.symbol);
         const playbook = updatePlaybook(state, { watchlists: { products } });
@@ -296,7 +300,7 @@ export function createPlaybookTools(): AgentTool[] {
           action: 'watch_product_removed',
           symbol,
         });
-        saveState(state);
+        await saveInvestor(snapshot);
         return ok(`Removed ${symbol} from the watch list.\n\n${formatPlaybookSummary(playbook)}`, {
           playbook,
           removed: symbol,

@@ -4,11 +4,8 @@
  */
 
 import { Type } from 'typebox';
-import {
-  resolveUserBySlackUser,
-  resolveUserByTelegramUser,
-  resolveUserBySlug,
-} from 'utarus';
+import { getDatabaseRuntime } from 'utarus/database';
+import type { InvestorSnapshot } from '../state/investor-store.js';
 import type { InvestorState } from '../state/portfolio-state.js';
 
 /** TypeBox fields to merge into tool parameters. */
@@ -39,35 +36,13 @@ export type ChannelIds = {
   user_slug?: string;
 };
 
-export function resolveInvestorFromChannel(p: ChannelIds): InvestorState {
-  if (p.user_slug) {
-    const state = resolveUserBySlug(p.user_slug) as InvestorState | null;
-    if (!state) {
-      throw new Error(
-        `No user with slug "${p.user_slug}". User must register first via invite code.`,
-      );
-    }
-    return state;
-  }
-  if (p.telegram_user_id != null) {
-    const state = resolveUserByTelegramUser(p.telegram_user_id) as InvestorState | null;
-    if (!state) {
-      throw new Error(
-        `No user linked to Telegram ID ${p.telegram_user_id}. User must register first via invite code.`,
-      );
-    }
-    return state;
-  }
-  if (p.slack_user_id) {
-    const state = resolveUserBySlackUser(p.slack_user_id) as InvestorState | null;
-    if (!state) {
-      throw new Error(
-        `No user linked to Slack ID ${p.slack_user_id}. User must register first via invite code.`,
-      );
-    }
-    return state;
-  }
-  throw new Error(
-    'Provide user_slug, telegram_user_id, or slack_user_id from the message context (never invent any).',
-  );
+export async function resolveInvestorFromChannel(p: ChannelIds): Promise<InvestorSnapshot> {
+  const users = getDatabaseRuntime().users;
+  let snapshot;
+  if (p.user_slug) snapshot = await users.findBySlug(p.user_slug);
+  else if (p.telegram_user_id != null) snapshot = await users.findByExternalIdentity('telegram', String(p.telegram_user_id), 'all');
+  else if (p.slack_user_id) snapshot = await users.findByExternalIdentity('slack', p.slack_user_id, 'all');
+  else throw new Error('Provide user_slug, telegram_user_id, or slack_user_id from the message context (never invent any).');
+  if (snapshot === null) throw new Error('No registered user for the supplied channel identity.');
+  return { state: snapshot.state as InvestorState, revision: snapshot.revision };
 }

@@ -5,6 +5,7 @@
  */
 
 import type { Holding } from '../market/types.js';
+import { mergeOptionExecutions, type OptionExecution } from './option-executions.js';
 import { assertHolding, HOLDING_KEY_CHANNEL_SEP } from '../market/position-value.js';
 import {
   assertBrokerConnectionMetrics,
@@ -40,6 +41,7 @@ export interface BrokerLot {
 }
 
 export interface BrokerStatement {
+  option_executions?: OptionExecution[];
   account_id: string;
   as_of: string;
   from_date?: string;
@@ -186,7 +188,7 @@ export function assertBrokerStatement(raw: unknown): BrokerStatement {
   }
   const o = raw as Record<string, unknown>;
   rejectVendorShape(o);
-  const allowed = new Set(['account_id', 'as_of', 'from_date', 'cash', 'lots', 'skipped', 'metrics']);
+  const allowed = new Set(['account_id', 'as_of', 'from_date', 'cash', 'lots', 'skipped', 'metrics', 'option_executions']);
   for (const k of Object.keys(o)) {
     if (!allowed.has(k)) {
       throw new Error(`Broker statement: unknown field "${k}".`);
@@ -240,6 +242,10 @@ export function assertBrokerStatement(raw: unknown): BrokerStatement {
   }
   if (o.metrics != null) {
     doc.metrics = assertBrokerConnectionMetrics(o.metrics, 'Broker statement metrics');
+  }
+  if (o.option_executions !== undefined) {
+    doc.option_executions = mergeOptionExecutions([], o.option_executions);
+    if (doc.option_executions.some(row => row.account_id !== doc.account_id)) throw new Error('Execution account differs from statement account');
   }
   return doc;
 }

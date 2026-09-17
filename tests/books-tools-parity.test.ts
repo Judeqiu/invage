@@ -1,35 +1,31 @@
+import { useTestDatabase, createInvestorFixture } from './helpers/database.js';
+import { loadInvestor, saveInvestor } from '../src/state/investor-store.js';
 /**
  * Parity: journal-based books tools match pure state-machine end balances.
  * Cash is never absolute-set — only opening + adjustments + transfer + deposit journals.
  */
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { mkdirSync, rmSync, writeFileSync } from 'fs';
+import { mkdirSync, rmSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { stringify } from 'yaml';
 import { randomUUID } from 'crypto';
+
+const testDatabase = await useTestDatabase({ books: true });
 
 const dataRoot = join(tmpdir(), `invage-books-parity-${process.pid}`);
 mkdirSync(join(dataRoot, 'users'), { recursive: true });
 process.env.UTARUS_LOADED_BY_HOST = '1';
 process.env.UTARUS_DATA_ROOT = dataRoot;
 
-const ADMIN_URL =
-  process.env.INVAGE_BOOKS_ADMIN_URL ??
-  'postgresql://zhengqingqiu@localhost:5432/invage_books';
-const APP_URL =
-  process.env.INVAGE_BOOKS_DATABASE_URL ??
-  'postgresql://invage_app:invage_dev_only@localhost:5432/invage_books';
 
 const HOUSEHOLD = 'cccccccc-dddd-4eee-8fff-000000000001';
 const SLUG = 'parity-user';
 const TG = 900001;
 
-function writeUser(extra: Record<string, unknown> = {}): void {
-  writeFileSync(
-    join(dataRoot, 'users', `${SLUG}.yaml`),
-    stringify({
+async function writeUser(extra: Record<string, unknown> = {}): Promise<void> {
+  await testDatabase.clearUsers();
+  await createInvestorFixture({
       user: {
         id: HOUSEHOLD,
         slug: SLUG,
@@ -40,39 +36,22 @@ function writeUser(extra: Record<string, unknown> = {}): void {
       profile: { display_name: 'Parity', contact_email: 'p@test.local' },
       log: [{ ts: '2026-08-01', action: 'created' }],
       ...extra,
-    }),
-    'utf-8',
-  );
+    });
 }
 
-async function wipeHousehold(id: string): Promise<void> {
+async function wipeHousehold(_id: string): Promise<void> {
+  const { closePool, migrateBooks } = await import('../src/books/index.js');
+  await closePool();
   const pg = await import('pg');
-  const admin = new pg.default.Client({ connectionString: ADMIN_URL });
-  await admin.connect();
+  const client = new pg.default.Client({ connectionString: testDatabase.booksUrl });
+  await client.connect();
   try {
-    // session_replication_role=replica skips user triggers (append-only) without
-    // racing ALTER TABLE DISABLE/ENABLE across parallel test files.
-    await admin.query('BEGIN');
-    await admin.query(`SELECT set_config('session_replication_role', 'replica', true)`);
-    await admin.query('DELETE FROM audit_events WHERE household_id = $1::uuid', [id]);
-    await admin.query('DELETE FROM journal_lines WHERE household_id = $1::uuid', [id]);
-    await admin.query('DELETE FROM journal_entries WHERE household_id = $1::uuid', [id]);
-    await admin.query('DELETE FROM deposit_meta WHERE household_id = $1::uuid', [id]);
-    await admin.query('DELETE FROM position_meta WHERE household_id = $1::uuid', [id]);
-    await admin.query('DELETE FROM account_balances WHERE household_id = $1::uuid', [id]);
-    await admin.query('DELETE FROM accounts WHERE household_id = $1::uuid', [id]);
-    await admin.query('DELETE FROM households WHERE id = $1::uuid', [id]);
-    await admin.query('COMMIT');
-  } catch (e) {
-    try {
-      await admin.query('ROLLBACK');
-    } catch {
-      /* ignore */
-    }
-    throw e;
+    await client.query('DROP SCHEMA public CASCADE');
+    await client.query('CREATE SCHEMA public');
   } finally {
-    await admin.end();
+    await client.end();
   }
+  await migrateBooks();
 }
 
 function toolByName(tools: Array<{ name: string }>, name: string) {
@@ -87,24 +66,14 @@ function toolByName(tools: Array<{ name: string }>, name: string) {
   };
 }
 
-describe('books tools parity vs YAML state machine', () => {
-  beforeAll(async () => {
-    process.env.INVAGE_BOOKS_DATABASE_URL = ADMIN_URL;
-    const { closePool, migrateBooks } = await import('../src/books/index.js');
-    await closePool();
-    await migrateBooks();
-    await closePool();
-    process.env.INVAGE_BOOKS_DATABASE_URL = APP_URL;
-    await closePool();
-  });
+describe('books tools parity vs domain state machine', () => {
 
   beforeEach(async () => {
     await wipeHousehold(HOUSEHOLD);
-    writeUser();
+    await writeUser();
   });
 
   afterAll(async () => {
-    await wipeHousehold(HOUSEHOLD).catch(() => undefined);
     const { closePool } = await import('../src/books/index.js');
     await closePool();
     rmSync(dataRoot, { recursive: true, force: true });
@@ -112,8 +81,8 @@ describe('books tools parity vs YAML state machine', () => {
 
   it('opening + transfer + deposit lifecycle matches state-machine amounts', async () => {
     // Baseline: pure portfolio-state mutators (no absolute tool)
-    writeUser();
-    const { loadState, saveState } = await import('utarus');
+    await writeUser();
+
     const {
       getCashes,
       getDeposits,
@@ -125,7 +94,8 @@ describe('books tools parity vs YAML state machine', () => {
       setCashes,
     } = await import('../src/state/portfolio-state.js');
 
-    let state = loadState(SLUG) as import('../src/state/portfolio-state.js').InvestorState;
+    let stateSnapshot = await loadInvestor(SLUG);
+    let state = stateSnapshot.state;
     setCash(state, {
       amount: 10000,
       currency: 'USD',
@@ -162,8 +132,8 @@ describe('books tools parity vs YAML state machine', () => {
       updatedAt: '2026-08-09',
       adjustCash: true,
     });
-    saveState(state);
-    const yamlCashes = getCashes(state)
+    await saveInvestor(stateSnapshot);
+    const domainCashes = getCashes(state)
       .map((c) => ({
         channel: c.channel ?? '',
         currency: c.currency,
@@ -173,8 +143,8 @@ describe('books tools parity vs YAML state machine', () => {
 
     // Books journals via tools
     await wipeHousehold(HOUSEHOLD);
-    writeUser();
-    process.env.INVAGE_BOOKS_DATABASE_URL = APP_URL;
+    await writeUser();
+    process.env.INVAGE_BOOKS_DATABASE_URL = testDatabase.booksUrl;
     const { closePool } = await import('../src/books/index.js');
     await closePool();
 
@@ -222,7 +192,8 @@ describe('books tools parity vs YAML state machine', () => {
       id: 'fd-parity',
     });
 
-    const booksState = loadState(SLUG) as import('../src/state/portfolio-state.js').InvestorState;
+    const booksStateSnapshot = await loadInvestor(SLUG);
+    const booksState = booksStateSnapshot.state;
     const booksCashes = getCashes(booksState)
       .map((c) => ({
         channel: c.channel ?? '',
@@ -231,18 +202,18 @@ describe('books tools parity vs YAML state machine', () => {
       }))
       .sort((a, b) => `${a.channel}@${a.currency}`.localeCompare(`${b.channel}@${b.currency}`));
 
-    expect(booksCashes).toEqual(yamlCashes);
+    expect(booksCashes).toEqual(domainCashes);
     expect(getDeposits(booksState)).toEqual([]);
     expect(booksCashes.find((c) => c.channel === 'dbs')?.amount).toBe(7500);
     expect(booksCashes.find((c) => c.channel === 'ibkr')?.amount).toBe(3500);
   });
 
-  it('auto-seeds YAML cash then transfer journals like before', async () => {
-    process.env.INVAGE_BOOKS_DATABASE_URL = APP_URL;
+  it('auto-seeds domain cash then transfer journals like before', async () => {
+    process.env.INVAGE_BOOKS_DATABASE_URL = testDatabase.booksUrl;
     const { closePool } = await import('../src/books/index.js');
     await closePool();
 
-    writeUser({
+    await writeUser({
       cash: [
         { amount: 5000, currency: 'USD', updated_at: '2026-08-08', channel: 'dbs' },
         { amount: 100, currency: 'USD', updated_at: '2026-08-08', channel: 'ibkr' },
@@ -262,20 +233,20 @@ describe('books tools parity vs YAML state machine', () => {
     const text = res.content.map((c) => c.text ?? '').join('');
     expect(text).not.toMatch(/Insufficient/i);
 
-    const { loadState } = await import('utarus');
+
     const { getCashes } = await import('../src/state/portfolio-state.js');
     const cashes = getCashes(
-      loadState(SLUG) as import('../src/state/portfolio-state.js').InvestorState,
+      (await loadInvestor(SLUG)).state as import('../src/state/portfolio-state.js').InvestorState,
     );
     expect(cashes.find((c) => c.channel === 'dbs')?.amount).toBe(4000);
     expect(cashes.find((c) => c.channel === 'ibkr')?.amount).toBe(1100);
   });
 
   it('post_adjustment refuses absolute overwrite semantics (delta only)', async () => {
-    process.env.INVAGE_BOOKS_DATABASE_URL = APP_URL;
+    process.env.INVAGE_BOOKS_DATABASE_URL = testDatabase.booksUrl;
     const { closePool } = await import('../src/books/index.js');
     await closePool();
-    writeUser();
+    await writeUser();
     const { createPortfolioTools } = await import('../src/tools/portfolio.js');
     const tools = createPortfolioTools();
     const open = toolByName(tools, 'post_opening_balance');
@@ -306,20 +277,20 @@ describe('books tools parity vs YAML state machine', () => {
       contra: 'income',
     });
     expect(okAdj.content.map((c) => c.text).join('')).toMatch(/income|1250|250/);
-    const { loadState } = await import('utarus');
+
     const { getCashes } = await import('../src/state/portfolio-state.js');
     expect(
-      getCashes(loadState(SLUG) as import('../src/state/portfolio-state.js').InvestorState).find(
+      getCashes((await loadInvestor(SLUG)).state as import('../src/state/portfolio-state.js').InvestorState).find(
         (c) => c.channel === 'dbs',
       )?.amount,
     ).toBe(1250);
   });
 
   it('add_holding journals cash drawdown after opening', async () => {
-    process.env.INVAGE_BOOKS_DATABASE_URL = APP_URL;
+    process.env.INVAGE_BOOKS_DATABASE_URL = testDatabase.booksUrl;
     const { closePool } = await import('../src/books/index.js');
     await closePool();
-    writeUser();
+    await writeUser();
 
     const { createPortfolioTools } = await import('../src/tools/portfolio.js');
     const tools = createPortfolioTools();

@@ -175,13 +175,13 @@ export function createOptionsInsightTool(): AgentTool {
             puts: chain.puts,
           });
           let text = formatContractInsight(insight);
-          const books = p.include_books ? booksOverlay(p, chain.underlying, insight) : null;
+          const books = p.include_books ? await booksOverlay(p, chain.underlying, insight) : null;
           if (books) text += `\n\n${books}`;
           return ok(text, { insight, expirations: chain.expirationDates, books: books ?? null });
         }
 
         const text = formatExpirySnapshot(chain);
-        const books = p.include_books ? booksLotsSummary(p, chain.underlying) : null;
+        const books = p.include_books ? await booksLotsSummary(p, chain.underlying) : null;
         return ok(books ? `${text}\n\n${books}` : text, {
           snapshot: {
             underlying: chain.underlying,
@@ -199,16 +199,17 @@ export function createOptionsInsightTool(): AgentTool {
   };
 }
 
-function booksOverlay(
+async function booksOverlay(
   p: ChannelIds,
   underlying: string,
   insight: ContractInsight,
-): string | null {
+): Promise<string | null> {
   try {
     if (!p.telegram_user_id && !p.slack_user_id && !p.user_slug) {
       throw new Error('include_books requires telegram_user_id, slack_user_id, or user_slug.');
     }
-    const state = resolveInvestorFromChannel(p);
+    const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
     const portfolio = getPortfolio(state);
     const lots = Object.entries(portfolio).filter(([, h]) => {
       if (!isOptionHolding(h) || h.option == null) return false;
@@ -240,11 +241,12 @@ function booksOverlay(
   }
 }
 
-function booksLotsSummary(p: ChannelIds, underlying: string): string | null {
+async function booksLotsSummary(p: ChannelIds, underlying: string): Promise<string | null> {
   if (!p.telegram_user_id && !p.slack_user_id && !p.user_slug) {
     throw new Error('include_books requires telegram_user_id, slack_user_id, or user_slug.');
   }
-  const state = resolveInvestorFromChannel(p);
+  const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
   const portfolio = getPortfolio(state);
   const lots = Object.entries(portfolio).filter(([, h]) => {
     if (!isOptionHolding(h) || h.option == null) return false;

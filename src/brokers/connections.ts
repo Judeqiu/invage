@@ -1,10 +1,13 @@
+import { saveInvestor, type InvestorSnapshot } from '../state/investor-store.js';
 /**
  * Per-user broker_connections YAML store + public DTO.
  * Lazy-migrates top-level ibkr_flex on write (including failed sync).
  */
 
-import { saveState } from 'utarus';
-import { applyFlexStatement } from '../ibkr/flex-apply.js';
+
+import { archiveXml } from '../ibkr/flex-apply.js';
+import { mapFlexDocToStatement } from '../ibkr/flex-map.js';
+import type { BrokerStatement } from './statement.js';
 import { formatBrokerSkip, type BrokerApplyResult } from './statement.js';
 import {
   createFlexTransport,
@@ -471,17 +474,18 @@ function writeLastSync(
     last_sync = okSync;
   }
   const map = { ...readBrokerConnections(state) };
-  const prev = map[id] ?? { enabled: true, credentials: {} };
+  const prev = map[id];
+  if (!prev) throw new Error('Broker connection disappeared before recording sync');
   map[id] = { ...prev, last_sync };
   persistBrokerConnections(state, map);
-  saveState(state);
 }
 
 export async function syncBrokerConnection(
-  state: InvestorState,
+  snapshot: InvestorSnapshot,
   id: string,
   transport?: FlexTransport,
 ): Promise<{ view: PublicConnectorView; applied: BrokerApplyResult }> {
+  const { state } = snapshot;
   const slug = state.user.slug;
   if (!slug) throw new Error('Investor state has no user.slug.');
   const key = inflightKey(slug, id);
@@ -501,65 +505,41 @@ export async function syncBrokerConnection(
     const queryId = conn.credentials[queryField];
     const token = conn.credentials.token;
     if (!queryId || !token) throw new BrokerNotConfiguredError();
+    let xml: Buffer;
+    let statement: BrokerStatement;
     try {
-      const xml = await fetchFlexStatement(
-        { token, queryId },
-        transport ?? createFlexTransport(),
-      );
-      let applied: BrokerApplyResult;
+      xml = await fetchFlexStatement({ token, queryId }, transport ?? createFlexTransport());
       try {
-        const doc = parseFlexQueryXml(xml);
-        applied = await applyFlexStatement(state, doc, xml);
-      } catch (parseErr) {
-        const asOf = new Date().toISOString().slice(0, 10);
-        const parseMessage = parseErr instanceof Error ? parseErr.message : String(parseErr);
-        const triage = archiveBrokerTriage({
-          slug,
-          connectorId: id,
-          body: xml,
-          asOf,
-          error: parseMessage,
-        });
-        const inv = triage.case.inventory;
-        const invLine = `triage ${id}/${triage.case.id} looks_like=${inv.looks_like} cash_currencies=${inv.cash_currencies.join(',') || '(none)'} position_qty_attr=${inv.position_qty_attr}`;
         const spec = loadBrokerParserSpec(slug, id);
-        if (!spec) {
-          throw new Error(
-            `${parseMessage} ${invLine}. Raw at ${triage.rawPath}. list_broker_triage then read_broker_raw, or save_broker_parser / apply_broker_statement.`,
-          );
-        }
-        try {
-          applied = await applyBrokerStatement(
-            state,
-            id,
-            runCsvTablesSpec(xml.toString('utf8'), spec, def.channel),
-            xml,
-          );
-        } catch (specErr) {
-          throw new Error(
-            `${specErr instanceof Error ? specErr.message : String(specErr)} ${invLine}. Raw at ${triage.rawPath}. Catalog parse: ${parseMessage}`,
-          );
-        }
+        // A saved parser is an explicit user configuration, not a recovery path
+        // for failed database writes.
+        statement = spec
+          ? runCsvTablesSpec(xml.toString('utf8'), spec, def.channel)
+          : mapFlexDocToStatement(parseFlexQueryXml(xml), def.channel);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const triage = archiveBrokerTriage({ slug, connectorId: id, body: xml,
+          asOf: new Date().toISOString().slice(0, 10), error: message });
+        throw new Error(`${message}. Raw statement archived at ${triage.rawPath}.`);
       }
-      const last_sync: BrokerConnectionLastSync = {
-        at,
-        ok: true,
-        as_of: applied.asOf,
-        account_id: applied.accountId,
-        lots_upserted: applied.lotsUpserted,
-        lots_removed: applied.lotsRemoved,
-      };
-      if (applied.skipped.length > 0) {
-        last_sync.not_imported = applied.skipped.map(formatBrokerSkip);
-      }
-      writeLastSync(state, id, last_sync, secrets);
-      const map = readBrokerConnections(state);
-      return { view: publicConnectorView(def, map[id]), applied };
-    } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
       writeLastSync(state, id, { at, ok: false, error: message }, secrets);
-      throw e;
+      await saveInvestor(snapshot);
+      throw error;
     }
+    const archivePath = archiveXml(slug, xml, statement.as_of);
+    // Portfolio, cash, metrics and success status use the same revision-checked
+    // aggregate write. Persistence errors propagate without a second attempt.
+    const applied = await applyBrokerStatement(snapshot, id, statement, xml, result => {
+      const last_sync: BrokerConnectionLastSync = { at, ok: true, as_of: result.asOf,
+        account_id: result.accountId, lots_upserted: result.lotsUpserted, lots_removed: result.lotsRemoved };
+      if (result.skipped.length) last_sync.not_imported = result.skipped.map(formatBrokerSkip);
+      writeLastSync(state, id, last_sync, secrets);
+    });
+    applied.archivePath = archivePath;
+    return { view: publicConnectorView(def, readBrokerConnections(state)[id]), applied };
+
   } finally {
     inflight.delete(key);
   }

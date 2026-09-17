@@ -7,9 +7,23 @@ import { Router, type Request, type Response } from 'express';
 import { targetSlug, type AuthUser } from 'utarus';
 import { loadDashboardForSlug } from './dashboard-data.js';
 import { loadWatchlistForSlug } from './watchlist-data.js';
+import { loadInvestor } from '../state/investor-store.js';
+import { buildExecutionJournal } from '../brokers/option-executions.js';
 
 export function createDashboardApiRouter(): Router {
   const router = Router();
+
+  router.get('/trades', async (req: Request, res: Response) => {
+    try {
+      const user = (req as Request & { user?: AuthUser }).user;
+      if (!user?.slug) { res.status(401).json({ error: 'unauthorized', message: 'No session user.' }); return; }
+      const snapshot = await loadInvestor(await targetSlug(req, user));
+      res.json(buildExecutionJournal(snapshot.state.option_executions));
+    } catch (e) {
+      console.error('Execution journal failed:', e);
+      res.status(500).json({ error: 'journal_failed', message: e instanceof Error ? e.message : String(e) });
+    }
+  });
 
   router.get('/dashboard', async (req: Request, res: Response) => {
     try {
@@ -18,7 +32,7 @@ export function createDashboardApiRouter(): Router {
         res.status(401).json({ error: 'unauthorized', message: 'No session user.' });
         return;
       }
-      const slug = targetSlug(req, user);
+      const slug = await targetSlug(req, user);
       const payload = await loadDashboardForSlug(slug);
       res.json(payload);
     } catch (e) {
@@ -35,7 +49,7 @@ export function createDashboardApiRouter(): Router {
         res.status(401).json({ error: 'unauthorized', message: 'No session user.' });
         return;
       }
-      const slug = targetSlug(req, user);
+      const slug = await targetSlug(req, user);
       const payload = await loadWatchlistForSlug(slug);
       res.json(payload);
     } catch (e) {

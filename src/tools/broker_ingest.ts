@@ -32,7 +32,8 @@ export function createListBrokerTriageTool(): AgentTool {
     execute: async (_id, raw) => {
       const p = raw as ChannelIds & { connector_id?: string };
       try {
-        const state = resolveInvestorFromChannel(p);
+        const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
         const slug = state.user.slug;
         if (!slug) throw new Error('Investor state has no user.slug.');
         const cases = listBrokerTriageCases(slug, p.connector_id?.trim());
@@ -64,7 +65,8 @@ export function createReadBrokerRawTool(): AgentTool {
     execute: async (_id, raw) => {
       const p = raw as ChannelIds & { connector_id: string; path?: string };
       try {
-        const state = resolveInvestorFromChannel(p);
+        const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
         const slug = state.user.slug;
         if (!slug) throw new Error('Investor state has no user.slug.');
         const got = readBrokerRawFile(slug, p.connector_id.trim(), p.path);
@@ -100,7 +102,8 @@ export function createSaveBrokerParserTool(): AgentTool {
     execute: async (_id, raw) => {
       const p = raw as ChannelIds & { connector_id: string; spec: unknown };
       try {
-        const state = resolveInvestorFromChannel(p);
+        const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
         const slug = state.user.slug;
         if (!slug) throw new Error('Investor state has no user.slug.');
         const spec = assertCsvTablesSpec(p.spec);
@@ -133,7 +136,8 @@ export function createParseBrokerRawTool(): AgentTool {
     execute: async (_id, raw) => {
       const p = raw as ChannelIds & { connector_id: string; path?: string; spec?: unknown };
       try {
-        const state = resolveInvestorFromChannel(p);
+        const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
         const slug = state.user.slug;
         if (!slug) throw new Error('Investor state has no user.slug.');
         const id = p.connector_id.trim();
@@ -175,9 +179,10 @@ export function createApplyBrokerStatementTool(): AgentTool {
     execute: async (_id, raw) => {
       const p = raw as ChannelIds & { connector_id: string; statement: unknown };
       try {
-        const state = resolveInvestorFromChannel(p);
+        const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
         const doc = assertBrokerStatement(p.statement);
-        const applied = await applyBrokerStatement(state, p.connector_id.trim(), doc);
+        const applied = await applyBrokerStatement(snapshot, p.connector_id.trim(), doc);
         const skip =
           applied.skipped.length > 0
             ? [`Not imported (${applied.skipped.length}):`, ...applied.skipped.map((s) => `- ${formatBrokerSkip(s)}`)]

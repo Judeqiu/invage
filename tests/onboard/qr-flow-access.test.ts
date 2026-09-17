@@ -1,3 +1,4 @@
+import { useTestDatabase } from '../helpers/database.js';
 /**
  * Regression: investor.lextok.com QR onboarding must stay independent of
  * framework invite/demo access-gate changes.
@@ -18,10 +19,13 @@ import { handleBindCommand } from '../../src/onboard/bind-command.js';
 import { onboardRouter } from '../../src/onboard/api.js';
 import { invageExtension } from '../../src/extension.js';
 
+const testDatabase = await useTestDatabase();
+
 const USERS_DIR = join(resolveDataRoot(), 'users');
 const DRIVE_DIR = join(resolveDataRoot(), 'drive');
 
-function wipeState() {
+async function wipeState() {
+  await testDatabase.clearUsers();
   const path = tokensFilePath();
   if (existsSync(path)) rmSync(path, { force: true });
   for (const dir of [USERS_DIR, DRIVE_DIR]) {
@@ -85,7 +89,7 @@ describe('landing + /bind isolation from framework access gate', () => {
     });
 
     expect(reply).toMatch(/registered with WalletStreet/i);
-    const investor = resolveUserBySlackUser(slackUserId);
+    const investor = await resolveUserBySlackUser(slackUserId);
     expect(investor).not.toBeNull();
     expect(investor!.profile.display_name).toBe('LexTok Investor');
   });

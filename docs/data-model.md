@@ -13,6 +13,16 @@ How Invester stores and isolates data — from user identity to portfolio holdin
 
 ## Overview
 
+### Execution history (Victor branch, September 2026)
+
+The current branch persists investor state through `src/state/investor-store.ts` using Utarus PostgreSQL state and optimistic revisions. The YAML paths below describe the legacy model.
+
+`option_executions?: OptionExecution[]` is durable, broker-sourced option execution history, independent of `portfolio` snapshots. The canonical `BrokerStatement` may include this same field. See `src/brokers/option-executions.ts` for the validated shape. Monetary amounts, strike, multiplier and quantity are decimal strings; exact signed commission is retained. Gross premium is signed proceeds and net premium is proceeds plus signed commission, before taxes. Amounts are never converted to JavaScript floating-point values for journal arithmetic.
+
+Identity is `(channel, account_id, execution_id)`. Repeated identical executions merge once; conflicts fail before broker snapshot writes. `executed_at` is the broker-local clock, not an inferred UTC instant. Missing history is unavailable, not zero trades. Normal sync merges executions while updating holdings; historical XML uploads merge history only and cannot replace current cash or positions. No one-year purge is applied to this collection.
+
+The journal’s daily short-option premium includes only sell-to-open and buy-to-close executions, grouped by broker date, account, channel and currency. These totals describe imported history only, not realized P&L. A closing execution is not proof that the entire contract position is closed, and roll relationships are not guessed. Snapshot holdings remain the source for active exposure. Historical opening spot prices are unavailable until explicitly sourced.
+
 ```
 data/
 ├── invites.yaml              # Invite codes (INV-XXXXXXXX)

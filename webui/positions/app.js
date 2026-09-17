@@ -54,7 +54,7 @@ function render() {
     'Every equity and fund lot currently on the books. Options are on Trades. Channel filter uses recorded custody tags only.',
   );
   const channels = [...new Set(all.map((p) => p.channel))].sort();
-  const head = ['Ticker', 'Instrument', 'Units', 'Avg cost', 'Last', 'Market value', 'Unrealized P&L', 'Return', 'Channel'];
+  const head = ['Ticker', 'Instrument', 'Units', 'Avg cost', 'Total cost', 'Last', 'Market value', 'Unrealized P&L', 'Return', 'Channel'];
   el.table1.innerHTML = `
     <div class="metric-card table-card">
       <div class="filters" style="padding:0.75rem 1.1rem;border-bottom:1px solid var(--border)">
@@ -77,6 +77,7 @@ function render() {
                         <td>${esc(p.instrument)}</td>
                         <td class="num">${p.units.toLocaleString()}</td>
                         <td class="num">${money(p.avgCost, ccy)}</td>
+                        <td class="num">${money(p.cost, ccy)}</td>
                         <td class="num">${money(p.price, ccy)}</td>
                         <td class="num">${money(p.value, ccy)}</td>
                         <td class="num ${toneClass(p.pl)}">${signedMoney(p.pl, ccy)}</td>

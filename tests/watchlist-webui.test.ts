@@ -1,8 +1,10 @@
+import { useTestDatabase, createInvestorFixture } from './helpers/database.js';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync } from 'fs';
+import { mkdtempSync, rmSync, mkdirSync, existsSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { stringify } from 'yaml';
+
+const testDatabase = await useTestDatabase();
 
 const dataRoot = mkdtempSync(join(tmpdir(), 'invage-watch-webui-'));
 process.env.UTARUS_LOADED_BY_HOST = '1';
@@ -13,12 +15,10 @@ const { createInvageWebUi, invageWebUiStaticDir } = await import(
   '../src/webapp/invage-webui.js'
 );
 
-beforeAll(() => {
+beforeAll(async () => {
   const usersDir = join(dataRoot, 'users');
   mkdirSync(usersDir, { recursive: true });
-  writeFileSync(
-    join(usersDir, 'dana.yaml'),
-    stringify({
+  await createInvestorFixture({
       user: {
         id: '00000000-0000-4000-8000-000000000051',
         slug: 'dana',
@@ -48,12 +48,8 @@ beforeAll(() => {
           ],
         },
       },
-    }),
-    'utf-8',
-  );
-  writeFileSync(
-    join(usersDir, 'erin.yaml'),
-    stringify({
+    });
+  await createInvestorFixture({
       user: {
         id: '00000000-0000-4000-8000-000000000061',
         slug: 'erin',
@@ -63,9 +59,7 @@ beforeAll(() => {
       },
       profile: { display_name: 'Erin', contact_email: 'e@example.com' },
       log: [{ ts: '2026-08-16', action: 'created' }],
-    }),
-    'utf-8',
-  );
+    });
 });
 
 afterAll(() => {
@@ -111,7 +105,7 @@ describe('loadWatchlistForSlug', () => {
 });
 
 describe('createInvageWebUi watch list', () => {
-  it('registers watch list nav, iframe route, and static page', () => {
+  it('registers watch list nav, iframe route, and static page', async () => {
     const webUi = createInvageWebUi();
     expect(webUi.nav?.some((n) => n.path === '/watchlist' && n.label === 'Watch List')).toBe(
       true,

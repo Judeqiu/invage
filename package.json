@@ -1,7 +1,7 @@
 {
   "name": "invage",
   "version": "0.3.1",
-  "description": "AI investment portfolio analyst. Built on the Utarus agent framework (BinDrive, Telegram, per-user YAML state).",
+  "description": "AI investment portfolio analyst. Built on the Utarus agent framework (BinDrive, Telegram, PostgreSQL personal user state).",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
@@ -29,8 +29,9 @@
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "pg": "^8.23.0",
+    "saxes": "^6.0.0",
     "tsx": "^4.22.4",
-    "utarus": "github:Judeqiu/utarus#v3.12.0",
+    "utarus": "github:Judeqiu/utarus#v4.0.0-beta.13",
     "yahoo-finance2": "^3.15.3",
     "yaml": "^2.9.0"
   },

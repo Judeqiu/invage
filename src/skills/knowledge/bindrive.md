@@ -4,9 +4,10 @@ File portal for each Utarus user. Files live under `data/drive/<user-slug>/`.
 
 ## Auth
 
-- Each user has `user.auth_token` in their YAML (created by invite redeem / init_user).
-- BinDrive tools take `token` (that `auth_token`) — identity comes from the token; there is no `owner_slug` arg (utarus ≥ v3.0.0-beta.76).
-- Prefer `get_user` / resolve from Telegram context to obtain the auth_token — never invent tokens.
+- The host binds every BinDrive tool to the authenticated user. Authentication is automatic.
+- Supply only the file arguments. There is no token or account-selection argument.
+- Never ask the user for credentials, another login, or portal setup. Do not fetch, invent, or pass tokens (including redaction placeholders).
+- Existing chats and specialist handoffs use the same authenticated account. BinDrive is unavailable in incognito sessions.
 
 ## Portfolio reports
 

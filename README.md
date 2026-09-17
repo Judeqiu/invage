@@ -4,11 +4,11 @@ Invage is a **domain agent** for investment portfolio analysis. It is built the 
 
 | Layer | Source |
 |-------|--------|
-| Framework (Telegram + Slack + CLI + **WebUI chat**, invite/admin, user YAML, skills, firecrawl) | [`utarus`](https://github.com/Judeqiu/utarus) |
+| Framework (Telegram + Slack + CLI + **WebUI chat**, invite/admin, PostgreSQL user state, skills, firecrawl) | [`utarus`](https://github.com/Judeqiu/utarus) |
 | BinDrive file portal + WebUI SPA | **Utarus** (`framework.startWebApp` / `bindrive_*`) |
 | Domain (portfolio, Yahoo Finance, 3-axis analysis, reports, landing register) | **this repo** |
 
-Channels (same agent process, shared user/portfolio YAML):
+Channels (same agent process, shared PostgreSQL user/portfolio state):
 
 | Channel | Pattern | Env |
 |---------|---------|-----|
@@ -28,16 +28,16 @@ invage (domain)  ──depends on──►  utarus (framework + BinDrive + WebUI
      └── src/onboard/*        landing register + Slack /bind handshake
 ```
 
-Pin `utarus` to a commit that includes the WebUI (`src/webapp/chat`, `web/` SPA):
+Pinned framework release:
 
 ```json
-"utarus": "github:Judeqiu/utarus#<commit-with-webui>"
+"utarus": "github:Judeqiu/utarus#v4.0.0-beta.13"
 ```
 ---
 
 ## Prerequisites
 
-- Node.js 20+
+- Node.js 22.13+ and PostgreSQL 18
 - DeepSeek API key
 - Optional: Telegram bot token, `gws` CLI for email reports
 
@@ -74,13 +74,41 @@ WEBAPP_ADMIN_CREDENTIALS={"admin":"change-me"}
 UTARUS_REPORTS_URL=http://localhost:3001
 ```
 
+## Database lifecycle (v4 personal mode)
+
+Set every `UTARUS_DATABASE_*` value in `.env.example`, including a dedicated
+32-byte encryption key. Keep the same key available for restoration. Initialize
+an empty database with `node --env-file=.env node_modules/utarus/dist/database/cli.js initialize personal`,
+then run the same command with `check personal` before starting either service.
+For existing users, initialization alone is **not a migration**.
+
+User credentials, profiles, portfolios, cash, deposits, playbooks and logs live
+in one revisioned SQL aggregate. Mutations use `loadInvestor` / `saveInvestor`;
+stale revisions fail. Reports, drive files, chat/session history and knowledge
+remain under `UTARUS_DATA_ROOT`. Old YAML is recovery material, not a writable
+v4 user store. Both processes bind an explicit personal-mode database runtime
+and drain work before closing it.
+
+The beta.42 migration runbook is [here](docs/plans/2026-09-15-v4-migration.md).
+It preserves personal accounts and requires full-state reconciliation plus a
+restorable code/files/database/key backup. Optional `INVAGE_BOOKS_DATABASE_URL`
+must remain unset for this migration: cross-database journal/user writes are
+not a single transaction.
+
+Database tests require an isolated `UTARUS_TEST_DATABASE_URL` naming
+`utarus_test_admin`; the test role creates and drops uniquely named test databases.
+Run `npm test` plus `UTARUS_LOADED_BY_HOST=1 node --test tests/migration/*.test.mjs`.
+
 ## Run
 
 ```bash
 # Agent: CLI + any configured chat interfaces
 npm run dev
 
-# Production: both bots, no CLI
+# Web-only production (Velovest): HTTP + scheduler, no CLI
+WEB_ONLY=true WEBAPP_PORT=3030 npm run dev
+
+# Production: configured bots, no CLI
 BOT_ONLY=true npm run dev
 
 # Telegram only / Slack only
@@ -128,9 +156,9 @@ src/
   index.ts              # dotenv → createFramework → Telegram + Slack + CLI
   extension.ts          # DomainExtension (purpose, tools, skills, enrichMessage)
   skills.ts             # registerDomainSkill for investment-analysis + bindrive
-  admin-bootstrap.ts    # TELEGRAM_ADMIN_IDS + SLACK_ADMIN_IDS → user YAML
+  admin-bootstrap.ts    # validate migrated admin identities
   webapp/server.ts      # re-export startBinDrive from utarus
-  state/portfolio-state.ts   # portfolio map on user YAML (tg + slack resolve)
+  state/portfolio-state.ts   # portfolio domain model; investor-store.ts persists revisions
   market/               # Yahoo Finance + analyzer
   tools/                # domain tools (telegram_user_id OR slack_user_id)
   report/               # HTML report template
@@ -144,7 +172,7 @@ src/
 
 | Tool | Role |
 |------|------|
-| `add_holding` / `update_holding` / `remove_holding` / `get_portfolio` / `clear_portfolio` | Portfolio CRUD (equities + options call/put) on `data/users/<slug>.yaml` |
+| `add_holding` / `update_holding` / `remove_holding` / `get_portfolio` / `clear_portfolio` | Portfolio CRUD (equities + options call/put) in the revisioned PostgreSQL user aggregate |
 | `portfolio_analyzer` | 3-axis analysis + market summary |
 | `save_report` | HTML report → BinDrive + signed URL (`kind=analysis` default, or `kind=dashboard` for value-change dashboard) |
 | `save_snapshot` / `list_snapshots` | Dated P/L JSON snapshots (feed dashboard history) |

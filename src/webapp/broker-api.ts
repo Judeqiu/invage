@@ -1,10 +1,12 @@
+import { saveInvestor, type InvestorSnapshot } from '../state/investor-store.js';
 /**
  * Session-authenticated broker connection APIs.
  * Not agent tools. Principal is loadSessionState(req) only — no targetSlug.
  */
 
-import { Router, type Request, type Response } from 'express';
-import { loadSessionState, saveState, type AuthUser } from 'utarus';
+import { Router, text as textBody, type Request, type Response } from 'express';
+import { importOptionExecutions } from '../brokers/import-executions.js';
+import { loadSessionState, type AuthUser } from 'utarus';
 import {
   ChannelOffError,
   BrokerNotConfiguredError,
@@ -29,12 +31,13 @@ function connectorIdParam(req: Request): string {
   return id;
 }
 
-function sessionInvestor(req: Request): InvestorState {
+async function sessionInvestor(req: Request): Promise<InvestorSnapshot> {
   const user = (req as Request & { user?: AuthUser }).user;
   if (!user?.slug) {
     throw Object.assign(new Error('No session user.'), { httpStatus: 401 });
   }
-  return loadSessionState(req) as InvestorState;
+  const snapshot = await loadSessionState(req);
+  return { state: snapshot.state as InvestorState, revision: snapshot.revision };
 }
 
 function jsonError(
@@ -99,9 +102,25 @@ function mapStoreError(e: unknown, res: Response): boolean {
 export function createBrokerConnectionsRouter(): Router {
   const router = Router();
 
-  router.get('/broker-connections', (req: Request, res: Response) => {
+  router.post('/trades/import', textBody({ type: 'application/xml', limit: '10mb' }), async (req: Request, res: Response) => {
     try {
-      const state = sessionInvestor(req);
+      const snapshot = await sessionInvestor(req);
+      if (typeof req.body !== 'string' || !req.body.trim()) {
+        res.status(400).json({ error: 'invalid_xml', message: 'Upload an Activity Flex XML as application/xml.' });
+        return;
+      }
+      res.json(await importOptionExecutions(snapshot, req.body));
+    } catch (e) {
+      console.error('Execution import failed:', e);
+      const status = (e as { httpStatus?: number }).httpStatus;
+      res.status(status === 401 ? 401 : 400).json({ error: 'execution_import_failed', message: e instanceof Error ? e.message : String(e) });
+    }
+  });
+
+  router.get('/broker-connections', async (req: Request, res: Response) => {
+    try {
+      const snapshot = await sessionInvestor(req);
+      const { state } = snapshot;
       const connectors = publicCatalog(state);
       res.json({
         egress_ipv4: readFlexEgressIpv4(),
@@ -118,9 +137,10 @@ export function createBrokerConnectionsRouter(): Router {
     }
   });
 
-  router.patch('/broker-connections/:id', (req: Request, res: Response) => {
+  router.patch('/broker-connections/:id', async (req: Request, res: Response) => {
     try {
-      const state = sessionInvestor(req);
+      const snapshot = await sessionInvestor(req);
+      const { state } = snapshot;
       const id = connectorIdParam(req);
       const body = req.body as PatchBrokerConnectionBody;
       if (body == null || typeof body !== 'object' || Array.isArray(body)) {
@@ -136,7 +156,7 @@ export function createBrokerConnectionsRouter(): Router {
           enabled: result.view.enabled,
           token_set: result.tokenSet,
         });
-        saveState(state);
+        await saveInvestor(snapshot);
       }
       res.json(result.view);
     } catch (e) {
@@ -156,9 +176,10 @@ export function createBrokerConnectionsRouter(): Router {
 
   router.post('/broker-connections/:id/sync', async (req: Request, res: Response) => {
     try {
-      const state = sessionInvestor(req);
+      const snapshot = await sessionInvestor(req);
+      const { state } = snapshot;
       const id = connectorIdParam(req);
-      const { view, applied } = await syncBrokerConnection(state, id);
+      const { view, applied } = await syncBrokerConnection(snapshot, id);
       res.json({
         ...view,
         apply: {
