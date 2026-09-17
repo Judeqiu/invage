@@ -102,10 +102,22 @@
     }
     button.primary { background: #1c1917; color: #fff; border-color: #1c1917; }
     button:disabled { opacity: 0.45; cursor: not-allowed; }
+    .actions a {
+      font-size: 11px;
+      border-radius: 8px;
+      border: 1px solid #e7e5e4;
+      background: #fafaf9;
+      padding: 6px 10px;
+      color: #1c1917;
+      text-decoration: none;
+    }
     .last { margin-top: 8px; font-size: 11px; color: #57534e; }
   </style>
 </head>
 <body>
+  <p class="hint" style="margin-bottom:10px">
+    <a href="/brokers/guide" target="_parent">Setup guide</a> — how to get Interactive Brokers, Tiger, and MooMoo credentials.
+  </p>
   <div id="error" class="error" hidden></div>
   <div id="list"></div>
   <script src="app.js"></script>

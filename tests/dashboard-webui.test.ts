@@ -151,6 +151,10 @@ describe('createInvageWebUi', () => {
     expect(route?.iframeSrc).toBe('/domain-assets/invage/brokers/index.html');
     expect(existsSync(join(invageWebUiStaticDir(), 'brokers', 'index.html'))).toBe(true);
     expect(existsSync(join(invageWebUiStaticDir(), 'brokers', 'app.js'))).toBe(true);
+    const guide = webUi.routes?.find((r) => r.path === '/brokers/guide');
+    expect(guide?.iframeSrc).toBe('/domain-assets/invage/brokers/guide/index.html');
+    expect(existsSync(join(invageWebUiStaticDir(), 'brokers', 'guide', 'index.html'))).toBe(true);
+    expect(existsSync(join(invageWebUiStaticDir(), 'brokers', 'guide', 'app.js'))).toBe(true);
   });
 
   it('registers Positions, Trades, Insights report pages', async () => {

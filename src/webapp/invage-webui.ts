@@ -200,6 +200,12 @@ export function createInvageWebUi(): DomainWebUiExtension {
         iframeSrc: '/domain-assets/invage/brokers/index.html',
         title: 'Brokers',
       },
+      {
+        path: '/brokers/guide',
+        pageKind: 'iframe',
+        iframeSrc: '/domain-assets/invage/brokers/guide/index.html',
+        title: 'Connect a broker',
+      },
     ],
     settingsSections: [
       {

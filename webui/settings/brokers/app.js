@@ -208,6 +208,7 @@ function render() {
       <div class="actions">
         <button type="button" class="primary" data-manage="${escapeHtml(conn.id)}" ${inFlight ? 'disabled' : ''}>${escapeHtml(primaryLabel(conn.status))}</button>
         ${showSync ? `<button type="button" data-sync="${escapeHtml(conn.id)}" ${syncDisabled ? 'disabled' : ''}>Sync now</button>` : ''}
+        <a href="/brokers/guide#${encodeURIComponent(conn.id)}" target="_parent">Setup guide</a>
       </div>
       ${form.expanded ? managePanel(conn) : ''}
     `;

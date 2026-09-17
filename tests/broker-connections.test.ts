@@ -379,6 +379,7 @@ describe('createInvageWebUi brokers section', () => {
     expect(ui.routes?.some((r) => r.path === '/brokers' && r.iframeSrc?.includes('/brokers/'))).toBe(
       true,
     );
+    expect(ui.routes?.some((r) => r.path === '/brokers/guide')).toBe(true);
   });
 
   it('Brokers page treats Tiger and MooMoo as live catalog cards, not coming-soon', () => {
@@ -388,6 +389,11 @@ describe('createInvageWebUi brokers section', () => {
     expect(js).toMatch(/Webull/);
     expect(js).not.toMatch(/name:\s*'Tiger Brokers'/);
     expect(js).not.toMatch(/name:\s*'MooMoo'/);
+    const html = readFileSync(join(process.cwd(), 'webui/brokers/index.html'), 'utf8');
+    expect(html).toContain('/brokers/guide');
+    expect(
+      readFileSync(join(process.cwd(), 'webui/brokers/guide/index.html'), 'utf8'),
+    ).toContain('Connect a brokerage account');
     const settings = readFileSync(join(process.cwd(), 'webui/settings/brokers/app.js'), 'utf8');
     expect(settings).toMatch(/payload\.connectors/);
     expect(settings).toMatch(/data-manage/);
