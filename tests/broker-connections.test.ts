@@ -371,7 +371,7 @@ describe('createInvageWebUi brokers section', () => {
         description: 'Connect read-only brokerage channels',
         icon: 'landmark',
         iframeSrc: '/domain-assets/invage/settings/brokers/index.html',
-        iframeHeightPx: 400,
+        iframeHeightPx: 760,
       },
     ]);
     expect(ui.apiRouters?.length).toBe(2);
@@ -379,5 +379,28 @@ describe('createInvageWebUi brokers section', () => {
     expect(ui.routes?.some((r) => r.path === '/brokers' && r.iframeSrc?.includes('/brokers/'))).toBe(
       true,
     );
+  });
+
+  it('Brokers page treats Tiger and MooMoo as live catalog cards, not coming-soon', () => {
+    const js = readFileSync(join(process.cwd(), 'webui/brokers/app.js'), 'utf8');
+    expect(js).toMatch(/payload\.connectors/);
+    expect(js).toMatch(/UPCOMING/);
+    expect(js).toMatch(/Webull/);
+    expect(js).not.toMatch(/name:\s*'Tiger Brokers'/);
+    expect(js).not.toMatch(/name:\s*'MooMoo'/);
+    const settings = readFileSync(join(process.cwd(), 'webui/settings/brokers/app.js'), 'utf8');
+    expect(settings).toMatch(/payload\.connectors/);
+    expect(settings).toMatch(/data-manage/);
+  });
+
+  it('GET catalog lists IBKR, Tiger Brokers, and MooMoo as live connectors', () => {
+    const views = publicCatalog(investor());
+    expect(views.map((v) => v.id)).toEqual(['ibkr', 'tiger', 'moomoo']);
+    expect(views.map((v) => v.display_name)).toEqual([
+      'Interactive Brokers',
+      'Tiger Brokers',
+      'MooMoo',
+    ]);
+    expect(views.every((v) => v.status === 'off')).toBe(true);
   });
 });

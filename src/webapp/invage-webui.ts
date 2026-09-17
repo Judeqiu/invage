@@ -208,7 +208,7 @@ export function createInvageWebUi(): DomainWebUiExtension {
         description: 'Connect read-only brokerage channels',
         icon: 'landmark',
         iframeSrc: '/domain-assets/invage/settings/brokers/index.html',
-        iframeHeightPx: 400,
+        iframeHeightPx: 760,
       },
     ],
     apiRouters: [

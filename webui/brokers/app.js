@@ -221,7 +221,7 @@ function render() {
       <div class="card-head">
         <div>
           <div class="card-name">${escapeHtml(conn.display_name)}</div>
-          <div class="card-sub">${escapeHtml(lastSyncSub(conn))}</div>
+          <div class="card-sub">${escapeHtml((conn.capability || '').split('.')[0])}. ${escapeHtml(lastSyncSub(conn))}</div>
         </div>
         <span class="${pillClass(conn.status)}">${escapeHtml(statusLabel(conn.status))}</span>
       </div>

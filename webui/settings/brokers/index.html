@@ -25,12 +25,16 @@
       white-space: pre-wrap;
     }
     .hint { color: #78716c; font-size: 11px; }
-    .connector + .connector {
-      margin-top: 14px;
-      padding-top: 14px;
-      border-top: 1px solid #e7e5e4;
+    .connector {
+      border: 1px solid #e7e5e4;
+      border-radius: 10px;
+      padding: 12px;
+      margin-top: 10px;
     }
+    .connector:first-child { margin-top: 0; }
+    .card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
     .title { font-size: 14px; font-weight: 600; }
+    .manage { margin-top: 10px; padding-top: 10px; border-top: 1px solid #e7e5e4; }
     .cap {
       color: #57534e;
       font-size: 11px;

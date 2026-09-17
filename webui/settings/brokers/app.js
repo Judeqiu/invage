@@ -7,7 +7,7 @@ const el = {
 
 /** @type {object | null} */
 let payload = null;
-/** @type {Record<string, { enabled: boolean, values: Record<string, string>, dirty: boolean }>} */
+/** @type {Record<string, { enabled: boolean, values: Record<string, string>, dirty: boolean, expanded: boolean }>} */
 let forms = {};
 let inFlight = false;
 let abortWait = false;
@@ -55,7 +55,12 @@ async function load() {
   payload = await readJson(res);
   forms = {};
   for (const conn of payload.connectors) {
-    forms[conn.id] = { enabled: conn.enabled, values: {}, dirty: false };
+    forms[conn.id] = {
+      enabled: conn.enabled,
+      values: {},
+      dirty: false,
+      expanded: conn.status === 'needs_credentials' || conn.status === 'error',
+    };
   }
   abortWait = false;
   render();
@@ -85,6 +90,14 @@ function hrefLabel(conn) {
   return 'OpenAPI docs';
 }
 
+function primaryLabel(status) {
+  if (status === 'connected') return 'Manage';
+  if (status === 'error') return 'Reconnect';
+  if (status === 'needs_credentials') return 'Finish setup';
+  if (status === 'off') return 'Connect';
+  throw new Error(`Unknown connector status: ${status}`);
+}
+
 function fieldInput(conn, field) {
   const form = forms[conn.id];
   const cred = conn.credentials[field.id];
@@ -106,8 +119,10 @@ function fieldInput(conn, field) {
   const control = useTextarea
     ? `<textarea id="${inputId}" data-conn="${escapeHtml(conn.id)}" data-field="${escapeHtml(field.id)}" data-secret="${field.type === 'secret' ? '1' : '0'}" autocomplete="off" placeholder="${escapeAttr(placeholder)}" ${inFlight ? 'disabled' : ''}>${escapeHtml(field.type === 'secret' ? '' : value)}</textarea>`
     : `<input id="${inputId}" data-conn="${escapeHtml(conn.id)}" data-field="${escapeHtml(field.id)}" data-secret="${field.type === 'secret' ? '1' : '0'}" type="${type}" autocomplete="off" value="${escapeAttr(value)}" placeholder="${escapeAttr(placeholder)}" ${inFlight ? 'disabled' : ''} />`;
+  const help = field.help ? `<span class="help">${escapeHtml(field.help)}</span>` : '';
   return `
     <label class="field" for="${inputId}">${escapeHtml(field.label)}
+      ${help}
       ${control}
     </label>`;
 }
@@ -138,27 +153,15 @@ function lastSyncLine(conn) {
   return bits.join(' · ');
 }
 
-function render() {
-  if (!payload) return;
-  el.list.replaceChildren();
-  for (const conn of payload.connectors) {
-    const form = forms[conn.id];
-    const wrap = document.createElement('div');
-    wrap.className = 'connector';
-    const saveDisabled = inFlight;
-    const syncDisabled =
-      inFlight ||
-      abortWait ||
-      form.dirty ||
-      !serverSyncEnabled(conn);
-    const refreshDisabled = inFlight;
-    const syncHint = form.dirty ? 'Save before sync' : '';
-    wrap.innerHTML = `
-      <div class="title">${escapeHtml(conn.display_name)}</div>
-      <div class="cap">${escapeHtml(conn.capability)}</div>
+function managePanel(conn) {
+  const form = forms[conn.id];
+  const saveDisabled = inFlight;
+  const syncDisabled = inFlight || abortWait || form.dirty || !serverSyncEnabled(conn);
+  const syncHint = form.dirty ? 'Save before sync' : '';
+  return `
+    <div class="manage">
       <div class="row">
         <label class="toggle"><input type="checkbox" data-toggle="${escapeHtml(conn.id)}" ${form.enabled ? 'checked' : ''} ${inFlight ? 'disabled' : ''} /> Enable channel</label>
-        <span class="chip ${escapeHtml(conn.status)}">${escapeHtml(statusLabel(conn.status))}</span>
       </div>
       <p class="hint" style="margin:8px 0 0">Stops ${escapeHtml(conn.display_name)} pulls. Holdings tagged ${escapeHtml(conn.channel)} stay on the dashboard.</p>
       ${conn.credential_fields.map((f) => fieldInput(conn, f)).join('')}
@@ -175,8 +178,38 @@ function render() {
       <div class="actions">
         <button type="button" class="primary" data-save="${escapeHtml(conn.id)}" ${saveDisabled ? 'disabled' : ''}>Save</button>
         <button type="button" data-sync="${escapeHtml(conn.id)}" ${syncDisabled ? 'disabled' : ''}>Sync now</button>
-        <button type="button" data-refresh="1" ${refreshDisabled ? 'disabled' : ''}>Refresh</button>
+        <button type="button" data-refresh="1" ${inFlight ? 'disabled' : ''}>Refresh</button>
       </div>
+    </div>`;
+}
+
+function render() {
+  if (!payload) return;
+  el.list.replaceChildren();
+  if (!Array.isArray(payload.connectors) || payload.connectors.length === 0) {
+    showError('Broker catalog returned no connectors.');
+    return;
+  }
+  for (const conn of payload.connectors) {
+    const form = forms[conn.id];
+    if (!form) continue;
+    const wrap = document.createElement('div');
+    wrap.className = 'connector';
+    const showSync = serverSyncEnabled(conn) || conn.status === 'connected' || conn.status === 'error';
+    const syncDisabled = inFlight || abortWait || form.dirty || !serverSyncEnabled(conn);
+    wrap.innerHTML = `
+      <div class="card-head">
+        <div>
+          <div class="title">${escapeHtml(conn.display_name)}</div>
+          <div class="cap">${escapeHtml(conn.capability)}</div>
+        </div>
+        <span class="chip ${escapeHtml(conn.status)}">${escapeHtml(statusLabel(conn.status))}</span>
+      </div>
+      <div class="actions">
+        <button type="button" class="primary" data-manage="${escapeHtml(conn.id)}" ${inFlight ? 'disabled' : ''}>${escapeHtml(primaryLabel(conn.status))}</button>
+        ${showSync ? `<button type="button" data-sync="${escapeHtml(conn.id)}" ${syncDisabled ? 'disabled' : ''}>Sync now</button>` : ''}
+      </div>
+      ${form.expanded ? managePanel(conn) : ''}
     `;
     el.list.appendChild(wrap);
   }
@@ -184,6 +217,19 @@ function render() {
 }
 
 function bind() {
+  el.list.querySelectorAll('button[data-manage]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = btn.getAttribute('data-manage');
+      const conn = payload.connectors.find((c) => c.id === id);
+      if (!conn) throw new Error(`Unknown connector ${id}`);
+      if (conn.status === 'off' && !forms[id].enabled) {
+        forms[id].enabled = true;
+        forms[id].dirty = true;
+      }
+      forms[id].expanded = !forms[id].expanded;
+      render();
+    });
+  });
   el.list.querySelectorAll('input[data-toggle]').forEach((input) => {
     input.addEventListener('change', () => {
       const id = input.getAttribute('data-toggle');
@@ -197,7 +243,6 @@ function bind() {
       const field = input.getAttribute('data-field');
       forms[id].values[field] = input.value;
       forms[id].dirty = true;
-      render();
     });
   });
   el.list.querySelectorAll('button[data-save]').forEach((btn) => {
@@ -247,7 +292,7 @@ async function save(id) {
     const view = await readJson(res);
     const idx = payload.connectors.findIndex((c) => c.id === id);
     payload.connectors[idx] = view;
-    forms[id] = { enabled: view.enabled, values: {}, dirty: false };
+    forms[id] = { enabled: view.enabled, values: {}, dirty: false, expanded: true };
   } catch (e) {
     showError(e instanceof Error ? e.message : String(e));
   } finally {
