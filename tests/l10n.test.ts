@@ -22,6 +22,7 @@ const HOST_CHROME_KEYS = [
   'page.trades',
   'page.insights',
   'page.brokers',
+  'page.brokers.guide',
   'chat.empty.title',
   'chat.empty.body',
   'chat.empty.footer',

@@ -13,6 +13,7 @@
   "page.trades": "Trades",
   "page.insights": "Insights",
   "page.brokers": "Brokers",
+  "page.brokers.guide": "Connect a broker",
   "chat.empty.title": "Your investment analyst — with household books",
   "chat.empty.body": "I analyze portfolios (live marks, playbook, undervalued screens) and can keep household books for cash flow and big decisions like buying a house. Use the Dashboard tab for portfolio value, Watch List for playbook names, and Brokers to connect read-only IBKR Flex, Tiger, or MooMoo.",
   "chat.empty.footer": "Tables, code, and BinDrive reports render inline. Select text to quote it into your next message. Educational analysis only — not licensed financial advice."
