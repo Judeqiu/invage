@@ -34,6 +34,16 @@ describe('inventoryBrokerRaw', () => {
     expect(inv.account_id).toBe('U1234567');
   });
 
+  it('flags JSON statements without counting Flex tags', () => {
+    const inv = inventoryBrokerRaw(
+      JSON.stringify({ schema: 'invage.tiger.raw.v1', positions: { STK: { data: { items: [1, 2] } } } }),
+    );
+    expect(inv.looks_like).toBe('json');
+    expect(inv.position_qty_attr).toBe('none');
+    expect(inv.tags['positions.STK']).toBe(2);
+    expect(inv.tags.OpenPosition).toBeUndefined();
+  });
+
   it('flags CSV statements', () => {
     const inv = inventoryBrokerRaw(
       `"ClientAccountID","EndingCash"\n"U1","100"\n`,

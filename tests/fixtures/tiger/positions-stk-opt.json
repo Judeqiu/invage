@@ -1,0 +1,32 @@
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "items": [
+      {
+        "symbol": "AAPL",
+        "secType": "STK",
+        "market": "US",
+        "currency": "USD",
+        "positionQty": 10,
+        "averageCost": 180.5,
+        "latestPrice": 232.44,
+        "multiplier": 1
+      },
+      {
+        "symbol": "AAPL",
+        "secType": "OPT",
+        "market": "US",
+        "currency": "USD",
+        "positionQty": -1,
+        "averageCost": 295.8904,
+        "latestPrice": 2.10,
+        "multiplier": 100,
+        "expiry": "20260116",
+        "strike": 230,
+        "right": "PUT",
+        "underlyingSymbol": "AAPL"
+      }
+    ]
+  }
+}

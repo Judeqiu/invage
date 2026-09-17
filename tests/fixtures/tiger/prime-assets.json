@@ -1,0 +1,26 @@
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "account": "1234567",
+    "segments": {
+      "S": {
+        "currency": "USD",
+        "buyingPower": 495623.1,
+        "excessLiquidation": 125259.83,
+        "maintainMargin": 8832.44,
+        "currencyAssets": {
+          "USD": { "currency": "USD", "cashBalance": 123844.77 },
+          "HKD": { "currency": "HKD", "cashBalance": -92554.07 },
+          "SGD": { "currency": "SGD", "cashBalance": 0 }
+        }
+      },
+      "F": {
+        "currency": "USD",
+        "currencyAssets": {
+          "USD": { "currency": "USD", "cashBalance": 5000 }
+        }
+      }
+    }
+  }
+}

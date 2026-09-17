@@ -2,6 +2,7 @@ import { Type } from 'typebox';
 import type { AgentTool, AgentToolResult } from '@earendil-works/pi-agent-core';
 import { applyBrokerStatement } from '../brokers/apply-statement.js';
 import { assertCsvTablesSpec, runCsvTablesSpec } from '../brokers/csv-tables.js';
+import { getBrokerAdapter } from '../brokers/adapter.js';
 import { getBrokerConnector } from '../brokers/catalog.js';
 import {
   loadBrokerParserSpec,
@@ -56,7 +57,7 @@ export function createReadBrokerRawTool(): AgentTool {
     name: 'read_broker_raw',
     label: 'Read archived broker raw',
     description:
-      'Read the latest archived raw broker statement (or a path under that user\'s broker-raw/<connector> directory) after a catalog parser failure. Never prints Flex tokens.',
+      'Read the latest archived raw broker statement (or a path under that user\'s broker-raw/<connector> directory) after a catalog parser failure. Raw may be XML or JSON. Never prints secrets. For looks_like json, map to a BrokerStatement — do not generate csv_tables.',
     parameters: Type.Object({
       ...channelIdParams,
       connector_id: Type.String({ description: 'Catalog connector id (e.g. ibkr).' }),
@@ -69,8 +70,12 @@ export function createReadBrokerRawTool(): AgentTool {
         const { state } = snapshot;
         const slug = state.user.slug;
         if (!slug) throw new Error('Investor state has no user.slug.');
-        const got = readBrokerRawFile(slug, p.connector_id.trim(), p.path);
-        return ok(`Archived raw (${got.path}), ${got.text.length} chars. Generate a csv_tables spec or a BrokerStatement JSON. Do not invent numbers.`, {
+        const id = p.connector_id.trim();
+        const got = readBrokerRawFile(slug, id, p.path);
+        const csvHint = getBrokerAdapter(id).usesCsvTables
+          ? 'Generate a csv_tables spec or a BrokerStatement JSON.'
+          : 'Map this JSON to a BrokerStatement. Do not generate csv_tables.';
+        return ok(`Archived raw (${got.path}), ${got.text.length} chars. ${csvHint} Do not invent numbers.`, {
           path: got.path,
           text: got.text,
         });
@@ -106,8 +111,12 @@ export function createSaveBrokerParserTool(): AgentTool {
         const { state } = snapshot;
         const slug = state.user.slug;
         if (!slug) throw new Error('Investor state has no user.slug.');
+        const id = p.connector_id.trim();
+        if (!getBrokerAdapter(id).usesCsvTables) {
+          throw new Error(`csv_tables parsers are only for IBKR Flex, not "${id}".`);
+        }
         const spec = assertCsvTablesSpec(p.spec);
-        const path = saveBrokerParserSpec(slug, p.connector_id.trim(), spec);
+        const path = saveBrokerParserSpec(slug, id, spec);
         return ok(`Saved parser spec for ${p.connector_id.trim()} at ${path}. Call sync again or parse_broker_raw.`, {
           path,
           connector_id: p.connector_id.trim(),
@@ -142,6 +151,9 @@ export function createParseBrokerRawTool(): AgentTool {
         if (!slug) throw new Error('Investor state has no user.slug.');
         const id = p.connector_id.trim();
         getBrokerConnector(id);
+        if (!getBrokerAdapter(id).usesCsvTables) {
+          throw new Error(`csv_tables parsers are only for IBKR Flex, not "${id}".`);
+        }
         const spec = p.spec != null ? assertCsvTablesSpec(p.spec) : null;
         const saved = spec ?? loadBrokerParserSpec(slug, id);
         if (!saved) throw new Error(`No parser spec for "${id}". Call save_broker_parser first.`);

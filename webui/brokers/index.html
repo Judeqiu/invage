@@ -156,7 +156,7 @@
     }
     label.field { display: block; margin-top: 0.7rem; font-size: 0.72rem; font-weight: 600; color: var(--ink); }
     label.field .help { display: block; font-weight: 400; color: var(--muted-foreground); margin-top: 0.15rem; }
-    input[type="text"], input[type="password"] {
+    input[type="text"], input[type="password"], textarea {
       width: 100%;
       margin-top: 0.3rem;
       border: 1px solid var(--border);
@@ -166,6 +166,7 @@
       background: #fff;
       color: var(--ink);
     }
+    textarea { min-height: 5.5rem; font-family: var(--font-mono); }
     .toggle { display: flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; margin-top: 0.75rem; }
     details { margin-top: 0.85rem; font-size: 0.75rem; color: var(--muted-foreground); }
     details ol { margin: 0.4rem 0 0 1.1rem; }
@@ -192,8 +193,7 @@
       <div class="label-eyebrow">Setup · one-time</div>
       <h1>Connect once. Sync on demand.</h1>
       <p>
-        Read-only Interactive Brokers Flex Web Service. Open Positions and Cash Report replace lots and free cash on channel ibkr.
-        Activity is prior-day; dashboard marks stay Yahoo. The token cannot trade.
+        Read-only brokerage channels. Enable a card, paste credentials, Sync. Marks stay Yahoo. Invage never places or cancels orders.
       </p>
     </div>
     <div id="error" class="error" hidden></div>

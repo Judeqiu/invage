@@ -1,20 +1,21 @@
 /**
  * Pull a catalog connector statement into recon without applying books.
  * Already-have Flex: fetch now; compare happens in sourceReconStatement.
+ * Never loadBrokerParserSpec / runCsvTablesSpec — Flex XML parse only for IBKR.
  */
 
-import { ChannelOffError, readBrokerConnections } from '../brokers/connections.js';
-import { BROKER_CATALOG, getBrokerConnector } from '../brokers/catalog.js';
-import { holdingInstrument } from '../state/portfolio-state.js';
-import type { BrokerStatement } from '../brokers/statement.js';
 import {
-  createFlexTransport,
-  fetchFlexStatement,
-  type FlexTransport,
-} from '../ibkr/flex-client.js';
-import { mapFlexDocToStatement } from '../ibkr/flex-map.js';
-import { parseFlexQueryXml } from '../ibkr/flex-parse.js';
-import { cashSlotKey, type InvestorState } from '../state/portfolio-state.js';
+  getBrokerAdapter,
+  type AdapterTransport,
+} from '../brokers/adapter.js';
+import { BROKER_CATALOG, getBrokerConnector } from '../brokers/catalog.js';
+import {
+  ChannelOffError,
+  readBrokerConnections,
+  requiredCredentialsComplete,
+} from '../brokers/connections.js';
+import type { BrokerStatement } from '../brokers/statement.js';
+import { cashSlotKey, holdingInstrument, type InvestorState } from '../state/portfolio-state.js';
 import { sourceReconStatement } from './apply.js';
 import type { ReconStatement } from './types.js';
 
@@ -34,12 +35,17 @@ export function reconStatementFromBroker(stmt: BrokerStatement): ReconStatement 
 export async function sourceReconConnector(
   state: InvestorState,
   channel: string,
-  transport?: FlexTransport,
+  transport?: AdapterTransport,
 ): Promise<void> {
   const ch = cashSlotKey(channel);
   const conns = readBrokerConnections(state);
   const match = BROKER_CATALOG.find((d) => cashSlotKey(d.channel) === ch);
   if (!match) {
+    if (ch === 'jude_futu') {
+      throw new Error(
+        'No catalog connector for channel jude_futu. Connector moomoo fetches Cloud Open API into channel moomoo only. It never reads jude_futu. To move Futu-tagged lots onto moomoo, recon the jude_futu sleeve (paste or update_holding) and the moomoo sleeve (connector fetch) separately. take on one does not delete the other. Fixed deposits stay on their channel; broker sync does not mature or move FDs. Paste the statement (cash, lots, deposits).',
+      );
+    }
     throw new Error(
       `No catalog connector for channel ${ch || '(unassigned)'}. Paste the statement (cash, lots, deposits).`,
     );
@@ -49,19 +55,16 @@ export async function sourceReconConnector(
     throw new ChannelOffError(match.displayName);
   }
   const def = getBrokerConnector(match.id);
-  const queryField = def.syncQueryFieldId;
-  if (!queryField) {
-    throw new Error(`Broker connector "${match.id}" has no sync query field.`);
-  }
-  const queryId = conn.credentials[queryField];
-  const token = conn.credentials.token;
-  if (!queryId || !token) {
+  if (!requiredCredentialsComplete(def, conn.credentials)) {
     throw new Error(
       `${def.displayName} is on but credentials are incomplete. Finish Settings → Brokers or paste the statement.`,
     );
   }
-  const xml = await fetchFlexStatement({ token, queryId }, transport ?? createFlexTransport());
-  const doc = parseFlexQueryXml(xml);
-  const brokerStmt = mapFlexDocToStatement(doc, def.channel);
+  const adapter = getBrokerAdapter(match.id);
+  const raw = await adapter.fetchRaw(
+    conn.credentials,
+    transport ? { transport } : undefined,
+  );
+  const brokerStmt = adapter.parseToStatement(raw, def.channel);
   sourceReconStatement(state, channel, reconStatementFromBroker(brokerStmt), 'connector');
 }

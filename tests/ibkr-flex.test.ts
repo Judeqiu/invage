@@ -4,6 +4,7 @@ import { holdingsFromOpenPositions, yahooSymbolFromFlex } from '../src/ibkr/flex
 import { replaceChannelCash, replaceChannelHoldings } from '../src/ibkr/flex-apply.js';
 import { assertHolding } from '../src/market/position-value.js';
 import { getCashes, type InvestorState } from '../src/state/portfolio-state.js';
+import { ibkrFlexAdapter } from '../src/ibkr/flex-adapter.js';
 import { FlexHttpError, fetchFlexStatement } from '../src/ibkr/flex-client.js';
 import { createBookkeeperTools } from '../src/tools/index.js';
 
@@ -361,11 +362,41 @@ describe('Bookkeeper tools', () => {
     const names = createBookkeeperTools().map((t) => t.name);
     expect(names).toContain('configure_ibkr_flex');
     expect(names).toContain('sync_ibkr_flex');
+    expect(names).toContain('configure_broker');
+    expect(names).toContain('sync_broker');
     expect(names).toContain('list_broker_triage');
     expect(names).toContain('read_broker_raw');
     expect(names).toContain('save_broker_parser');
     expect(names).toContain('parse_broker_raw');
     expect(names).toContain('apply_broker_statement');
+  });
+});
+
+describe('ibkrFlexAdapter', () => {
+  it('fetchRaw uses wrapped FlexTransport; parseToStatement is Flex XML only', async () => {
+    const raw = await ibkrFlexAdapter.fetchRaw(
+      { token: 'tok', activity_query_id: '99' },
+      {
+        transport: {
+          kind: 'ibkr',
+          flex: {
+            get: async (path, params) => {
+              if (path === 'SendRequest') {
+                expect(params.q).toBe('99');
+                return Buffer.from(
+                  `<FlexStatementResponse><Status>Success</Status><ReferenceCode>ref1</ReferenceCode></FlexStatementResponse>`,
+                );
+              }
+              return Buffer.from(SAMPLE);
+            },
+          },
+        },
+      },
+    );
+    expect(raw.kind).toBe('xml');
+    const stmt = ibkrFlexAdapter.parseToStatement(raw, 'ibkr');
+    expect(stmt.account_id).toBe('U1234567');
+    expect(stmt.lots.map((l) => l.ticker)).toEqual(['AAPL', 'AAPL-C-200-20250117-S']);
   });
 });
 

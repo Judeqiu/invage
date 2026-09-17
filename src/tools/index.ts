@@ -42,6 +42,7 @@ import {
   createReadBrokerRawTool,
   createSaveBrokerParserTool,
 } from './broker_ingest.js';
+import { createConfigureBrokerTool, createSyncBrokerTool } from './broker_connect.js';
 import { createConfigureIbkrFlexTool, createSyncIbkrFlexTool } from './ibkr_flex.js';
 import { createOptionsInsightTool } from './options_insight.js';
 import { createReconTools } from './recon.js';
@@ -72,6 +73,8 @@ export function createBookkeeperTools(): AgentTool[] {
     ...createSnapshotTool(),
     createConfigureIbkrFlexTool(),
     createSyncIbkrFlexTool(),
+    createConfigureBrokerTool(),
+    createSyncBrokerTool(),
     createListBrokerTriageTool(),
     createReadBrokerRawTool(),
     createSaveBrokerParserTool(),

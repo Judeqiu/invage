@@ -33,7 +33,7 @@ export const INVAGE_CHAT_EMPTY_STATE = {
   title: 'Your investment analyst — with household books',
   body: [
     'I analyze portfolios (live marks, playbook, undervalued screens) and can keep household books for cash flow and big decisions like buying a house.',
-    'Use the Dashboard tab for portfolio value, Watch List for playbook names, and Brokers to connect Interactive Brokers Flex. Bookkeeper journals the ledger; InvestmentAdvisor researches; AIDeal runs the Aideal sleeve pack; Factchecker audits numbers before the final answer.',
+    'Use the Dashboard tab for portfolio value, Watch List for playbook names, and Brokers to connect read-only IBKR Flex, Tiger, or MooMoo. Bookkeeper journals the ledger; InvestmentAdvisor researches; AIDeal runs the Aideal sleeve pack; Factchecker audits numbers before the final answer.',
   ],
   bullets: [
     'Import or add holdings (equity / fund / options) · set free cash and fixed deposits',
@@ -88,7 +88,7 @@ export function chatEmptyStateFor(profile: ProductProfileId): {
       title: INVAGE_CHAT_EMPTY_STATE.title,
       body: [
         'I analyze portfolios (live marks, playbook, undervalued screens) and can keep household books for cash flow and big decisions.',
-        'Use the Dashboard tab for portfolio value, Watch List for playbook names, and Brokers to connect Interactive Brokers Flex. Bookkeeper journals the ledger; InvestmentAdvisor researches securities; OptionsExpert reads listed calls/puts; Factchecker audits numbers before the final answer.',
+        'Use the Dashboard tab for portfolio value, Watch List for playbook names, and Brokers to connect read-only IBKR Flex, Tiger, or MooMoo. Bookkeeper journals the ledger; InvestmentAdvisor researches securities; OptionsExpert reads listed calls/puts; Factchecker audits numbers before the final answer.',
       ],
       bullets: [...INVAGE_CHAT_EMPTY_STATE.bullets],
       starters: [

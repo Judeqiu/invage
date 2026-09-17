@@ -66,11 +66,23 @@ function markDirty(id) {
   render();
 }
 
-function ipHelp(egress) {
-  if (typeof egress === 'string' && egress.length > 0) {
-    return `Paste this IPv4 into Client Portal → Flex Web Service → Valid for IP Address: ${egress}. A stolen token then fails from elsewhere (IBKR 1013).`;
+function ipHelp(conn, egress) {
+  if (conn.id === 'ibkr') {
+    if (typeof egress === 'string' && egress.length > 0) {
+      return `Paste this IPv4 into Client Portal → Flex Web Service → Valid for IP Address: ${egress}. A stolen token then fails from elsewhere (IBKR 1013).`;
+    }
+    return 'Leave Valid for IP Address blank unless ops gave you a static egress IP. Setting an IP with rotating egress returns IBKR 1013.';
   }
-  return 'Leave Valid for IP Address blank unless ops gave you a static egress IP. Setting an IP with rotating egress returns IBKR 1013.';
+  if (typeof egress === 'string' && egress.length > 0) {
+    return `Paste this IPv4 into Tiger developer portal IP whitelist: ${egress}.`;
+  }
+  return 'Leave Tiger IP whitelist blank unless ops gave you a static egress IP.';
+}
+
+function hrefLabel(conn) {
+  if (conn.help_href_label) return conn.help_href_label;
+  if (conn.id === 'ibkr') return 'Flex Web Service docs';
+  return 'OpenAPI docs';
 }
 
 function fieldInput(conn, field) {
@@ -90,9 +102,13 @@ function fieldInput(conn, field) {
       : field.type === 'secret'
         ? ''
         : cred.value || '';
+  const useTextarea = field.widget === 'textarea' || field.format === 'pem';
+  const control = useTextarea
+    ? `<textarea id="${inputId}" data-conn="${escapeHtml(conn.id)}" data-field="${escapeHtml(field.id)}" data-secret="${field.type === 'secret' ? '1' : '0'}" autocomplete="off" placeholder="${escapeAttr(placeholder)}" ${inFlight ? 'disabled' : ''}>${escapeHtml(field.type === 'secret' ? '' : value)}</textarea>`
+    : `<input id="${inputId}" data-conn="${escapeHtml(conn.id)}" data-field="${escapeHtml(field.id)}" data-secret="${field.type === 'secret' ? '1' : '0'}" type="${type}" autocomplete="off" value="${escapeAttr(value)}" placeholder="${escapeAttr(placeholder)}" ${inFlight ? 'disabled' : ''} />`;
   return `
     <label class="field" for="${inputId}">${escapeHtml(field.label)}
-      <input id="${inputId}" data-conn="${escapeHtml(conn.id)}" data-field="${escapeHtml(field.id)}" data-secret="${field.type === 'secret' ? '1' : '0'}" type="${type}" autocomplete="off" value="${escapeAttr(value)}" placeholder="${escapeAttr(placeholder)}" ${inFlight ? 'disabled' : ''} />
+      ${control}
     </label>`;
 }
 
@@ -144,16 +160,16 @@ function render() {
         <label class="toggle"><input type="checkbox" data-toggle="${escapeHtml(conn.id)}" ${form.enabled ? 'checked' : ''} ${inFlight ? 'disabled' : ''} /> Enable channel</label>
         <span class="chip ${escapeHtml(conn.status)}">${escapeHtml(statusLabel(conn.status))}</span>
       </div>
-      <p class="hint" style="margin:8px 0 0">Stops Flex pulls. Holdings tagged ${escapeHtml(conn.channel)} stay on the dashboard.</p>
+      <p class="hint" style="margin:8px 0 0">Stops ${escapeHtml(conn.display_name)} pulls. Holdings tagged ${escapeHtml(conn.channel)} stay on the dashboard.</p>
       ${conn.credential_fields.map((f) => fieldInput(conn, f)).join('')}
       <details>
         <summary>How to get ${escapeHtml(conn.display_name)} credentials</summary>
         <ol>
           ${(conn.help_steps || []).map((n) => `<li>${escapeHtml(n)}</li>`).join('')}
-          <li>${escapeHtml(ipHelp(payload.egress_ipv4))}</li>
+          ${conn.ip_whitelist_help ? `<li>${escapeHtml(ipHelp(conn, payload.egress_ipv4))}</li>` : ''}
         </ol>
         ${(conn.help_notes || []).map((n) => `<p>${escapeHtml(n)}</p>`).join('')}
-        ${conn.help_href ? `<p><a href="${escapeAttr(conn.help_href)}" target="_blank" rel="noopener">Flex Web Service docs</a></p>` : ''}
+        ${conn.help_href ? `<p><a href="${escapeAttr(conn.help_href)}" target="_blank" rel="noopener">${escapeHtml(hrefLabel(conn))}</a></p>` : ''}
       </details>
       <div class="last">${escapeHtml(lastSyncLine(conn))}${syncHint ? ` · ${syncHint}` : ''}${abortWait ? ' · Request still running on the server — wait, then Refresh.' : ''}</div>
       <div class="actions">
@@ -175,7 +191,7 @@ function bind() {
       markDirty(id);
     });
   });
-  el.list.querySelectorAll('input[data-field]').forEach((input) => {
+  el.list.querySelectorAll('input[data-field], textarea[data-field]').forEach((input) => {
     input.addEventListener('input', () => {
       const id = input.getAttribute('data-conn');
       const field = input.getAttribute('data-field');

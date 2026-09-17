@@ -5,20 +5,19 @@ import { saveInvestor, type InvestorSnapshot } from '../state/investor-store.js'
  */
 
 
-import { archiveXml } from '../ibkr/flex-apply.js';
-import { mapFlexDocToStatement } from '../ibkr/flex-map.js';
-import type { BrokerStatement } from './statement.js';
-import { formatBrokerSkip, type BrokerApplyResult } from './statement.js';
-import {
-  createFlexTransport,
-  fetchFlexStatement,
-  type FlexTransport,
-} from '../ibkr/flex-client.js';
 import type { IbkrFlexConfig } from '../ibkr/flex-config.js';
-import { parseFlexQueryXml } from '../ibkr/flex-parse.js';
+import { normalizePem } from './pem.js';
+import {
+  archiveBrokerSuccess,
+  getBrokerAdapter,
+  type AdapterTransport,
+  type BrokerRawPayload,
+} from './adapter.js';
 import { applyBrokerStatement } from './apply-statement.js';
 import { runCsvTablesSpec } from './csv-tables.js';
 import { loadBrokerParserSpec } from './parser-store.js';
+import type { BrokerStatement } from './statement.js';
+import { formatBrokerSkip, type BrokerApplyResult } from './statement.js';
 import { archiveBrokerTriage } from './triage.js';
 import {
   assertBrokerConnectionMetrics,
@@ -45,10 +44,8 @@ export class ChannelOffError extends Error {
 
 export class BrokerNotConfiguredError extends Error {
   readonly errorCode = 'not_configured' as const;
-  constructor() {
-    super(
-      'IBKR Flex is not configured. Call configure_ibkr_flex with the Client Portal token and Activity Flex Query id.',
-    );
+  constructor(displayName = 'This broker') {
+    super(`${displayName} is not configured. Finish Settings → Brokers.`);
     this.name = 'BrokerNotConfiguredError';
   }
 }
@@ -56,9 +53,7 @@ export class BrokerNotConfiguredError extends Error {
 export class SyncInProgressError extends Error {
   readonly errorCode = 'sync_in_progress' as const;
   constructor() {
-    super(
-      'A Flex sync is already running for this connector. Wait, then Refresh.',
-    );
+    super('A sync is already running for this connector. Wait, then Refresh.');
     this.name = 'SyncInProgressError';
   }
 }
@@ -92,6 +87,8 @@ export interface PublicConnectorView {
     type: CredentialFieldDef['type'];
     required: boolean;
     help?: string;
+    widget?: CredentialFieldDef['widget'];
+    format?: CredentialFieldDef['format'];
   }>;
   credentials: Record<string, PublicCredentialView>;
   last_sync: BrokerConnectionLastSync | null;
@@ -99,6 +96,8 @@ export interface PublicConnectorView {
   help_notes?: string[];
   help_steps?: string[];
   help_href?: string;
+  help_href_label?: string;
+  ip_whitelist_help?: boolean;
 }
 
 type StateWithLegacy = InvestorState & {
@@ -339,6 +338,8 @@ export function publicConnectorView(
         required: f.required,
       };
       if (f.help) field.help = f.help;
+      if (f.widget) field.widget = f.widget;
+      if (f.format) field.format = f.format;
       return field;
     }),
     credentials,
@@ -348,6 +349,8 @@ export function publicConnectorView(
   if (def.helpNotes) view.help_notes = [...def.helpNotes];
   if (def.helpSteps) view.help_steps = [...def.helpSteps];
   if (def.helpHref) view.help_href = def.helpHref;
+  if (def.helpHrefLabel) view.help_href_label = def.helpHrefLabel;
+  if (def.ipWhitelistHelp) view.ip_whitelist_help = true;
   return view;
 }
 
@@ -408,7 +411,7 @@ export function patchBrokerConnection(
       if (!trimmed) {
         throw new Error(`${field.label} must be non-empty.`);
       }
-      nextCreds[key] = trimmed;
+      nextCreds[key] = field.format === 'pem' ? normalizePem(trimmed) : trimmed;
       if (field.type === 'secret') tokenSet = true;
     }
   }
@@ -432,7 +435,7 @@ export function patchBrokerConnection(
 
 function requireCompleteOrThrow(def: BrokerConnectorDef, conn: BrokerConnection | undefined): BrokerConnection {
   if (!conn || !requiredCredentialsComplete(def, conn.credentials)) {
-    throw new BrokerNotConfiguredError();
+    throw new BrokerNotConfiguredError(def.displayName);
   }
   return conn;
 }
@@ -483,7 +486,7 @@ function writeLastSync(
 export async function syncBrokerConnection(
   snapshot: InvestorSnapshot,
   id: string,
-  transport?: FlexTransport,
+  opts?: { transport?: AdapterTransport },
 ): Promise<{ view: PublicConnectorView; applied: BrokerApplyResult }> {
   const { state } = snapshot;
   const slug = state.user.slug;
@@ -498,27 +501,21 @@ export async function syncBrokerConnection(
     secrets = Object.entries(conn.credentials)
       .filter(([fid]) => def.credentialFields.find((f) => f.id === fid)?.type === 'secret')
       .map(([, v]) => v);
-    const queryField = def.syncQueryFieldId;
-    if (!queryField) {
-      throw new Error(`Broker connector "${id}" has no sync query field.`);
-    }
-    const queryId = conn.credentials[queryField];
-    const token = conn.credentials.token;
-    if (!queryId || !token) throw new BrokerNotConfiguredError();
-    let xml: Buffer;
+    const adapter = getBrokerAdapter(id);
+    let raw: BrokerRawPayload;
     let statement: BrokerStatement;
     try {
-      xml = await fetchFlexStatement({ token, queryId }, transport ?? createFlexTransport());
+      raw = await adapter.fetchRaw(conn.credentials, opts);
       try {
-        const spec = loadBrokerParserSpec(slug, id);
+        const spec = adapter.usesCsvTables ? loadBrokerParserSpec(slug, id) : null;
         // A saved parser is an explicit user configuration, not a recovery path
-        // for failed database writes.
+        // for failed database writes. Recon never loads specs.
         statement = spec
-          ? runCsvTablesSpec(xml.toString('utf8'), spec, def.channel)
-          : mapFlexDocToStatement(parseFlexQueryXml(xml), def.channel);
+          ? runCsvTablesSpec(raw.body.toString('utf8'), spec, def.channel)
+          : adapter.parseToStatement(raw, def.channel);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        const triage = archiveBrokerTriage({ slug, connectorId: id, body: xml,
+        const triage = archiveBrokerTriage({ slug, connectorId: id, body: raw.body,
           asOf: new Date().toISOString().slice(0, 10), error: message });
         throw new Error(`${message}. Raw statement archived at ${triage.rawPath}.`);
       }
@@ -528,10 +525,10 @@ export async function syncBrokerConnection(
       await saveInvestor(snapshot);
       throw error;
     }
-    const archivePath = archiveXml(slug, xml, statement.as_of);
+    const archivePath = archiveBrokerSuccess(slug, id, raw, statement.as_of);
     // Portfolio, cash, metrics and success status use the same revision-checked
     // aggregate write. Persistence errors propagate without a second attempt.
-    const applied = await applyBrokerStatement(snapshot, id, statement, xml, result => {
+    const applied = await applyBrokerStatement(snapshot, id, statement, raw.body, result => {
       const last_sync: BrokerConnectionLastSync = { at, ok: true, as_of: result.asOf,
         account_id: result.accountId, lots_upserted: result.lotsUpserted, lots_removed: result.lotsRemoved };
       if (result.skipped.length) last_sync.not_imported = result.skipped.map(formatBrokerSkip);
@@ -574,7 +571,7 @@ export function readIbkrConnectionConfig(state: InvestorState): IbkrFlexConfig {
   const map = readBrokerConnections(state);
   const conn = map.ibkr;
   if (!conn || !requiredCredentialsComplete(def, conn.credentials)) {
-    throw new BrokerNotConfiguredError();
+    throw new BrokerNotConfiguredError(def.displayName);
   }
   const cfg: IbkrFlexConfig = {
     token: conn.credentials.token,

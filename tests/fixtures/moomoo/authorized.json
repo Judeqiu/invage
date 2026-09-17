@@ -1,0 +1,15 @@
+{
+  "s": "ok",
+  "d": {
+    "accounts": [
+      {
+        "account_id": "281756420273981734",
+        "security_firm": "FUTUSG",
+        "enable_market": [2],
+        "univs_account_card_number": "10018561211263256",
+        "acc_type": "margin",
+        "account_card_number": "1001100530724347"
+      }
+    ]
+  }
+}

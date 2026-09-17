@@ -115,7 +115,8 @@ export function createReconTools(): AgentTool[] {
     label: 'Source recon statement',
     description:
       'Load the statement for the current (or named) sleeve, then compare to books. ' +
-      'Already-have catalog connector (enabled IBKR Flex): omit cash/lots/deposits — fetches now and does not write books. ' +
+      'Already-have catalog connector (enabled ibkr / tiger / moomoo): omit cash/lots/deposits — fetches now and does not write books. ' +
+      'Connector moomoo never reads jude_futu; recon those sleeves separately. ' +
       'Otherwise pass statement cash[], lots[], deposits[]. Matching lines auto-keep. Pass channel ids from context.',
     parameters: Type.Object({
       ...channelIdParams,

@@ -9,9 +9,11 @@ beforeEach(()=>{root=mkdtempSync(join(tmpdir(),'raw-data-'));process.env.UTARUS_
 function file(slug:string,path:string,body:string|Buffer){const full=join(root,'drive',slug,path);mkdirSync(join(full,'..'),{recursive:true});writeFileSync(full,body);}
 describe('raw-data retrieval',()=>{
  it('lists successful syncs, failed archives, and uploads across channels without inventing provenance',()=>{
-  file('alice','ibkr-flex/activity.xml','<raw/>');file('alice','broker-raw/another-bank/case/raw.csv','x,y');file('alice','bank-statement.csv','original');
+  file('alice','ibkr-flex/activity.xml','<raw/>');file('alice','tiger-raw/snapshot.json','{}');file('alice','moomoo-raw/snapshot.json','{}');file('alice','broker-raw/another-bank/case/raw.csv','x,y');file('alice','bank-statement.csv','original');
   file('bob','private.csv','other owner');
-  const got=listRawData('alice',0,100);expect(got.total).toBe(3);expect(got.files.map(f=>f.channel).sort()).toEqual(['another-bank','ibkr',null].sort());
+  const got=listRawData('alice',0,100);expect(got.total).toBe(5);expect(got.files.map(f=>f.channel).sort()).toEqual(['another-bank','ibkr','moomoo','tiger',null].sort());
+  expect(got.files.find(f=>f.channel==='tiger')?.source_kind).toBe('broker-sync');
+  expect(got.files.find(f=>f.channel==='moomoo')?.source_kind).toBe('broker-sync');
   expect(listRawData('alice',0,1).next_offset).toBe(1);expect(listRawData('alice',0,100,'another-bank').total).toBe(1);
  });
  it('returns all original UTF8 bytes over bounded pages including split multibyte characters',()=>{

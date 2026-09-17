@@ -1,8 +1,12 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  assertCatalogChannelEqualsId,
   assertIbkrChannelMatchesCatalog,
   getBrokerConnector,
 } from '../src/brokers/catalog.js';
+import { adapters, getBrokerAdapter } from '../src/brokers/adapter.js';
 import {
   ChannelOffError,
   patchBrokerConnection,
@@ -10,6 +14,9 @@ import {
   readBrokerConnections,
   resolveConnectionForSync,
 } from '../src/brokers/connections.js';
+import { assertCsvTablesSpec } from '../src/brokers/csv-tables.js';
+import { saveBrokerParserSpec } from '../src/brokers/parser-store.js';
+import { readRecon, sourceReconConnector, startRecon } from '../src/recon/index.js';
 import { readFlexEgressIpv4 } from '../src/brokers/egress.js';
 import { IBKR_CHANNEL } from '../src/ibkr/flex-map.js';
 import type { InvestorState } from '../src/state/portfolio-state.js';
@@ -29,7 +36,12 @@ function investor(over: Partial<InvestorState> = {}): InvestorState {
 describe('broker catalog', () => {
   it('IBKR channel id matches lot tag', () => {
     assertIbkrChannelMatchesCatalog();
+    assertCatalogChannelEqualsId();
     expect(getBrokerConnector('ibkr').channel).toBe(IBKR_CHANNEL);
+    expect(getBrokerConnector('tiger').channel).toBe('tiger');
+    expect(getBrokerConnector('tiger').displayName).toBe('Tiger Brokers');
+    expect(getBrokerConnector('moomoo').displayName).toBe('MooMoo');
+    expect(getBrokerConnector('moomoo').channel).toBe('moomoo');
   });
 
   it('unknown id fails', () => {
@@ -59,14 +71,17 @@ describe('readFlexEgressIpv4', () => {
 describe('broker_connections store', () => {
   it('never-configured IBKR is off, not needs_credentials', () => {
     const views = publicCatalog(investor());
-    expect(views).toHaveLength(1);
-    expect(views[0]).toMatchObject({
+    expect(views).toHaveLength(3);
+    const ibkr = views.find((v) => v.id === 'ibkr');
+    expect(ibkr).toMatchObject({
       id: 'ibkr',
       enabled: false,
       status: 'off',
       last_sync: null,
     });
-    expect(views[0].credential_fields.map((f) => f.id)).toEqual([
+    expect(ibkr!.ip_whitelist_help).toBe(true);
+    expect(ibkr!.help_href_label).toBe('Flex Web Service docs');
+    expect(ibkr!.credential_fields.map((f) => f.id)).toEqual([
       'token',
       'activity_query_id',
       'tradeconf_query_id',
@@ -83,7 +98,7 @@ describe('broker_connections store', () => {
     const json = JSON.stringify(publicCatalog(state));
     expect(json).not.toContain(TOKEN);
     expect(json).toContain('"last4":"9999"');
-    expect(publicCatalog(state)[0].status).toBe('connected');
+    expect(publicCatalog(state).find((v) => v.id === 'ibkr')?.status).toBe('connected');
   });
 
   it('throws if both keys exist', () => {
@@ -98,10 +113,10 @@ describe('broker_connections store', () => {
 
   it('throws on unknown connector keys', () => {
     const state = investor({
-      broker_connections: { tiger: { enabled: false, credentials: {} } },
+      broker_connections: { webull: { enabled: false, credentials: {} } },
     });
     expect(() => readBrokerConnections(state)).toThrow(
-      /Unknown broker connector "tiger" in broker_connections/,
+      /Unknown broker connector "webull" in broker_connections/,
     );
   });
 
@@ -113,7 +128,7 @@ describe('broker_connections store', () => {
     state.broker_connections = {
       ibkr: { enabled: true, credentials: { activity_query_id: '123456' } },
     };
-    expect(publicCatalog(state)[0].status).toBe('needs_credentials');
+    expect(publicCatalog(state).find((v) => v.id === 'ibkr')?.status).toBe('needs_credentials');
   });
 
   it('PATCH {} is a no-op and does not persist a row', () => {
@@ -160,8 +175,8 @@ describe('broker_connections store', () => {
       enabled: true,
       credentials: { token: 'abc', activity_query_id: '1' },
     });
-    const view = publicCatalog(state)[0];
-    expect(view.credentials.token).toEqual({ configured: true });
+    const view = publicCatalog(state).find((v) => v.id === 'ibkr');
+    expect(view?.credentials.token).toEqual({ configured: true });
   });
 
   it('reads existing connection YAML without metrics or extras', () => {
@@ -185,7 +200,7 @@ describe('broker_connections store', () => {
     expect(conn.enabled).toBe(true);
     expect(conn.metrics).toBeUndefined();
     expect(conn.last_sync?.account_id).toBe('U20877136');
-    expect(publicCatalog(state)[0].status).toBe('connected');
+    expect(publicCatalog(state).find((v) => v.id === 'ibkr')?.status).toBe('connected');
   });
 
   it('parses and preserves optional metrics; rejects unknown keys', () => {
@@ -228,6 +243,121 @@ describe('broker_connections store', () => {
         } as InvestorState),
       ),
     ).toThrow(/unknown field "sma"/);
+  });
+});
+
+describe('broker fetch adapter', () => {
+  it('normalizes a PEM private_key on PATCH', () => {
+    const pem = readFileSync(join(process.cwd(), 'tests/fixtures/tiger/test-private.pem'), 'utf8');
+    const state = investor();
+    patchBrokerConnection(state, 'tiger', {
+      enabled: true,
+      credentials: {
+        tiger_id: '20150000',
+        account: '1234567',
+        license: 'TBSG',
+        private_key: pem.trim().replace(/\n/g, '\\n'),
+      },
+    });
+    const stored = readBrokerConnections(state).tiger.credentials.private_key;
+    expect(stored).toContain('BEGIN');
+    expect(stored).toContain('\n');
+    expect(stored).not.toContain('\\n');
+  });
+
+  it('resolves the IBKR Flex adapter', () => {
+    const ad = getBrokerAdapter('ibkr');
+    expect(ad.id).toBe('ibkr');
+    expect(ad.usesCsvTables).toBe(true);
+    expect(adapters.ibkr).toBe(ad);
+  });
+
+  it('unknown catalog id fails like getBrokerConnector', () => {
+    expect(() => getBrokerAdapter('not-a-connector')).toThrow(/Unknown broker connector/);
+  });
+
+  it('catalog id without an adapter is a programmer error', () => {
+    const prev = adapters.ibkr;
+    delete adapters.ibkr;
+    try {
+      expect(() => getBrokerAdapter('ibkr')).toThrow(/no fetch adapter/);
+    } finally {
+      adapters.ibkr = prev;
+    }
+  });
+
+  it('recon connector fetch ignores a saved csv_tables spec', async () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<FlexQueryResponse queryName="Activity" type="AF">
+  <FlexStatements count="1">
+    <FlexStatement accountId="U1234567" fromDate="20260811" toDate="20260817" period="Last7CalendarDays" whenGenerated="20260818;090000">
+      <OpenPositions>
+        <OpenPosition accountId="U1234567" currency="USD" assetCategory="STK" symbol="AAPL" listingExchange="NASDAQ" quantity="10" multiplier="1" costBasisPrice="150" costBasisMoney="1500" markPrice="190" positionValue="1900" />
+      </OpenPositions>
+      <CashReport>
+        <CashReportCurrency accountId="U1234567" currency="USD" endingCash="100" />
+      </CashReport>
+    </FlexStatement>
+  </FlexStatements>
+</FlexQueryResponse>`;
+    const spec = assertCsvTablesSpec({
+      kind: 'csv_tables',
+      skipCurrencies: ['BASE_SUMMARY'],
+      cash: {
+        headerMustInclude: ['EndingCash', 'CurrencyPrimary'],
+        columns: {
+          accountId: 'ClientAccountID',
+          fromDate: 'FromDate',
+          toDate: 'ToDate',
+          currency: 'CurrencyPrimary',
+          amount: 'EndingCash',
+        },
+      },
+      positions: {
+        headerMustInclude: ['Symbol', 'AssetClass'],
+        columns: {
+          accountId: 'ClientAccountID',
+          symbol: 'Symbol',
+          quantity: 'Quantity',
+          currency: 'CurrencyPrimary',
+          assetCategory: 'AssetClass',
+          markPrice: 'MarkPrice',
+          costBasisPrice: 'CostBasisPrice',
+          costBasisMoney: 'CostBasisMoney',
+        },
+      },
+    });
+    const state = investor({
+      cash: { amount: 100, currency: 'USD', updated_at: '2026-08-01', channel: 'ibkr' },
+      portfolio: {
+        'AAPL@ibkr': { avg_price: 150, units: 10, channel: 'ibkr' },
+      },
+      broker_connections: {
+        ibkr: { enabled: true, credentials: { token: 'tok', activity_query_id: '99' } },
+      },
+    });
+    saveBrokerParserSpec('alice', 'ibkr', spec);
+    startRecon(state, { as_of: '2026-08-17' });
+    await sourceReconConnector(state, 'ibkr', {
+      kind: 'ibkr',
+      flex: {
+        get: async (path) => {
+          if (path === 'SendRequest') {
+            return Buffer.from(
+              `<FlexStatementResponse><Status>Success</Status><ReferenceCode>ref1</ReferenceCode></FlexStatementResponse>`,
+            );
+          }
+          return Buffer.from(xml);
+        },
+      },
+    });
+    const sleeve = readRecon(state)?.sleeves[0];
+    expect(sleeve?.source).toBe('connector');
+    expect(sleeve?.status).toBe('applied');
+    expect(sleeve?.statement?.lots).toEqual([
+      { ticker: 'AAPL', units: 10, avg_price: 150, instrument: 'equity' },
+    ]);
+    expect(sleeve?.statement?.cash).toEqual([{ currency: 'USD', amount: 100 }]);
   });
 });
 

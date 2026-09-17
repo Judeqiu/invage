@@ -98,6 +98,8 @@ describe('Bookkeeper local agent', () => {
     expect(skillIds).toContain('family-treasury');
     expect(skillIds).toContain('broker-integration');
     expect(skillIds).toContain('ibkr-flex');
+    expect(skillIds).toContain('tiger-openapi');
+    expect(skillIds).toContain('moomoo-openapi');
     expect(skillIds).not.toContain('investment-analysis');
     const broker = bookkeeperExtension.skills.find((s) => s.id === 'broker-integration');
     expect(broker?.description).toMatch(/csv_tables|apply_broker_statement/);

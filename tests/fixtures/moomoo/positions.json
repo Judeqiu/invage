@@ -1,0 +1,41 @@
+{
+  "s": "ok",
+  "d": [
+    {
+      "position_side": "LONG",
+      "code": "US.AAPL",
+      "stock_name": "Apple Inc.",
+      "qty": "100",
+      "currency": "USD",
+      "nominal_price": "185.500",
+      "cost_price": "180.000",
+      "cost_price_valid": true
+    },
+    {
+      "position_side": "LONG",
+      "code": "HK.00700",
+      "stock_name": "Tencent",
+      "qty": "200",
+      "currency": "HKD",
+      "nominal_price": "400",
+      "cost_price": "300",
+      "cost_price_valid": true
+    },
+    {
+      "position_side": "SHORT",
+      "code": "US.TSLA",
+      "qty": "10",
+      "currency": "USD",
+      "cost_price": "200",
+      "cost_price_valid": true
+    },
+    {
+      "position_side": "LONG",
+      "code": "HK.TCH260629C390000",
+      "qty": "1",
+      "currency": "HKD",
+      "cost_price": "2",
+      "cost_price_valid": true
+    }
+  ]
+}

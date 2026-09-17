@@ -1,0 +1,16 @@
+{
+  "s": "ok",
+  "d": {
+    "power": "12500.00",
+    "cash": "7000.00",
+    "available_funds": "7000.00",
+    "currency": "USD",
+    "maintenance_margin": "0.00",
+    "hk_cash": "0.00",
+    "us_cash": "7000.00",
+    "jp_cash": "0.00",
+    "cn_cash": "-1.00",
+    "sg_cash": "0.00",
+    "kr_cash": "0.00"
+  }
+}

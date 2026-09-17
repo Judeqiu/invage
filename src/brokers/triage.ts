@@ -22,7 +22,7 @@ export type BrokerTriageStatus = (typeof BROKER_TRIAGE_STATUSES)[number];
 export const POSITION_QTY_ATTRS = ['quantity', 'position', 'both', 'missing', 'none'] as const;
 export type PositionQtyAttr = (typeof POSITION_QTY_ATTRS)[number];
 
-export const RAW_LOOKS_LIKE = ['flex_xml', 'csv', 'unknown'] as const;
+export const RAW_LOOKS_LIKE = ['flex_xml', 'csv', 'json', 'unknown'] as const;
 export type RawLooksLike = (typeof RAW_LOOKS_LIKE)[number];
 
 export interface BrokerRawInventory {
@@ -79,16 +79,59 @@ export function brokerRawConnectorDir(slug: string, connectorId: string): string
   return join(resolveDataRoot(), 'drive', slug, 'broker-raw', connectorId);
 }
 
+function looksLikeJson(text: string): boolean {
+  const t = text.trimStart();
+  return t.startsWith('{') || t.startsWith('[');
+}
+
+function jsonTags(text: string): Record<string, number> {
+  const tags: Record<string, number> = {};
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (Array.isArray(parsed)) {
+      tags.array = parsed.length;
+      return tags;
+    }
+    if (parsed && typeof parsed === 'object') {
+      const rec = parsed as Record<string, unknown>;
+      for (const [k, v] of Object.entries(rec)) {
+        tags[k] = Array.isArray(v) ? v.length : 1;
+      }
+      const positions = rec.positions;
+      if (positions && typeof positions === 'object' && !Array.isArray(positions)) {
+        for (const [k, v] of Object.entries(positions as Record<string, unknown>)) {
+          tags[`positions.${k}`] = 1;
+          const env = v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
+          const data = env?.data;
+          const items = Array.isArray(data)
+            ? data
+            : data && typeof data === 'object' && Array.isArray((data as { items?: unknown }).items)
+              ? (data as { items: unknown[] }).items
+              : null;
+          if (items) tags[`positions.${k}`] = items.length;
+        }
+      }
+    }
+  } catch {
+    /* not JSON */
+  }
+  return tags;
+}
+
 export function inventoryBrokerRaw(text: string): BrokerRawInventory {
   const looks_like: RawLooksLike = looksLikeCsv(text)
     ? 'csv'
     : text.includes('<FlexQueryResponse') || text.includes('<FlexStatement ')
       ? 'flex_xml'
-      : 'unknown';
-  const tags: Record<string, number> = {};
-  for (const m of text.matchAll(/<([A-Za-z][\w:.-]*)\b/g)) {
-    const tag = m[1];
-    tags[tag] = (tags[tag] ?? 0) + 1;
+      : looksLikeJson(text)
+        ? 'json'
+        : 'unknown';
+  const tags: Record<string, number> = looks_like === 'json' ? jsonTags(text) : {};
+  if (looks_like !== 'json') {
+    for (const m of text.matchAll(/<([A-Za-z][\w:.-]*)\b/g)) {
+      const tag = m[1];
+      tags[tag] = (tags[tag] ?? 0) + 1;
+    }
   }
   const cash_currencies = [
     ...new Set(
@@ -249,7 +292,12 @@ export function archiveBrokerTriage(args: {
   const id = at.replace(/[:.]/g, '-');
   const text = args.body.toString('utf8');
   const inventory = inventoryBrokerRaw(text);
-  const raw_rel = inventory.looks_like === 'flex_xml' ? 'raw.xml' : 'raw.txt';
+  const raw_rel =
+    inventory.looks_like === 'flex_xml'
+      ? 'raw.xml'
+      : inventory.looks_like === 'json'
+        ? 'raw.json'
+        : 'raw.txt';
   const dir = join(brokerRawConnectorDir(args.slug, connectorId), id);
   mkdirSync(dir, { recursive: true });
   const rawPath = join(dir, raw_rel);

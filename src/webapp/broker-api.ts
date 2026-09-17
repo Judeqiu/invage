@@ -18,6 +18,7 @@ import {
   type PatchBrokerConnectionBody,
 } from '../brokers/connections.js';
 import { readFlexEgressIpv4 } from '../brokers/egress.js';
+import { BrokerHttpError, BrokerParseError } from '../brokers/errors.js';
 import { FlexHttpError } from '../ibkr/flex-client.js';
 import { FlexProtocolError } from '../ibkr/flex-parse.js';
 import { formatBrokerSkip } from '../brokers/statement.js';
@@ -75,6 +76,14 @@ function mapSyncError(e: unknown, res: Response): void {
     jsonError(res, 400, 'flex_parse', message);
     return;
   }
+  if (e instanceof BrokerHttpError) {
+    jsonError(res, 502, e.errorCode, message);
+    return;
+  }
+  if (e instanceof BrokerParseError) {
+    jsonError(res, 400, e.errorCode, message);
+    return;
+  }
   if (
     /missing OpenPositions|missing CashReport|CashReport has no currency rows|expected FlexQueryResponse|expected one FlexStatement|returned CSV/.test(
       message,
@@ -83,7 +92,7 @@ function mapSyncError(e: unknown, res: Response): void {
     jsonError(res, 400, 'flex_parse', message);
     return;
   }
-  jsonError(res, /IBKR Flex/.test(message) ? 400 : 500, 'flex_apply', message);
+  jsonError(res, /IBKR Flex/.test(message) ? 400 : 500, /IBKR Flex/.test(message) ? 'flex_apply' : 'broker_apply', message);
 }
 
 function mapStoreError(e: unknown, res: Response): boolean {

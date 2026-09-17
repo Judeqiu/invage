@@ -3,17 +3,15 @@ const API = '/api/domain/invage/broker-connections';
 /** Display-only. Not catalog connectors — no YAML, no credentials, no sync. */
 const UPCOMING = [
   { name: 'Webull' },
-  { name: 'MooMoo' },
-  { name: 'Tiger Brokers' },
 ];
 
 const IMPORTS = [
-  ['Open positions', 'Stocks, ETFs, options, and funds tagged channel ibkr. Empty Open Positions is a flat book.'],
-  ['Cash report', 'ISO currency sleeves on channel ibkr. IBKR BASE_SUMMARY is dropped, not stored.'],
-  ['Channel snapshot', 'Replace ibkr lots and ibkr cash only. Other brokers stay untouched.'],
+  ['Open positions', 'Stocks, ETFs, options, and funds on that connector channel. Empty positions is a flat book.'],
+  ['Cash', 'ISO currency sleeves on that channel only. Other brokers stay untouched.'],
+  ['Channel snapshot', 'Sync replaces lots and cash on the connector channel only.'],
   ['Not imported', 'Unsupported lots (futures, shorts, …) are listed after sync. Never invented as holdings.'],
-  ['Prior-day books', 'Activity Flex updates once per business day. Dashboard marks stay Yahoo.'],
-  ['Flex token', 'Reporting-only credential from Client Portal. Never echoed. Off does not delete lots.'],
+  ['Marks', 'Dashboard marks stay Yahoo. Broker snapshot time is the UTC date of Sync (IBKR Flex is prior-day).'],
+  ['Secrets', 'Reporting-only credentials. Never echoed. Off does not delete lots.'],
 ];
 
 const el = {
@@ -95,18 +93,30 @@ function escapeAttr(s) {
   return escapeHtml(s);
 }
 
-function ipHelp(egress) {
-  if (typeof egress === 'string' && egress.length > 0) {
-    return `Paste this IPv4 into Client Portal → Flex Web Service → Valid for IP Address: ${egress}. A stolen token then fails from elsewhere (IBKR 1013).`;
+function ipHelp(conn, egress) {
+  if (conn.id === 'ibkr') {
+    if (typeof egress === 'string' && egress.length > 0) {
+      return `Paste this IPv4 into Client Portal → Flex Web Service → Valid for IP Address: ${egress}. A stolen token then fails from elsewhere (IBKR 1013).`;
+    }
+    return 'Leave Valid for IP Address blank unless ops gave you a static egress IP. Setting an IP with rotating egress returns IBKR 1013.';
   }
-  return 'Leave Valid for IP Address blank unless ops gave you a static egress IP. Setting an IP with rotating egress returns IBKR 1013.';
+  if (typeof egress === 'string' && egress.length > 0) {
+    return `Paste this IPv4 into Tiger developer portal IP whitelist: ${egress}.`;
+  }
+  return 'Leave Tiger IP whitelist blank unless ops gave you a static egress IP.';
+}
+
+function hrefLabel(conn) {
+  if (conn.help_href_label) return conn.help_href_label;
+  if (conn.id === 'ibkr') return 'Flex Web Service docs';
+  return 'OpenAPI docs';
 }
 
 function lastSyncSub(conn) {
   if (conn.last_sync == null) return 'no account yet · never synced';
   const account = conn.last_sync.account_id
     ? `account ${conn.last_sync.account_id}`
-    : 'no Flex account yet';
+    : 'no account yet';
   if (conn.last_sync.ok === false) {
     return `${account} · last sync failed`;
   }
@@ -144,10 +154,14 @@ function fieldInput(conn, field) {
         ? ''
         : cred.value || '';
   const help = field.help ? `<span class="help">${escapeHtml(field.help)}</span>` : '';
+  const useTextarea = field.widget === 'textarea' || field.format === 'pem';
+  const control = useTextarea
+    ? `<textarea id="${inputId}" data-conn="${escapeAttr(conn.id)}" data-field="${escapeAttr(field.id)}" autocomplete="off" placeholder="${escapeAttr(placeholder)}" ${inFlight ? 'disabled' : ''}>${escapeHtml(field.type === 'secret' ? '' : value)}</textarea>`
+    : `<input id="${inputId}" data-conn="${escapeAttr(conn.id)}" data-field="${escapeAttr(field.id)}" type="${type}" autocomplete="off" value="${escapeAttr(value)}" placeholder="${escapeAttr(placeholder)}" ${inFlight ? 'disabled' : ''} />`;
   return `
     <label class="field" for="${inputId}">${escapeHtml(field.label)}
       ${help}
-      <input id="${inputId}" data-conn="${escapeAttr(conn.id)}" data-field="${escapeAttr(field.id)}" type="${type}" autocomplete="off" value="${escapeAttr(value)}" placeholder="${escapeAttr(placeholder)}" ${inFlight ? 'disabled' : ''} />
+      ${control}
     </label>`;
 }
 
@@ -161,16 +175,16 @@ function managePanel(conn) {
         <input type="checkbox" data-toggle="${escapeAttr(conn.id)}" ${form.enabled ? 'checked' : ''} ${inFlight ? 'disabled' : ''} />
         Enable channel
       </label>
-      <p class="card-sub">Stops Flex pulls. Holdings tagged ${escapeHtml(conn.channel)} stay on the dashboard.</p>
+      <p class="card-sub">Stops ${escapeHtml(conn.display_name)} pulls. Holdings tagged ${escapeHtml(conn.channel)} stay on the dashboard.</p>
       ${conn.credential_fields.map((f) => fieldInput(conn, f)).join('')}
       <details>
         <summary>How to get ${escapeHtml(conn.display_name)} credentials</summary>
         <ol>
           ${(conn.help_steps || []).map((n) => `<li>${escapeHtml(n)}</li>`).join('')}
-          <li>${escapeHtml(ipHelp(payload.egress_ipv4))}</li>
+          ${conn.ip_whitelist_help ? `<li>${escapeHtml(ipHelp(conn, payload.egress_ipv4))}</li>` : ''}
         </ol>
         ${(conn.help_notes || []).map((n) => `<p>${escapeHtml(n)}</p>`).join('')}
-        ${conn.help_href ? `<p><a href="${escapeAttr(conn.help_href)}" target="_blank" rel="noopener">Flex Web Service docs</a></p>` : ''}
+        ${conn.help_href ? `<p><a href="${escapeAttr(conn.help_href)}" target="_blank" rel="noopener">${escapeHtml(hrefLabel(conn))}</a></p>` : ''}
       </details>
       <div class="last">${escapeHtml(lastSyncLine(conn))}${syncHint ? ` ${syncHint}` : ''}${abortWait ? ' Request still running on the server — wait, then Refresh.' : ''}</div>
       <div class="actions">
@@ -262,7 +276,7 @@ function bind() {
       render();
     });
   });
-  el.list.querySelectorAll('input[data-field]').forEach((input) => {
+  el.list.querySelectorAll('input[data-field], textarea[data-field]').forEach((input) => {
     input.addEventListener('input', () => {
       const id = input.getAttribute('data-conn');
       const field = input.getAttribute('data-field');

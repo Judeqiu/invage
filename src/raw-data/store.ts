@@ -22,6 +22,8 @@ function describe(id:string,stat:Stats):RawFile {
   let channel:string|null=null;
   let source_kind:RawFile['source_kind']='drive-file';
   if(parts[0]==='ibkr-flex'){channel='ibkr';source_kind='broker-sync';}
+  if(parts[0]==='tiger-raw'){channel='tiger';source_kind='broker-sync';}
+  if(parts[0]==='moomoo-raw'){channel='moomoo';source_kind='broker-sync';}
   if(parts[0]==='broker-raw'&&parts.length>=3){channel=parts[1]!;source_kind='broker-triage';}
   return {id,channel,source_kind,bytes:stat.size,modified_at:stat.mtime.toISOString(),version:version(stat)};
 }

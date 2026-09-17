@@ -6,6 +6,8 @@
 import { IBKR_CHANNEL } from '../ibkr/flex-map.js';
 
 export type CredentialFieldType = 'secret' | 'text';
+export type CredentialWidget = 'input' | 'textarea';
+export type CredentialFormat = 'plain' | 'pem';
 
 export interface CredentialFieldDef {
   id: string;
@@ -13,6 +15,8 @@ export interface CredentialFieldDef {
   type: CredentialFieldType;
   required: boolean;
   help?: string;
+  widget?: CredentialWidget;
+  format?: CredentialFormat;
 }
 
 export interface BrokerConnectorDef {
@@ -25,6 +29,8 @@ export interface BrokerConnectorDef {
   /** Ordered Client Portal / vendor steps (IP note is assembled at GET time). */
   helpSteps?: string[];
   helpHref?: string;
+  helpHrefLabel?: string;
+  ipWhitelistHelp?: boolean;
   syncQueryFieldId?: string;
 }
 
@@ -68,7 +74,127 @@ export const BROKER_CATALOG: readonly BrokerConnectorDef[] = [
       'Optional Trade Confirmation query for later; not used by Sync now in v1.',
     ],
     helpHref: 'https://www.interactivebrokers.com/campus/ibkr-api-page/flex-web-service/',
+    helpHrefLabel: 'Flex Web Service docs',
+    ipWhitelistHelp: true,
     syncQueryFieldId: 'activity_query_id',
+  },
+  {
+    id: 'tiger',
+    displayName: 'Tiger Brokers',
+    channel: 'tiger',
+    capability:
+      'Read-only Tiger Brokers OpenAPI. Pulls a live snapshot of stock, option, and fund positions plus per-currency cash into channel tiger. Cannot trade or submit orders. Snapshot time is the UTC date of Sync (not prior-day Flex). Dashboard marks stay Yahoo. Paper accounts ingest only if you paste a paper account id.',
+    credentialFields: [
+      {
+        id: 'tiger_id',
+        label: 'Tiger ID',
+        type: 'text',
+        required: true,
+        help: 'Developer ID from https://developer.itigerup.com/profile.',
+      },
+      {
+        id: 'account',
+        label: 'Account',
+        type: 'text',
+        required: true,
+        help: 'Global (U…), Prime (5–10 digits), or paper (17 digits). Paper only if you intend to ingest sim.',
+      },
+      {
+        id: 'license',
+        label: 'License',
+        type: 'text',
+        required: true,
+        help: 'e.g. TBSG, TBHK, TBNZ. Must match the developer portal license.',
+      },
+      {
+        id: 'private_key',
+        label: 'RSA private key',
+        type: 'secret',
+        required: true,
+        widget: 'textarea',
+        format: 'pem',
+        help: 'Shown once at developer registration. PKCS#1 or PKCS#8 PEM. Never echoed.',
+      },
+      {
+        id: 'token',
+        label: 'TBHK token',
+        type: 'secret',
+        required: false,
+        help: 'Required for TBHK (~30-day). Paste-rotate when expired. Other licenses omit.',
+      },
+      {
+        id: 'secret_key',
+        label: 'Institutional secret key',
+        type: 'secret',
+        required: false,
+        help: 'Institutional accounts only. Individuals leave blank.',
+      },
+    ],
+    helpNotes: [
+      'Optional IP whitelist: if Settings shows an egress IPv4, paste it on the developer portal. Rotating egress without a whitelist is fine; a stale whitelist fails like IBKR 1013.',
+      'Invage never places or cancels orders. Do not paste a paper account unless you want sim lots on channel tiger.',
+    ],
+    helpSteps: [
+      'Open a funded Tiger account and sign the API agreement at https://developer.itigerup.com/profile.',
+      'Generate the RSA key pair on that page. Copy tiger_id and the private key (shown once).',
+      'Copy the trading account id and license (TBSG for Singapore live; TBHK needs the extra token file).',
+      'TBHK only: generate the token, paste it here, and rotate before it expires (~30 days). Invage does not auto-refresh in v1.',
+    ],
+    helpHref: 'https://docs-en.itigerup.com/docs/prepare',
+    helpHrefLabel: 'Tiger OpenAPI docs',
+    ipWhitelistHelp: true,
+  },
+  {
+    id: 'moomoo',
+    displayName: 'MooMoo',
+    channel: 'moomoo',
+    capability:
+      'Read-only moomoo Cloud Open API (not the local OpenD gateway). Pulls a live snapshot of positions and per-currency cash into channel moomoo. Cannot trade or submit orders. Requests trade:read only. Snapshot time is the UTC date of Sync. Dashboard marks stay Yahoo. Channel moomoo is not jude_futu — existing Futu-tagged lots and FDs stay until you move them.',
+    credentialFields: [
+      {
+        id: 'app_key',
+        label: 'AppKey ID',
+        type: 'text',
+        required: true,
+        help: 'From https://open.moomoo.com/dashboard User Center.',
+      },
+      {
+        id: 'private_key',
+        label: 'AppKey private key',
+        type: 'secret',
+        required: true,
+        widget: 'textarea',
+        format: 'pem',
+        help: 'Local private key matching the public key uploaded for the AppKey. Ed25519 or RSA. Never echoed.',
+      },
+      {
+        id: 'acc_id',
+        label: 'Trading account ID',
+        type: 'text',
+        required: false,
+        help: 'Optional. Required when more than one authorized trading account exists.',
+      },
+      {
+        id: 'sign_alg',
+        label: 'Signature algorithm',
+        type: 'text',
+        required: false,
+        help: 'Ed25519 (default) or RSA-SHA256. Must match the AppKey.',
+      },
+    ],
+    helpNotes: [
+      'Do not install OpenD and do not unlock trade. Invage talks only to https://webapi.moomoo.com.',
+      'jude_futu is a manual custody tag. Enabling moomoo does not move those lots or FDs.',
+    ],
+    helpSteps: [
+      'Log in at https://open.moomoo.com/dashboard and open User Center.',
+      'Create an AppKey, upload the public key, keep the private key local.',
+      'Paste AppKey ID and private key here. Do not grant trading on the key if the dashboard offers a split.',
+      'If Sync says multiple authorized accounts, paste acc_id from Get Authorized Trading Accounts.',
+    ],
+    helpHref: 'https://open.moomoo.com/api/overview/getting-started',
+    helpHrefLabel: 'moomoo OpenAPI docs',
+    ipWhitelistHelp: false,
   },
 ];
 
@@ -86,5 +212,13 @@ export function assertIbkrChannelMatchesCatalog(): void {
     throw new Error(
       `IBKR catalog channel "${ibkr.channel}" must equal IBKR_CHANNEL "${IBKR_CHANNEL}".`,
     );
+  }
+}
+
+export function assertCatalogChannelEqualsId(): void {
+  for (const def of BROKER_CATALOG) {
+    if (def.channel !== def.id) {
+      throw new Error(`Catalog connector "${def.id}" channel "${def.channel}" must equal id.`);
+    }
   }
 }

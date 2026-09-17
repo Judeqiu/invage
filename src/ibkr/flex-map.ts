@@ -11,6 +11,9 @@ import type {
   BrokerStatement,
 } from '../brokers/statement.js';
 import type { FlexOpenPosition, FlexSkip, FlexStatementDoc } from './flex-parse.js';
+import { yahooSymbolFromFlex } from '../brokers/yahoo-symbol.js';
+
+export { yahooSymbolFromFlex };
 
 export const IBKR_CHANNEL = 'ibkr';
 
@@ -18,21 +21,6 @@ export interface MappedLot {
   mapKey: string;
   holding: Holding;
   currency: string;
-}
-
-function padHk(symbol: string): string {
-  if (!/^\d+$/.test(symbol)) return `${symbol}.HK`;
-  return `${symbol.padStart(4, '0')}.HK`;
-}
-
-export function yahooSymbolFromFlex(pos: {
-  symbol: string;
-  listingExchange?: string;
-}): string {
-  const sym = pos.symbol.trim().toUpperCase();
-  const ex = (pos.listingExchange ?? '').trim().toUpperCase();
-  if (ex === 'SEHK' || ex === 'HKEX') return padHk(sym);
-  return sym;
 }
 
 function ymdOptionExpiry(raw: string): string {
