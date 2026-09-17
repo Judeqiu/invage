@@ -3,7 +3,7 @@ layout: default
 title: Data Model — Invester
 ---
 
-**[Home](/invage/)** | **[Data Model](/invage/data-model.html)** | **[Playbook](/invage/playbook.html)**
+**[Home](/invage/)** | **[Data Model](/invage/data-model.html)** | **[Playbook](/invage/playbook.html)** | **[IBKR Flex processing](/invage/ibkr-flex-raw-processing.html)**
 
 # Data Model
 
@@ -13,15 +13,79 @@ How Invester stores and isolates data — from user identity to portfolio holdin
 
 ## Overview
 
-### Execution history (Victor branch, September 2026)
+### Persistence (v4)
 
-The current branch persists investor state through `src/state/investor-store.ts` using Utarus PostgreSQL state and optimistic revisions. The YAML paths below describe the legacy model.
+The current branch persists investor state through `src/state/investor-store.ts` using Utarus PostgreSQL state and optimistic revisions. The YAML paths below describe the same public types (holdings, cash, executions, broker connections) as they appear on the agent-facing document. Disk YAML under `data/users/<slug>.yaml` is the legacy layout; do not treat it as a second schema.
+
+### Three stores (do not mix them)
+
+Broker ingest writes **three different things**. They are not interchangeable, and a Flex XML file is none of them until a parser maps it.
+
+| Store | Where | What it represents | How a broker sync writes it |
+|---|---|---|---|
+| **Books snapshot** | `portfolio` map + `cash` sleeves, keyed by `channel` | **Now:** lots and free cash as of statement `as_of` | **Replace** every lot and cash sleeve on that channel. Other channels stay. |
+| **Execution journal** | `option_executions[]` | **History:** individual option fills | **Merge** by identity. Never deletes older fills. Independent of whether the option is still open. |
+| **Raw archive** | `data/drive/<slug>/…` | **Vendor bytes** (Flex XML, Tiger JSON, …) | Copy of the broker response. Not holdings. Not the journal. |
+
+```
+Flex / Tiger / MooMoo raw
+        │  parser (vendor names die here)
+        ▼
+BrokerStatement { as_of, cash[], lots[], option_executions? }
+        │
+        ├─ lots + cash  → replace channel snapshot  (portfolio + cash)
+        ├─ option fills → merge journal             (option_executions)
+        └─ raw bytes    → drive archive             (ibkr-flex/, tiger-raw/, …)
+```
+
+**Snapshot vs journal, in one sentence:** `PATH@ibkr` with `units: 27900` is “we hold this now.” An `option_executions` row with yesterday’s `tradeID` is “this fill happened.” Closing the lot does **not** delete the fill. Importing last year’s fills does **not** rewind `units`.
+
+Vendor field names (`OpenPosition`, `endingCash`, `assetCategory`, `conid`, `levelOfDetail`) are **parser inputs**. They are not stored. After apply you should see `Holding`, `cash.amount`, `broker_ref.native_id`, and `OptionExecution` only. Pipeline detail for IBKR: [IBKR Flex raw data processing](./ibkr-flex-raw-processing.md).
+
+What v1 ingest **does not** store, even if the XML contains it: stock/ETF fills, dividends, deposits, daily NAV / EquitySummary history, TWR, FIFO tax lots, roll links, opening spot. Those stay in the raw file or `not_imported`. Dashboard period-change history is `save_snapshot`, not Flex.
+
+### Execution history (Victor branch, September 2026)
 
 `option_executions?: OptionExecution[]` is durable, broker-sourced option execution history, independent of `portfolio` snapshots. The canonical `BrokerStatement` may include this same field. See `src/brokers/option-executions.ts` for the validated shape. Monetary amounts, strike, multiplier and quantity are decimal strings; exact signed commission is retained. Gross premium is signed proceeds and net premium is proceeds plus signed commission, before taxes. Amounts are never converted to JavaScript floating-point values for journal arithmetic.
 
 Identity is `(channel, account_id, execution_id)`. Repeated identical executions merge once; conflicts fail before broker snapshot writes. `executed_at` is the broker-local clock, not an inferred UTC instant. Missing history is unavailable, not zero trades. Normal sync merges executions while updating holdings; historical XML uploads merge history only and cannot replace current cash or positions. No one-year purge is applied to this collection.
 
 The journal’s daily short-option premium includes only sell-to-open and buy-to-close executions, grouped by broker date, account, channel and currency. These totals describe imported history only, not realized P&L. A closing execution is not proof that the entire contract position is closed, and roll relationships are not guessed. Snapshot holdings remain the source for active exposure. Historical opening spot prices are unavailable until explicitly sourced.
+
+**When the journal field is missing vs empty:** omit `option_executions` on a statement (no `<Trades>` wrapper in Flex) means “this report does not speak about fills” — existing rows stay. An empty array means “this report included Trades and there were no option executions.” Only `OPT` rows at Executions level enter the journal; `ORDER` / `CLOSED_LOT` / stock trades do not.
+
+```yaml
+option_executions:
+  - channel: ibkr
+    account_id: U1234567
+    execution_id: "987654321"          # IBKR tradeID; identity with channel + account
+    contract_id: "12345678"            # IBKR conid
+    executed_at: "2026-09-14T10:26:48" # broker-local; no timezone invented
+    underlying: AMD
+    right: call                        # call | put
+    expiry: "2026-10-17"
+    strike: "150"
+    multiplier: "100"
+    contracts: "1"                     # absolute contracts; sign lives in side
+    side: sell                         # buy | sell
+    effect: open                       # open | close  (IBKR openCloseIndicator O/C)
+    currency: USD
+    gross_premium: "5140.00"           # signed proceeds (buy is negative)
+    commission: "-1.23456789"          # signed; same currency
+```
+
+| Field | Type | Meaning |
+|---|---|---|
+| `channel` | string | Custody sleeve (`ibkr`). Must match the connector that imported the row |
+| `account_id` | string | Broker account on the statement |
+| `execution_id` | string | Broker trade id. Duplicate identical rows merge; same id with different money **fails the sync** |
+| `contract_id` | string | Broker contract id (`conid`) |
+| `executed_at` | `YYYY-MM-DDTHH:MM:SS` | Report clock, not UTC |
+| `contracts` | decimal string | Positive count. `SELL` quantity in Flex is negative; we store sign on `side` |
+| `gross_premium` | decimal string | Flex `proceeds`. Sign must match buy/sell |
+| `commission` | decimal string | Flex `ibCommission`. Keep exact text; do not float |
+
+`net_premium` is **computed** for the Trades UI (`proceeds + commission`). It is not a stored field. The Trades tab is unavailable until at least one row exists (sync with execution-level Trades, or XML upload).
 
 ```
 data/
@@ -249,7 +313,9 @@ recon:
 
 Missing `recon` = no open session. Unknown keys fail on read. Cash `take` posts a journal (`post_adjustment` / `post_opening_balance`); never `set_cash`. See [plans/2026-08-28-channel-recon-flow-design.md](./plans/2026-08-28-channel-recon-flow-design.md).
 
-**One books snapshot.** YAML stores only public types: `Holding`, `cash.amount` (optional `settled_amount` / `accrued_interest`), `broker_connections.<id>` (credentials, `last_sync`, optional `metrics`). IBKR Flex XML/CSV is a **parser**, not a second schema: `conid` → `broker_ref.native_id`, Cash Report ending cash → `cash.amount`. Apply is `applyBrokerStatement` for every connector. Do not persist `openPositions`, `endingCash`, `assetCategory`, or `conid`.
+**One books snapshot.** YAML stores only public types: `Holding`, `cash.amount` (optional `settled_amount` / `accrued_interest`), `broker_connections.<id>` (credentials, `last_sync`, optional `metrics`), plus the independent `option_executions` journal. IBKR Flex XML/CSV is a **parser**, not a second schema: `conid` → `broker_ref.native_id`, Cash Report ending cash → `cash.amount`. Apply is `applyBrokerStatement` for every connector. Do not persist `openPositions`, `endingCash`, `assetCategory`, or `conid`.
+
+A period pack (Last 90 days, YTD, …) is still applied as **one** snapshot: lots and cash become whatever Open Positions / Cash Report show on `toDate`. Extra days in the pack only add execution rows when Trades/Executions is present. Widening the Flex period does **not** create a time series of `portfolio` keys.
 
 Catalog apply is a **channel snapshot** of what mapped: every ISO cash sleeve on that channel, every mappable lot as a `Holding`. IBKR Flex `CashReportCurrency` with `currency: BASE_SUMMARY` is **not** an ISO sleeve — drop it when per-currency rows exist. When the query only returns BASE_SUMMARY, the catalog parser books that `endingCash` in the ISO code from `EquitySummaryByReportDateInBase` for the statement `toDate`, and **fails** if that section is missing or `cash` disagrees with BASE_SUMMARY `endingCash`. Open Positions quantity is XML `quantity` or `position` (IBKR docs label “Quantity”; Flex XML often uses `position`). Unsupported rows are listed in `last_sync.not_imported` and are **not** invented as holdings. Missing Open Positions / Cash Report wrappers, or zero importable cash sleeves, fail the catalog parser (no wipe).
 
@@ -545,6 +611,19 @@ Missing/empty `channel` is **not** rewritten in YAML; the dashboard maps it to `
 **Position key:** if `ticker` is omitted on add, auto-built as  
 `{UNDERLYING}-{P|C}-{STRIKE}-{YYYYMMDD}-{L|S}`  
 e.g. `SPACEX-P-90-20260807-S`. When `channel` is set, the stored map key is `{base}@{channel}`.
+
+### Option execution journal (not a holding)
+
+Open option lots above are the **snapshot**. Fills live on top-level `option_executions` (see [Overview](#execution-history-victor-branch-september-2026)). They share `channel` with the lot but are **not** nested under it and are **not** keyed like `AMD-C-150-20261017-S@ibkr`.
+
+| Question | Answer from |
+|---|---|
+| Do we still hold this contract? | `portfolio` option lot (`units`, `option.side`) |
+| What did we pay/receive on this fill? | `option_executions` row (`gross_premium`, `commission`) |
+| Daily short-premium chart | Derived from journal: sell-to-open + buy-to-close only |
+| Was this a roll? | Not stored — do not infer from two nearby fills |
+
+Broker apply **replaces** `AMD@ibkr` from Open Positions in the same transaction that **merges** that day’s AMD option `tradeID`s. A later sync whose Flex query is Last Business Day will refresh the lot and leave last month’s fills in the journal. A historical XML upload merges fills and must not rewrite the lot.
 
 **Pricing:**
 
