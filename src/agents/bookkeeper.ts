@@ -56,7 +56,7 @@ function registerBookkeeperSkills(): Skill[] {
       id: 'broker-integration',
       name: 'Broker integration',
       description:
-        'Read-only ingest from a catalog brokerage connector onto its channel. Shipped: ibkr, tiger, moomoo. Load by capability fit when books should match a broker statement, Flex/Tiger/MooMoo sync fails to parse, CSV/XML/JSON format is unexpected, or the user wants to connect/refresh/reconcile a catalog connector. Tools: configure_broker, sync_broker, configure_ibkr_flex, sync_ibkr_flex, list_broker_triage, read_broker_raw, save_broker_parser, parse_broker_raw, apply_broker_statement. Catalog parser first; on parse failure a triage case (inventory + raw) is archived. csv_tables is IBKR-only. moomoo never reads jude_futu. Never eval, never invent numbers. Quote not_imported.',
+        'Read-only ingest from a catalog brokerage connector onto its channel. Shipped: ibkr, tiger, moomoo, webull. Load by capability fit when books should match a broker statement, Flex/Tiger/MooMoo/Webull sync fails to parse, CSV/XML/JSON format is unexpected, or the user wants to connect/refresh/reconcile a catalog connector. Tools: configure_broker, sync_broker, configure_ibkr_flex, sync_ibkr_flex, list_broker_triage, read_broker_raw, save_broker_parser, parse_broker_raw, apply_broker_statement. Catalog parser first; on parse failure a triage case (inventory + raw) is archived. csv_tables is IBKR-only. moomoo never reads jude_futu. Never eval, never invent numbers. Quote not_imported.',
     },
     {
       id: 'ibkr-flex',
@@ -75,6 +75,12 @@ function registerBookkeeperSkills(): Skill[] {
       name: 'MooMoo Cloud Open API sync',
       description:
         'MooMoo is catalog connector moomoo (Cloud REST, not OpenD). Load broker-integration. Tools: configure_broker / sync_broker with connector_id moomoo. Channel moomoo is not jude_futu. Read-only positions + cash. No csv_tables. No option lots without a complete OptionSpec fixture.',
+    },
+    {
+      id: 'webull-openapi',
+      name: 'Webull OpenAPI sync',
+      description:
+        'Webull is catalog connector webull. Load broker-integration. Tools: configure_broker / sync_broker with connector_id webull. Read-only equity positions + cash. No csv_tables. Optional access_token if the API requires in-app 2FA.',
     },
     {
       id: 'family-treasury',
@@ -99,7 +105,7 @@ const BOOKKEEPER_PURPOSE = `You are **Bookkeeper** — a local specialist on the
 
 **You are the only agent allowed to write/update books data** (portfolio, cash, deposits, holdings, household ledger, projection assumptions/scenarios, snapshots, IBKR Flex ingest). Other peers are read-only on the books — they must hand journal work to you.
 
-**Brokers:** Load skill **broker-integration**. Catalog ids \`ibkr\`, \`tiger\`, and \`moomoo\` (parsers, not a second data model). Books are only \`Holding\` + \`cash.amount\` + optional extras. Connect in Settings → Brokers or \`configure_broker\`. Call \`sync_broker\` anytime the channel is on. If the catalog parser fails, read archived raw. For IBKR, generate a \`csv_tables\` spec or public BrokerStatement from the text — never Flex \`openPositions\`/\`endingCash\`. For Tiger/MooMoo JSON, do not generate csv_tables. Connector \`moomoo\` never reads \`jude_futu\`. Never invent numbers. Quote \`not_imported\`. Never echo secrets.
+**Brokers:** Load skill **broker-integration**. Catalog ids \`ibkr\`, \`tiger\`, \`moomoo\`, and \`webull\` (parsers, not a second data model). Books are only \`Holding\` + \`cash.amount\` + optional extras. Connect in Settings → Brokers or \`configure_broker\`. Call \`sync_broker\` anytime the channel is on. If the catalog parser fails, read archived raw. For IBKR, generate a \`csv_tables\` spec or public BrokerStatement from the text — never Flex \`openPositions\`/\`endingCash\`. For Tiger/MooMoo/Webull JSON, do not generate csv_tables. Connector \`moomoo\` never reads \`jude_futu\`. Never invent numbers. Quote \`not_imported\`. Never echo secrets.
 
 You are **not** the investment analyst. Do not run undervalued screens, live valuation theses, news→price paths, playbook interviews, or market-theme research. For those, hand off to **@WalletStreet** / **@InvestmentAdvisor** (or let the default agent consult them).
 

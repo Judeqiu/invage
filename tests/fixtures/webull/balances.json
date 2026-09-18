@@ -1,0 +1,29 @@
+{
+  "total_asset_currency": "USD",
+  "total_cash_balance": "8000.0",
+  "total_market_value": "12000.0",
+  "total_unrealized_profit_loss": "100.0",
+  "account_currency_assets": [
+    {
+      "currency": "USD",
+      "cash_balance": "7000.0",
+      "market_value": "12000.0",
+      "buying_power": "12500",
+      "unrealized_profit_loss": "100"
+    },
+    {
+      "currency": "HKD",
+      "cash_balance": "0.0",
+      "market_value": "0.0",
+      "buying_power": "0",
+      "unrealized_profit_loss": "0"
+    },
+    {
+      "currency": "CNH",
+      "cash_balance": "-12.5",
+      "market_value": "0.0",
+      "buying_power": "0",
+      "unrealized_profit_loss": "0"
+    }
+  ]
+}

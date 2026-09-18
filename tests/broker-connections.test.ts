@@ -71,7 +71,7 @@ describe('readFlexEgressIpv4', () => {
 describe('broker_connections store', () => {
   it('never-configured IBKR is off, not needs_credentials', () => {
     const views = publicCatalog(investor());
-    expect(views).toHaveLength(3);
+    expect(views).toHaveLength(4);
     const ibkr = views.find((v) => v.id === 'ibkr');
     expect(ibkr).toMatchObject({
       id: 'ibkr',
@@ -113,10 +113,10 @@ describe('broker_connections store', () => {
 
   it('throws on unknown connector keys', () => {
     const state = investor({
-      broker_connections: { webull: { enabled: false, credentials: {} } },
+      broker_connections: { schwab: { enabled: false, credentials: {} } },
     });
     expect(() => readBrokerConnections(state)).toThrow(
-      /Unknown broker connector "webull" in broker_connections/,
+      /Unknown broker connector "schwab" in broker_connections/,
     );
   });
 
@@ -380,9 +380,22 @@ describe('createInvageWebUi brokers section', () => {
       true,
     );
     expect(ui.routes?.some((r) => r.path === '/brokers/guide')).toBe(true);
+    const matchRoute = (path: string) => {
+      for (const r of ui.routes ?? []) {
+        if (r.path === path) return r;
+        if (path.startsWith(`${r.path}/`)) return r;
+      }
+      return undefined;
+    };
+    expect(matchRoute('/brokers/guide')?.iframeSrc).toBe(
+      '/domain-assets/invage/brokers/guide/index.html',
+    );
+    expect(matchRoute('/brokers')?.iframeSrc).toBe(
+      '/domain-assets/invage/brokers/index.html',
+    );
   });
 
-  it('Brokers page treats Tiger and MooMoo as live catalog cards, not coming-soon', () => {
+  it('Brokers page treats Tiger, MooMoo, and Webull as live catalog cards, not coming-soon', () => {
     const js = readFileSync(join(process.cwd(), 'webui/brokers/app.js'), 'utf8');
     expect(js).toMatch(/payload\.connectors/);
     expect(js).toMatch(/UPCOMING/);
@@ -394,18 +407,22 @@ describe('createInvageWebUi brokers section', () => {
     expect(
       readFileSync(join(process.cwd(), 'webui/brokers/guide/index.html'), 'utf8'),
     ).toContain('Connect a brokerage account');
+    expect(
+      readFileSync(join(process.cwd(), 'webui/brokers/guide/app.js'), 'utf8'),
+    ).toContain('parent.location.hash');
     const settings = readFileSync(join(process.cwd(), 'webui/settings/brokers/app.js'), 'utf8');
     expect(settings).toMatch(/payload\.connectors/);
     expect(settings).toMatch(/data-manage/);
   });
 
-  it('GET catalog lists IBKR, Tiger Brokers, and MooMoo as live connectors', () => {
+  it('GET catalog lists IBKR, Tiger Brokers, MooMoo, and Webull as live connectors', () => {
     const views = publicCatalog(investor());
-    expect(views.map((v) => v.id)).toEqual(['ibkr', 'tiger', 'moomoo']);
+    expect(views.map((v) => v.id)).toEqual(['ibkr', 'tiger', 'moomoo', 'webull']);
     expect(views.map((v) => v.display_name)).toEqual([
       'Interactive Brokers',
       'Tiger Brokers',
       'MooMoo',
+      'Webull',
     ]);
     expect(views.every((v) => v.status === 'off')).toBe(true);
   });

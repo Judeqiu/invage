@@ -277,7 +277,7 @@ broker_connections:
         - "ES: assetCategory FUT is not imported (supported: STK, ETF, OPT, FUND)"
 ```
 
-Legacy `ibkr_flex` is accepted on **read** only. The first Settings save, `configure_ibkr_flex`, or Flex sync (including a failed sync) writes `broker_connections` and **deletes** `ibkr_flex`. Both keys present is an error. Unknown connector or credential keys fail on read. **Disable does not delete** holdings tagged with that connector channel (`ibkr`, `tiger`, `moomoo`). Successful Tiger/MooMoo snapshots archive under `drive/<slug>/tiger-raw/` and `moomoo-raw/` (`list_raw_data` `source_kind: broker-sync`). Channel `moomoo` is not `jude_futu`.
+Legacy `ibkr_flex` is accepted on **read** only. The first Settings save, `configure_ibkr_flex`, or Flex sync (including a failed sync) writes `broker_connections` and **deletes** `ibkr_flex`. Both keys present is an error. Unknown connector or credential keys fail on read. **Disable does not delete** holdings tagged with that connector channel (`ibkr`, `tiger`, `moomoo`, `webull`). Successful Tiger/MooMoo/Webull snapshots archive under `drive/<slug>/tiger-raw/`, `moomoo-raw/`, and `webull-raw/` (`list_raw_data` `source_kind: broker-sync`). Channel `moomoo` is not `jude_futu`.
 
 ### Channel recon session
 

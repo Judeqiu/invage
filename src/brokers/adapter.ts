@@ -11,6 +11,7 @@ import { ibkrFlexAdapter } from '../ibkr/flex-adapter.js';
 import type { FlexTransport } from '../ibkr/flex-client.js';
 import { moomooAdapter } from '../moomoo/moomoo-adapter.js';
 import { tigerAdapter } from '../tiger/tiger-adapter.js';
+import { webullAdapter } from '../webull/webull-adapter.js';
 import { getBrokerConnector } from './catalog.js';
 import type { BrokerStatement } from './statement.js';
 
@@ -43,6 +44,7 @@ export const adapters: Record<string, BrokerConnectorAdapter> = {
   ibkr: ibkrFlexAdapter,
   tiger: tigerAdapter,
   moomoo: moomooAdapter,
+  webull: webullAdapter,
 };
 
 export function getBrokerAdapter(id: string): BrokerConnectorAdapter {
@@ -61,7 +63,7 @@ export function archiveBrokerSuccess(
   asOf: string,
 ): string {
   if (id === 'ibkr') return archiveXml(slug, raw.body, asOf);
-  if (id === 'tiger' || id === 'moomoo') {
+  if (id === 'tiger' || id === 'moomoo' || id === 'webull') {
     const dir = join(resolveDataRoot(), 'drive', slug, `${id}-raw`);
     mkdirSync(dir, { recursive: true });
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');

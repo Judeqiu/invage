@@ -23,6 +23,24 @@ function requiredLabel(field) {
   return field.required ? 'Required' : 'Optional';
 }
 
+function sectionHash() {
+  let hash = window.location.hash;
+  if (!hash) {
+    try {
+      if (window.parent !== window) hash = window.parent.location.hash;
+    } catch {
+      /* cross-origin parent */
+    }
+  }
+  return decodeURIComponent((hash || '').replace(/^#/, ''));
+}
+
+function scrollToSection() {
+  const id = sectionHash();
+  if (!id) return;
+  document.getElementById(id)?.scrollIntoView();
+}
+
 function render(connectors) {
   el.toc.innerHTML = connectors
     .map(
@@ -75,6 +93,7 @@ fetch(API, { credentials: 'include' })
     const connectors = body.connectors || [];
     if (connectors.length === 0) throw new Error('Broker catalog returned no connectors.');
     render(connectors);
+    scrollToSection();
   })
   .catch((e) => {
     showError(e instanceof Error ? e.message : String(e));

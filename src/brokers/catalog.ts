@@ -196,6 +196,65 @@ export const BROKER_CATALOG: readonly BrokerConnectorDef[] = [
     helpHrefLabel: 'moomoo OpenAPI docs',
     ipWhitelistHelp: false,
   },
+  {
+    id: 'webull',
+    displayName: 'Webull',
+    channel: 'webull',
+    capability:
+      'Read-only Webull OpenAPI. Pulls a live snapshot of equity positions and per-currency cash into channel webull. Cannot trade or submit orders. Snapshot time is the UTC date of Sync. Dashboard marks stay Yahoo. Paper/sandbox hosts are not used.',
+    credentialFields: [
+      {
+        id: 'app_key',
+        label: 'App Key',
+        type: 'text',
+        required: true,
+        help: 'From Developer Tool → API Keys Management on the Webull website for your license.',
+      },
+      {
+        id: 'app_secret',
+        label: 'App Secret',
+        type: 'secret',
+        required: true,
+        help: 'Shown when you Generate Key. Never echoed. Used only to sign requests (not sent as a header).',
+      },
+      {
+        id: 'region',
+        label: 'Region',
+        type: 'text',
+        required: true,
+        help: 'License host: us, hk, jp, sg, th, au, my, uk, or eu. Must match the site where you created the key.',
+      },
+      {
+        id: 'account_id',
+        label: 'Account ID',
+        type: 'text',
+        required: false,
+        help: 'Optional. Required when more than one brokerage account is on the key.',
+      },
+      {
+        id: 'access_token',
+        label: 'Access token',
+        type: 'secret',
+        required: false,
+        help: 'Paste if Sync says Webull requires an access token (in-app 2FA). Rotate when it expires. Invage does not poll the Webull app.',
+      },
+    ],
+    helpNotes: [
+      'Invage never places or cancels orders. App Secret is HMAC-only; it is not sent in HTTP headers.',
+      'US individual API applications typically need about $100 net account value and a 1–2 business day review.',
+      'Institutional IP whitelist: if Settings shows an egress IPv4, paste it in the Webull portal. Individuals usually skip the whitelist.',
+    ],
+    helpSteps: [
+      'Open the official Webull website for your license (for example webull.com, webull.hk, or webull.com.sg) and sign in.',
+      'Avatar → Developer Tool → My Application. Submit the API application and wait for approval (often 1–2 business days).',
+      'API Keys Management → register the app → Generate Key. Copy App Key and App Secret (secret shown once).',
+      'Paste App Key, App Secret, and region (us / hk / sg / … matching that site). Save, then Sync.',
+      'If Sync says multiple accounts, paste account_id from the account list. If it asks for an access token, approve the request in the Webull app (or paste the token) and Sync again.',
+    ],
+    helpHref: 'https://developer.webull.com/apis/docs/getting-started',
+    helpHrefLabel: 'Webull OpenAPI docs',
+    ipWhitelistHelp: false,
+  },
 ];
 
 export function getBrokerConnector(id: string): BrokerConnectorDef {

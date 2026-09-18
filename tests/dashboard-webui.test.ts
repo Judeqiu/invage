@@ -1,6 +1,6 @@
 import { useTestDatabase, createInvestorFixture } from './helpers/database.js';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'fs';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 
@@ -155,6 +155,12 @@ describe('createInvageWebUi', () => {
     expect(guide?.iframeSrc).toBe('/domain-assets/invage/brokers/guide/index.html');
     expect(existsSync(join(invageWebUiStaticDir(), 'brokers', 'guide', 'index.html'))).toBe(true);
     expect(existsSync(join(invageWebUiStaticDir(), 'brokers', 'guide', 'app.js'))).toBe(true);
+    const paths = (webUi.routes ?? []).map((r) => r.path);
+    expect(paths.indexOf('/brokers/guide')).toBeGreaterThanOrEqual(0);
+    expect(paths.indexOf('/brokers/guide')).toBeLessThan(paths.indexOf('/brokers'));
+    expect(
+      readFileSync(join(invageWebUiStaticDir(), 'brokers', 'guide', 'app.js'), 'utf8'),
+    ).toContain('parent.location.hash');
   });
 
   it('registers Positions, Trades, Insights report pages', async () => {

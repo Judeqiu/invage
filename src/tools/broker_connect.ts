@@ -21,7 +21,7 @@ export function createConfigureBrokerTool(): AgentTool {
       'Store credentials for a catalog connector (ibkr, tiger, …) via the same path as Settings → Brokers. Never echoes secrets. After this, call sync_broker with the same connector_id.',
     parameters: Type.Object({
       ...channelIdParams,
-      connector_id: Type.String({ description: 'Catalog connector id (ibkr, tiger, moomoo).' }),
+      connector_id: Type.String({ description: 'Catalog connector id (ibkr, tiger, moomoo, webull).' }),
       credentials: Type.Object({}, { additionalProperties: Type.String(), description: 'Credential field map from the catalog.' }),
     }),
     execute: async (_id, raw) => {
@@ -55,7 +55,7 @@ export function createSyncBrokerTool(): AgentTool {
       'Pull the catalog connector statement and replace lots + cash on that channel only. Read-only. Other channels stay untouched. Unsupported lots are listed as not_imported.',
     parameters: Type.Object({
       ...channelIdParams,
-      connector_id: Type.String({ description: 'Catalog connector id (ibkr, tiger, moomoo).' }),
+      connector_id: Type.String({ description: 'Catalog connector id (ibkr, tiger, moomoo, webull).' }),
     }),
     execute: async (_id, raw) => {
       const p = raw as ChannelIds & { connector_id: string };

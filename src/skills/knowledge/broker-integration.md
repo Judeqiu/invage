@@ -1,8 +1,8 @@
 # Broker integration
 
-Read-only ingest from a **catalog connector** (`catalog.get(id)`) onto that connector’s channel. Shipped: IBKR (`ibkr`), Tiger Brokers (`tiger`), and MooMoo (`moomoo`). Load whenever books should match a brokerage statement — connect, refresh, scheduled pull, parse failure, or reconcile vs the broker.
+Read-only ingest from a **catalog connector** (`catalog.get(id)`) onto that connector’s channel. Shipped: IBKR (`ibkr`), Tiger Brokers (`tiger`), MooMoo (`moomoo`), and Webull (`webull`). Load whenever books should match a brokerage statement — connect, refresh, scheduled pull, parse failure, or reconcile vs the broker.
 
-Never invent numbers. Never echo Flex tokens, RSA PEMs, or Tiger tokens. Select by catalog id + capability, not synonyms.
+Never invent numbers. Never echo Flex tokens, RSA PEMs, Tiger tokens, Webull app secrets, or access tokens. Select by catalog id + capability, not synonyms.
 
 ## Tools
 
@@ -23,7 +23,7 @@ Settings → Brokers uses the same store. Off refuses pull; lots stay. `not_impo
 3. `list_broker_triage` then `read_broker_raw` (path = `raw_path` from the case). Read the text. For IBKR Flex XML/CSV, produce either:
    - a `csv_tables` spec (headers + column map + `skipCurrencies` such as `BASE_SUMMARY`), `save_broker_parser`, then `sync_ibkr_flex` or `parse_broker_raw` + `apply_broker_statement`; or
    - a **BrokerStatement** JSON (`account_id`, `as_of`, `cash[].amount`, `lots[].holding`) taken only from the raw, then `apply_broker_statement`. Never submit Flex `openPositions` / `endingCash`.
-   For `looks_like: json` (Tiger / MooMoo), do **not** generate csv_tables. Map the archived JSON to BrokerStatement or fix credentials and Sync again. Connector `moomoo` never reads `jude_futu`.
+   For `looks_like: json` (Tiger / MooMoo / Webull), do **not** generate csv_tables. Map the archived JSON to BrokerStatement or fix credentials and Sync again. Connector `moomoo` never reads `jude_futu`.
 4. If a field is not in the raw, omit it or list it in `skipped` — never guess cost, qty, or cash.
 
 IBKR Flex XML (catalog parser): Open Positions **Quantity** is often the attribute `position` (not `quantity`). `quantity` on `<Trade>` is a different section. Cash Report `BASE_SUMMARY` is base-currency total — not an ISO sleeve. Per-currency Cash Report rows are preferred; if the query only sent BASE_SUMMARY, Equity Summary In Base `currency` + `cash` on `toDate` must match `endingCash` or the parse fails.
@@ -84,7 +84,7 @@ Use `list_raw_data` to find saved source files across channels, then
 `fetch_raw_data` with the returned `id` and `version`. Both tools are bound to
 the authenticated user; they never take a user slug from model arguments.
 Successful IBKR responses are in `ibkr-flex/`; successful Tiger snapshots are in
-`tiger-raw/`; successful MooMoo snapshots are in `moomoo-raw/`; parser-failure
+`tiger-raw/`; successful MooMoo snapshots are in `moomoo-raw/`; successful Webull snapshots are in `webull-raw/`; parser-failure
 archives are in `broker-raw/<connector>/`. Other Drive files may be uploads or
 generated reports and have unverified channel provenance. Do not claim that a manual holding has
 an original statement unless a file actually exists.

@@ -136,7 +136,7 @@
     </div>
     <div class="card">
       <ol>
-        <li>Open <a href="/brokers" target="_parent">Brokers</a> and choose a card (Interactive Brokers, Tiger Brokers, or MooMoo).</li>
+        <li>Open <a href="/brokers" target="_parent">Brokers</a> and choose a card (Interactive Brokers, Tiger Brokers, MooMoo, or Webull).</li>
         <li>Click Connect, enable the channel, and paste the credentials listed below.</li>
         <li>Save, then Sync. Only lots and cash tagged with that channel are replaced. Other brokers stay untouched.</li>
         <li>Turning a channel off stops future pulls. It does not delete holdings.</li>
@@ -160,6 +160,7 @@
         <li><strong>Tiger TBHK.</strong> Hong Kong licenses need the extra token (~30 days). Paste a fresh one when Sync says it expired. Invage does not auto-refresh it.</li>
         <li><strong>MooMoo “paste acc_id”.</strong> More than one trading account is authorized. Copy the account id from Get Authorized Trading Accounts and save it.</li>
         <li><strong>MooMoo clock skew (-12006).</strong> Sync retries once against server time. If it still fails, check the device clock and try again.</li>
+        <li><strong>Webull access token.</strong> Some licenses require in-app 2FA. Approve the request in the Webull app, paste access_token if asked, and Sync again. Invage does not poll the app.</li>
         <li><strong>Paper / sim accounts.</strong> Only ingest a paper account if that is the id you pasted. Live books should use a funded live account.</li>
         <li><strong>jude_futu lots.</strong> Connecting MooMoo does not move Futu-tagged lots or fixed deposits. Recon those sleeves separately if you want one channel.</li>
         <li><strong>Not imported.</strong> Futures, shorts, and unmapped option codes are listed after Sync. They are never invented as holdings.</li>

@@ -1,0 +1,51 @@
+[
+  {
+    "position_id": "POS-AAPL",
+    "currency": "USD",
+    "quantity": "10",
+    "symbol": "AAPL",
+    "instrument_type": "EQUITY",
+    "last_price": "190.0",
+    "cost_price": "150.0",
+    "unrealized_profit_loss": "400.0"
+  },
+  {
+    "position_id": "POS-700",
+    "currency": "HKD",
+    "quantity": "100",
+    "symbol": "700",
+    "instrument_type": "EQUITY",
+    "last_price": "380.0",
+    "cost_price": "300.0",
+    "unrealized_profit_loss": "8000.0"
+  },
+  {
+    "position_id": "POS-TSLA",
+    "currency": "USD",
+    "quantity": "0",
+    "symbol": "TSLA",
+    "instrument_type": "EQUITY",
+    "last_price": "200.0",
+    "cost_price": "180.0",
+    "unrealized_profit_loss": "0"
+  },
+  {
+    "position_id": "POS-OPT",
+    "currency": "USD",
+    "quantity": "2",
+    "symbol": "AAPL",
+    "instrument_type": "OPTION",
+    "last_price": "3.0",
+    "cost_price": "2.0",
+    "unrealized_profit_loss": "200.0",
+    "legs": [
+      {
+        "symbol": "AAPL",
+        "option_type": "CALL",
+        "option_expire_date": "2026-09-18",
+        "option_exercise_price": "200.0",
+        "option_contract_multiplier": "100"
+      }
+    ]
+  }
+]
