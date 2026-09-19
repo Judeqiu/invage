@@ -83,7 +83,7 @@ export const BROKER_CATALOG: readonly BrokerConnectorDef[] = [
     displayName: 'Tiger Brokers',
     channel: 'tiger',
     capability:
-      'Read-only Tiger Brokers OpenAPI. Pulls a live snapshot of stock, option, and fund positions plus per-currency cash into channel tiger. Cannot trade or submit orders. Snapshot time is the UTC date of Sync (not prior-day Flex). Dashboard marks stay Yahoo. Paper accounts ingest only if you paste a paper account id.',
+      'Read-only Tiger Brokers OpenAPI. Pulls a live snapshot of stock, option, and fund positions plus per-currency cash into channel tiger. Cannot trade or submit orders. Snapshot time is the UTC date of Sync (not prior-day Flex). Dashboard marks stay Yahoo. Option fill history is not imported (IBKR Flex Trades only). Paper accounts ingest only if you paste a paper account id.',
     credentialFields: [
       {
         id: 'tiger_id',
@@ -149,7 +149,7 @@ export const BROKER_CATALOG: readonly BrokerConnectorDef[] = [
     displayName: 'MooMoo',
     channel: 'moomoo',
     capability:
-      'Read-only moomoo Cloud Open API (not the local OpenD gateway). Pulls a live snapshot of positions and per-currency cash into channel moomoo. Cannot trade or submit orders. Requests trade:read only. Snapshot time is the UTC date of Sync. Dashboard marks stay Yahoo. Channel moomoo is not jude_futu — existing Futu-tagged lots and FDs stay until you move them.',
+      'Read-only moomoo Cloud Open API (not the local OpenD gateway). Pulls a live snapshot of stock and listed option lots plus per-currency cash into channel moomoo. Cannot trade or submit orders. Requests trade:read only. Snapshot time is the UTC date of Sync. Dashboard marks stay Yahoo. Option fill history is not imported (IBKR Flex Trades only). Channel moomoo is not jude_futu — existing Futu-tagged lots and FDs stay until you move them.',
     credentialFields: [
       {
         id: 'app_key',
@@ -201,7 +201,7 @@ export const BROKER_CATALOG: readonly BrokerConnectorDef[] = [
     displayName: 'Webull',
     channel: 'webull',
     capability:
-      'Read-only Webull OpenAPI. Pulls a live snapshot of equity positions and per-currency cash into channel webull. Cannot trade or submit orders. Snapshot time is the UTC date of Sync. Dashboard marks stay Yahoo. Paper/sandbox hosts are not used.',
+      'Read-only Webull OpenAPI. Pulls a live snapshot of equity and single-leg listed option lots plus per-currency cash into channel webull. Cannot trade or submit orders. Snapshot time is the UTC date of Sync. Dashboard marks stay Yahoo. Combo/multi-leg options are skipped. Option fill history is not imported (IBKR Flex Trades only). Paper/sandbox hosts are not used.',
     credentialFields: [
       {
         id: 'app_key',

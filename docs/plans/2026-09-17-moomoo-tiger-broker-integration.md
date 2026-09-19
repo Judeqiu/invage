@@ -99,7 +99,7 @@ The current sync and recon paths are **Flex-hardcoded** (`syncQueryFieldId` + `c
 | **KD-T13** | Secret PEM fields use `widget: 'textarea'` + PATCH normalize (newlines / `\n` / headerless base64). | Password inputs strip PEM. |
 | **KD-T14** | `fetchRaw` for multi-call vendors returns one **versioned bundle** JSON (`TigerRawBundle` / `MooMooRawBundle`), not a single vendor response body. | Archive + parse need all calls together. |
 | **KD-T15** | Document all licenses. **Smoke SG first** (TBSG / Moomoo `FUTUSG`). TBHK token is paste-rotate in v1 (no auto-refresh). Ingest Futu HK (`FUTUSECURITIES`) if that `acc_id` is authorized. Do not promise HK options without fixtures. Not “SG-only” (do not refuse TBHK/Futu HK) and not first-class TBHK auto-refresh. | User confirmed 2026-09-17. |
-| **KD-T16** | No option **execution journal** in v1 for Tiger/MooMoo. Positions + cash only. Option **lots** still import when `OptionSpec` is complete. IBKR Flex Trades unchanged. Journal is later work, not a v1 PR. | User confirmed 2026-09-17. |
+| **KD-T16** | No option **execution journal** in v1 for Tiger/MooMoo/Webull. Option **lots** import when `OptionSpec` is complete (same `Holding.option` as Flex). IBKR Flex Trades unchanged. Journal is later work, not a v1 PR. | User confirmed 2026-09-17. Lots shipped 2026-09-19 for MooMoo (TCH fixture + `stock_owner`/`lot_size`) and Webull (single-leg `legs[]`). |
 
 ---
 
@@ -619,7 +619,7 @@ Copy Flex (`flex-map.ts`). `Holding.option` requires `right`, `side`, `strike`, 
 | `mark` | `latestPrice * multiplier` (per-contract). Skip if missing/non-finite (Flex requires mark) |
 | `quote_source` | omit (auto), same as Flex |
 
-MooMoo: **do not ship option lots** until a REST fixture fills every `OptionSpec` field. Unmapped codes (`HK.TCH260629C390000` without a proven parse) → skip `option code not mapped`.
+MooMoo: ship option lots when the REST row fills every `OptionSpec` field (`option_type` / parsed `TCH260629C390000`, `strike_price`/`strike_time`, `lot_size`, `stock_owner` or proven HK root TCH→`0700.HK`, `nominal_price` × multiplier, valid `cost_price`). Incomplete codes → skip (`option missing multiplier`, etc.), not a second schema. Webull: single-leg `OPTION` + `legs[]` only; combos skip.
 
 ---
 

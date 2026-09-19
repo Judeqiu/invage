@@ -28,14 +28,14 @@ Broker ingest writes **three different things**. They are not interchangeable, a
 | **Raw archive** | `data/drive/<slug>/…` | **Vendor bytes** (Flex XML, Tiger JSON, …) | Copy of the broker response. Not holdings. Not the journal. |
 
 ```
-Flex / Tiger / MooMoo raw
+Flex / Tiger / MooMoo / Webull raw
         │  parser (vendor names die here)
         ▼
 BrokerStatement { as_of, cash[], lots[], option_executions? }
         │
         ├─ lots + cash  → replace channel snapshot  (portfolio + cash)
         ├─ option fills → merge journal             (option_executions)
-        └─ raw bytes    → drive archive             (ibkr-flex/, tiger-raw/, …)
+        └─ raw bytes    → drive archive             (ibkr-flex/, tiger-raw/, moomoo-raw/, webull-raw/)
 ```
 
 **Snapshot vs journal, in one sentence:** `PATH@ibkr` with `units: 27900` is “we hold this now.” An `option_executions` row with yesterday’s `tradeID` is “this fill happened.” Closing the lot does **not** delete the fill. Importing last year’s fills does **not** rewind `units`.
@@ -43,6 +43,15 @@ BrokerStatement { as_of, cash[], lots[], option_executions? }
 Vendor field names (`OpenPosition`, `endingCash`, `assetCategory`, `conid`, `levelOfDetail`) are **parser inputs**. They are not stored. After apply you should see `Holding`, `cash.amount`, `broker_ref.native_id`, and `OptionExecution` only. Pipeline detail for IBKR: [IBKR Flex raw data processing](./ibkr-flex-raw-processing.md).
 
 What v1 ingest **does not** store, even if the XML contains it: stock/ETF fills, dividends, deposits, daily NAV / EquitySummary history, TWR, FIFO tax lots, roll links, opening spot. Those stay in the raw file or `not_imported`. Dashboard period-change history is `save_snapshot`, not Flex.
+
+**Option lots vs fills (every catalog connector):** listed option **positions** map into the same `Holding.option` on `{key}@{channel}`. Incomplete rows (missing strike/expiry/multiplier/underlying/mark) and Webull multi-leg combos are `not_imported`. Option **fills** use the shared `option_executions` journal; only IBKR Flex Trades at Executions level populates it. Tiger/MooMoo/Webull omit the field so existing journal rows stay.
+
+| Connector | Open option lots | `option_executions` |
+|---|---|---|
+| `ibkr` | Flex `OPT` (short included) | Merge when Trades is Executions-level |
+| `tiger` | `positions.OPT` when `OptionSpec` is complete | Omit (keep existing) |
+| `moomoo` | DRVT / option code when `OptionSpec` is complete | Omit (keep existing) |
+| `webull` | Single-leg `OPTION` + `legs[]` | Omit (keep existing) |
 
 ### Execution history (Victor branch, September 2026)
 

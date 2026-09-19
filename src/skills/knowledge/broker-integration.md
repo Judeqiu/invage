@@ -4,6 +4,8 @@ Read-only ingest from a **catalog connector** (`catalog.get(id)`) onto that conn
 
 Never invent numbers. Never echo Flex tokens, RSA PEMs, Tiger tokens, Webull app secrets, or access tokens. Select by catalog id + capability, not synonyms.
 
+**Options (all connectors, one model):** open lots are `Holding` + `option` on `{key}@{channel}`. Sync replaces that channel’s lots (including options). Incomplete option rows → `not_imported`, never a vendor-specific schema. **Fill history** is the shared `option_executions` journal; only IBKR Flex Trades at Executions level populates it today. Other connectors omit the field (do not wipe IBKR fills). OptionsExpert overlays every channel. The agent does not place or roll orders.
+
 ## Tools
 
 - `configure_broker` / `sync_broker` — catalog-id credentials + sync (same store as Settings).
@@ -42,7 +44,7 @@ YAML types are **the only store**. IBKR Flex/CSV is mapped in memory and discard
 | Accrued interest | `cash.accrued_interest` | Do not add into `amount` until settled |
 | Buying power / excess / maint. | `broker_connections.<id>.metrics` | `as_of` + `currency` + ≥1 number; never invent from cash |
 
-v1 catalog ingest writes lots + `cash.amount` only. Do not invent extras. Later ingest may set them. `add_holding` does not merge encumbrance; `update_holding` preserves existing extras.
+Catalog ingest writes lots (equity / fund / **option**) + `cash.amount`. Do not invent extras (`encumbrance`, settled cash). `add_holding` does not merge encumbrance; `update_holding` preserves existing extras.
 
 IBKR activity is prior-day. Marks stay Yahoo.
 

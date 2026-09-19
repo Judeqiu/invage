@@ -2,7 +2,7 @@
 
 Catalog connector `tiger` on skill **broker-integration**. Load that skill. Tools: `configure_broker` / `sync_broker` with `connector_id=tiger`. IBKR Flex tools do not pull Tiger.
 
-Read-only live snapshot: stock, option, and fund positions plus per-ISO cash onto channel `tiger`. Cannot trade. Dashboard marks stay Yahoo. `as_of` is the UTC date of Sync.
+Read-only live snapshot: stock, option, and fund positions plus per-ISO cash onto channel `tiger`. Cannot trade. Dashboard marks stay Yahoo. `as_of` is the UTC date of Sync. Option lots use the shared `Holding.option` shape (short OPT included). **Option fill history** is not fetched — omit `option_executions` so IBKR journal rows stay.
 
 Credentials (Settings or `configure_broker`): `tiger_id`, `account`, `license`, `private_key` (PEM). Optional TBHK `token` (paste-rotate, ~30 days). Optional institutional `secret_key`.
 

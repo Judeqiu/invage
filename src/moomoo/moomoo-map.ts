@@ -1,10 +1,22 @@
 import { BrokerParseError } from '../brokers/errors.js';
+import {
+  looksLikeOptionCode,
+  optionUnderlyingFromBroker,
+  parseBrokerOptionCode,
+} from '../brokers/option-symbol.js';
 import type { BrokerCashSleeve, BrokerSkip, BrokerStatement } from '../brokers/statement.js';
 import { yahooSymbolFromBroker } from '../brokers/yahoo-symbol.js';
 import type { Holding } from '../market/types.js';
-import { assertHolding, buildHoldingKey, holdingBaseKey } from '../market/position-value.js';
+import {
+  assertHolding,
+  buildHoldingKey,
+  buildOptionKey,
+  holdingBaseKey,
+} from '../market/position-value.js';
 import type { BrokerConnectionMetrics } from '../state/portfolio-state.js';
 import { envelopeOk, type MooMooRawBundle } from './moomoo-types.js';
+
+export { looksLikeOptionCode } from '../brokers/option-symbol.js';
 
 const CASH_FIELDS: Record<string, string> = {
   us_cash: 'USD',
@@ -39,9 +51,102 @@ function skipPos(symbol: string | undefined, reason: string): BrokerSkip {
   return s;
 }
 
-/** Option OCC-style codes are not mapped in v1 (no OptionSpec fixture). */
-export function looksLikeOptionCode(symbol: string): boolean {
-  return /\d{6}[CP]/i.test(symbol);
+function isOptionRow(item: Record<string, unknown>, symbol: string): boolean {
+  const stockType = String(item.stock_type ?? item.security_type ?? '').trim().toUpperCase();
+  if (stockType === 'DRVT' || stockType === 'OPTION' || stockType === 'OPT') return true;
+  if (item.option_type != null || item.strike_price != null || item.strike_time != null) return true;
+  return looksLikeOptionCode(symbol);
+}
+
+function ownerOf(item: Record<string, unknown>): string | undefined {
+  const raw = item.stock_owner ?? item.underlying ?? item.underlying_symbol ?? item.option_owner;
+  const t = raw == null ? '' : String(raw).trim();
+  return t || undefined;
+}
+
+function mapOptionPosition(
+  item: Record<string, unknown>,
+  channel: string,
+  code: string,
+  market: string,
+  symbol: string,
+  qty: number,
+  currency: string,
+  seen: Set<string>,
+): { lot?: BrokerStatement['lots'][number]; skip?: BrokerSkip } {
+  const parsed = parseBrokerOptionCode(symbol);
+  const parsedOk = !('skip' in parsed);
+  const typeRaw = String(item.option_type ?? item.put_call ?? '').trim().toUpperCase();
+  const right =
+    typeRaw === 'P' || typeRaw === 'PUT'
+      ? 'put'
+      : typeRaw === 'C' || typeRaw === 'CALL'
+        ? 'call'
+        : parsedOk
+          ? parsed.right
+          : null;
+  if (!right) return { skip: skipPos(code, 'option missing right') };
+  const strike = parseNum(item.strike_price ?? item.strike) ?? (parsedOk ? parsed.strike : undefined);
+  if (strike == null || !(strike > 0)) return { skip: skipPos(code, 'option missing strike') };
+  const expiryRaw = String(item.strike_time ?? item.expiry ?? item.expire_date ?? item.expiry_date ?? '').trim();
+  let expiry = expiryRaw;
+  if (/^\d{8}$/.test(expiryRaw)) {
+    expiry = `${expiryRaw.slice(0, 4)}-${expiryRaw.slice(4, 6)}-${expiryRaw.slice(6, 8)}`;
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(expiry) && parsedOk) expiry = parsed.expiry;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(expiry)) return { skip: skipPos(code, 'option missing expiry') };
+  const multiplier = parseNum(
+    item.lot_size ?? item.contract_size ?? item.option_contract_multiplier ?? item.multiplier,
+  );
+  if (multiplier == null || !(multiplier > 0)) {
+    return { skip: skipPos(code, 'option missing multiplier') };
+  }
+  const underlying = optionUnderlyingFromBroker({
+    market,
+    owner: ownerOf(item),
+    optionRoot: parsedOk ? parsed.root : undefined,
+  });
+  if (typeof underlying !== 'string') return { skip: skipPos(code, underlying.skip) };
+  const costValid = item.cost_price_valid === true;
+  const costPerShare = parseNum(item.cost_price);
+  if (!costValid || costPerShare == null || !(costPerShare > 0)) {
+    return { skip: skipPos(code, 'cost_price is not valid') };
+  }
+  const markPerShare = parseNum(item.nominal_price ?? item.last_price ?? item.mark_price);
+  if (markPerShare == null || !Number.isFinite(markPerShare)) {
+    return { skip: skipPos(code, 'option missing mark') };
+  }
+  const mark = markPerShare * multiplier;
+  const avg = costPerShare * multiplier;
+  if (!(mark > 0) || !Number.isFinite(mark)) return { skip: skipPos(code, 'option missing mark') };
+  if (!(avg > 0) || !Number.isFinite(avg)) return { skip: skipPos(code, 'cost_price is not valid') };
+  const units = Math.abs(qty);
+  if (!(units > 0)) return { skip: skipPos(code, 'option quantity is zero') };
+  const sideRaw = String(item.position_side ?? 'LONG').trim().toUpperCase();
+  const side = sideRaw === 'SHORT' || qty < 0 ? 'short' : 'long';
+  const base = buildOptionKey({ underlying, right, strike, expiry, side });
+  const mapKey = buildHoldingKey(base, channel);
+  if (seen.has(mapKey)) return { skip: skipPos(base, 'duplicate map key') };
+  seen.add(mapKey);
+  const holding: Holding = {
+    instrument: 'option',
+    units,
+    avg_price: avg,
+    channel,
+    option: {
+      right,
+      side,
+      strike,
+      expiry,
+      multiplier,
+      underlying,
+      settlement: 'physical',
+      mark,
+    },
+    broker_ref: { listing_exchange: market, native_id: code },
+  };
+  assertHolding(mapKey, holding);
+  return { lot: { ticker: holdingBaseKey(mapKey), currency, holding } };
 }
 
 function mapFunds(d: unknown, asOf: string, skipped: BrokerSkip[]): {
@@ -86,9 +191,6 @@ function mapPosition(
   const qty = parseNum(item.qty);
   if (!code) return { skip: skipPos(undefined, 'missing code') };
   if (qty == null) return { skip: skipPos(code, 'non-finite quantity') };
-  if (side === 'SHORT' || !(qty > 0)) {
-    return { skip: skipPos(code, `short or non-positive qty (${qty}) is not imported`) };
-  }
   const dot = code.indexOf('.');
   if (dot <= 0) return { skip: skipPos(code, 'code is not MARKET.SYMBOL') };
   const market = code.slice(0, dot).toUpperCase();
@@ -96,8 +198,14 @@ function mapPosition(
   if (SKIP_MARKETS.has(market)) {
     return { skip: skipPos(code, `market ${market} is not imported`) };
   }
-  if (looksLikeOptionCode(symbol)) {
-    return { skip: skipPos(code, 'option code not mapped') };
+  const currency = String(item.currency ?? '').trim().toUpperCase();
+  if (!/^[A-Z]{3,4}$/.test(currency)) return { skip: skipPos(code, 'missing currency') };
+  if (isOptionRow(item, symbol)) {
+    if (qty === 0) return { skip: skipPos(code, 'option quantity is zero') };
+    return mapOptionPosition(item, channel, code, market, symbol, qty, currency, seen);
+  }
+  if (side === 'SHORT' || !(qty > 0)) {
+    return { skip: skipPos(code, `short or non-positive qty (${qty}) is not imported`) };
   }
   const yahoo = yahooSymbolFromBroker({ market, symbol });
   if (typeof yahoo !== 'string') return { skip: skipPos(code, yahoo.skip) };
@@ -106,8 +214,6 @@ function mapPosition(
   if (!costValid || avg == null || !(avg > 0)) {
     return { skip: skipPos(code, 'cost_price is not valid') };
   }
-  const currency = String(item.currency ?? '').trim().toUpperCase();
-  if (!/^[A-Z]{3,4}$/.test(currency)) return { skip: skipPos(code, 'missing currency') };
   const mapKey = buildHoldingKey(yahoo, channel);
   if (seen.has(mapKey)) return { skip: skipPos(yahoo, 'duplicate map key') };
   seen.add(mapKey);

@@ -88,7 +88,7 @@ You may be **consulted** by ${HOST_LABEL} via \`invoke_local_agent\` / handoff �
 3. **Market facts from Yahoo chain** — premium, bid/ask, IV, OI, volume when the tool returns them
 4. **Relative IV** — cheap/rich vs ATM **only** when both IVs are sourced
 5. **Strategy framing** — long option, covered call, protective put, collar, cash-secured short put, verticals (two strikes)
-6. **Books overlay** — live mark vs cost on existing option lots (\`include_books\`)
+6. **Books overlay** — live mark vs cost on existing option lots on **every** broker channel (\`include_books\`). Keys are \`{contract}@{ibkr|tiger|moomoo|webull}\`. Missing lots after Sync means that connector skipped the row (\`not_imported\`), not that the user has no options elsewhere.
 
 ## What you do not do
 
@@ -137,7 +137,7 @@ function optionsExpertContextPrefix(
           : '';
   const lotHint =
     optionLots.length === 0
-      ? 'No option lots on books.'
+      ? 'No option lots on books (any channel). Sync ibkr/tiger/moomoo/webull maps listed options into the same Holding.option shape; incomplete rows are not_imported.'
       : `Option lots: ${optionLots
           .map(([k, h]) => {
             const o = h.option!;

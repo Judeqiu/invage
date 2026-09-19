@@ -9,7 +9,7 @@ const IMPORTS = [
   ['Open positions', 'Stocks, ETFs, options, and funds on that connector channel. Empty positions is a flat book.'],
   ['Cash', 'ISO currency sleeves on that channel only. Other brokers stay untouched.'],
   ['Channel snapshot', 'Sync replaces lots and cash on the connector channel only.'],
-  ['Not imported', 'Unsupported lots (futures, shorts, …) are listed after sync. Never invented as holdings.'],
+  ['Not imported', 'Futures, short stock, combo options, and incomplete option rows are listed after sync. Never invented as holdings.'],
   ['Marks', 'Dashboard marks stay Yahoo. Broker snapshot time is the UTC date of Sync (IBKR Flex is prior-day).'],
   ['Secrets', 'Reporting-only credentials. Never echoed. Off does not delete lots.'],
 ];

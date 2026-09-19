@@ -63,10 +63,24 @@ describe('Webull mapping', () => {
       { currency: 'HKD', amount: 0 },
     ]);
     expect(stmt.skipped.some((s) => s.currency === 'CNH')).toBe(true);
-    expect(stmt.lots.map((l) => l.ticker)).toEqual(['AAPL', '0700.HK']);
+    expect(stmt.lots.map((l) => l.ticker)).toEqual(['AAPL', '0700.HK', 'AAPL-C-200-20260918-L']);
     expect(stmt.lots[0]?.holding.broker_ref?.native_id).toBe('POS-AAPL');
+    const opt = stmt.lots[2]?.holding;
+    expect(opt?.instrument).toBe('option');
+    expect(opt?.option).toMatchObject({
+      right: 'call',
+      side: 'long',
+      strike: 200,
+      expiry: '2026-09-18',
+      multiplier: 100,
+      underlying: 'AAPL',
+      settlement: 'physical',
+      mark: 300,
+    });
+    expect(opt?.avg_price).toBe(200);
+    expect(opt?.units).toBe(2);
     expect(stmt.skipped.some((s) => s.symbol === 'TSLA')).toBe(true);
-    expect(stmt.skipped.some((s) => s.reason === 'option lots are not imported')).toBe(true);
+    expect(stmt.skipped.some((s) => s.reason === 'option lots are not imported')).toBe(false);
     expect(stmt.metrics?.buying_power).toBe(12500);
     expect(stmt.metrics?.currency).toBe('USD');
   });
@@ -74,6 +88,43 @@ describe('Webull mapping', () => {
   it('does not book total_cash_balance', () => {
     const stmt = mapWebullBundleToStatement(bundle(), 'webull');
     expect(stmt.cash.reduce((n, c) => n + c.amount, 0)).toBe(7000);
+  });
+
+  it('skips multi-leg combo options', () => {
+    const stmt = mapWebullBundleToStatement(
+      bundle({
+        positions: [
+          {
+            position_id: 'POS-COMBO',
+            currency: 'USD',
+            quantity: '1',
+            symbol: 'AAPL',
+            instrument_type: 'OPTION',
+            last_price: '1.0',
+            cost_price: '1.0',
+            legs: [
+              {
+                symbol: 'AAPL',
+                option_type: 'CALL',
+                option_expire_date: '2026-09-18',
+                option_exercise_price: '200.0',
+                option_contract_multiplier: '100',
+              },
+              {
+                symbol: 'AAPL',
+                option_type: 'PUT',
+                option_expire_date: '2026-09-18',
+                option_exercise_price: '180.0',
+                option_contract_multiplier: '100',
+              },
+            ],
+          },
+        ],
+      }),
+      'webull',
+    );
+    expect(stmt.lots).toEqual([]);
+    expect(stmt.skipped.some((s) => s.reason === 'combo option lots are not imported')).toBe(true);
   });
 
   it('maps HK numeric tickers and skips unmapped currencies', () => {

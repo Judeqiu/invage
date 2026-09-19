@@ -68,19 +68,19 @@ function registerBookkeeperSkills(): Skill[] {
       id: 'tiger-openapi',
       name: 'Tiger OpenAPI sync',
       description:
-        'Tiger Brokers is catalog connector tiger. Load broker-integration. Tools: configure_broker / sync_broker with connector_id tiger. Read-only positions + cash. No csv_tables.',
+        'Tiger Brokers is catalog connector tiger. Load broker-integration. Tools: configure_broker / sync_broker with connector_id tiger. Read-only stock/option/fund lots + cash. No csv_tables. Option fill journal is IBKR Flex only.',
     },
     {
       id: 'moomoo-openapi',
       name: 'MooMoo Cloud Open API sync',
       description:
-        'MooMoo is catalog connector moomoo (Cloud REST, not OpenD). Load broker-integration. Tools: configure_broker / sync_broker with connector_id moomoo. Channel moomoo is not jude_futu. Read-only positions + cash. No csv_tables. No option lots without a complete OptionSpec fixture.',
+        'MooMoo is catalog connector moomoo (Cloud REST, not OpenD). Load broker-integration. Tools: configure_broker / sync_broker with connector_id moomoo. Channel moomoo is not jude_futu. Read-only stock and listed option lots + cash. Incomplete OptionSpec rows go to not_imported. No csv_tables. Option fill journal is IBKR Flex only.',
     },
     {
       id: 'webull-openapi',
       name: 'Webull OpenAPI sync',
       description:
-        'Webull is catalog connector webull. Load broker-integration. Tools: configure_broker / sync_broker with connector_id webull. Read-only equity positions + cash. No csv_tables. Optional access_token if the API requires in-app 2FA.',
+        'Webull is catalog connector webull. Load broker-integration. Tools: configure_broker / sync_broker with connector_id webull. Read-only equity and single-leg listed option lots + cash. Combo options skipped. No csv_tables. Optional access_token if the API requires in-app 2FA. Option fill journal is IBKR Flex only.',
     },
     {
       id: 'family-treasury',

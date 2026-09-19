@@ -2,7 +2,7 @@
 
 **OptionsExpert skill.** Evaluate **listed calls and puts** as contingent claims: structure, time value, implied vol *when sourced*, liquidity, and defined vs undefined risk. Not a substitute for equity thesis (that is **InvestmentAdvisor**) and not a bookkeeper.
 
-Load by capability fit when the user needs: call/put insight, chain scan, covered call, cash-secured / naked put, protective put, collar, vertical spread framing, IV richness vs ATM, assignment risk, or overlay on existing option lots.
+Load by capability fit when the user needs: call/put insight, chain scan, covered call, cash-secured / naked put, protective put, collar, vertical spread framing, IV richness vs ATM, assignment risk, or overlay on existing option lots **from any catalog channel** (`ibkr`, `tiger`, `moomoo`, `webull`, or manual). Lots are `{option-key}@{channel}` — same contract at two brokers is two lots. Yahoo chain facts are US-listed; HK/SG lots still overlay from stored `mark` when the chain has no match. Do not invent IV. Broker fills on the Trades tab are IBKR journal rows unless another connector supplied `option_executions`.
 
 **Hard fact rule:** Never invent **premium, bid/ask, IV, delta, gamma, theta, vega, open interest, volume**. If `options_insight` does not return the field → **unavailable**. Yahoo chain in this product does **not** include Greeks — say so; do not Black-Scholes from memory.
 

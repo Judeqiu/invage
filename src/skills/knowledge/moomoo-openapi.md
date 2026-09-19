@@ -2,7 +2,9 @@
 
 Catalog connector `moomoo` on skill **broker-integration**. Load that skill. Tools: `configure_broker` / `sync_broker` with `connector_id=moomoo`. Do not install OpenD. Do not unlock trade.
 
-Read-only live snapshot: positions + per-ISO cash onto channel `moomoo`. Cannot trade. Dashboard marks stay Yahoo. `as_of` is the UTC date of Sync. No option lots until an OptionSpec-complete REST fixture exists (unmapped option codes are `not_imported`).
+Read-only live snapshot: stock and listed option lots + per-ISO cash onto channel `moomoo`. Cannot trade. Dashboard marks stay Yahoo. `as_of` is the UTC date of Sync.
+
+Option lots map into the same `Holding.option` as IBKR/Tiger when every `OptionSpec` field is present (right, side, strike, expiry, multiplier/`lot_size`, underlying/`stock_owner`, per-share `nominal_price` × multiplier as mark). Short options import. Codes like `HK.TCH260629C390000` parse when those fields (or a proven HK root such as TCH→`0700.HK`) complete the spec; otherwise `not_imported`. Combo/strategy views are not lots. **Option fill history** (`option_executions`) is not fetched — omit the field so existing IBKR journal rows stay.
 
 Credentials: `app_key`, `private_key` (Ed25519 or RSA PEM). Optional `acc_id` when more than one authorized trading account exists. Optional `sign_alg` (`Ed25519` default, or `RSA-SHA256`).
 

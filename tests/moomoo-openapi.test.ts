@@ -72,9 +72,22 @@ describe('MooMoo mapping', () => {
       { currency: 'KRW', amount: 0 },
     ]);
     expect(stmt.skipped.some((s) => s.currency === 'CNH')).toBe(true);
-    expect(stmt.lots.map((l) => l.ticker)).toEqual(['AAPL', '0700.HK']);
+    expect(stmt.lots.map((l) => l.ticker)).toEqual(['AAPL', '0700.HK', '0700.HK-C-390-20260629-L']);
+    const opt = stmt.lots[2]?.holding;
+    expect(opt?.instrument).toBe('option');
+    expect(opt?.option).toMatchObject({
+      right: 'call',
+      side: 'long',
+      strike: 390,
+      expiry: '2026-06-29',
+      multiplier: 100,
+      underlying: '0700.HK',
+      settlement: 'physical',
+      mark: 250,
+    });
+    expect(opt?.avg_price).toBe(200);
     expect(stmt.skipped.some((s) => s.symbol === 'US.TSLA')).toBe(true);
-    expect(stmt.skipped.some((s) => s.reason === 'option code not mapped')).toBe(true);
+    expect(stmt.skipped.some((s) => s.reason === 'option code not mapped')).toBe(false);
     expect(stmt.metrics?.buying_power).toBe(12500);
     expect(stmt.metrics?.currency).toBe('USD');
   });
@@ -83,6 +96,61 @@ describe('MooMoo mapping', () => {
     expect(looksLikeOptionCode('TCH260629C390000')).toBe(true);
     expect(looksLikeOptionCode('00700')).toBe(false);
     expect(looksLikeOptionCode('AAPL')).toBe(false);
+  });
+
+  it('skips option rows that cannot fill OptionSpec', () => {
+    const stmt = mapMooMooBundleToStatement(
+      bundle({
+        positions: {
+          s: 'ok',
+          d: [
+            {
+              position_side: 'LONG',
+              code: 'HK.TCH260629C390000',
+              qty: '1',
+              currency: 'HKD',
+              cost_price: '2',
+              cost_price_valid: true,
+            },
+          ],
+        },
+      }),
+      'moomoo',
+    );
+    expect(stmt.lots).toEqual([]);
+    expect(stmt.skipped.some((s) => s.reason === 'option missing multiplier')).toBe(true);
+  });
+
+  it('imports short option lots', () => {
+    const stmt = mapMooMooBundleToStatement(
+      bundle({
+        positions: {
+          s: 'ok',
+          d: [
+            {
+              position_side: 'SHORT',
+              code: 'US.AAPL250117P00150000',
+              qty: '-2',
+              currency: 'USD',
+              cost_price: '3.10',
+              cost_price_valid: true,
+              nominal_price: '2.50',
+              stock_type: 'DRVT',
+              stock_owner: 'US.AAPL',
+              option_type: 'PUT',
+              strike_time: '2025-01-17',
+              strike_price: '150',
+              lot_size: 100,
+            },
+          ],
+        },
+      }),
+      'moomoo',
+    );
+    expect(stmt.lots.map((l) => l.ticker)).toEqual(['AAPL-P-150-20250117-S']);
+    expect(stmt.lots[0]?.holding.option?.side).toBe('short');
+    expect(stmt.lots[0]?.holding.units).toBe(2);
+    expect(stmt.lots[0]?.holding.option?.mark).toBe(250);
   });
 });
 

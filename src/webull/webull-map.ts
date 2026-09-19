@@ -2,7 +2,12 @@ import { BrokerParseError } from '../brokers/errors.js';
 import type { BrokerCashSleeve, BrokerSkip, BrokerStatement } from '../brokers/statement.js';
 import { yahooSymbolFromBroker } from '../brokers/yahoo-symbol.js';
 import type { Holding } from '../market/types.js';
-import { assertHolding, buildHoldingKey, holdingBaseKey } from '../market/position-value.js';
+import {
+  assertHolding,
+  buildHoldingKey,
+  buildOptionKey,
+  holdingBaseKey,
+} from '../market/position-value.js';
 import type { BrokerConnectionMetrics } from '../state/portfolio-state.js';
 import type { WebullRawBundle, WebullRegion } from './webull-types.js';
 
@@ -90,6 +95,95 @@ function mapCash(balances: unknown, asOf: string, skipped: BrokerSkip[]): {
   return { cash, metrics };
 }
 
+function optionLegsOf(item: Record<string, unknown>): Record<string, unknown>[] {
+  if (!Array.isArray(item.legs)) return [];
+  return item.legs.filter((x): x is Record<string, unknown> => {
+    if (x == null || typeof x !== 'object' || Array.isArray(x)) return false;
+    const t = String((x as { instrument_type?: unknown }).instrument_type ?? '').trim().toUpperCase();
+    if (t === 'EQUITY' || t === 'STOCK') return false;
+    return (
+      t === 'OPTION' ||
+      (x as { option_type?: unknown }).option_type != null ||
+      (x as { option_expire_date?: unknown }).option_expire_date != null
+    );
+  });
+}
+
+function mapOptionPosition(
+  item: Record<string, unknown>,
+  channel: string,
+  region: WebullRegion,
+  currency: string,
+  qty: number,
+  seen: Set<string>,
+): { lot?: BrokerStatement['lots'][number]; skip?: BrokerSkip } {
+  const symbol = String(item.symbol ?? '').trim();
+  const legs = optionLegsOf(item);
+  if (legs.length === 0) return { skip: skipPos(symbol || undefined, 'option missing legs') };
+  if (legs.length !== 1) {
+    return { skip: skipPos(symbol || undefined, 'combo option lots are not imported') };
+  }
+  const leg = legs[0]!;
+  const typeRaw = String(leg.option_type ?? '').trim().toUpperCase();
+  const right = typeRaw === 'P' || typeRaw === 'PUT' ? 'put' : typeRaw === 'C' || typeRaw === 'CALL' ? 'call' : null;
+  if (!right) return { skip: skipPos(symbol || undefined, 'option missing right') };
+  const strike = parseNum(leg.strike_price ?? leg.option_exercise_price);
+  if (strike == null || !(strike > 0)) return { skip: skipPos(symbol || undefined, 'option missing strike') };
+  const expiry = String(leg.option_expire_date ?? '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(expiry)) return { skip: skipPos(symbol || undefined, 'option missing expiry') };
+  const multiplier = parseNum(leg.option_contract_multiplier ?? item.option_contract_multiplier);
+  if (multiplier == null || !(multiplier > 0)) {
+    return { skip: skipPos(symbol || undefined, 'option missing multiplier') };
+  }
+  const underRaw = String(leg.symbol ?? item.symbol ?? '').trim();
+  if (!underRaw) return { skip: skipPos(symbol || undefined, 'option missing underlying') };
+  const market = marketForWebullSymbol({ symbol: underRaw, region, currency });
+  if (typeof market !== 'string') return { skip: skipPos(underRaw, market.skip) };
+  const underlying = yahooSymbolFromBroker({ market, symbol: underRaw });
+  if (typeof underlying !== 'string') return { skip: skipPos(underRaw, underlying.skip) };
+  const costPerShare = parseNum(item.cost_price);
+  if (costPerShare == null || !(costPerShare > 0)) {
+    return { skip: skipPos(symbol || underlying, 'cost_price is not valid') };
+  }
+  const markPerShare = parseNum(item.last_price);
+  if (markPerShare == null || !Number.isFinite(markPerShare)) {
+    return { skip: skipPos(symbol || underlying, 'option missing mark') };
+  }
+  const mark = markPerShare * multiplier;
+  const avg = costPerShare * multiplier;
+  if (!(mark > 0) || !Number.isFinite(mark)) return { skip: skipPos(symbol || underlying, 'option missing mark') };
+  if (!(avg > 0) || !Number.isFinite(avg)) return { skip: skipPos(symbol || underlying, 'cost_price is not valid') };
+  const units = Math.abs(qty);
+  if (!(units > 0)) return { skip: skipPos(symbol || underlying, 'option quantity is zero') };
+  const sideRaw = String(item.side ?? leg.side ?? '').trim().toUpperCase();
+  const side = sideRaw === 'SELL' || qty < 0 ? 'short' : 'long';
+  const base = buildOptionKey({ underlying, right, strike, expiry, side });
+  const mapKey = buildHoldingKey(base, channel);
+  if (seen.has(mapKey)) return { skip: skipPos(base, 'duplicate map key') };
+  seen.add(mapKey);
+  const holding: Holding = {
+    instrument: 'option',
+    units,
+    avg_price: avg,
+    channel,
+    option: {
+      right,
+      side,
+      strike,
+      expiry,
+      multiplier,
+      underlying,
+      settlement: 'physical',
+      mark,
+    },
+    broker_ref: { listing_exchange: market },
+  };
+  const native = String(item.position_id ?? '').trim();
+  if (native) holding.broker_ref = { ...holding.broker_ref, native_id: native };
+  assertHolding(mapKey, holding);
+  return { lot: { ticker: holdingBaseKey(mapKey), currency, holding } };
+}
+
 function mapPosition(
   item: Record<string, unknown>,
   channel: string,
@@ -101,15 +195,16 @@ function mapPosition(
   const qty = parseNum(item.quantity);
   const currency = String(item.currency ?? '').trim().toUpperCase();
   if (!symbol) return { skip: skipPos(undefined, 'missing symbol') };
-  if (type === 'OPTION' || Array.isArray(item.legs)) {
-    return { skip: skipPos(symbol, 'option lots are not imported') };
+  if (!/^[A-Z]{3,4}$/.test(currency)) return { skip: skipPos(symbol, 'missing currency') };
+  if (qty == null) return { skip: skipPos(symbol, 'non-finite quantity') };
+  if (type === 'OPTION' || optionLegsOf(item).length > 0) {
+    if (qty === 0) return { skip: skipPos(symbol, 'option quantity is zero') };
+    return mapOptionPosition(item, channel, region, currency, qty, seen);
   }
   if (type && type !== 'EQUITY' && type !== 'STOCK') {
     return { skip: skipPos(symbol, `instrument_type ${type} is not imported`) };
   }
-  if (qty == null) return { skip: skipPos(symbol, 'non-finite quantity') };
   if (!(qty > 0)) return { skip: skipPos(symbol, `short or non-positive qty (${qty}) is not imported`) };
-  if (!/^[A-Z]{3,4}$/.test(currency)) return { skip: skipPos(symbol, 'missing currency') };
   const market = marketForWebullSymbol({ symbol, region, currency });
   if (typeof market !== 'string') return { skip: skipPos(symbol, market.skip) };
   const yahoo = yahooSymbolFromBroker({ market, symbol });

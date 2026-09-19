@@ -163,7 +163,7 @@
         <li><strong>Webull access token.</strong> Some licenses require in-app 2FA. Approve the request in the Webull app, paste access_token if asked, and Sync again. Invage does not poll the app.</li>
         <li><strong>Paper / sim accounts.</strong> Only ingest a paper account if that is the id you pasted. Live books should use a funded live account.</li>
         <li><strong>jude_futu lots.</strong> Connecting MooMoo does not move Futu-tagged lots or fixed deposits. Recon those sleeves separately if you want one channel.</li>
-        <li><strong>Not imported.</strong> Futures, shorts, and unmapped option codes are listed after Sync. They are never invented as holdings.</li>
+        <li><strong>Not imported.</strong> Futures, short stock, combo/multi-leg options, and option rows missing strike/expiry/multiplier stay in the Sync skip list. They are never invented as holdings. Listed single-leg options that fill the shared option shape are imported on every connector. Fill history (Trades tab) is IBKR Flex only today.</li>
       </ul>
     </div>
     <a class="cta" href="/brokers" target="_parent">Connect a broker</a>

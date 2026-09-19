@@ -32,10 +32,18 @@
     {
       "position_side": "LONG",
       "code": "HK.TCH260629C390000",
+      "stock_name": "Tencent 260629 390.00 Call",
       "qty": "1",
       "currency": "HKD",
+      "nominal_price": "2.50",
       "cost_price": "2",
-      "cost_price_valid": true
+      "cost_price_valid": true,
+      "stock_type": "DRVT",
+      "stock_owner": "HK.00700",
+      "option_type": "CALL",
+      "strike_time": "2026-06-29",
+      "strike_price": "390",
+      "lot_size": 100
     }
   ]
 }

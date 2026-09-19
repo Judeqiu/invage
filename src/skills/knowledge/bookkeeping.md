@@ -23,7 +23,7 @@ Seeded agent entries cover: hard rules, tools map, cash/deposit recipes, fund sc
 6. Reconcile: delta = statement − books; `post_adjustment` that delta with memo (document + date). **Channel walk:** `start_recon` → per sleeve `source_recon_channel` → `decide_recon_line` → `apply_recon_channel`. Completeness is `get_recon` next=done. Enabled Flex = fetch now (already-have), not skip. Never `set_cash`.  
 7. Funds → `instrument=fund` + `fund_quote_source` (required).  
 8. Scope: journal/reconcile/read only → valuation is **@WalletStreet**.  
-9. **Brokers:** load skill **broker-integration**. IBKR is catalog `ibkr`. Quote `not_imported`. Never print the token.
+9. **Brokers:** load skill **broker-integration**. Catalog ids `ibkr`, `tiger`, `moomoo`, `webull`. Option **lots** sync onto each connector channel; option **fills** journal only from IBKR Flex Trades today. Quote `not_imported`. Never print secrets.
 
 ## Minimum fund correction shape
 
