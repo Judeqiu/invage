@@ -1,13 +1,15 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { createPublicKey, createSign } from 'node:crypto';
+import * as tigerKeys from '../src/tiger/tiger-keys.js';
 import { getBrokerAdapter } from '../src/brokers/adapter.js';
 import { normalizePem } from '../src/brokers/pem.js';
 import { yahooSymbolFromBroker } from '../src/brokers/yahoo-symbol.js';
 import { BrokerParseError } from '../src/brokers/errors.js';
 import { shanghaiTimestamp, signTigerRequest, tigerSignContent } from '../src/tiger/tiger-sign.js';
 import { TIGER_PUBLIC_KEY_PEM, SANDBOX_TIGER_PUBLIC_KEY_PEM } from '../src/tiger/tiger-keys.js';
-import { fetchTigerRawBundle } from '../src/tiger/tiger-client.js';
+import { fetchTigerRawBundle, tigerExecute } from '../src/tiger/tiger-client.js';
 import { mapTigerBundleToStatement, positionItems } from '../src/tiger/tiger-map.js';
 import type { TigerRawBundle } from '../src/tiger/tiger-types.js';
 import { createBookkeeperTools } from '../src/tools/index.js';
@@ -36,6 +38,42 @@ describe('yahooSymbolFromBroker', () => {
 });
 
 describe('Tiger signing', () => {
+  it.each(['timestamp', 'timestamp with encoded data', 'wrong timestamp', 'response JSON'])(
+    'verifies responses signed over %s against the request timestamp',
+    async (signedContent) => {
+      const key = createPublicKey(PRIVATE).export({ type: 'spki', format: 'pem' }).toString();
+      const keySpy = vi.spyOn(tigerKeys, 'tigerPublicKeyForHost').mockReturnValue(key);
+      try {
+        const timestamp = '2026-09-23 10:00:00';
+        const body = { code: 0, data: { items: [] } };
+        const content = signedContent.startsWith('timestamp') ? timestamp
+          : signedContent === 'wrong timestamp' ? '2026-09-23 09:00:00' : JSON.stringify(body);
+        const signer = createSign('SHA1');
+        signer.update(content, 'utf8');
+        const sign = signer.sign(PRIVATE, 'base64');
+        const fetchImpl: typeof fetch = async (_url, init) => {
+          expect(JSON.parse(String(init?.body)).timestamp).toBe(timestamp);
+          return new Response(JSON.stringify({ ...body,
+            data: signedContent === 'timestamp with encoded data' ? JSON.stringify(body.data) : body.data,
+            sign,
+          }));
+        };
+        const result = tigerExecute({
+          gateway: 'https://openapi.tigerfintech.com/gateway',
+          credentials: { tiger_id: '20150000', account: '123456', license: 'TBSG', private_key: PRIVATE },
+          method: 'prime_assets', biz: { account: '123456' }, timestamp, fetchImpl,
+        });
+        if (signedContent.startsWith('timestamp')) {
+          await expect(result).resolves.toEqual({ ...body, sign });
+        } else {
+          await expect(result).rejects.toThrow('response signature is invalid');
+        }
+      } finally {
+        keySpy.mockRestore();
+      }
+    },
+  );
+
   it('formats timestamps in Asia/Shanghai without offset', () => {
     const ts = shanghaiTimestamp(new Date('2026-09-17T02:00:00.000Z'));
     expect(ts).toBe('2026-09-17 10:00:00');
@@ -118,6 +156,20 @@ describe('Tiger position mapping', () => {
     expect(stmt.metrics?.buying_power).toBe(495623.1);
     expect(stmt.metrics?.excess_liquidity).toBe(125259.83);
     expect(stmt.cash.find((c) => c.amount === 5000)).toBeUndefined();
+  });
+
+  it('maps live Prime segment and currency arrays without including other segments', () => {
+    const original = bundle({});
+    const expected = mapTigerBundleToStatement(original, 'tiger');
+    const data = structuredClone(PRIME.data);
+    data.segments = Object.entries(data.segments).reverse().map(([category, value]) => ({
+      ...(value as Record<string, unknown>), category,
+      currencyAssets: Object.values((value as { currencyAssets: Record<string, unknown> }).currencyAssets),
+    }));
+    const actual = mapTigerBundleToStatement(bundle({ assets: {
+      method: 'prime_assets', envelope: { code: 0, data },
+    } }), 'tiger');
+    expect(actual).toEqual(expected);
   });
 
   it('skips OPT without underlyingSymbol', () => {

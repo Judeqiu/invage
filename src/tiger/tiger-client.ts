@@ -156,10 +156,20 @@ export async function tigerExecute(args: {
   }
   const json = (await res.json()) as TigerGatewayEnvelope;
   if (typeof json.sign === 'string' && json.sign) {
-    const { sign, ...rest } = json as TigerGatewayEnvelope & { sign: string };
-    const content = compactJson(rest);
+    const sign = json.sign;
+    // Tiger signs the original request timestamp, not the response JSON.
+    // Match TigerOpenClient.__parse_response in the official Python SDK.
+    const content = params.timestamp;
     if (!verifyTigerResponse({ hostname: host, content, sign })) {
       throw new BrokerHttpError(`Tiger ${args.method} response signature is invalid.`);
+    }
+  }
+  // Tiger may encode data as a JSON string (as handled by TigerResponse in its SDK).
+  if (typeof json.data === 'string') {
+    try {
+      json.data = JSON.parse(json.data);
+    } catch {
+      throw new BrokerHttpError(`Tiger ${args.method} response data is not valid JSON.`);
     }
   }
   return json;

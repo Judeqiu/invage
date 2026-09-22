@@ -206,6 +206,14 @@ function mapPositionsSleeve(env: TigerGatewayEnvelope, channel: string, seen: Se
 }
 
 function currencyMap(raw: unknown): Record<string, Record<string, unknown>> {
+  if (Array.isArray(raw)) {
+    const out: Record<string, Record<string, unknown>> = {};
+    for (const value of raw) {
+      const row = asRecord(value);
+      if (row && typeof row.currency === 'string') out[row.currency.toUpperCase()] = row;
+    }
+    return out;
+  }
   const rec = asRecord(raw);
   if (!rec) return {};
   const out: Record<string, Record<string, unknown>> = {};
@@ -243,8 +251,10 @@ function mapPrimeAssets(data: unknown, asOf: string, skipped: BrokerSkip[]): {
   metrics?: BrokerConnectionMetrics;
 } {
   const root = asRecord(data);
-  const segments = asRecord(root?.segments) ?? {};
-  const sec = pickSegment(segments, 'S');
+  const segments = root?.segments;
+  const sec = Array.isArray(segments)
+    ? asRecord(segments.find((segment) => asRecord(segment)?.category === 'S'))
+    : pickSegment(asRecord(segments) ?? {}, 'S');
   const cash = cashFromCurrencyAssets(
     currencyMap(sec?.currencyAssets ?? sec?.currency_assets),
     skipped,
