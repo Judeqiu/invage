@@ -105,11 +105,9 @@ describe('loadWatchlistForSlug', () => {
 });
 
 describe('createInvageWebUi watch list', () => {
-  it('registers watch list nav, iframe route, and static page', async () => {
+  it('hides watch list from nav while retaining its iframe route and static page', async () => {
     const webUi = createInvageWebUi();
-    expect(webUi.nav?.some((n) => n.path === '/watchlist' && n.label === 'Watch List')).toBe(
-      true,
-    );
+    expect(webUi.nav?.some((n) => n.path === '/watchlist')).toBe(false);
     const route = webUi.routes?.find((r) => r.path === '/watchlist');
     expect(route?.pageKind).toBe('iframe');
     expect(route?.iframeSrc).toContain('/domain-assets/invage/watchlist');
