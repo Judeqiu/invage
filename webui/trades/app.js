@@ -1,6 +1,7 @@
 const el = {
   error: document.getElementById('error'),
   eyebrow: document.getElementById('eyebrow'),
+  hello: document.getElementById('hello'),
   filters: document.getElementById('filters'),
   table: document.getElementById('table'),
 };
@@ -9,20 +10,53 @@ let dash = null;
 let channel = 'all';
 let right = 'all';
 let journal = null;
-let view = 'journal';
+let view = null;
 
 function optionRows(live) {
   return live.positions.filter((p) => p.instrument === 'option' && p.option);
 }
 
+function setViewChrome() {
+  const journalBtn = document.getElementById('journal-view');
+  const posBtn = document.getElementById('positions-view');
+  journalBtn.classList.toggle('on', view === 'journal');
+  posBtn.classList.toggle('on', view === 'positions');
+  const consultant = productProfileOf(dash) === 'consultant';
+  if (el.hello) {
+    if (view === 'journal') {
+      el.hello.textContent = consultant ? 'Each trade, recorded separately.' : 'Option fills.';
+    } else {
+      const live = liveSlice(dash);
+      el.hello.textContent =
+        live && live.optionCount > 0
+          ? consultant
+            ? 'Every open contract, journaled.'
+            : 'Open option lots.'
+          : 'No option lots on the books.';
+    }
+  }
+}
+
+function pickDefaultView() {
+  const live = liveSlice(dash);
+  const optionCount = live ? live.optionCount : 0;
+  const journalOk = journal && journal.available;
+  if (productProfileOf(dash) === 'consultant') {
+    return optionCount > 0 ? 'positions' : 'journal';
+  }
+  return journalOk ? 'journal' : 'positions';
+}
+
 function render() {
   showError(el.error, '');
+  if (!view) view = pickDefaultView();
+  setViewChrome();
   if (view === 'journal') { renderJournal(); return; }
   const live = liveSlice(dash);
   if (!live) {
-    el.eyebrow.textContent = 'Journal · 0 options';
+    el.eyebrow.textContent = 'Open lots · 0 options';
     el.filters.innerHTML = '';
-    el.table.innerHTML = `<div class="metric-card empty">${esc(dash.message || 'No option lots on the books.')}</div>`;
+    el.table.innerHTML = emptyCard(dash && dash.message ? dash.message : 'No option lots on the books.');
     return;
   }
   const ccy = ccyOf(live);
@@ -32,7 +66,7 @@ function render() {
   if (right !== 'all') {
     rows = rows.filter((p) => p.option.right === right);
   }
-  el.eyebrow.textContent = `Journal · ${rows.length} open option lots`;
+  el.eyebrow.textContent = `Open lots · ${rows.length} option lots`;
   el.filters.innerHTML = `
     <span class="label-eyebrow">Channel</span>
     ${channelButtons(channels, channel, 'data-tr-ch="1"')}
@@ -48,6 +82,7 @@ function render() {
   el.filters.querySelectorAll('[data-tr-ch]').forEach((btn) => {
     btn.addEventListener('click', () => {
       channel = btn.getAttribute('data-channel');
+      writeChannelQuery(channel);
       render();
     });
   });
@@ -57,49 +92,89 @@ function render() {
       render();
     });
   });
-  const head = ['Ticker', 'Right', 'Side', 'Strike', 'Expiry', 'DTE', 'Contracts', 'Avg premium', 'Mark', 'P&L', 'If assigned', 'Channel'];
-  el.table.innerHTML = `
-    <div class="metric-card table-card">
-      <div class="table-scroll">
-        <table class="report">
+  const head = ['Ticker', 'Right', 'Side', 'Strike', 'Expiry', 'DTE', 'Contracts', 'Avg premium', 'Mark', 'P&L', 'Mark / premium received', 'If assigned', 'Channel'];
+  const prices = (dash && dash.equityPrices) || {};
+  const groups = {};
+  for (const p of rows) {
+    const m = p.option.expiry.slice(0, 7);
+    if (!groups[m]) groups[m] = [];
+    groups[m].push(p);
+  }
+  const months = Object.keys(groups).sort();
+  if (rows.length === 0) {
+    el.table.innerHTML = `<div class="metric-card table-card"><div class="table-scroll"><table class="report">
+      <thead><tr>${head.map((h) => `<th>${esc(h)}</th>`).join('')}</tr></thead>
+      <tbody><tr><td colspan="${head.length}" class="empty">No open option lots for this filter.</td></tr></tbody>
+    </table></div></div>`;
+    return;
+  }
+  el.table.innerHTML = months
+    .map((m) => {
+      const g = groups[m];
+      const prem = g.reduce((s, p) => s + (p.option.side === 'short' ? Number(p.premiumAbsolute || 0) : 0), 0);
+      const pl = g.reduce((s, p) => s + Number(p.pl || 0), 0);
+      const cash = g.reduce((s, p) => s + Number(p.contingentCashObligation || 0), 0);
+      const dtes = g.map((p) => dteDays(p.option.expiry));
+      const earliest = Math.min(...dtes);
+      const body = g
+        .map((p) => {
+          const o = p.option;
+          const days = dteDays(o.expiry);
+          const assigned = p.contingentCashObligation;
+          const itm = optionItmState(p, prices);
+          const rowClass =
+            itm === 'itm' || days <= 7 ? 'risk-danger' : days <= 21 ? 'risk-warning' : '';
+          const ratio = shortMarkOverPremium(p);
+          const ifAsg =
+            o.right === 'put'
+              ? assigned
+                ? money(assigned, ccy)
+                : '—'
+              : p.contingentShareObligation
+                ? `${p.contingentShareObligation} sh`
+                : '—';
+          return `<tr class="${rowClass}">
+            <td><strong>${esc(o.underlying || p.ticker)}</strong><div class="metric-sub">${esc(p.label)}</div></td>
+            <td>${esc(o.right)}</td>
+            <td>${esc(o.side)}</td>
+            <td class="num">${money(o.strike, ccy)}</td>
+            <td class="num">${esc(expiryLabel(o.expiry))}</td>
+            <td class="num">${days}d</td>
+            <td class="num">${p.units.toLocaleString()}</td>
+            <td class="num">${money(p.avgCost, ccy)}</td>
+            <td class="num">${money(p.price, ccy)}</td>
+            <td class="num ${toneClass(p.pl)}">${signedMoney(p.pl, ccy)}</td>
+            <td class="num">${formatMarkOverPremium(ratio)}</td>
+            <td class="num">${ifAsg}</td>
+            <td>${esc(p.channel === 'default' ? 'unassigned' : p.channel)}</td>
+          </tr>`;
+        })
+        .join('');
+      return `<div class="metric-card table-card" style="margin-bottom:1rem">
+        <div class="filters" style="padding:0.75rem 1.1rem;border-bottom:1px solid var(--border)">
+          <strong>${esc(m)}</strong>
+          <span class="metric-sub">${g.length} lots · earliest DTE ${earliest}d · premium ${money(prem, ccy)} · P/L ${signedMoney(pl, ccy)} · if-assigned ${money(cash, ccy)}</span>
+        </div>
+        <div class="table-scroll"><table class="report">
           <thead><tr>${head.map((h) => `<th>${esc(h)}</th>`).join('')}</tr></thead>
-          <tbody>
-            ${
-              rows.length === 0
-                ? `<tr><td colspan="${head.length}" class="empty">No open option lots for this filter.</td></tr>`
-                : rows
-                    .map((p) => {
-                      const o = p.option;
-                      const days = dteDays(o.expiry);
-                      const assigned = p.contingentCashObligation;
-                      const rowClass =
-                        assigned > 0 && days <= 21 ? 'risk-warning' : '';
-                      return `<tr class="${rowClass}">
-                        <td><strong>${esc(o.underlying || p.ticker)}</strong><div class="metric-sub">${esc(p.label)}</div></td>
-                        <td>${esc(o.right)}</td>
-                        <td>${esc(o.side)}</td>
-                        <td class="num">${money(o.strike, ccy)}</td>
-                        <td class="num">${esc(expiryLabel(o.expiry))}</td>
-                        <td class="num">${days}d</td>
-                        <td class="num">${p.units.toLocaleString()}</td>
-                        <td class="num">${money(p.avgCost, ccy)}</td>
-                        <td class="num">${money(p.price, ccy)}</td>
-                        <td class="num ${toneClass(p.pl)}">${signedMoney(p.pl, ccy)}</td>
-                        <td class="num">${assigned ? money(assigned, ccy) : ''}</td>
-                        <td>${esc(p.channel === 'default' ? 'unassigned' : p.channel)}</td>
-                      </tr>`;
-                    })
-                    .join('')
-            }
-          </tbody>
-        </table>
-      </div>
-    </div>`;
+          <tbody>${body}</tbody>
+        </table></div>
+      </div>`;
+    })
+    .join('');
 }
 
 async function load() {
   try {
-    journal = await readJson(await fetch('/api/domain/invage/trades', { credentials: 'include' }));
+    const [j, d] = await Promise.all([
+      readJson(await fetch('/api/domain/invage/trades', { credentials: 'include' })),
+      loadDashboard().catch(() => ({ empty: true, model: null, message: 'No open positions.', productProfile: 'full' })),
+    ]);
+    journal = j;
+    dash = d;
+    const q = channelFromQuery();
+    channel = q === 'merged' ? 'all' : q;
+    view = pickDefaultView();
     render();
   } catch (e) {
     showError(el.error, e instanceof Error ? e.message : String(e));
@@ -123,7 +198,7 @@ function renderJournal() {
   }
   const channels = [...new Set(journal.executions.map(row => row.channel))].sort();
   el.filters.innerHTML = channelButtons(channels, channel, 'data-history-channel="1"');
-  el.filters.querySelectorAll('[data-history-channel]').forEach(btn => btn.addEventListener('click', () => { channel = btn.getAttribute('data-channel'); render(); }));
+  el.filters.querySelectorAll('[data-history-channel]').forEach(btn => btn.addEventListener('click', () => { channel = btn.getAttribute('data-channel'); writeChannelQuery(channel); render(); }));
   const rows = filterChannel(journal.executions, channel);
   const daily = filterChannel(journal.daily, channel);
   const heads = ['Date / time (broker)', 'Trade ID', 'Ticker / contract ID', 'Action', 'Strike', 'Expiry', 'Contracts', 'Gross premium', 'Commission (signed)', 'Net premium', 'Currency', 'Account / channel'];

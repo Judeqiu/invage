@@ -14,8 +14,8 @@ const DEFAULT_CHANNEL = 'default';
 const MERGED_CHANNEL_VIEW = 'merged';
 
 const COLORS = [
-  '#c084c0', '#ff6b6b', '#4ecdc4', '#45b7d1', '#ffeaa7', '#98d8c8',
-  '#3b82f6', '#f59e0b', '#8b5cf6', '#10b981', '#ef4444', '#6b7280',
+  '#5b50f8', '#00b4ca', '#00a852', '#eb9500', '#ea0030', '#626c81',
+  '#3b82f6', '#171f30', '#8b5cf6', '#10b981', '#ef4444', '#6b7280',
 ];
 
 const el = {
@@ -35,6 +35,15 @@ const el = {
   kpiRow: document.getElementById('kpiRow'),
   expiryRow: document.getElementById('expiryRow'),
   expiryLead: document.getElementById('expiryLead'),
+  expiryTitle: document.getElementById('expiryTitle'),
+  expiryBlock: document.getElementById('expiryBlock'),
+  expiryTable: document.getElementById('expiryTable'),
+  premiumBlock: document.getElementById('premiumBlock'),
+  premiumHead: document.getElementById('premiumHead'),
+  premiumEngine: document.getElementById('premiumEngine'),
+  openOptionsBlock: document.getElementById('openOptionsBlock'),
+  openOptionsHead: document.getElementById('openOptionsHead'),
+  openOptions: document.getElementById('openOptions'),
   statusBadge: document.getElementById('statusBadge'),
   status: document.getElementById('status'),
   refreshBtn: document.getElementById('refreshBtn'),
@@ -59,6 +68,11 @@ const el = {
 let payload = null;
 let selectedDate = 'live';
 let selectedChannel = MERGED_CHANNEL_VIEW;
+
+function normalizeChannelId(raw) {
+  if (!raw || raw === 'all' || raw === MERGED_CHANNEL_VIEW) return MERGED_CHANNEL_VIEW;
+  return raw;
+}
 let charts = {};
 let timer = null;
 let loading = false;
@@ -1026,18 +1040,30 @@ function renderOverview(view) {
     .join(', ');
 
   if (el.deskEyebrow) {
-    el.deskEyebrow.textContent =
-      view.channelView === MERGED_CHANNEL_VIEW
-        ? `Multi-broker${channels.length ? ` · ${channels.length} channel${channels.length === 1 ? '' : 's'}` : ''}`
+    const consultant = payload.productProfile === 'consultant';
+    if (view.channelView === MERGED_CHANNEL_VIEW) {
+      el.deskEyebrow.textContent = consultant
+        ? channels.length > 1
+          ? 'Multi-broker desk'
+          : channels[0] && channels[0] !== DEFAULT_CHANNEL
+            ? `${channels[0]} desk`
+            : 'Desk'
+        : 'Multi-broker';
+    } else {
+      el.deskEyebrow.textContent = consultant
+        ? `${view.channelLabel || view.channelView} desk`
         : `Channel · ${view.channelLabel || view.channelView}`;
+    }
   }
   if (el.heroDate) {
     el.heroDate.textContent = longDateLabel(asOf);
   }
   if (el.heroLead) {
-    el.heroLead.textContent = brokerNames
-      ? `Unified view across ${brokerNames}. Pick a date to replay the numbers captured at that day's close.`
-      : 'Unified view of recorded holdings and cash. Pick a date to replay numbers captured at that day’s close.';
+    const n = view.positionCount || 0;
+    const e = view.equityCount || 0;
+    const o = view.optionCount || 0;
+    const f = view.fundCount || 0;
+    el.heroLead.textContent = `${n} holdings — ${e} equity, ${o} option, ${f} fund. Pick a date to replay numbers captured at that day's close.`;
   }
   if (el.navValue) {
     el.navValue.textContent = fmtPrettyMoney(view.totalValue, repCcy, 2);
@@ -1075,23 +1101,20 @@ function renderOverview(view) {
   }
 
   const cashCcy = view.cashCurrency || repCcy;
-  const optionPl =
-    (view.positions || [])
-      .filter((p) => p.instrument === 'option')
-      .reduce((s, p) => s + Number(p.pl || 0), 0);
+  const premiumOpen = Number(view.optionsPremiumCollected || 0);
 
   if (el.kpiRow) {
     el.kpiRow.innerHTML = [
       metricCardHtml(
         'Premium · open',
         view.optionCount
-          ? fmtPrettyMoney(optionPl, repCcy, 0)
+          ? fmtPrettyMoney(premiumOpen, repCcy, 0)
           : '—',
         view.optionCount
-          ? `${view.optionCount} option lot${view.optionCount === 1 ? '' : 's'} · open P/L, not a day blotter`
+          ? `${view.optionCount} option lot${view.optionCount === 1 ? '' : 's'} · open book, not daily blotter`
           : 'No option lots',
-        'Open option mark-to-market vs book premium. Daily premium is not stored.',
-        optionPl > 0 ? 'up' : optionPl < 0 ? 'down' : '',
+        'Sum of short-option premiumAbsolute on the open book. Daily premium lives on Trades.',
+        premiumOpen > 0 ? 'up' : '',
       ),
       metricCardHtml(
         'Buying power',
@@ -1122,6 +1145,20 @@ function renderOverview(view) {
 
 function renderExpiryRisk(view, asOf, buying) {
   if (!el.expiryRow) return;
+  const hasOptions = (view.optionCount || 0) > 0;
+  if (el.expiryBlock) el.expiryBlock.classList.toggle('hidden', !hasOptions);
+  if (el.expiryTitle) {
+    const consultant = payload.productProfile === 'consultant';
+    el.expiryTitle.innerHTML = consultant
+      ? '<span class="bar"></span>Expiry calendar &amp; assignment risk'
+      : '<span class="bar"></span>Option expiries &amp; obligations';
+  }
+  if (!hasOptions) {
+    if (el.expiryTable) el.expiryTable.innerHTML = '';
+    renderPremiumEngine(view);
+    renderOpenOptions(view);
+    return;
+  }
   const prices = payload?.equityPrices || {};
   const shorts = (view.positions || []).filter(
     (p) => p.instrument === 'option' && p.option?.side === 'short',
@@ -1195,6 +1232,193 @@ function renderExpiryRisk(view, asOf, buying) {
       cover != null && cover < 100 ? 'down' : '',
     ),
   ].join('');
+
+  if (el.expiryTable) {
+    if (shorts.length === 0) {
+      el.expiryTable.innerHTML = emptyCard('No short option lots in this view.');
+    } else {
+      const sorted = [...shorts].sort((a, b) => dteDays(a.option.expiry) - dteDays(b.option.expiry));
+      const head = ['Contract', 'Spot', 'Strike', 'Moneyness', 'Expiry', 'DTE', 'ITM%', 'Mark', 'If assigned', 'Status', 'Channel'];
+      el.expiryTable.innerHTML = `<div class="metric-card table-card"><div class="table-scroll"><table class="report">
+        <thead><tr>${head.map((h) => `<th>${escapeHtml(h)}</th>`).join('')}</tr></thead>
+        <tbody>${sorted
+          .map((p) => {
+            const o = p.option;
+            const dte = dteDays(o.expiry);
+            const itm = optionItmState(p, prices);
+            const px = prices[o.underlying];
+            const moneyNess =
+              typeof px === 'number' && o.strike
+                ? `${(((px - o.strike) / o.strike) * 100).toFixed(1)}%`
+                : '—';
+            const rowClass =
+              itm === 'itm' || dte <= 7 ? 'risk-danger' : dte <= 21 ? 'risk-warning' : 'risk-ok';
+            const pulse = itm === 'itm' && dte <= 7
+              ? '<span class="pulse-dot" aria-hidden="true"></span> '
+              : '';
+            const pill =
+              itm === 'itm'
+                ? riskPill('danger', 'ITM')
+                : itm === 'otm'
+                  ? riskPill('ok', 'OTM')
+                  : riskPill('muted', 'Unknown quote');
+            const dtePill =
+              dte <= 7 ? ` ${riskPill('danger', `DTE ${dte}d`)}` : dte <= 21 ? ` ${riskPill('warning', `DTE ${dte}d`)}` : '';
+            const assigned =
+              o.right === 'put'
+                ? fmtPrettyMoney(Number(p.contingentCashObligation || 0), reportingCcyCode(view), 0)
+                : `${Number(p.contingentShareObligation || 0)} sh`;
+            return `<tr class="${rowClass}">
+              <td>${pulse}<strong>${escapeHtml(o.underlying || p.ticker)}</strong>
+                <div class="metric-sub">${escapeHtml(o.right.toUpperCase())} · ${escapeHtml(o.side)} · ${p.units}x</div></td>
+              <td class="num">${typeof px === 'number' ? fmtUsd2(px) : '—'}</td>
+              <td class="num">${fmtUsd2(o.strike)}</td>
+              <td class="num">${moneyNess}</td>
+              <td class="num">${escapeHtml(o.expiry)}</td>
+              <td class="num">${dte}d</td>
+              <td class="num muted">—</td>
+              <td class="num">${fmtUsd2(p.price)}</td>
+              <td class="num">${assigned}</td>
+              <td>${pill}${dtePill}</td>
+              <td>${escapeHtml(p.channel === DEFAULT_CHANNEL ? 'Unassigned' : p.channel)}</td>
+            </tr>`;
+          })
+          .join('')}</tbody></table></div>
+        <div class="metric-sub" style="padding:0.75rem 1.1rem">How ITM is decided — short put if last &lt; strike; short call if last &gt; strike. Probability of finishing ITM is not on these books (see docs/report-missing-datapoints.md).</div>
+      </div>`;
+    }
+  }
+  renderPremiumEngine(view);
+  renderOpenOptions(view);
+}
+
+function renderPremiumEngine(view) {
+  if (!el.premiumEngine || !el.premiumBlock) return;
+  const opts = (view.positions || []).filter((p) => p.instrument === 'option' && p.option);
+  if (opts.length === 0) {
+    el.premiumBlock.classList.add('hidden');
+    el.premiumEngine.innerHTML = '';
+    return;
+  }
+  el.premiumBlock.classList.remove('hidden');
+  const consultant = payload.productProfile === 'consultant';
+  if (el.premiumHead) {
+    el.premiumHead.innerHTML = sectionHead(
+      'Section 02',
+      consultant ? 'Premium engine' : 'Premium by expiry',
+      'Premium sold and open P&L bucketed by expiry month from the current open book. Not lifetime premium.',
+    );
+  }
+  const byMonth = {};
+  const byUnd = {};
+  for (const p of opts) {
+    const m = p.option.expiry.slice(0, 7);
+    if (!byMonth[m]) byMonth[m] = { prem: 0, pl: 0 };
+    if (p.option.side === 'short') byMonth[m].prem += Number(p.premiumAbsolute || 0);
+    byMonth[m].pl += Number(p.pl || 0);
+    const u = p.option.underlying || p.ticker;
+    if (!byUnd[u]) byUnd[u] = 0;
+    if (p.option.side === 'short') byUnd[u] += Number(p.premiumAbsolute || 0);
+  }
+  const months = Object.keys(byMonth).sort();
+  const ccy = reportingCcyCode(view);
+  const premRows = months.map((m) => ({
+    label: m,
+    value: byMonth[m].prem,
+    display: fmtPrettyMoney(byMonth[m].prem, ccy, 0),
+  }));
+  const plRows = months.map((m) => ({
+    label: m,
+    value: byMonth[m].pl,
+    display: fmtPrettyMoney(byMonth[m].pl, ccy, 0),
+  }));
+  const undRows = Object.entries(byUnd)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+    .map(([label, value]) => ({ label, value, display: fmtPrettyMoney(value, ccy, 0) }));
+  const concSrc = [...(view.positions || [])]
+    .map((p) => ({ label: p.ticker, value: Number(p.weightPct || 0), display: `${Number(p.weightPct || 0).toFixed(1)}%` }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 8);
+  if (view.cashWeightPct != null) {
+    concSrc.push({
+      label: 'Cash',
+      value: view.cashWeightPct,
+      display: `${view.cashWeightPct.toFixed(1)}%`,
+    });
+    concSrc.sort((a, b) => b.value - a.value);
+  }
+  el.premiumEngine.innerHTML =
+    cssBarCard('Premium sold by expiry month', premRows) +
+    cssBarCard('NAV concentration', concSrc.slice(0, 8), concSrc.length ? 'Top 8 weights' : '') +
+    cssBarCard('Premium by underlying', undRows, 'Top 8 underlyings') +
+    cssBarCard('Open P&L by expiry month', plRows);
+}
+
+function renderOpenOptions(view) {
+  if (!el.openOptions || !el.openOptionsBlock) return;
+  const opts = (view.positions || []).filter((p) => p.instrument === 'option' && p.option);
+  if (opts.length === 0) {
+    el.openOptionsBlock.classList.add('hidden');
+    el.openOptions.innerHTML = '';
+    return;
+  }
+  el.openOptionsBlock.classList.remove('hidden');
+  if (el.openOptionsHead) {
+    el.openOptionsHead.innerHTML = sectionHead(
+      'Section 03',
+      'Open options positions · broker view',
+      'Grouped by expiry month. Marks are $ per contract.',
+    );
+  }
+  const prices = payload?.equityPrices || {};
+  const groups = {};
+  for (const p of opts) {
+    const m = p.option.expiry.slice(0, 7);
+    if (!groups[m]) groups[m] = [];
+    groups[m].push(p);
+  }
+  const months = Object.keys(groups).sort();
+  const ccy = reportingCcyCode(view);
+  const head = ['Contract', 'Right', 'Side', 'Strike', 'DTE', 'Contracts', 'Premium', 'Mark', 'P/L', 'Channel'];
+  let html = '';
+  for (const m of months) {
+    const rows = groups[m];
+    const prem = rows.reduce((s, p) => s + (p.option.side === 'short' ? Number(p.premiumAbsolute || 0) : 0), 0);
+    const pl = rows.reduce((s, p) => s + Number(p.pl || 0), 0);
+    const cash = rows.reduce((s, p) => s + Number(p.contingentCashObligation || 0), 0);
+    html += `<div class="metric-card table-card" style="margin-bottom:1rem">
+      <div class="filters" style="padding:0.75rem 1.1rem;border-bottom:1px solid var(--border)">
+        <strong>${escapeHtml(m)}</strong>
+        <span class="metric-sub">${rows.length} lots · premium ${fmtPrettyMoney(prem, ccy, 0)} · P/L ${fmtPrettyMoney(pl, ccy, 0)} · if-assigned cash ${fmtPrettyMoney(cash, ccy, 0)}</span>
+      </div>
+      <div class="table-scroll"><table class="report">
+        <thead><tr>${head.map((h) => `<th>${escapeHtml(h)}</th>`).join('')}</tr></thead>
+        <tbody>${rows
+          .map((p) => {
+            const o = p.option;
+            const dte = dteDays(o.expiry);
+            const itm = optionItmState(p, prices);
+            const rowClass =
+              itm === 'itm' || dte <= 7 ? 'risk-danger' : dte <= 21 ? 'risk-warning' : '';
+            return `<tr class="${rowClass}">
+              <td><strong>${escapeHtml(o.underlying || p.ticker)}</strong><div class="metric-sub">${escapeHtml(p.label)}</div></td>
+              <td>${escapeHtml(o.right)}</td>
+              <td>${escapeHtml(o.side)}</td>
+              <td class="num">${fmtUsd2(o.strike)}</td>
+              <td class="num">${dte}d</td>
+              <td class="num">${p.units}</td>
+              <td class="num">${fmtUsd2(p.avgCost)}</td>
+              <td class="num">${fmtUsd2(p.price)}</td>
+              <td class="num ${plClass(p.pl)}">${fmtSignedUsd0(p.pl)}</td>
+              <td>${escapeHtml(p.channel === DEFAULT_CHANNEL ? 'Unassigned' : p.channel)}</td>
+            </tr>`;
+          })
+          .join('')}</tbody>
+      </table></div>
+    </div>`;
+  }
+  el.openOptions.innerHTML = html;
 }
 
 function renderChannelPills(view) {
@@ -1842,6 +2066,12 @@ function initChannelSelect() {
 }
 
 function initDashboard() {
+  const requested = normalizeChannelId(channelFromQuery());
+  const liveChannels = payload.model.live.channels || [];
+  selectedChannel =
+    requested === MERGED_CHANNEL_VIEW || liveChannels.includes(requested)
+      ? requested
+      : MERGED_CHANNEL_VIEW;
   const dates = payload.model.history.map((h) => h.date).sort().reverse();
   const stillValid = selectedDate === 'live' || dates.includes(selectedDate);
   if (!stillValid) selectedDate = 'live';
@@ -1873,6 +2103,9 @@ function renderEmpty(body) {
   el.loading.classList.add('hidden');
   el.error.classList.add('hidden');
   el.dashboard.classList.remove('hidden');
+  if (el.deskEyebrow) {
+    el.deskEyebrow.textContent = body.productProfile === 'consultant' ? 'Desk' : 'Household books';
+  }
   if (el.heroDate) {
     el.heroDate.textContent = longDateLabel(new Date().toISOString().slice(0, 10));
   }
@@ -1924,6 +2157,10 @@ function renderEmpty(body) {
   el.barGrid.innerHTML = '';
   el.chartGrid.innerHTML = '';
   el.insightGrid.innerHTML = '';
+  if (el.expiryBlock) el.expiryBlock.classList.add('hidden');
+  if (el.premiumBlock) el.premiumBlock.classList.add('hidden');
+  if (el.openOptionsBlock) el.openOptionsBlock.classList.add('hidden');
+  if (el.expiryTable) el.expiryTable.innerHTML = '';
 }
 
 async function load() {
@@ -2026,8 +2263,9 @@ if (el.channelPills) {
   el.channelPills.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-channel]');
     if (!btn) return;
-    selectedChannel = btn.getAttribute('data-channel');
+    selectedChannel = normalizeChannelId(btn.getAttribute('data-channel'));
     if (el.channelSelect) el.channelSelect.value = selectedChannel;
+    writeChannelQuery(selectedChannel === MERGED_CHANNEL_VIEW ? 'all' : selectedChannel);
     renderDate(selectedDate, selectedChannel);
   });
 }

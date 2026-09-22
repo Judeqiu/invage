@@ -38,6 +38,8 @@ import {
 } from '../report/dashboard-model.js';
 import type { Holding } from '../market/types.js';
 import type { OptionLiveMark } from '../market/fetch-option-marks.js';
+import { readProductProfile, type ProductProfileId } from '../agents/roster.js';
+import { productDisplayName } from '../product-name.js';
 
 export const BENCHMARK_TICKER = 'SPY';
 
@@ -68,6 +70,17 @@ export interface DashboardPayload {
   equityPrices?: Record<string, number>;
   /** Optional margin snapshot keyed by holding channel. Omit when none recorded. */
   connectionMetrics?: Record<string, BrokerConnectionMetrics>;
+  /** Env product profile — copy/section gates. Not a books field. */
+  productProfile: ProductProfileId;
+  /** UTARUS_AGENT_NAME. */
+  productName: string;
+}
+
+function productMeta(): { productProfile: ProductProfileId; productName: string } {
+  return {
+    productProfile: readProductProfile(),
+    productName: productDisplayName(),
+  };
 }
 
 /** Fetch SPY adjusted closes at snapshot dates + current price. Soft-fails to null. */
@@ -206,6 +219,7 @@ export async function loadDashboardForSlug(
       model: null,
       benchmark: null,
       warnings: [],
+      ...productMeta(),
     };
   }
 
@@ -350,6 +364,7 @@ export async function loadDashboardForSlug(
     model,
     benchmark,
     warnings: model.live.issues,
+    ...productMeta(),
   };
   if (Object.keys(market.prices).length > 0) out.equityPrices = market.prices;
   if (connectionMetrics) out.connectionMetrics = connectionMetrics;

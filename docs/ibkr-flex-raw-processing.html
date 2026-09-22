@@ -1,0 +1,351 @@
+<html><head><meta http-equiv="Content-Type" content="text/html; charset=utf-8" /><title></title></head><body><hr />
+<h2>layout: default
+title: IBKR Flex raw data processing</h2>
+<p><strong><a href="/invage/">Home</a></strong> | <strong><a href="/invage/data-model.html">Data Model</a></strong> | <strong><a href="/invage/playbook.html">Playbook</a></strong> | <strong><a href="/invage/ibkr-flex-raw-processing.html">IBKR Flex processing</a></strong></p>
+<h1>IBKR Flex raw data processing</h1>
+<p>How Invage turns an Activity Flex XML file into channel <code>ibkr</code> lots, cash, and (when the query allows it) option execution history.</p>
+<p>This note is grounded in a production archive named <code>activity-2026-09-14-2026-09-15T22-36-46-458Z.xml</code> (Velovest Activity Flex, generated 2026-09-15 18:36 IBKR clock). SSH to <code>lextokprod02</code> / <code>lextok03</code> was not available from the machine that wrote this, so the file is the local copy of that BinDrive archive, not a fresh <code>GetStatement</code> pull. Account ids, quantities, and cash amounts are omitted below.</p>
+<h2>What the raw file is</h2>
+<p>A successful IBKR Sync writes the <strong>entire</strong> Flex response, unchanged, to:</p>
+<pre><code>data/drive/&lt;slug&gt;/ibkr-flex/activity-{asOf}-{stamp}.xml
+</code></pre>
+<p><code>asOf</code> is the statement <code>toDate</code>. <code>list_raw_data</code> labels that path <code>channel=ibkr</code>, <code>source_kind=broker-sync</code>.</p>
+<p>This archive is:</p>
+<table>
+<thead>
+<tr>
+<th>Fact</th>
+<th>Value in the sample</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Envelope</td>
+<td><code>FlexQueryResponse type=&quot;AF&quot;</code> (Activity Flex)</td>
+</tr>
+<tr>
+<td>Period</td>
+<td><strong><code>LastBusinessDay</code></strong> — <code>fromDate</code> = <code>toDate</code> = 2026-09-14</td>
+</tr>
+<tr>
+<td>Sections present</td>
+<td><code>EquitySummaryInBase</code>, <code>CashReport</code>, <code>OpenPositions</code>, <code>Trades</code></td>
+</tr>
+<tr>
+<td>Open positions</td>
+<td>147 rows: 8 <code>STK</code>, 139 <code>OPT</code> (all short). Quantity is XML <code>position</code>, not <code>quantity</code></td>
+</tr>
+<tr>
+<td>Cash</td>
+<td>One <code>CashReportCurrency</code> with <code>currency=&quot;BASE_SUMMARY&quot;</code> (no USD/HKD/… sleeve)</td>
+</tr>
+<tr>
+<td>Trades</td>
+<td>5 <code>OPT</code> <code>SELL</code> rows on 2026-09-14 only</td>
+</tr>
+<tr>
+<td>Not present</td>
+<td><code>conid</code>, <code>listingExchange</code>, <code>levelOfDetail</code>, <code>tradeID</code>, <code>openCloseIndicator</code>, <code>ibCommissionCurrency</code>, deposits, dividends, NAV history series</td>
+</tr>
+</tbody>
+</table>
+<p>That period is why Sync cannot “pull two months ago” until the <strong>Flex query</strong> in Client Portal is widened. Invage never sends <code>fd</code> / <code>td</code> / <code>p</code> on <code>SendRequest</code>; it only sends token, query id, <code>v=3</code>.</p>
+<h2>Pipeline</h2>
+<pre><code>Client Portal Flex query (period + sections)
+        │
+        ▼
+SendRequest → poll GetStatement          src/ibkr/flex-client.ts
+        │
+        ▼
+parseFlexQueryXml                        src/ibkr/flex-parse.ts
+        │  (optional csv_tables overlay — IBKR only)
+        ▼
+mapFlexDocToStatement                    src/ibkr/flex-map.ts
+        │
+        ├─ success → archive XML under ibkr-flex/
+        │            applyBrokerStatement
+        │              lots/cash snapshot on channel ibkr
+        │              merge option_executions if Trades parsed
+        │
+        └─ parse fail → drive/&lt;slug&gt;/broker-raw/ibkr/&lt;id&gt;/
+                         raw.xml + case.yaml  (triage, no books write)
+</code></pre>
+<p>Entry points: Settings / Brokers <strong>Sync</strong>, tool <code>sync_broker</code> / <code>sync_ibkr_flex</code>. All of them call <code>syncBrokerConnection</code> (<code>src/brokers/connections.ts</code>).</p>
+<p>A second path, <strong>Trades → Import XML</strong>, is <code>POST /trades/import</code> → <code>importOptionExecutions</code>. It parses <strong>Trades only</strong>, merges executions, and <strong>does not</strong> replace lots or cash and <strong>does not</strong> write <code>ibkr-flex/</code>.</p>
+<h2>Step 1 — Fetch</h2>
+<p><code>ibkrFlexAdapter.fetchRaw</code> calls <code>fetchFlexStatement({ token, queryId: activity_query_id })</code>.</p>
+<ul>
+<li>Host: <code>https://ndcdyn.interactivebrokers.com/AccountManagement/FlexWebService</code></li>
+<li>User-Agent required; ≥1.1s between HTTP calls</li>
+<li>Polls <code>GetStatement</code> until a <code>FlexQueryResponse</code> (or CSV, which we then reject)</li>
+</ul>
+<p>No date override. The window is the query template’s period. This sample’s <code>period=&quot;LastBusinessDay&quot;</code> is that template.</p>
+<h2>Step 2 — Parse XML → <code>FlexStatementDoc</code></h2>
+<p><code>parseFlexQueryXml</code> is strict about wrappers and lenient about individual lots.</p>
+<p><strong>Must exist or the whole parse fails (no wipe of existing books):</strong></p>
+<ul>
+<li>Exactly one <code>FlexStatement</code></li>
+<li><code>OpenPositions</code> wrapper (zero rows is allowed)</li>
+<li><code>CashReport</code> wrapper with at least one importable cash sleeve</li>
+</ul>
+<p><strong>Open positions.</strong> Each <code>OpenPosition</code> becomes a <code>FlexOpenPosition</code>. IBKR often emits <code>position=&quot;1700&quot;</code>; the parser accepts <code>quantity</code> or <code>position</code> and fatals if both exist and disagree. <code>CASH</code> rows are ignored. A bad row is skipped (<code>skipped[]</code>), not a fatal, unless <code>quantity</code> and <code>position</code> conflict.</p>
+<p><strong>Cash.</strong> Per-ISO <code>CashReportCurrency</code> rows become sleeves. <code>BASE_SUMMARY</code> is <strong>not</strong> an ISO code. This sample is BASE_SUMMARY-only, so the parser looks up <code>EquitySummaryByReportDateInBase</code> whose <code>reportDate</code> equals statement <code>toDate</code>, takes that row’s ISO <code>currency</code> and <code>cash</code>, and <strong>requires</strong> it to equal BASE_SUMMARY <code>endingCash</code>. Here that resolves to <strong>USD</strong> on 2026-09-14. Extra EquitySummary dates (this file also has 2026-09-11) are ignored. They are <strong>not</strong> stored as performance history.</p>
+<p><strong>Trades.</strong> After cash/lots, parse always runs <code>parseFlexOptionExecutions</code> on the same XML.</p>
+<ul>
+<li>No <code>&lt;Trades&gt;</code> wrapper → executions field omitted (<code>undefined</code>). Sync then <strong>leaves</strong> existing <code>option_executions</code> alone.</li>
+<li>Empty <code>&lt;Trades&gt;&lt;/Trades&gt;</code> → empty list (history present, zero fills).</li>
+<li>Each <code>Trade</code> with <code>assetCategory=&quot;OPT&quot;</code> must be <code>levelOfDetail=&quot;EXECUTION&quot;</code> and include: <code>accountId</code>, <code>tradeID</code>, <code>conid</code>, <code>dateTime</code> (<code>YYYYMMDD;HHMMSS</code>), <code>buySell</code>, <code>openCloseIndicator</code>, <code>quantity</code>, <code>multiplier</code>, <code>underlyingSymbol</code>, <code>putCall</code>, <code>strike</code>, <code>expiry</code> (<code>YYYYMMDD</code>), <code>currency</code>, <code>proceeds</code>, <code>ibCommission</code>, <code>ibCommissionCurrency</code>.</li>
+<li><code>ORDER</code> / <code>CLOSED_LOT</code> / summary rows are skipped. Stock trades are skipped. Missing required fields <strong>fail the entire Flex parse</strong>.</li>
+</ul>
+<p>Current code on <strong>this production file</strong> fails:</p>
+<pre><code>IBKR option execution undefined: missing levelOfDetail
+</code></pre>
+<p>The five option sells have <code>dateTime</code>, <code>buySell</code>, <code>quantity</code>, <code>proceeds</code>, <code>ibCommission</code>, strike/expiry/putCall — but not <code>tradeID</code>, <code>conid</code>, <code>levelOfDetail</code>, <code>openCloseIndicator</code>, or <code>ibCommissionCurrency</code>. That is a Flex <strong>field</strong> setting, not a period setting.</p>
+<p>The archive still exists because it was written on 2026-09-15, before execution parsing was wired into <code>parseFlexQueryXml</code> (journal deploy 2026-09-17). A Sync of the same query <strong>today</strong> would miss <code>ibkr-flex/</code> success archive and land in <code>broker-raw/ibkr/</code> triage instead, unless Trades is removed or upgraded to Executions with those fields.</p>
+<p>Stripping <code>&lt;Trades&gt;</code> from this file (what the old parser effectively did) maps cleanly: 147 lots (8 equity, 139 short options), USD cash from BASE_SUMMARY, nothing skipped.</p>
+<h2>How this lands in the data model</h2>
+<p>The XML is not the books. After a successful apply, investor state holds only public types. Full field rules: <a href="./data-model.md">Data Model</a>.</p>
+<table>
+<thead>
+<tr>
+<th>In this Flex file</th>
+<th>Stored type</th>
+<th>This sample</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>OpenPosition</code> <code>STK</code> <code>position</code></td>
+<td><code>portfolio[&quot;AMD@ibkr&quot;]</code> (equity <code>Holding</code>)</td>
+<td>8 equity lots, <code>channel: ibkr</code></td>
+</tr>
+<tr>
+<td><code>OpenPosition</code> <code>OPT</code> (short)</td>
+<td><code>portfolio[&quot;AMD-P-…-S@ibkr&quot;]</code> (option <code>Holding</code>)</td>
+<td>139 short option lots; <code>units</code> = abs(position)</td>
+</tr>
+<tr>
+<td><code>CashReport</code> <code>BASE_SUMMARY</code> + EquitySummary on <code>toDate</code></td>
+<td><code>cash[]</code> sleeve <code>{ currency: USD, amount, channel: ibkr }</code></td>
+<td>One USD sleeve; not a holding</td>
+</tr>
+<tr>
+<td><code>Trade</code> OPT rows</td>
+<td><code>option_executions[]</code></td>
+<td><strong>Not stored</strong> — missing execution fields, parse fails today</td>
+</tr>
+<tr>
+<td><code>EquitySummaryByReportDateInBase</code> extra dates</td>
+<td>nothing</td>
+<td>2026-09-11 row dropped</td>
+</tr>
+<tr>
+<td>Whole XML</td>
+<td><code>drive/&lt;slug&gt;/ibkr-flex/activity-{asOf}-{stamp}.xml</code></td>
+<td>Raw archive only</td>
+</tr>
+</tbody>
+</table>
+<p>Worked snapshot (illustrative keys, not live amounts):</p>
+<pre><code class="language-yaml">portfolio:
+  AMD@ibkr:
+    instrument: equity
+    units: …                   # Flex position
+    avg_price: …               # costBasisMoney / position
+    channel: ibkr
+  AMD-P-150-20261017-S@ibkr:
+    instrument: option
+    units: 2
+    avg_price: …               # contract premium, not per share
+    channel: ibkr
+    option:
+      right: put
+      side: short
+      strike: 150
+      expiry: &quot;2026-10-17&quot;
+      multiplier: 100
+      underlying: AMD
+      settlement: physical
+      mark: …                  # markPrice × multiplier
+cash:
+  - amount: …                  # BASE_SUMMARY endingCash, booked as USD
+    currency: USD
+    channel: ibkr
+    updated_at: &quot;2026-09-14&quot;
+option_executions: []          # would list AMD SELLs if Trades were Executions-level
+</code></pre>
+<p>Replace vs merge on this file: the 147 lots <strong>are</strong> the entire <code>ibkr</code> sleeve after apply (old <code>ibkr</code> lots vanish). Journal rows from earlier days would <strong>remain</strong> if Trades had parsed. <code>period: LastBusinessDay</code> means the raw file never contained August fills to merge.</p>
+<h2>Step 3 — Map → public <code>BrokerStatement</code></h2>
+<p>Vendor labels do not persist. <code>mapFlexDocToStatement</code> builds:</p>
+<table>
+<thead>
+<tr>
+<th>Flex</th>
+<th>Statement</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>accountId</code></td>
+<td><code>account_id</code></td>
+</tr>
+<tr>
+<td><code>toDate</code></td>
+<td><code>as_of</code> (IBKR books date; prior day)</td>
+</tr>
+<tr>
+<td><code>fromDate</code></td>
+<td><code>from_date</code></td>
+</tr>
+<tr>
+<td>Cash sleeves</td>
+<td><code>cash[].currency</code> + <code>amount</code> (ending cash)</td>
+</tr>
+<tr>
+<td>Open positions</td>
+<td><code>lots[]</code> with public <code>Holding</code></td>
+</tr>
+<tr>
+<td>Parsed OPT executions</td>
+<td><code>option_executions</code> (omitted if Trades wrapper missing)</td>
+</tr>
+</tbody>
+</table>
+<p>Lot mapping (<code>holdingsFromOpenPositions</code>):</p>
+<table>
+<thead>
+<tr>
+<th><code>assetCategory</code></th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>STK</code> / <code>ETF</code></td>
+<td>Equity holding. Short stock is skipped. Yahoo ticker from <code>symbol</code> (+ HK pad if <code>listingExchange</code> is SEHK). <code>avg_price</code> from <code>costBasisMoney / quantity</code> (else <code>costBasisPrice</code>).</td>
+</tr>
+<tr>
+<td><code>OPT</code></td>
+<td>Option holding. Needs multiplier, put/call, strike, expiry, <code>underlyingSymbol</code>, <code>markPrice</code>. <code>units</code> is <code>abs(quantity)</code>; sign becomes <code>option.side</code> long/short. <code>avg_price</code> is cost of the contract (costBasisMoney / units, or costBasisPrice × multiplier). Mark is <code>markPrice × multiplier</code>.</td>
+</tr>
+<tr>
+<td><code>FUND</code> / <code>BILL</code> / <code>BOND</code></td>
+<td>Fund holding with manual mark.</td>
+</tr>
+<tr>
+<td>Anything else</td>
+<td><code>not_imported</code></td>
+</tr>
+</tbody>
+</table>
+<p><code>conid</code> → <code>holding.broker_ref.native_id</code> when present. This sample has <strong>no</strong> <code>conid</code> on positions.</p>
+<p>Duplicate map keys skip the later row. Dashboard marks stay Yahoo; Flex <code>markPrice</code> is stored on the option lot for the snapshot, not used as the dashboard quote source.</p>
+<h2>Step 4 — Apply (success) vs triage (failure)</h2>
+<p><strong>Success</strong> (<code>applyBrokerStatement</code>):</p>
+<ol>
+<li>Merge incoming option executions into <code>state.option_executions</code> by <code>(channel, account_id, execution_id)</code> <strong>before</strong> any lot write. Same row twice is a no-op; a conflicting row aborts the sync.</li>
+<li><strong>Replace</strong> every holding on channel <code>ibkr</code> with this statement’s lots. Other channels are untouched.</li>
+<li><strong>Replace</strong> <code>ibkr</code> cash sleeves with statement cash (ledger posts when books are on: close vanished lots, reopen current lots, adjust cash to ending amounts, <code>adjust_cash=false</code> on holding legs).</li>
+<li>Write <code>broker_connections.ibkr.last_sync</code> (<code>ok</code>, <code>as_of</code>, lots upserted/removed, <code>not_imported</code>).</li>
+<li>Save investor state (PostgreSQL). Executions are durable; there is no one-year purge.</li>
+</ol>
+<p>So even a 365-day query still <strong>overwrites today’s lots and cash</strong> with the <strong>end-of-period</strong> snapshot. The extra days only matter for Trades/executions.</p>
+<p><strong>Parse failure:</strong> no apply. Case under <code>drive/&lt;slug&gt;/broker-raw/ibkr/&lt;id&gt;/</code> with <code>raw.xml</code> + <code>case.yaml</code> (<code>looks_like</code>, tag counts, error). Use <code>list_broker_triage</code> / <code>read_broker_raw</code>, or save a <code>csv_tables</code> spec (IBKR CSV only).</p>
+<h2>What this sample would store (if Trades did not fail parse)</h2>
+<table>
+<thead>
+<tr>
+<th>Store</th>
+<th>This file</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Raw XML</td>
+<td>Yes — one-day Activity statement</td>
+</tr>
+<tr>
+<td><code>ibkr</code> lots</td>
+<td>8 stocks + 139 short options as of 2026-09-14</td>
+</tr>
+<tr>
+<td><code>ibkr</code> cash</td>
+<td>One USD sleeve (BASE_SUMMARY resolved via EquitySummary)</td>
+</tr>
+<tr>
+<td><code>option_executions</code></td>
+<td><strong>None</strong> with current parser (missing execution fields). With Trades stripped: field omitted, previous journal kept</td>
+</tr>
+<tr>
+<td>Daily NAV / 2026-09-11 equity row</td>
+<td>Dropped</td>
+</tr>
+<tr>
+<td>Two-month history</td>
+<td><strong>Not in the file.</strong> Period is last business day</td>
+</tr>
+</tbody>
+</table>
+<h2>Flex query changes (if you want history)</h2>
+<p>Do <strong>not</strong> set a custom range whose <strong>to-date is in the past</strong> and then Sync — that would replace current lots with old positions.</p>
+<p>To keep current books <strong>and</strong> import option fills back ~60 days:</p>
+<ol>
+<li><strong>Period:</strong> Last 90 Calendar Days (or Last 365). Query id can stay.</li>
+<li><strong>Keep</strong> Open Positions + Cash Report, format XML.</li>
+<li><strong>Trades:</strong> Executions level, with the fields listed on the Activity Query ID help in Settings (especially <code>tradeID</code>, <code>conid</code>, <code>levelOfDetail</code>, <code>openCloseIndicator</code>, <code>ibCommissionCurrency</code>).</li>
+<li>Prefer per-currency Cash Report rows; BASE_SUMMARY-only still works if Equity Summary In Base is included.</li>
+<li>Sync once. Confirm <code>last_sync.ok</code> and that <code>option_executions</code> gained rows. Raw XML for that pull will show <code>fromDate</code> covering the lookback, <code>toDate</code> still prior day.</li>
+</ol>
+<p>For fills older than the Web Service window (~365 days, and IBKR may 1003 older ranges), download Activity XML from Client Portal and use Trades import (journal only).</p>
+<h2>Code map</h2>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Role</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>src/ibkr/flex-client.ts</code></td>
+<td>SendRequest / GetStatement</td>
+</tr>
+<tr>
+<td><code>src/ibkr/flex-adapter.ts</code></td>
+<td>Catalog fetch + parse</td>
+</tr>
+<tr>
+<td><code>src/ibkr/flex-parse.ts</code></td>
+<td>XML → <code>FlexStatementDoc</code></td>
+</tr>
+<tr>
+<td><code>src/ibkr/flex-executions.ts</code></td>
+<td>OPT execution rows</td>
+</tr>
+<tr>
+<td><code>src/ibkr/flex-map.ts</code></td>
+<td>→ <code>BrokerStatement</code></td>
+</tr>
+<tr>
+<td><code>src/brokers/connections.ts</code></td>
+<td><code>syncBrokerConnection</code></td>
+</tr>
+<tr>
+<td><code>src/brokers/apply-statement.ts</code></td>
+<td>Snapshot apply + execution merge</td>
+</tr>
+<tr>
+<td><code>src/brokers/import-executions.ts</code></td>
+<td>Historical XML upload</td>
+</tr>
+<tr>
+<td><code>src/ibkr/flex-apply.ts</code></td>
+<td><code>ibkr-flex/</code> archive</td>
+</tr>
+<tr>
+<td><code>src/raw-data/store.ts</code></td>
+<td><code>list_raw_data</code> provenance</td>
+</tr>
+</tbody>
+</table>
+</body></html>

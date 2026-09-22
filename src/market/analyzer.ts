@@ -8,6 +8,11 @@ import {
   valuePosition,
 } from './position-value.js';
 
+function analysisChannel(h: Holding): string {
+  const t = typeof h.channel === 'string' ? h.channel.trim() : '';
+  return t.length > 0 ? t : 'default';
+}
+
 /** Default thresholds when no playbook is supplied (matches global THRESHOLDS). */
 export function defaultAnalysisThresholds(): Pick<
   PlaybookThresholds,
@@ -57,6 +62,7 @@ export function buildAnalysis(
         upsideToMean: null,
         costVsHigh: null,
         currentVsCost: e.avgCost > 0 ? ((e.price - e.avgCost) / e.avgCost) * 100 : null,
+        channel: analysisChannel(h),
         instrument: 'option',
         option: e.option,
         contingentCashObligation: e.contingentCashObligation,
@@ -92,6 +98,7 @@ export function buildAnalysis(
         upsideToMean: null,
         costVsHigh: null,
         currentVsCost: e.avgCost > 0 ? ((e.price - e.avgCost) / e.avgCost) * 100 : null,
+        channel: analysisChannel(h),
         instrument: 'fund',
       });
       continue;
@@ -143,6 +150,7 @@ export function buildAnalysis(
       upsideToMean,
       costVsHigh,
       currentVsCost,
+      channel: analysisChannel(h),
       instrument: 'equity',
     });
   }

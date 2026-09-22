@@ -18,14 +18,21 @@
 
 import puppeteer from 'puppeteer-core';
 import { setTimeout as sleep } from 'timers/promises';
-import { writeFileSync, mkdirSync } from 'fs';
+import { writeFileSync, mkdirSync, existsSync } from 'fs';
 import { join } from 'path';
 
 const URL_BASE = process.env.URL_BASE ?? 'https://chat.investor.lextok.com';
 const AUTH_TOKEN = process.env.AUTH_TOKEN;
+
 const CHROME_PATH =
   process.env.CHROME_PATH ??
-  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+  [
+    '/usr/bin/google-chrome',
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/chromium-browser',
+    '/usr/bin/chromium',
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+  ].find((p) => existsSync(p));
 const OUT_DIR = process.env.OUT_DIR ?? join(process.cwd(), 'tests/e2e-artifacts');
 
 if (!AUTH_TOKEN) {

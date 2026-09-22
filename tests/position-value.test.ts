@@ -415,6 +415,7 @@ describe('mixed portfolio valuation', () => {
     );
     expect(result.fullAnalysis).toHaveLength(2);
     expect(result.fullAnalysis.some((p) => p.instrument === 'option')).toBe(true);
+    expect(result.fullAnalysis.every((p) => typeof p.channel === 'string')).toBe(true);
     expect(result.laggards.every((p) => p.instrument !== 'option')).toBe(true);
     expect(result.overpriced.every((p) => p.instrument !== 'option')).toBe(true);
     expect(result.buyOpportunities.every((p) => p.instrument !== 'option')).toBe(true);

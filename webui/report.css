@@ -1,19 +1,33 @@
 :root {
   --radius: 0.65rem;
+  --background: #f7fafe;
   --background: oklch(0.985 0.006 250);
+  --foreground: #171f30;
   --foreground: oklch(0.24 0.035 265);
+  --ink: #060e23;
   --ink: oklch(0.17 0.045 265);
+  --card: #ffffff;
   --card: oklch(1 0 0);
+  --muted: #ebf1fa;
   --muted: oklch(0.955 0.014 260);
+  --muted-foreground: #626c81;
   --muted-foreground: oklch(0.53 0.035 265);
+  --border: #d8e0ed;
   --border: oklch(0.905 0.02 262);
+  --brand: #5b50f8;
   --brand: oklch(0.55 0.24 278);
+  --brand-2: #00b4ca;
   --brand-2: oklch(0.68 0.17 205);
+  --success: #00a852;
   --success: oklch(0.63 0.19 155);
+  --warning: #eb9500;
   --warning: oklch(0.74 0.17 72);
+  --danger: #ea0030;
   --danger: oklch(0.585 0.245 22);
   --gradient-brand: linear-gradient(120deg, var(--brand), var(--brand-2));
+  --shadow-card: 0 1px 2px rgba(6, 14, 35, 0.06), 0 12px 30px -18px rgba(6, 14, 35, 0.28);
   --shadow-card: 0 1px 2px oklch(0.24 0.06 265 / 0.06), 0 12px 30px -18px oklch(0.24 0.12 265 / 0.35);
+  --shadow-glow: 0 0 0 1px rgba(91, 80, 248, 0.22), 0 18px 40px -22px rgba(91, 80, 248, 0.60);
   --shadow-glow: 0 0 0 1px color-mix(in oklab, var(--brand) 22%, transparent),
     0 18px 40px -22px color-mix(in oklab, var(--brand) 60%, transparent);
   --font-serif: "Instrument Serif", ui-serif, Georgia, serif;
@@ -78,6 +92,7 @@ h1, h2 { font-family: var(--font-serif); font-weight: 400; letter-spacing: -0.01
   padding: 1.1rem 1.25rem;
   box-shadow: var(--shadow-card);
 }
+.metric-card:hover { box-shadow: var(--shadow-glow); }
 .metric-value { margin-top: 0.7rem; font-family: var(--font-serif); font-size: 1.75rem; color: var(--ink); }
 .metric-sub { margin-top: 0.25rem; font-size: 0.75rem; color: var(--muted-foreground); }
 .metric-value.up { color: var(--success); }
@@ -107,6 +122,11 @@ h1, h2 { font-family: var(--font-serif); font-weight: 400; letter-spacing: -0.01
   box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--danger) 42%, transparent);
 }
 .pill-muted { background: var(--muted); color: var(--muted-foreground); }
+.pill-brand {
+  background: color-mix(in oklab, var(--brand) 14%, transparent);
+  color: color-mix(in oklab, var(--brand) 70%, black);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--brand) 38%, transparent);
+}
 .filters { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin: 0.75rem 0; }
 .chip-btn {
   appearance: none;
@@ -170,3 +190,62 @@ table.report td.num { font-variant-numeric: tabular-nums; font-family: var(--fon
 .empty { padding: 2rem 1.25rem; text-align: center; color: var(--muted-foreground); font-size: 0.875rem; }
 .risk-danger { box-shadow: inset 3px 0 0 0 var(--danger); background: color-mix(in oklab, var(--danger) 8%, transparent); }
 .risk-warning { box-shadow: inset 3px 0 0 0 var(--warning); background: color-mix(in oklab, var(--warning) 10%, transparent); }
+.risk-ok { box-shadow: inset 3px 0 0 0 var(--success); }
+.pulse-dot {
+  display: inline-block;
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 999px;
+  background: var(--danger);
+  box-shadow: 0 0 0 0 color-mix(in oklab, var(--danger) 55%, transparent);
+  animation: pulse-dot 1.6s ease-out infinite;
+}
+@keyframes pulse-dot {
+  0% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--danger) 55%, transparent); }
+  70% { box-shadow: 0 0 0 0.45rem transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pulse-dot { animation: none; }
+  .metric-card:hover { box-shadow: var(--shadow-card); }
+}
+.bar-list { display: grid; gap: 0.65rem; }
+.bar-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.5rem 0.75rem; align-items: center; }
+.bar-row .bar-meta { display: flex; justify-content: space-between; gap: 0.5rem; font-size: 0.78rem; }
+.bar-track { grid-column: 1 / -1; height: 0.45rem; border-radius: 999px; background: var(--muted); overflow: hidden; }
+.bar-fill { height: 100%; border-radius: 999px; background-image: var(--gradient-brand); }
+.bar-fill.down { background-image: none; background: var(--danger); }
+.muted { color: var(--muted-foreground); }
+.hidden { display: none !important; }
+.hero-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+.hero-row .nav-card { min-width: 220px; flex: 0 0 240px; }
+.date-nav { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin-top: 1rem; }
+.date-nav input[type="date"] {
+  font-family: inherit;
+  font-size: 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.35rem 0.6rem;
+  background: var(--card);
+  color: var(--foreground);
+}
+.help-dot {
+  width: 1.05rem;
+  height: 1.05rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--muted-foreground);
+  font-size: 0.7rem;
+  line-height: 1;
+  cursor: help;
+}
+.metric-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem; }
+.broker-pills, .chip-row { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.85rem; }
+.group-row td { background: var(--muted); font-weight: 600; }

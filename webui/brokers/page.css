@@ -1,0 +1,36 @@
+.page { max-width: 1100px; }
+#list { align-items: start; }
+.broker-card { min-width: 0; }
+.card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.card-head > div { min-width: 0; }
+.card-head .pill { flex: none; align-self: flex-start; }
+.card-name { font-weight: 600; }
+.card-sub { font-size: .8rem; color: var(--muted-foreground); margin-top: .25rem; line-height: 1.5; overflow-wrap: anywhere; }
+.actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .85rem; }
+button.primary, a.ghost, button.ghost { font-family: inherit; font-size: .8rem; font-weight: 600; border-radius: .5rem; padding: .55rem .85rem; min-height: 40px; border: 1px solid var(--border); background: var(--card); color: var(--ink); cursor: pointer; }
+button.primary { background: var(--ink); color: #fff; border-color: var(--ink); }
+button:disabled { opacity: .5; cursor: not-allowed; }
+.manage { border-top: 1px solid var(--border); margin-top: 1.2rem; padding-top: 1.2rem; }
+.toggle { display: flex; align-items: center; gap: .5rem; font-size: .85rem; font-weight: 600; }
+.toggle input { width: 1rem; height: 1rem; margin: 0; accent-color: var(--brand); }
+.credential-fields { display: grid; gap: 1.1rem; margin: 1.25rem 0; }
+label.field { display: block; min-width: 0; font-size: .85rem; font-weight: 600; line-height: 1.5; }
+label.field .help { display: block; margin-top: .4rem; font-size: .75rem; font-weight: 400; color: var(--muted-foreground); overflow-wrap: anywhere; }
+label.field input, label.field textarea { display: block; width: 100%; box-sizing: border-box; min-height: 44px; margin-top: .4rem; border: 1px solid var(--border); border-radius: .5rem; background: var(--card); color: var(--ink); padding: .65rem .75rem; font: inherit; font-size: 16px; font-weight: 400; }
+label.field textarea { min-height: 100px; resize: vertical; font-family: ui-monospace, monospace; }
+label.field input:focus-visible, label.field textarea:focus-visible, button:focus-visible, summary:focus-visible, a:focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; }
+details { margin-top: .85rem; font-size: .8rem; line-height: 1.6; overflow-wrap: anywhere; }
+summary { cursor: pointer; font-weight: 500; }
+details ol, details ul { margin: .65rem 0 0; padding-left: 1.3rem; }
+details li + li, details p { margin-top: .5rem; }
+.sync-summary { border: 1px solid var(--border); border-radius: .6rem; background: var(--muted); margin-top: 1.2rem; padding: .85rem; font-size: .8rem; line-height: 1.6; overflow-wrap: anywhere; }
+.sync-summary p { margin: .2rem 0 0; color: var(--muted-foreground); }
+.sync-heading { font-weight: 600; }
+.sync-failed { color: var(--danger); }
+.sync-issues summary { color: var(--ink); }
+.import-body { margin-top: .5rem; font-size: .85rem; color: var(--muted-foreground); }
+@media (max-width: 600px) {
+  #list { grid-template-columns: minmax(0, 1fr); }
+  .broker-card { padding: 1rem; }
+  .card-head { gap: .5rem; }
+}

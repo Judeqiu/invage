@@ -1,6 +1,7 @@
 // Local fixture-only browser regression. Run: node --import tsx tests/execution-journal-ui.mjs
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
+import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import puppeteer from 'puppeteer-core';
 import { buildExecutionJournal } from '../src/brokers/option-executions.ts';
@@ -20,7 +21,7 @@ const server = createServer(async (req, res) => {
       res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(journal)); return;
     }
     if (req.url === '/api/domain/invage/dashboard') {
-      res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ empty: true, model: null, message: 'No open positions.' })); return;
+      res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ empty: true, model: null, message: 'No open positions.', productProfile: 'full', productName: 'Victor Consultant' })); return;
     }
     const file = files.get(req.url);
     if (!file) { res.statusCode = 404; res.end(); return; }
@@ -31,7 +32,12 @@ const server = createServer(async (req, res) => {
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 let browser;
 try {
-  browser = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true });
+  const chrome =
+    process.env.CHROME_PATH ??
+    ['/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/usr/bin/chromium-browser', '/usr/bin/chromium', '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome']
+      .find((p) => existsSync(p));
+  if (!chrome) throw new Error('CHROME_PATH not set and no Chrome binary found');
+  browser = await puppeteer.launch({ executablePath: chrome, headless: true, args: ['--no-sandbox'] });
   const page = await browser.newPage();
   await page.setViewport({ width: 1600, height: 1000 });
   const errors = [];
@@ -43,7 +49,7 @@ try {
   const text = await page.$eval('#table', el => el.textContent);
   for (const value of ['2026-09-09 10:30:15', '19-MAR-2027', '-1.23456789', 'sell to open', '5140.00']) assert(text.includes(value), value);
   assert.equal(await page.$eval('details', el => el.open), false);
-  await page.screenshot({ path: '/private/tmp/invage-execution-journal.png', fullPage: true });
+  await page.screenshot({ path: 'tests/e2e-artifacts/execution-journal.png', fullPage: true });
   await page.click('#positions-view');
   await page.waitForFunction(() => document.getElementById('table').textContent.includes('No open positions.'));
   await page.click('#journal-view');

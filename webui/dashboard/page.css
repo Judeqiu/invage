@@ -1,0 +1,102 @@
+/* Dashboard-only chrome. Tokens come from ../report.css. */
+.loading { padding: 2rem 0; color: var(--muted-foreground); }
+.error-box { margin: 1rem 0; }
+.warnings-banner {
+  display: none;
+  margin: 0 0 1.25rem;
+  padding: 0.9rem 1.1rem;
+  border-radius: 0.65rem;
+  border: 1px solid color-mix(in oklab, var(--warning) 40%, var(--border));
+  background: color-mix(in oklab, var(--warning) 12%, var(--card));
+  color: color-mix(in oklab, var(--warning) 50%, black);
+  font-size: 0.875rem;
+}
+.warnings-banner.visible { display: block; }
+.warnings-banner ul { margin: 0; padding-left: 1.15rem; }
+.status-line { min-height: 1.1em; font-size: 0.75rem; color: var(--muted-foreground); margin: 0.5rem 0 0; }
+.status-line.error { color: var(--danger); }
+.controls-hidden { display: none !important; }
+.auto-label { display: flex; align-items: center; gap: 0.35rem; font-size: 0.8rem; color: var(--muted-foreground); }
+.kpi-row { display: grid; gap: 0.75rem; grid-template-columns: 1fr 1fr; margin-top: 1.5rem; }
+@media (min-width: 900px) { .kpi-row { grid-template-columns: repeat(4, 1fr); } }
+.section { margin: 0 0 1.75rem; }
+.section-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0.5rem 1rem; margin-bottom: 0.85rem; }
+.section-title { font-family: var(--font-serif); font-size: 1.35rem; color: var(--ink); }
+.section-meta { font-size: 0.8125rem; color: var(--muted-foreground); max-width: 72ch; }
+.table-wrap { overflow-x: auto; }
+table.report.detail-table, table.detail-table, table.deposits-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+table.detail-table th.num, table.detail-table td.num,
+table.deposits-table th.num, table.deposits-table td.num { text-align: right; }
+.totals-row td { font-weight: 700; background: var(--muted); }
+.channel-group td { background: var(--muted); font-weight: 600; }
+.pl-pos { color: var(--success); }
+.pl-neg { color: var(--danger); }
+.pl-flat { color: var(--muted-foreground); }
+.badge-type, .card-badge, .badge-cost, .badge-matured {
+  display: inline-block;
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  font-size: 0.68rem;
+  font-weight: 650;
+}
+.badge-type-equity { background: color-mix(in oklab, var(--brand) 14%, white); color: var(--brand); }
+.badge-type-option { background: color-mix(in oklab, var(--danger) 12%, white); color: var(--danger); }
+.badge-type-fund { background: color-mix(in oklab, var(--brand-2) 16%, white); color: color-mix(in oklab, var(--brand-2) 50%, black); }
+.badge-type-cash { background: color-mix(in oklab, var(--success) 14%, white); color: var(--success); }
+.badge-type-deposit { background: var(--muted); color: var(--foreground); }
+.badge-cost, .badge-matured { background: color-mix(in oklab, var(--warning) 18%, white); color: color-mix(in oklab, var(--warning) 45%, black); }
+.badge-channel { background: color-mix(in oklab, var(--brand) 12%, white); color: var(--brand); }
+.badge-channel-default { background: var(--muted); color: var(--muted-foreground); }
+.allocation-grid, .chart-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 1rem;
+}
+.allocation-card, .bar-card, .chart-card, .insights {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 0.85rem;
+  padding: 1.1rem 1.25rem;
+  box-shadow: var(--shadow-card);
+}
+.allocation-card h3, .bar-card h3, .chart-card h3 { font-family: var(--font-serif); font-size: 1.2rem; color: var(--ink); margin-bottom: 0.5rem; }
+.donut-container { position: relative; height: 280px; max-width: 380px; margin: 0 auto; }
+.bar-container { position: relative; height: 340px; }
+.chart-container { position: relative; height: 240px; }
+.legend-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 0.65rem; margin-top: 1rem; }
+.legend-item { display: flex; align-items: center; gap: 0.5rem; font-size: 0.8125rem; }
+.legend-color { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+.bar-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 0.65rem;
+  margin-bottom: 1rem;
+  padding: 0.85rem 1rem;
+  background: var(--muted);
+  border-radius: 0.65rem;
+}
+.bar-summary-label { font-size: 0.68rem; color: var(--muted-foreground); text-transform: uppercase; letter-spacing: 0.04em; }
+.bar-summary-value { font-size: 0.95rem; font-weight: 700; }
+.insight-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0.85rem; margin-top: 0.85rem; }
+.methodology { font-size: 0.8rem; color: var(--muted-foreground); margin-top: 2rem; }
+.methodology h3 { font-family: var(--font-serif); color: var(--ink); }
+footer { text-align: center; font-size: 0.72rem; color: var(--muted-foreground); padding: 1.5rem; }
+.live-badge, .archive-badge {
+  color: #fff;
+  padding: 0.28rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+.live-badge { background: var(--success); }
+.archive-badge { background: var(--muted-foreground); }
+.deposits-section { margin-top: 1.5rem; }
+@media (max-width: 768px) {
+  .chart-grid, .allocation-grid { grid-template-columns: 1fr; }
+  .donut-container { height: 240px; }
+  .bar-container { height: 280px; }
+}

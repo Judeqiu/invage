@@ -13,6 +13,8 @@ import { loadSnapshots } from '../state/snapshot.js';
 import { buildAnalysisReport } from '../report/template.js';
 import { buildDashboardModel, buildLivePositions } from '../report/dashboard-model.js';
 import { buildDashboardReport } from '../report/dashboard-template.js';
+import { productDisplayName } from '../product-name.js';
+import { EMAIL_HTML_LIMIT } from '../report/html-kit.js';
 import {
   channelIdParams,
   resolveInvestorFromChannel,
@@ -116,7 +118,10 @@ export function createSendReportTool(): AgentTool {
             const live = buildLivePositions(valued, equityPrices, optionMarks);
             const snapshots = loadSnapshots(state.user.slug);
             const model = buildDashboardModel(live, snapshots);
-            htmlBody = buildDashboardReport(model, userName);
+            htmlBody = buildDashboardReport(model, userName, {
+              productName: productDisplayName(),
+              surface: 'email',
+            });
             subject = p.subject ?? `Portfolio Dashboard — ${userName}`;
           } else {
             const targets =
@@ -124,12 +129,15 @@ export function createSendReportTool(): AgentTool {
                 ? await fetchTargets(eqKeys)
                 : ({} as Awaited<ReturnType<typeof fetchTargets>>);
             const result = runFullAnalysis(valued, equityPrices, targets);
-            htmlBody = buildAnalysisReport(result, userName);
+            htmlBody = buildAnalysisReport(result, userName, {
+              productName: productDisplayName(),
+              surface: 'email',
+            });
             subject = p.subject ?? `Portfolio Analysis Report — ${userName}`;
           }
         } else if (p.html) {
           htmlBody = p.html;
-          subject = p.subject ?? 'Report from WalletStreet';
+          subject = p.subject ?? `Report from ${productDisplayName()}`;
           kind = p.kind ?? 'analysis';
         } else {
           return fail(
@@ -137,6 +145,11 @@ export function createSendReportTool(): AgentTool {
           );
         }
 
+        if (htmlBody.length > EMAIL_HTML_LIMIT) {
+          return fail(
+            `Email HTML is ${htmlBody.length} bytes (limit ${EMAIL_HTML_LIMIT}). Shrink the report or save to BinDrive instead.`,
+          );
+        }
         const result = await sendEmail(p.to, subject, htmlBody);
         return ok(`Email sent to ${p.to}.\n${result}`, { to: p.to, subject, kind });
       } catch (e) {

@@ -172,7 +172,7 @@ export const BROKER_CATALOG: readonly BrokerConnectorDef[] = [
         label: 'Trading account ID',
         type: 'text',
         required: false,
-        help: 'Optional. Required when more than one authorized trading account exists.',
+        help: 'Leave blank on the first sync. Paste only the long OpenAPI account_id (about 18 digits) that Sync lists when more than one account is authorized. Do not paste your moomoo ID (牛牛号) or the account card number from the app.',
       },
       {
         id: 'sign_alg',
@@ -184,13 +184,15 @@ export const BROKER_CATALOG: readonly BrokerConnectorDef[] = [
     ],
     helpNotes: [
       'Do not install OpenD and do not unlock trade. Invage talks only to https://webapi.moomoo.com.',
+      'Trading account ID is the OpenAPI account_id from Get Authorized Trading Accounts. The moomoo ID in the app profile and the card number on the account screen are different numbers and will fail sync.',
       'jude_futu is a manual custody tag. Enabling moomoo does not move those lots or FDs.',
     ],
     helpSteps: [
       'Log in at https://open.moomoo.com/dashboard and open User Center.',
-      'Create an AppKey, upload the public key, keep the private key local.',
-      'Paste AppKey ID and private key here. Do not grant trading on the key if the dashboard offers a split.',
-      'If Sync says multiple authorized accounts, paste acc_id from Get Authorized Trading Accounts.',
+      'Create an AppKey. Choose Ed25519 or RSA, upload the matching public key, and keep the private key on this machine.',
+      'Copy the AppKey ID into AppKey ID. Paste the private key into AppKey private key. Set Signature algorithm to the algorithm you chose (Ed25519 if you leave it blank).',
+      'Leave Trading account ID empty, Save, then Sync. If this AppKey can read one account, Invage uses that account_id.',
+      'If Sync lists several accounts, copy one long account_id from that message into Trading account ID, Save, and Sync again. Match the card ending (•• and four digits) to the account in the app. Do not paste your moomoo ID or the full card number.',
     ],
     helpHref: 'https://open.moomoo.com/api/overview/getting-started',
     helpHrefLabel: 'moomoo OpenAPI docs',

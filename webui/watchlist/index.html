@@ -9,72 +9,12 @@
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="../report.css" />
   <style>
-    :root {
-      --bg: var(--background);
-      --surface: #ffffff;
-      --ink: #0f172a;
-      --ink-muted: #64748b;
-      --ink-soft: #94a3b8;
-      --border: #e2e8f0;
-      --border-strong: #cbd5e1;
-      --accent: #1e293b;
-      --positive: #047857;
-      --negative: #b91c1c;
-      --radius: 12px;
-      --shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 4px 16px rgba(15, 23, 42, 0.04);
-      --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: var(--font);
-      background: var(--bg);
-      color: var(--ink);
-      line-height: 1.5;
-      -webkit-font-smoothing: antialiased;
-    }
-    .header {
-      background: transparent;
-      color: var(--ink);
-      padding: 1.25rem 1.5rem 1.1rem;
-      text-align: left;
-      position: sticky;
-      top: 0;
-      z-index: 100;
-      border-bottom: 1px solid var(--border);
-    }
-    .header h1 { font-family: var(--font-serif); font-size: 1.85rem; font-weight: 400; letter-spacing: -0.02em; }
-    .header .subtitle { font-size: 0.8125rem; opacity: 0.72; margin-top: 0.3rem; }
-    .controls {
-      background: var(--surface);
-      padding: 0.85rem 1.5rem;
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.85rem 1.25rem;
-      align-items: center;
-      justify-content: center;
-    }
-    button {
-      appearance: none;
-      border: 1px solid var(--border-strong);
-      background: var(--accent);
-      color: #fff;
-      border-radius: 8px;
-      padding: 0.45rem 0.95rem;
-      font-size: 0.8125rem;
-      font-weight: 600;
-      cursor: pointer;
-    }
-    button:disabled { opacity: 0.5; cursor: not-allowed; }
-    .status {
-      font-size: 0.75rem;
-      color: var(--ink-muted);
-      text-align: center;
-      padding: 0.45rem 1rem 0;
-      min-height: 1.15em;
-    }
-    .status.error { color: var(--negative); }
-    .container { max-width: 1100px; margin: 0 auto; padding: 1.5rem 1.5rem 2rem; }
+    .chip-block { margin: 0.75rem 0; }
+    .chip-label { font-size: 0.75rem; color: var(--muted-foreground); margin-bottom: 0.35rem; }
+    .chips { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+    .status { font-size: 0.75rem; color: var(--muted-foreground); min-height: 1.1em; }
+    .status.error { color: var(--danger); }
+    .container { max-width: 1100px; }
     .section { margin: 0 0 1.75rem; }
     .section-title {
       font-size: 1.05rem;
@@ -155,12 +95,15 @@
   </style>
 </head>
 <body>
-  <div class="header">
+  <div class="page">
+  <div class="breadcrumb label-eyebrow">Watch List / Playbook</div>
+  <div class="hero">
+    <div class="label-eyebrow">Playbook / named products</div>
     <h1>Watch List</h1>
-    <div class="subtitle" id="subtitle">Loading…</div>
+    <p class="subtitle" id="subtitle">Loading…</p>
   </div>
-  <div class="controls">
-    <button type="button" id="refreshBtn">Refresh</button>
+  <div class="filters">
+    <button type="button" class="refresh" id="refreshBtn">Refresh</button>
   </div>
   <p class="status" id="status"></p>
   <div class="container">
@@ -184,7 +127,7 @@
       <section class="section" aria-label="Named products">
         <div class="section-title">Products</div>
         <div class="table-wrap">
-          <table>
+          <table class="report">
             <thead>
               <tr>
                 <th>Symbol</th>
@@ -204,7 +147,8 @@
       </section>
     </div>
   </div>
-  <p class="footer">Yahoo Finance · Educational only — not licensed financial advice</p>
+  <p class="footer metric-sub" style="text-align:center">Yahoo Finance · Educational only — not licensed financial advice</p>
+  </div>
   <script src="app.js"></script>
 </body>
 </html>

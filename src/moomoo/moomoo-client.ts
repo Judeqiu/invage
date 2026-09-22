@@ -66,7 +66,15 @@ export async function moomooGet(args: {
   if (!res.ok) {
     throw new BrokerHttpError(`MooMoo ${args.path} HTTP ${res.status}`, String(res.status));
   }
-  return asEnvelope(await res.json());
+  // Moomoo sends uint64 account IDs as JSON numbers. Preserve their source
+  // digits before JavaScript rounds them beyond Number.MAX_SAFE_INTEGER.
+  const json = JSON.parse(await res.text(), (key, value, context?: { source?: string }) => {
+    if (key !== 'account_id' || typeof value !== 'number') return value;
+    if (context?.source && /^\d+$/.test(context.source)) return context.source;
+    if (Number.isSafeInteger(value)) return String(value);
+    throw new BrokerParseError('MooMoo account_id cannot be read without precision loss. Use a Node.js runtime supporting JSON.parse source context.');
+  });
+  return asEnvelope(json);
 }
 
 async function serverTimeMs(fetchImpl: typeof fetch): Promise<string | undefined> {
@@ -105,24 +113,58 @@ function failIfError(env: MooMooEnvelope, what: string): void {
   );
 }
 
-function pickAccId(authorized: MooMooEnvelope, stored?: string): string {
+interface AuthorizedAccount {
+  account_id: string;
+  security_firm: string;
+  card_last4: string;
+}
+
+function authorizedAccounts(authorized: MooMooEnvelope): AuthorizedAccount[] {
   const d = authorized.d;
-  const accounts =
+  const rows =
     d && typeof d === 'object' && !Array.isArray(d) && Array.isArray((d as { accounts?: unknown }).accounts)
       ? ((d as { accounts: unknown[] }).accounts)
       : Array.isArray(d)
         ? d
         : [];
-  const ids = accounts
-    .map((a) => {
-      if (a == null || typeof a !== 'object') return '';
-      return String((a as { account_id?: unknown }).account_id ?? '').trim();
-    })
-    .filter(Boolean);
+  const out: AuthorizedAccount[] = [];
+  for (const row of rows) {
+    if (row == null || typeof row !== 'object') continue;
+    const rec = row as Record<string, unknown>;
+    const account_id = String(rec.account_id ?? '').trim();
+    if (!account_id) continue;
+    const security_firm = typeof rec.security_firm === 'string' ? rec.security_firm.trim() : '';
+    const card = String(rec.univs_account_card_number ?? rec.account_card_number ?? '').trim();
+    out.push({
+      account_id,
+      security_firm,
+      card_last4: card.length >= 4 ? card.slice(-4) : '',
+    });
+  }
+  return out;
+}
+
+function describeAuthorized(accounts: AuthorizedAccount[]): string {
+  const shown = accounts.slice(0, 8).map((a) => {
+    const bits = [a.security_firm, a.card_last4 ? `card ••${a.card_last4}` : ''].filter(Boolean);
+    return bits.length ? `${a.account_id} (${bits.join(', ')})` : a.account_id;
+  });
+  const more = accounts.length - shown.length;
+  if (more > 0) shown.push(`${more} more`);
+  return shown.join('; ');
+}
+
+function pickAccId(authorized: MooMooEnvelope, stored?: string): string {
+  const accounts = authorizedAccounts(authorized);
+  const ids = accounts.map((a) => a.account_id);
+  const listed = describeAuthorized(accounts);
   if (stored?.trim()) {
     if (!ids.includes(stored.trim())) {
+      const hint = listed
+        ? ` Authorized account_id values: ${listed}.`
+        : '';
       throw new BrokerParseError(
-        `acc_id ${stored.trim()} is not in the authorized trading accounts list.`,
+        `acc_id ${stored.trim()} is not in the authorized trading accounts list.${hint} Paste one of those account_id values, or clear Trading account ID when only one account is listed. A moomoo ID and an account card number are different numbers.`,
       );
     }
     return stored.trim();
@@ -131,7 +173,9 @@ function pickAccId(authorized: MooMooEnvelope, stored?: string): string {
   if (ids.length === 0) {
     throw new BrokerParseError('MooMoo returned no authorized trading accounts.');
   }
-  throw new BrokerParseError('multiple authorized accounts — paste acc_id');
+  throw new BrokerParseError(
+    `multiple authorized accounts — paste acc_id. Authorized account_id values: ${listed}.`,
+  );
 }
 
 export async function fetchMooMooRawBundle(

@@ -84,6 +84,8 @@ describe('loadDashboardForSlug', () => {
     expect(payload.model).toBeNull();
     expect(payload.displayName).toBe('Bob');
     expect(payload.message).toMatch(/No holdings/i);
+    expect(payload.productProfile).toBe('full');
+    expect(payload.productName).toBe('Wallet Street');
   });
 
   it('builds live model with price override and snapshot history', async () => {
@@ -98,6 +100,8 @@ describe('loadDashboardForSlug', () => {
     expect(payload.model).not.toBeNull();
     expect(payload.model!.live.totalValue).toBe(1200);
     expect(payload.model!.live.positions[0].ticker).toBe('AAPL');
+    expect(payload.productProfile).toBe('full');
+    expect(payload.productName).toBe('Wallet Street');
     expect(payload.model!.history).toHaveLength(1);
     expect(payload.model!.history[0].positions).toEqual([]);
     expect(payload.model!.lastSnapshot?.date).toBe('2026-07-01');

@@ -186,6 +186,30 @@ describe('MooMoo fetchRaw', () => {
     expect(raw.schema).toBe('invage.moomoo.raw.v1');
   });
 
+  it('preserves numeric uint64 account IDs from the wire through account selection and request URLs', async () => {
+    const id = '283726802396297711';
+    const urls: string[] = [];
+    const raw = await fetchMooMooRawBundle(
+      { app_key: 'ak', private_key: ED, sign_alg: 'Ed25519', acc_id: id },
+      { fetchImpl: async (url) => {
+        const href = String(url);
+        urls.push(href);
+        if (href.includes('authorized_trd_accs')) {
+          return new Response('{"s":"ok","d":{"accounts":[{"account_id":283726802396297711},{"account_id":283726798101330415}]}}');
+        }
+        if (href.includes('/funds')) return Response.json(FUNDS);
+        return Response.json(POSITIONS);
+      } },
+    );
+    expect(raw.acc_id).toBe(id);
+    expect(raw.authorized.d).toEqual({ accounts: [{ account_id: id }, { account_id: '283726798101330415' }] });
+    expect(urls.slice(1)).toEqual([
+      `https://webapi.moomoo.com/api/v1.0/accounts/${id}/funds?currency=USD`,
+      `https://webapi.moomoo.com/api/v1.0/accounts/${id}/positions`,
+    ]);
+    expect(raw.funds).toEqual(FUNDS);
+  });
+
   it('fails when multiple accounts and acc_id is omitted', async () => {
     const two = {
       s: 'ok',
@@ -202,6 +226,23 @@ describe('MooMoo fetchRaw', () => {
         { fetchImpl: mockFetch({ authorized: two, funds: FUNDS, positions: POSITIONS }) },
       ),
     ).rejects.toThrow(/paste acc_id/);
+    await expect(
+      fetchMooMooRawBundle(
+        { app_key: 'ak', private_key: ED, sign_alg: 'Ed25519' },
+        { fetchImpl: mockFetch({ authorized: two, funds: FUNDS, positions: POSITIONS }) },
+      ),
+    ).rejects.toThrow(/Authorized account_id values: 1 \(FUTUSG\); 2 \(FUTUSG\)/);
+  });
+
+  it('names the real account_id when the pasted id is not authorized', async () => {
+    await expect(
+      fetchMooMooRawBundle(
+        { app_key: 'ak', private_key: ED, sign_alg: 'Ed25519', acc_id: '102152687' },
+        { fetchImpl: mockFetch({ authorized: AUTHORIZED, funds: FUNDS, positions: POSITIONS }) },
+      ),
+    ).rejects.toThrow(
+      /102152687 is not in the authorized trading accounts list\. Authorized account_id values: 281756420273981734 \(FUTUSG, card ••3256\)/,
+    );
   });
 
   it('retries once on clock skew -12006', async () => {
@@ -226,7 +267,15 @@ describe('MooMoo fetchRaw', () => {
 
 describe('adapter + catalog', () => {
   it('registers moomoo without csv_tables', () => {
-    expect(getBrokerConnector('moomoo').displayName).toBe('MooMoo');
+    const moomoo = getBrokerConnector('moomoo');
+    expect(moomoo.displayName).toBe('MooMoo');
+    const steps = (moomoo.helpSteps ?? []).join('\n');
+    expect(steps).toMatch(/Leave Trading account ID empty/);
+    expect(steps).toMatch(/moomoo ID/);
+    expect(moomoo.credentialFields.find((f) => f.id === 'acc_id')?.help).toMatch(/moomoo ID/);
+    expect(readFileSync(join(process.cwd(), 'webui/brokers/guide/index.html'), 'utf8')).toMatch(
+      /Leave Trading account ID blank/,
+    );
     expect(getBrokerAdapter('moomoo').usesCsvTables).toBe(false);
     expect(getBrokerAdapter('tiger').usesCsvTables).toBe(false);
     expect(getBrokerAdapter('ibkr').usesCsvTables).toBe(true);

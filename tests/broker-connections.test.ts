@@ -398,8 +398,9 @@ describe('createInvageWebUi brokers section', () => {
   it('Brokers page treats Tiger, MooMoo, and Webull as live catalog cards, not coming-soon', () => {
     const js = readFileSync(join(process.cwd(), 'webui/brokers/app.js'), 'utf8');
     expect(js).toMatch(/payload\.connectors/);
-    expect(js).toMatch(/UPCOMING/);
-    expect(js).toMatch(/Webull/);
+    expect(js).not.toMatch(/UPCOMING/);
+    expect(js).not.toMatch(/Coming soon/);
+    expect(js).toMatch(/option_executions/);
     expect(js).not.toMatch(/name:\s*'Tiger Brokers'/);
     expect(js).not.toMatch(/name:\s*'MooMoo'/);
     const html = readFileSync(join(process.cwd(), 'webui/brokers/index.html'), 'utf8');

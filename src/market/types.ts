@@ -217,6 +217,8 @@ export interface PositionAnalysis {
   costVsHigh: number | null;
   currentVsCost: number | null;
   recommendation?: string;
+  /** Broker / custody tag. Unassigned lots are `"default"`. */
+  channel?: string;
   /** Present when this row is an option contract. */
   instrument?: InstrumentKind;
   option?: OptionSpec;

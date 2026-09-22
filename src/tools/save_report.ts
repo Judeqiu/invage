@@ -14,6 +14,7 @@ import { loadSnapshots } from '../state/snapshot.js';
 import { buildAnalysisReport } from '../report/template.js';
 import { buildDashboardModel, buildLivePositions } from '../report/dashboard-model.js';
 import { buildDashboardReport } from '../report/dashboard-template.js';
+import { productDisplayName } from '../product-name.js';
 import {
   channelIdParams,
   resolveInvestorFromChannel,
@@ -85,7 +86,10 @@ export function createSaveReportTool(): AgentTool {
           const live = buildLivePositions(valued, equityPrices, optionMarks);
           const snapshots = loadSnapshots(state.user.slug);
           const model = buildDashboardModel(live, snapshots);
-          html = buildDashboardReport(model, userName);
+          html = buildDashboardReport(model, userName, {
+            productName: productDisplayName(),
+            surface: 'drive',
+          });
           defaultName = `dashboard-${today}.html`;
           positions = live.positionCount;
           historyNote =
@@ -98,7 +102,10 @@ export function createSaveReportTool(): AgentTool {
               ? await fetchTargets(eqKeys)
               : ({} as Awaited<ReturnType<typeof fetchTargets>>);
           const result = runFullAnalysis(valued, equityPrices, targets);
-          html = buildAnalysisReport(result, userName);
+          html = buildAnalysisReport(result, userName, {
+            productName: productDisplayName(),
+            surface: 'drive',
+          });
           defaultName = `report-${today}.html`;
           positions = result.fullAnalysis.length;
         }

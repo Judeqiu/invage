@@ -1,16 +1,14 @@
 const API = '/api/domain/invage/broker-connections';
 
-/** Display-only. Not catalog connectors — no YAML, no credentials, no sync. */
-const UPCOMING = [
-  { name: 'Webull' },
-];
-
 const IMPORTS = [
-  ['Open positions', 'Stocks, ETFs, options, and funds on that connector channel. Empty positions is a flat book.'],
+  ['Open positions', 'Equity / fund / option lots, cost, mark, and P/L on that connector channel. Empty positions is a flat book.'],
   ['Cash', 'ISO currency sleeves on that channel only. Other brokers stay untouched.'],
   ['Channel snapshot', 'Sync replaces lots and cash on the connector channel only.'],
-  ['Not imported', 'Futures, short stock, combo options, and incomplete option rows are listed after sync. Never invented as holdings.'],
   ['Marks', 'Dashboard marks stay Yahoo. Broker snapshot time is the UTC date of Sync (IBKR Flex is prior-day).'],
+  ['Assignment size', 'Computed from strike × multiplier × contracts. Not a vendor probability or IV metric.'],
+  ['Account metrics', 'Buying power, excess liquidity, and maintenance margin when the connector recorded them.'],
+  ['Fills', 'IBKR Flex Trades at Executions level only. Tiger, MooMoo, and Webull omit option_executions.'],
+  ['Not imported', 'Futures, short stock, combo options, and incomplete option rows are listed after sync. Never invented as holdings.'],
   ['Secrets', 'Reporting-only credentials. Never echoed. Off does not delete lots.'],
 ];
 
@@ -124,18 +122,16 @@ function lastSyncSub(conn) {
   return `${account} · last sync ${when}`;
 }
 
-function lastSyncLine(conn) {
-  if (conn.last_sync == null) return 'Never synced';
-  if (conn.last_sync.ok === false) {
-    return `Last sync failed: ${conn.last_sync.error || 'error'}`;
-  }
-  const bits = [`Last sync ${conn.last_sync.as_of || conn.last_sync.at}`];
-  if (conn.last_sync.account_id) bits.push(`account ${conn.last_sync.account_id}`);
-  if (conn.last_sync.lots_upserted != null) bits.push(`${conn.last_sync.lots_upserted} lots`);
-  if (Array.isArray(conn.last_sync.not_imported) && conn.last_sync.not_imported.length > 0) {
-    bits.push(`${conn.last_sync.not_imported.length} not imported: ${conn.last_sync.not_imported.join('; ')}`);
-  }
-  return bits.join(' · ');
+function syncSummary(conn) {
+  const sync = conn.last_sync;
+  if (!sync) return '<p class="sync-summary">Never synced</p>';
+  if (sync.ok === false) return `<p class="sync-summary sync-failed">Last sync failed: ${escapeHtml(sync.error || 'Unknown error')}</p>`;
+  const skipped = Array.isArray(sync.not_imported) ? sync.not_imported : [];
+  return `<div class="sync-summary">
+    <div class="sync-heading">${skipped.length ? 'Sync complete · some items not imported' : 'Sync complete'}</div>
+    <p>${escapeHtml(sync.as_of || sync.at)}${sync.lots_upserted != null ? ` · ${escapeHtml(sync.lots_upserted)} positions imported` : ''}</p>
+    ${skipped.length ? `<details class="sync-issues"><summary>${skipped.length} items not imported</summary><ul>${skipped.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul></details>` : ''}
+  </div>`;
 }
 
 function fieldInput(conn, field) {
@@ -153,15 +149,15 @@ function fieldInput(conn, field) {
       : field.type === 'secret'
         ? ''
         : cred.value || '';
-  const help = field.help ? `<span class="help">${escapeHtml(field.help)}</span>` : '';
+  const help = field.help ? `<span class="help" id="${inputId}-help">${escapeHtml(field.help)}</span>` : '';
   const useTextarea = field.widget === 'textarea' || field.format === 'pem';
   const control = useTextarea
-    ? `<textarea id="${inputId}" data-conn="${escapeAttr(conn.id)}" data-field="${escapeAttr(field.id)}" autocomplete="off" placeholder="${escapeAttr(placeholder)}" ${inFlight ? 'disabled' : ''}>${escapeHtml(field.type === 'secret' ? '' : value)}</textarea>`
-    : `<input id="${inputId}" data-conn="${escapeAttr(conn.id)}" data-field="${escapeAttr(field.id)}" type="${type}" autocomplete="off" value="${escapeAttr(value)}" placeholder="${escapeAttr(placeholder)}" ${inFlight ? 'disabled' : ''} />`;
+    ? `<textarea id="${inputId}" data-conn="${escapeAttr(conn.id)}" data-field="${escapeAttr(field.id)}" autocomplete="off" spellcheck="false" aria-describedby="${inputId}-help" placeholder="${escapeAttr(placeholder)}" ${inFlight ? 'disabled' : ''}>${escapeHtml(field.type === 'secret' ? '' : value)}</textarea>`
+    : `<input id="${inputId}" data-conn="${escapeAttr(conn.id)}" data-field="${escapeAttr(field.id)}" type="${type}" autocomplete="off" aria-describedby="${inputId}-help" value="${escapeAttr(value)}" placeholder="${escapeAttr(placeholder)}" ${inFlight ? 'disabled' : ''} />`;
   return `
     <label class="field" for="${inputId}">${escapeHtml(field.label)}
-      ${help}
       ${control}
+      ${help}
     </label>`;
 }
 
@@ -175,8 +171,8 @@ function managePanel(conn) {
         <input type="checkbox" data-toggle="${escapeAttr(conn.id)}" ${form.enabled ? 'checked' : ''} ${inFlight ? 'disabled' : ''} />
         Enable channel
       </label>
-      <p class="card-sub">Stops ${escapeHtml(conn.display_name)} pulls. Holdings tagged ${escapeHtml(conn.channel)} stay on the dashboard.</p>
-      ${conn.credential_fields.map((f) => fieldInput(conn, f)).join('')}
+      <p class="card-sub">Turning this off stops ${escapeHtml(conn.display_name)} syncs. Holdings tagged ${escapeHtml(conn.channel)} stay on the dashboard.</p>
+      <div class="credential-fields">${conn.credential_fields.map((f) => fieldInput(conn, f)).join('')}</div>
       <details>
         <summary>How to get ${escapeHtml(conn.display_name)} credentials</summary>
         <ol>
@@ -186,7 +182,8 @@ function managePanel(conn) {
         ${(conn.help_notes || []).map((n) => `<p>${escapeHtml(n)}</p>`).join('')}
         ${conn.help_href ? `<p><a href="${escapeAttr(conn.help_href)}" target="_blank" rel="noopener">${escapeHtml(hrefLabel(conn))}</a></p>` : ''}
       </details>
-      <div class="last">${escapeHtml(lastSyncLine(conn))}${syncHint ? ` ${syncHint}` : ''}${abortWait ? ' Request still running on the server — wait, then Refresh.' : ''}</div>
+      ${syncSummary(conn)}
+      ${syncHint || abortWait ? `<p class="card-sub" role="status">${syncHint} ${abortWait ? 'Request still running on the server — wait, then Refresh.' : ''}</p>` : ''}
       <div class="actions">
         <button type="button" class="primary" data-save="${escapeAttr(conn.id)}" ${saveDisabled ? 'disabled' : ''}>Save</button>
         <button type="button" class="ghost" data-refresh="1" ${inFlight ? 'disabled' : ''}>Refresh</button>
@@ -214,7 +211,7 @@ function render() {
   for (const conn of payload.connectors) {
     const form = forms[conn.id];
     const wrap = document.createElement('div');
-    wrap.className = 'metric-card';
+    wrap.className = 'metric-card broker-card';
     const syncDisabled = inFlight || abortWait || form.dirty || !serverSyncEnabled(conn);
     const showSync = serverSyncEnabled(conn) || conn.status === 'connected' || conn.status === 'error';
     wrap.innerHTML = `
@@ -232,24 +229,6 @@ function render() {
       </div>
       ${form.expanded ? managePanel(conn) : ''}
     `;
-    el.list.appendChild(wrap);
-  }
-  const liveNames = new Set(payload.connectors.map((c) => c.display_name));
-  for (const row of UPCOMING) {
-    if (liveNames.has(row.name)) continue;
-    const wrap = document.createElement('div');
-    wrap.className = 'metric-card soon';
-    wrap.innerHTML = `
-      <div class="card-head">
-        <div>
-          <div class="card-name">${escapeHtml(row.name)}</div>
-          <div class="card-sub">No connector in the catalog yet</div>
-        </div>
-        <span class="pill pill-muted">Coming soon</span>
-      </div>
-      <div class="actions">
-        <button type="button" class="primary" disabled>Connect</button>
-      </div>`;
     el.list.appendChild(wrap);
   }
   bind();
