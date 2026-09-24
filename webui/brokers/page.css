@@ -8,6 +8,7 @@
 .card-sub { font-size: .8rem; color: var(--muted-foreground); margin-top: .25rem; line-height: 1.5; overflow-wrap: anywhere; }
 .actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .85rem; }
 button.primary, a.ghost, button.ghost { font-family: inherit; font-size: .8rem; font-weight: 600; border-radius: .5rem; padding: .55rem .85rem; min-height: 40px; border: 1px solid var(--border); background: var(--card); color: var(--ink); cursor: pointer; }
+a.ghost { display: inline-flex; align-items: center; box-sizing: border-box; text-decoration: none; }
 button.primary { background: var(--ink); color: #fff; border-color: var(--ink); }
 button:disabled { opacity: .5; cursor: not-allowed; }
 .manage { border-top: 1px solid var(--border); margin-top: 1.2rem; padding-top: 1.2rem; }

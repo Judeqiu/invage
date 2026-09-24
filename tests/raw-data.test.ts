@@ -2,7 +2,7 @@ import {describe,it,expect,beforeEach} from 'vitest';
 import {mkdirSync,mkdtempSync,writeFileSync,symlinkSync} from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
-import {listRawData,fetchRawData} from '../src/raw-data/store.js';
+import {listRawData,fetchRawData,latestBrokerRawData} from '../src/raw-data/store.js';
 import {createRawDataTools} from '../src/tools/raw_data.js';
 let root:string;
 beforeEach(()=>{root=mkdtempSync(join(tmpdir(),'raw-data-'));process.env.UTARUS_DATA_ROOT=root;});
@@ -41,6 +41,12 @@ describe('raw-data retrieval',()=>{
  });
  it('reports an empty drive without fabricating sources and rejects invalid pagination',()=>{
   expect(listRawData('alice',0,10)).toEqual({files:[],total:0,next_offset:null});expect(()=>listRawData('alice',-1,10)).toThrow();
+ });
+ it('selects the newest broker payload and skips triage case metadata',()=>{
+  file('alice','broker-raw/ibkr/case-1/raw.xml','<failed/>');
+  file('alice','broker-raw/ibkr/case-1/case.yaml','status: failed');
+  expect(latestBrokerRawData('alice','ibkr')?.id).toBe('broker-raw/ibkr/case-1/raw.xml');
+  expect(latestBrokerRawData('alice','tiger')).toBeNull();
  });
 });
 

@@ -22,6 +22,8 @@ import { BrokerHttpError, BrokerParseError } from '../brokers/errors.js';
 import { FlexHttpError } from '../ibkr/flex-client.js';
 import { FlexProtocolError } from '../ibkr/flex-parse.js';
 import { formatBrokerSkip } from '../brokers/statement.js';
+import { getBrokerConnector } from '../brokers/catalog.js';
+import { fetchRawData, latestBrokerRawData } from '../raw-data/store.js';
 import type { InvestorState } from '../state/portfolio-state.js';
 
 function connectorIdParam(req: Request): string {
@@ -130,7 +132,10 @@ export function createBrokerConnectionsRouter(): Router {
     try {
       const snapshot = await sessionInvestor(req);
       const { state } = snapshot;
-      const connectors = publicCatalog(state);
+      const connectors = publicCatalog(state).map((conn) => ({
+        ...conn,
+        latest_raw_data: latestBrokerRawData(state.user.slug, conn.channel),
+      }));
       res.json({
         egress_ipv4: readFlexEgressIpv4(),
         connectors,
@@ -143,6 +148,47 @@ export function createBrokerConnectionsRouter(): Router {
       }
       if (mapStoreError(e, res)) return;
       jsonError(res, 500, 'broker_connections_invalid', message);
+    }
+  });
+
+  router.get('/broker-connections/:id/raw-data', async (req: Request, res: Response) => {
+    try {
+      const snapshot = await sessionInvestor(req);
+      const connector = getBrokerConnector(connectorIdParam(req));
+      const file = latestBrokerRawData(snapshot.state.user.slug, connector.channel);
+      if (!file) {
+        jsonError(res, 404, 'raw_data_not_found', `No saved raw data for ${connector.displayName}.`);
+        return;
+      }
+      let page = fetchRawData(snapshot.state.user.slug, file.id, file.version, 0, 65536, 'base64');
+      const name = `${connector.id}-${file.id.split('/').at(-1)}`.replace(/[^a-zA-Z0-9._-]/g, '_');
+      res.setHeader('Content-Type', file.id.endsWith('.xml') ? 'application/xml' : file.id.endsWith('.json') ? 'application/json' : 'application/octet-stream');
+      res.setHeader('Content-Disposition', `attachment; filename="${name}"`);
+      res.setHeader('Content-Length', String(file.bytes));
+      res.setHeader('Cache-Control', 'private, no-store');
+      for (;;) {
+        const chunk = Buffer.from(page.content, 'base64');
+        if (!res.write(chunk)) {
+          await new Promise<void>((resolve, reject) => {
+            const drained = () => { res.off('close', closed); resolve(); };
+            const closed = () => { res.off('drain', drained); reject(new Error('Download connection closed.')); };
+            res.once('drain', drained);
+            res.once('close', closed);
+          });
+        }
+        if (page.next_offset === null) break;
+        page = fetchRawData(snapshot.state.user.slug, file.id, file.version, page.next_offset, 65536, 'base64');
+      }
+      res.end();
+    } catch (e) {
+      if (res.headersSent) {
+        res.destroy(e instanceof Error ? e : new Error(String(e)));
+        return;
+      }
+      const status = (e as { httpStatus?: number }).httpStatus;
+      if (status === 401) jsonError(res, 401, 'unauthorized', 'No session user.');
+      else if (e instanceof UnknownConnectorError || /Unknown broker connector/.test(String(e))) jsonError(res, 404, 'unknown_connector', String(e));
+      else jsonError(res, 500, 'raw_data_download_failed', e instanceof Error ? e.message : String(e));
     }
   });
 
@@ -167,7 +213,10 @@ export function createBrokerConnectionsRouter(): Router {
         });
         await saveInvestor(snapshot);
       }
-      res.json(result.view);
+      res.json({
+        ...result.view,
+        latest_raw_data: latestBrokerRawData(state.user.slug, id),
+      });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       if ((e as { httpStatus?: number }).httpStatus === 401) {
@@ -191,6 +240,7 @@ export function createBrokerConnectionsRouter(): Router {
       const { view, applied } = await syncBrokerConnection(snapshot, id);
       res.json({
         ...view,
+        latest_raw_data: latestBrokerRawData(state.user.slug, id),
         apply: {
           lots_upserted: applied.lotsUpserted,
           lots_removed: applied.lotsRemoved,

@@ -47,6 +47,16 @@ export function listRawData(slug:string,offset:number,limit:number,channel?:stri
   files.sort((a,b)=>b.modified_at.localeCompare(a.modified_at)||a.id.localeCompare(b.id));
   return {files:files.slice(offset,offset+limit),total:files.length,next_offset:offset+limit<files.length?offset+limit:null};
 }
+export function latestBrokerRawData(slug:string,channel:string):RawFile|null {
+  let offset=0;
+  for(;;){
+    const page=listRawData(slug,offset,100,channel);
+    const file=page.files.find(item=>item.source_kind==='broker-sync'||(item.source_kind==='broker-triage'&&!item.id.endsWith('/case.yaml')));
+    if(file)return file;
+    if(page.next_offset===null)return null;
+    offset=page.next_offset;
+  }
+}
 export function fetchRawData(slug:string,id:string,expectedVersion:string,offset:number,maxBytes:number,encoding:'utf8'|'base64') {
   if(!id||id.includes('\\')||id.split('/').some(p=>!p||p==='.'||p==='..'))throw new Error('Invalid relative raw-data ID');
   if(!Number.isSafeInteger(offset)||offset<0||!Number.isSafeInteger(maxBytes)||maxBytes<4||maxBytes>65536)throw new Error('Invalid raw-data byte pagination');

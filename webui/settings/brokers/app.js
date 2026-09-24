@@ -208,6 +208,9 @@ function render() {
       <div class="actions">
         <button type="button" class="primary" data-manage="${escapeHtml(conn.id)}" ${inFlight ? 'disabled' : ''}>${escapeHtml(primaryLabel(conn.status))}</button>
         ${showSync ? `<button type="button" data-sync="${escapeHtml(conn.id)}" ${syncDisabled ? 'disabled' : ''}>Sync now</button>` : ''}
+        ${conn.latest_raw_data
+          ? `<a href="${API}/${encodeURIComponent(conn.id)}/raw-data" download>Download latest raw data</a>`
+          : '<button type="button" disabled title="No saved raw data yet">Download latest raw data</button>'}
         <a href="/brokers/guide#${encodeURIComponent(conn.id)}" target="_parent">Setup guide</a>
       </div>
       ${form.expanded ? managePanel(conn) : ''}
