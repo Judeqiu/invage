@@ -3,9 +3,11 @@ import express from 'express';
 import request from 'supertest';
 import { type InvestorSnapshot } from '../src/state/investor-store.js';
 
-const mocks = vi.hoisted(() => ({ save: vi.fn(), load: vi.fn(), session: vi.fn(), target: vi.fn() }));
+const mocks = vi.hoisted(() => ({ save: vi.fn(), load: vi.fn(), session: vi.fn(), dashboard: vi.fn(), watchlist: vi.fn() }));
 vi.mock('../src/state/investor-store.js', () => ({ saveInvestor: mocks.save, loadInvestor: mocks.load }));
-vi.mock('utarus', async importOriginal => ({ ...await importOriginal<object>(), loadSessionState: mocks.session, targetSlug: mocks.target }));
+vi.mock('../src/webapp/dashboard-data.js', () => ({ loadDashboardForSlug: mocks.dashboard }));
+vi.mock('../src/webapp/watchlist-data.js', () => ({ loadWatchlistForSlug: mocks.watchlist }));
+vi.mock('utarus', async importOriginal => ({ ...await importOriginal<object>(), loadSessionState: mocks.session }));
 
 const { importOptionExecutions } = await import('../src/brokers/import-executions.js');
 const { createBrokerConnectionsRouter } = await import('../src/webapp/broker-api.js');
@@ -20,7 +22,8 @@ beforeEach(() => {
   snapshot = { revision: 4, state: { user: { id: 'u', slug: 'alice', created_at: '2026-01-01', telegram_user_ids: [], auth_token: 'token' }, profile: { display_name: 'Alice', contact_email: 'a@example.com' }, log: [], cash: { amount: 193400, currency: 'USD' }, portfolio: { PATH: { units: 10, avg_price: 12 } } } };
   mocks.session.mockResolvedValue(snapshot);
   mocks.load.mockResolvedValue(snapshot);
-  mocks.target.mockResolvedValue('alice');
+  mocks.dashboard.mockResolvedValue({ slug: 'alice' });
+  mocks.watchlist.mockResolvedValue({ slug: 'alice' });
 });
 
 it('imports old history without replacing cash or positions; repeat upload is idempotent', async () => {
@@ -48,9 +51,9 @@ it('normal Flex parsing maps execution history into the canonical statement', ()
   expect(doc.option_executions?.[0].commission).toBe('-1.23456789');
 });
 
-function app(authenticated = true) {
+function app(authenticated = true, user = { slug: 'alice', type: 'user' }) {
   const a = express();
-  a.use((req, _res, next) => { if (authenticated) Object.assign(req, { user: { slug: 'alice' } }); next(); });
+  a.use((req, _res, next) => { if (authenticated) Object.assign(req, { user }); next(); });
   a.use(createDashboardApiRouter());
   a.use(createBrokerConnectionsRouter());
   return a;
@@ -69,7 +72,18 @@ it('uploads for the session user and returns exact money through the API', async
   expect(mocks.session).toHaveBeenCalledOnce();
   const read = await request(app()).get('/trades');
   expect(read.body.executions[0].commission).toBe('-1.23456789');
-  expect(mocks.load).toHaveBeenCalledWith('alice');
+  expect(mocks.session).toHaveBeenCalledTimes(2);
+});
+
+it('uses the signed-in admin account for domain reads without a slug query', async () => {
+  const admin = { slug: 'alice', type: 'admin' };
+  for (const path of ['/dashboard', '/watchlist', '/trades']) {
+    expect((await request(app(true, admin)).get(path)).status).toBe(200);
+    expect((await request(app(true, admin)).get(`${path}?slug=bob`)).status).toBe(200);
+  }
+  expect(mocks.dashboard).toHaveBeenCalledWith('alice');
+  expect(mocks.watchlist).toHaveBeenCalledWith('alice');
+  expect(mocks.load).not.toHaveBeenCalled();
 });
 
 it('returns an explicit unavailable state and rejects invalid uploads without saving', async () => {

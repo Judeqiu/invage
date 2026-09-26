@@ -4,21 +4,26 @@
  */
 
 import { Router, type Request, type Response } from 'express';
-import { targetSlug, type AuthUser } from 'utarus';
+import { loadSessionState, type AuthUser } from 'utarus';
 import { loadDashboardForSlug } from './dashboard-data.js';
 import { loadWatchlistForSlug } from './watchlist-data.js';
-import { loadInvestor } from '../state/investor-store.js';
+import type { InvestorState } from '../state/portfolio-state.js';
 import { buildExecutionJournal } from '../brokers/option-executions.js';
 
 export function createDashboardApiRouter(): Router {
   const router = Router();
 
+  async function sessionInvestor(req: Request) {
+    const user = (req as Request & { user?: AuthUser }).user;
+    if (!user?.slug) return null;
+    return loadSessionState(req);
+  }
+
   router.get('/trades', async (req: Request, res: Response) => {
     try {
-      const user = (req as Request & { user?: AuthUser }).user;
-      if (!user?.slug) { res.status(401).json({ error: 'unauthorized', message: 'No session user.' }); return; }
-      const snapshot = await loadInvestor(await targetSlug(req, user));
-      res.json(buildExecutionJournal(snapshot.state.option_executions));
+      const snapshot = await sessionInvestor(req);
+      if (!snapshot) { res.status(401).json({ error: 'unauthorized', message: 'No session user.' }); return; }
+      res.json(buildExecutionJournal((snapshot.state as InvestorState).option_executions));
     } catch (e) {
       console.error('Execution journal failed:', e);
       res.status(500).json({ error: 'journal_failed', message: e instanceof Error ? e.message : String(e) });
@@ -27,34 +32,32 @@ export function createDashboardApiRouter(): Router {
 
   router.get('/dashboard', async (req: Request, res: Response) => {
     try {
-      const user = (req as Request & { user: AuthUser }).user;
-      if (!user?.slug) {
+      const snapshot = await sessionInvestor(req);
+      if (!snapshot) {
         res.status(401).json({ error: 'unauthorized', message: 'No session user.' });
         return;
       }
-      const slug = await targetSlug(req, user);
-      const payload = await loadDashboardForSlug(slug);
+      const payload = await loadDashboardForSlug(snapshot.state.user.slug);
       res.json(payload);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
-      const status = /not found|does not exist|Admin must specify/i.test(message) ? 400 : 500;
+      const status = /not found|does not exist/i.test(message) ? 400 : 500;
       res.status(status).json({ error: 'dashboard_failed', message });
     }
   });
 
   router.get('/watchlist', async (req: Request, res: Response) => {
     try {
-      const user = (req as Request & { user: AuthUser }).user;
-      if (!user?.slug) {
+      const snapshot = await sessionInvestor(req);
+      if (!snapshot) {
         res.status(401).json({ error: 'unauthorized', message: 'No session user.' });
         return;
       }
-      const slug = await targetSlug(req, user);
-      const payload = await loadWatchlistForSlug(slug);
+      const payload = await loadWatchlistForSlug(snapshot.state.user.slug);
       res.json(payload);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
-      const status = /not found|does not exist|Admin must specify/i.test(message) ? 400 : 500;
+      const status = /not found|does not exist/i.test(message) ? 400 : 500;
       res.status(status).json({ error: 'watchlist_failed', message });
     }
   });
