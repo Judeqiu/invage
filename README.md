@@ -31,8 +31,15 @@ invage (domain)  ──depends on──►  utarus (framework + BinDrive + WebUI
 Pinned framework release:
 
 ```json
-"utarus": "github:Judeqiu/utarus#v4.0.0-beta.13"
+"utarus": "github:Judeqiu/utarus#v4.0.0-beta.45"
 ```
+
+Room auto-mention uses Jev on the host agent. Set `UTARUS_TYPESAFE_ENABLED=true`
+and `UTARUS_TYPESAFE_API_KEY` in the host `.env`, then enable
+**Management → Agent configuration → Utarus — Room auto-mention**. The saved
+switch applies to unmentioned messages in rooms with multiple agents; explicit
+mentions take priority. Keep the API key out of Git.
+
 ---
 
 ## Prerequisites
@@ -74,20 +81,26 @@ WEBAPP_ADMIN_CREDENTIALS={"admin":"change-me"}
 UTARUS_REPORTS_URL=http://localhost:3001
 ```
 
-## Database lifecycle (v4 personal mode)
+## Database lifecycle (v4 organization mode)
 
 Set every `UTARUS_DATABASE_*` value in `.env.example`, including a dedicated
 32-byte encryption key. Keep the same key available for restoration. Initialize
-an empty database with `node --env-file=.env node_modules/utarus/dist/database/cli.js initialize personal`,
-then run the same command with `check personal` before starting either service.
+an empty database with `node --env-file=.env node_modules/utarus/dist/database/cli.js initialize org`,
+then run the same command with `check org` before starting either service.
 For existing users, initialization alone is **not a migration**.
 
 User credentials, profiles, portfolios, cash, deposits, playbooks and logs live
 in one revisioned SQL aggregate. Mutations use `loadInvestor` / `saveInvestor`;
 stale revisions fail. Reports, drive files, chat/session history and knowledge
 remain under `UTARUS_DATA_ROOT`. Old YAML is recovery material, not a writable
-v4 user store. Both processes bind an explicit personal-mode database runtime
+v4 user store. Both processes bind an explicit organization-mode database runtime
 and drain work before closing it.
+
+The framework permits multiple organizations with multiple members; each user
+account can belong to one organization. Existing
+users retain private accounts until an administrator adds them to an organization.
+Members can create shared WebUI rooms. Membership does not automatically share
+investment portfolios or household books.
 
 The beta.42 migration runbook is [here](docs/plans/2026-09-15-v4-migration.md).
 It preserves personal accounts and requires full-state reconciliation plus a

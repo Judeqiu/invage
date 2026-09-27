@@ -1,6 +1,8 @@
+import { randomUUID } from 'node:crypto';
 import { Type } from 'typebox';
 import type { AgentTool, AgentToolResult } from '@earendil-works/pi-agent-core';
 import { saveInvestor } from '../state/investor-store.js';
+import { listOrganizationFinanceHistory } from '../finance/history.js';
 import type { FundSpec, Holding, OptionSpec } from '../market/types.js';
 import {
   assertHolding,
@@ -1079,13 +1081,13 @@ export function createPortfolioTools(): AgentTool[] {
 
   const postOpeningBalanceTool: AgentTool = {
     name: 'post_opening_balance',
-    label: 'Post Opening Balance',
+    label: 'Record Opening Balance',
     description:
-      'Double-entry **opening balance** for a free-cash sleeve that currently has **zero / no balance**. ' +
-      'Debits cash, credits Opening equity. amount > 0. **memo required** (source document). ' +
+      'Opening balance for a free-cash sleeve that currently has **zero / no balance**. ' +
+      'amount > 0. **memo required** (source document). ' +
       'If the sleeve already has cash, this fails — use post_adjustment with a signed **delta**, never overwrite. ' +
       'NOT for bank→broker wires (transfer_cash) or FD unlock (mature_deposit). ' +
-      'Requires INVAGE_BOOKS_DATABASE_URL. Pass channel ids from message context.',
+      'Records the opening balance in organization finance when enabled. Pass channel ids from message context.',
     parameters: Type.Object({
       ...channelIdParams,
       amount: Type.Number({
@@ -1101,7 +1103,7 @@ export function createPortfolioTools(): AgentTool[] {
       ),
       memo: Type.String({
         description:
-          'Journal narrative: source (statement/screenshot date), what was opened, and why (min 3 chars).',
+          'Source (statement/screenshot date), what was opened, and why (min 3 chars).',
       }),
       value_date: Type.Optional(
         Type.String({ description: 'Accounting value date YYYY-MM-DD (default: today).' }),
@@ -1119,7 +1121,7 @@ export function createPortfolioTools(): AgentTool[] {
         value_date?: string;
       };
       try {
-        if (!isBooksEnabled()) {
+        if (!isBooksEnabled() && process.env.WALLETSTREET_ORG_FINANCE_ENABLED !== 'true') {
           return fail(
             'Books of record required for journals (set INVAGE_BOOKS_DATABASE_URL). ' +
               'Cash cannot be written without a balanced journal.',
@@ -1143,13 +1145,19 @@ export function createPortfolioTools(): AgentTool[] {
         const channel = channelProvided
           ? normalizeOptionalChannel(p.channel, 'channel')
           : undefined;
-        const posted = await booksPostOpeningBalance(state, {
-          amount: p.amount,
-          currency: p.currency,
-          channel,
-          valueDate,
-          memo: p.memo,
-        });
+        const existing = findCashForSlot(getCashes(state), channel, p.currency.trim().toUpperCase());
+        if (!isBooksEnabled() && existing && existing.amount !== 0) {
+          return fail('Opening balance requires an empty or zero cash sleeve. Use post_adjustment for a delta.');
+        }
+        const posted = isBooksEnabled()
+          ? await booksPostOpeningBalance(state, {
+              amount: p.amount, currency: p.currency, channel, valueDate, memo: p.memo,
+            })
+          : (() => {
+              setCash(state, { amount: p.amount, currency: p.currency.trim().toUpperCase(),
+                updated_at: valueDate, ...(channel == null ? {} : { channel }) });
+              return { amount: p.amount, cashes: getCashes(state), requestId: `org-opening-${randomUUID()}` };
+            })();
         const cash =
           findCashForSlot(posted.cashes, channel, p.currency.trim().toUpperCase()) ??
           ({
@@ -1170,8 +1178,8 @@ export function createPortfolioTools(): AgentTool[] {
         await saveInvestor(snapshot);
         const cashLive = await totalCashLive(posted.cashes, reportingCurrencyOf(state));
         return ok(
-          `Journal opening_balance: +${posted.amount.toFixed(2)} ${cash.currency} ` +
-            `[${formatCashSlotLabel(cash)}] (Dr Cash / Cr Opening equity).\n` +
+          `${isBooksEnabled() ? 'Journal' : 'Recorded'} opening_balance: +${posted.amount.toFixed(2)} ${cash.currency} ` +
+            `[${formatCashSlotLabel(cash)}]${isBooksEnabled() ? ' (Dr Cash / Cr Opening equity)' : ''}.\n` +
             `Memo: ${p.memo.trim()}`,
           {
             cash,
@@ -1189,14 +1197,14 @@ export function createPortfolioTools(): AgentTool[] {
 
   const postAdjustmentTool: AgentTool = {
     name: 'post_adjustment',
-    label: 'Post Cash Adjustment',
+    label: 'Record Cash Adjustment',
     description:
-      'Double-entry **cash adjustment** by **signed delta** (never an absolute balance set). ' +
+      'Cash adjustment by **signed delta** (never an absolute balance set). ' +
       'amount > 0 increases free cash; amount < 0 decreases. **memo required**. ' +
       'contra: adjustment (reconciling/equity), income, expense, or clearing. ' +
       'Bank statement reconcile: read get_portfolio, compute delta = statement − books, post that delta. ' +
       'NOT for transfers (transfer_cash), FD unlock (mature_deposit), or first open of a zero sleeve (post_opening_balance). ' +
-      'Requires INVAGE_BOOKS_DATABASE_URL. Pass channel ids from message context.',
+      'Records the signed change in organization finance when enabled. Pass channel ids from message context.',
     parameters: Type.Object({
       ...channelIdParams,
       amount: Type.Number({
@@ -1213,7 +1221,7 @@ export function createPortfolioTools(): AgentTool[] {
       ),
       memo: Type.String({
         description:
-          'Journal narrative: document/source, period, reason for the delta (min 3 chars).',
+          'Document/source, period, reason for the delta (min 3 chars).',
       }),
       contra: Type.Optional(
         Type.String({
@@ -1238,7 +1246,7 @@ export function createPortfolioTools(): AgentTool[] {
         value_date?: string;
       };
       try {
-        if (!isBooksEnabled()) {
+        if (!isBooksEnabled() && process.env.WALLETSTREET_ORG_FINANCE_ENABLED !== 'true') {
           return fail(
             'Books of record required for journals (set INVAGE_BOOKS_DATABASE_URL). ' +
               'Cash cannot be written without a balanced journal.',
@@ -1270,14 +1278,20 @@ export function createPortfolioTools(): AgentTool[] {
         const channel = channelProvided
           ? normalizeOptionalChannel(p.channel, 'channel')
           : undefined;
-        const posted = await booksPostAdjustment(state, {
-          amount: p.amount,
-          currency: p.currency,
-          channel,
-          valueDate,
-          memo: p.memo,
-          contra: contraRaw as CashContraKind,
-        });
+        const posted = isBooksEnabled()
+          ? await booksPostAdjustment(state, {
+              amount: p.amount, currency: p.currency, channel, valueDate,
+              memo: p.memo, contra: contraRaw as CashContraKind,
+            })
+          : (() => {
+              const prior = findCashForSlot(getCashes(state), channel, p.currency.trim().toUpperCase())?.amount ?? 0;
+              const result = applyCashDelta(getCashes(state), p.amount, valueDate, true,
+                channel, p.currency, { createIfMissing: p.amount > 0 });
+              if (!result.adjusted) throw new Error('Cannot decrease cash that has not been recorded.');
+              setCashes(state, result.cashes);
+              return { delta: p.amount, prior, balanceAfter: result.cash!.amount,
+                cashes: result.cashes, requestId: `org-adjustment-${randomUUID()}` };
+            })();
         const cash = findCashForSlot(
           posted.cashes,
           channel,
@@ -1298,7 +1312,7 @@ export function createPortfolioTools(): AgentTool[] {
         const cashLive = await totalCashLive(posted.cashes, reportingCurrencyOf(state));
         const sign = posted.delta >= 0 ? '+' : '';
         return ok(
-          `Journal cash_adjustment: ${sign}${posted.delta.toFixed(2)} ${p.currency.trim().toUpperCase()} ` +
+          `${isBooksEnabled() ? 'Journal' : 'Recorded'} cash_adjustment: ${sign}${posted.delta.toFixed(2)} ${p.currency.trim().toUpperCase()} ` +
             `[${formatCashSlotLabel({ channel: channel ?? undefined, currency: p.currency.trim().toUpperCase() })}] ` +
             `(contra=${contraRaw}).\n` +
             `Prior ${posted.prior.toFixed(2)} → ${posted.balanceAfter.toFixed(2)}.\n` +
@@ -1322,18 +1336,18 @@ export function createPortfolioTools(): AgentTool[] {
 
   const clearCashTool: AgentTool = {
     name: 'clear_cash',
-    label: 'Clear Cash (via adjustment journal)',
+    label: 'Clear Cash',
     description:
-      'Zero free cash by posting **adjustment journals** (not a silent delete). ' +
+      'Zero free cash with an audited finance change. ' +
       'Requires confirm=true and **memo** (reason). Channel/currency filters same as before. ' +
-      'Requires INVAGE_BOOKS_DATABASE_URL. Prefer post_adjustment for partial deltas.',
+      'Records the clear in organization finance when enabled. Prefer post_adjustment for partial deltas.',
     parameters: Type.Object({
       ...channelIdParams,
       confirm: Type.Boolean({
         description: 'Must be true to proceed. Confirm with the user first.',
       }),
       memo: Type.String({
-        description: 'Journal reason for zeroing sleeves (min 3 chars).',
+        description: 'Reason for zeroing sleeves (min 3 chars).',
       }),
       channel: Type.Optional(
         Type.String({
@@ -1360,9 +1374,9 @@ export function createPortfolioTools(): AgentTool[] {
           return fail('Set confirm=true to clear recorded cash. Confirm with the user first.');
         }
         if (!p.memo?.trim() || p.memo.trim().length < 3) {
-          return fail('memo is required to journal the clear (min 3 chars).');
+          return fail('memo is required to record the clear (min 3 chars).');
         }
-        if (!isBooksEnabled()) {
+        if (!isBooksEnabled() && process.env.WALLETSTREET_ORG_FINANCE_ENABLED !== 'true') {
           return fail(
             'Books of record required (INVAGE_BOOKS_DATABASE_URL). Cash is not deleted without journals.',
           );
@@ -1390,12 +1404,9 @@ export function createPortfolioTools(): AgentTool[] {
                 `No free cash for ${formatCashSlotLabel({ channel: ch ?? undefined, currency: ccy })}. Recorded: ${labels}.`,
               );
             }
-            const posted = await booksClearCashSleeve(state, {
-              channel: ch,
-              currency: ccy,
-              valueDate: today,
-              memo,
-            });
+            const posted = isBooksEnabled()
+              ? await booksClearCashSleeve(state, { channel: ch, currency: ccy, valueDate: today, memo })
+              : (() => { clearCash(state, ch, ccy); return { requestId: `org-clear-${randomUUID()}` }; })();
             state.log.push({
               ts: today,
               action: 'journal_cash_cleared',
@@ -1408,7 +1419,7 @@ export function createPortfolioTools(): AgentTool[] {
             await saveInvestor(snapshot);
             const remaining = getCashes(state);
             return ok(
-              `Journaled clear of ${formatCashSlotLabel(target)} ` +
+              `Recorded clear of ${formatCashSlotLabel(target)} ` +
                 `(was ${target.amount.toFixed(2)} ${target.currency}). Memo: ${memo}`,
               { cleared: target, cashes: remaining },
             );
@@ -1422,12 +1433,10 @@ export function createPortfolioTools(): AgentTool[] {
             );
           }
           for (const t of targets) {
-            await booksClearCashSleeve(state, {
-              channel: t.channel,
-              currency: t.currency,
-              valueDate: today,
-              memo,
+            if (isBooksEnabled()) await booksClearCashSleeve(state, {
+              channel: t.channel, currency: t.currency, valueDate: today, memo,
             });
+            else clearCash(state, t.channel, t.currency);
           }
           state.log.push({
             ts: today,
@@ -1439,19 +1448,17 @@ export function createPortfolioTools(): AgentTool[] {
           await saveInvestor(snapshot);
           const remaining = getCashes(state);
           return ok(
-            `Journaled clear of channel "${key || '(unassigned)'}" ` +
+            `Recorded clear of channel "${key || '(unassigned)'}" ` +
               `(${targets.map((t) => `${t.amount.toFixed(2)} ${t.currency}`).join(', ')}). Memo: ${memo}`,
             { cleared: targets, cashes: remaining },
           );
         }
 
         for (const t of before) {
-          await booksClearCashSleeve(state, {
-            channel: t.channel,
-            currency: t.currency,
-            valueDate: today,
-            memo,
+          if (isBooksEnabled()) await booksClearCashSleeve(state, {
+            channel: t.channel, currency: t.currency, valueDate: today, memo,
           });
+          else clearCash(state, t.channel, t.currency);
         }
         state.log.push({
           ts: today,
@@ -1461,7 +1468,7 @@ export function createPortfolioTools(): AgentTool[] {
         });
         await saveInvestor(snapshot);
         return ok(
-          `Journaled clear of all free-cash sleeves (${before.length}). Memo: ${memo}`,
+          `Recorded clear of all free-cash sleeves (${before.length}). Memo: ${memo}`,
           { cleared: before, cashes: getCashes(state) },
         );
       } catch (e) {
@@ -2686,10 +2693,10 @@ export function createPortfolioReadTools(): AgentTool[] {
 export function createListJournalEntriesTool(): AgentTool {
   return {
     name: 'list_journal_entries',
-    label: 'List Journal Entries',
+    label: 'List Financial History',
     description:
-      'List recent books-of-record journal entries (double-entry) for the household. ' +
-      'Requires INVAGE_BOOKS_DATABASE_URL. Use for reconcile / audit. ' +
+      'List imported double-entry journals and recent organization finance changes. ' +
+      'Use for reconcile / audit. ' +
       'Pass telegram_user_id or slack_user_id from the message context.',
     parameters: Type.Object({
       ...channelIdParams,
@@ -2702,7 +2709,7 @@ export function createListJournalEntriesTool(): AgentTool {
     async execute(_id, raw) {
       const p = raw as ChannelIds & { limit?: number };
       try {
-        if (!isBooksEnabled()) {
+        if (!isBooksEnabled() && process.env.WALLETSTREET_ORG_FINANCE_ENABLED !== 'true') {
           return fail(
             'Books of record not configured (set INVAGE_BOOKS_DATABASE_URL).',
           );
@@ -2715,6 +2722,12 @@ export function createListJournalEntriesTool(): AgentTool {
             return fail('limit must be a positive finite number.');
           }
           limit = Math.min(100, Math.floor(p.limit));
+        }
+        if (!isBooksEnabled()) {
+          const entries = await listOrganizationFinanceHistory(state, limit);
+          return ok(entries.length === 0 ? 'No financial history.' :
+            `Financial history (${entries.length}):\n\n${entries.map(e => e.text).join('\n\n')}`,
+            { entries, count: entries.length });
         }
         const entries = await booksListJournals(state, limit);
         const lines = entries.map((e) => {

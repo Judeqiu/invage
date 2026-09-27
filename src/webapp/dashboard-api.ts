@@ -9,6 +9,7 @@ import { loadDashboardForSlug } from './dashboard-data.js';
 import { loadWatchlistForSlug } from './watchlist-data.js';
 import type { InvestorState } from '../state/portfolio-state.js';
 import { buildExecutionJournal } from '../brokers/option-executions.js';
+import { assertInvestorFinanceCurrent } from '../state/investor-store.js';
 
 export function createDashboardApiRouter(): Router {
   const router = Router();
@@ -16,7 +17,9 @@ export function createDashboardApiRouter(): Router {
   async function sessionInvestor(req: Request) {
     const user = (req as Request & { user?: AuthUser }).user;
     if (!user?.slug) return null;
-    return loadSessionState(req);
+    const snapshot = await loadSessionState(req);
+    await assertInvestorFinanceCurrent(snapshot.state as InvestorState);
+    return snapshot;
   }
 
   router.get('/trades', async (req: Request, res: Response) => {

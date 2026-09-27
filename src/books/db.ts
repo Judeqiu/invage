@@ -9,6 +9,9 @@ const { Pool } = pg;
 let pool: pg.Pool | null = null;
 
 export function booksDatabaseUrl(): string | null {
+  // Organization finance is the sole live writer after the cutover. The old
+  // books URL may remain available to one-off migration scripts.
+  if (process.env.WALLETSTREET_ORG_FINANCE_ENABLED === 'true') return null;
   const url = process.env.INVAGE_BOOKS_DATABASE_URL;
   if (url == null || String(url).trim().length === 0) return null;
   return String(url).trim();

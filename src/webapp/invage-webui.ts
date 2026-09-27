@@ -16,6 +16,7 @@ import { type ProductProfileId, readProductProfile } from '../agents/roster.js';
 import { readFlexEgressIpv4 } from '../brokers/egress.js';
 import { createBrokerConnectionsRouter } from './broker-api.js';
 import { createDashboardApiRouter } from './dashboard-api.js';
+import { createOrgFinanceRouter } from './org-finance-api.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -114,6 +115,7 @@ export function chatEmptyStateFor(profile: ProductProfileId): {
 export function createInvageWebUi(): DomainWebUiExtension {
   readFlexEgressIpv4();
   const empty = chatEmptyStateFor(readProductProfile());
+  const orgFinanceEnabled = process.env.WALLETSTREET_ORG_FINANCE_ENABLED === 'true';
   return {
     agentKey: 'invage',
     productName: productDisplayName(),
@@ -134,6 +136,13 @@ export function createInvageWebUi(): DomainWebUiExtension {
         icon: 'table',
         order: 11,
       },
+      ...(orgFinanceEnabled ? [{
+        id: 'org-finance',
+        label: 'Organization assets',
+        path: '/org-finance',
+        icon: 'landmark' as const,
+        order: 12,
+      }] : []),
       {
         id: 'trades',
         label: 'Trades',
@@ -169,6 +178,12 @@ export function createInvageWebUi(): DomainWebUiExtension {
         iframeSrc: '/domain-assets/invage/positions/index.html',
         title: 'Positions',
       },
+      ...(orgFinanceEnabled ? [{
+        path: '/org-finance',
+        pageKind: 'iframe' as const,
+        iframeSrc: '/domain-assets/invage/org-finance/index.html',
+        title: 'Organization assets',
+      }] : []),
       {
         path: '/watchlist',
         pageKind: 'iframe',
@@ -223,6 +238,11 @@ export function createInvageWebUi(): DomainWebUiExtension {
         router: createBrokerConnectionsRouter(),
         auth: 'user',
       },
+      ...(orgFinanceEnabled ? [{
+        mountPath: '',
+        router: createOrgFinanceRouter(),
+        auth: 'user' as const,
+      }] : []),
     ],
     staticDir: invageWebUiStaticDir(),
   };

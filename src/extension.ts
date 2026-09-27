@@ -241,6 +241,13 @@ export const invageExtension: DomainExtension = {
 
   purpose: INVAGE_PURPOSE,
 
+  // Jev selects an agent for unmentioned requests in shared rooms when configured.
+  typesafe: { enabled: process.env.UTARUS_TYPESAFE_ENABLED === 'true' },
+
+  // Users keep private accounts and may join an organization for shared rooms.
+  // The organization count is unrestricted; membership remains explicit.
+  orgs: { enabled: true, required: false, allowMultiple: true },
+
   tools: () => createInvageTools(),
 
   skills: INVAGE_SKILLS,

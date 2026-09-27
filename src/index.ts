@@ -1,4 +1,4 @@
-/** Invage personal-mode host. Database lifetime encloses all framework work. */
+/** WalletStreet organization-mode host. Database lifetime encloses all framework work. */
 import { config as dotenvConfig } from 'dotenv';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -9,7 +9,7 @@ dotenvConfig({ path: resolve(dirname(fileURLToPath(import.meta.url)), '../.env')
 process.env.UTARUS_LOADED_BY_HOST = '1';
 
 async function main(): Promise<void> {
-  const database = await openDatabaseRuntime({ env: process.env, mode: 'personal', onError: error => { throw error; } });
+  const database = await openDatabaseRuntime({ env: process.env, mode: 'org', onError: error => { throw error; } });
   const release = bindDatabaseRuntime(database);
   let framework: Framework | undefined;
   let stopping: Promise<void> | undefined;
@@ -68,9 +68,8 @@ async function main(): Promise<void> {
     }
     if (stopping) return;
     const background = ['BOT_ONLY', 'TELEGRAM_ONLY', 'SLACK_ONLY'].some(name => process.env[name] === 'true');
-    if (background) {
-      if (channels === 0) throw new Error('Background mode requires a configured chat channel');
-    } else {
+    if (background && channels === 0) throw new Error('Background mode requires a configured chat channel');
+    if (!background && channels === 0) {
       const userSlug = process.env.UTARUS_CLI_USER_SLUG;
       if (!userSlug?.trim()) throw new Error('UTARUS_CLI_USER_SLUG is required for CLI');
       observe(await framework.startCli({ userSlug }));

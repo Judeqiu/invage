@@ -68,7 +68,7 @@ const isMain =
 
 if (isMain) {
   const { openDatabaseRuntime, bindDatabaseRuntime } = await import('utarus/database');
-  const database = await openDatabaseRuntime({ env: process.env, mode: 'personal', onError: error => { throw error; } });
+  const database = await openDatabaseRuntime({ env: process.env, mode: 'org', onError: error => { throw error; } });
   const release = bindDatabaseRuntime(database);
   try {
     const port = Number(process.env.WEBAPP_PORT);

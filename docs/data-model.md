@@ -17,6 +17,27 @@ How Invester stores and isolates data — from user identity to portfolio holdin
 
 The current branch persists investor state through `src/state/investor-store.ts` using Utarus PostgreSQL state and optimistic revisions. The YAML paths below describe the same public types (holdings, cash, executions, broker connections) as they appear on the agent-facing document. Disk YAML under `data/users/<slug>.yaml` is the legacy layout; do not treat it as a second schema.
 
+### Organization finance foundation
+
+`src/finance/schema.sql` defines a separate organization-owned finance model in
+the same Utarus database. Every finance account, asset, position, cash balance,
+deposit, property, liability, cash flow, and historical journal row carries one `org_id`.
+Composite foreign keys prevent a position or journal line from linking records
+from different organizations. Finance access requires both active Utarus
+membership and an explicit finance grant. The importer in
+`src/finance/import-personal.ts` copies existing user finance records into this
+model with account identity and source provenance. In production, all current
+`qiu` records have been imported. Subsequent user finance writes update the
+user state and organization projection in one transaction, with an audit event.
+Historical double-entry books are archived; new audit events are not balanced
+journal entries. Broker sync still uses the per-user channel view and rejects a
+second native account on the same connector until that view can represent both.
+Broker source files are copied into encrypted `finance.source_files` rows,
+linked to the organization and the matching account where unambiguous.
+See
+[the organization finance review](./plans/2026-09-27-org-financial-data-model-review.md)
+for migration status and remaining routing work.
+
 ### Three stores (do not mix them)
 
 Broker ingest writes **three different things**. They are not interchangeable, and a Flex XML file is none of them until a parser maps it.
@@ -96,6 +117,11 @@ option_executions:
 
 `net_premium` is **computed** for the Trades UI (`proceeds + commission`). It is not a stored field. The Trades tab is unavailable until at least one row exists (sync with execution-level Trades, or XML upload).
 
+### Legacy YAML examples below
+
+The remainder of this page contains v3 storage examples and older workflows.
+They describe historical document shapes, not current v4 writable storage.
+
 ```
 data/
 ├── invites.yaml              # Invite codes (INV-XXXXXXXX)
@@ -107,9 +133,15 @@ data/
     └── ...
 ```
 
-Each user gets a **single YAML file** at `data/users/<slug>.yaml`. This file is the source of truth for that user's identity, profile, and (legacy) portfolio snapshot. Users cannot access each other's files.
+In v3 each user had a single YAML file. In v4 Utarus stores user state and
+credentials in PostgreSQL; the per-user portfolio view is transactionally
+projected into the `qiu` organization finance schema.
 
-**Books of record (optional, recommended):** when `INVAGE_BOOKS_DATABASE_URL` is set, money mutations (cash, deposits, holding cash legs) post to an **append-only PostgreSQL journal** (`src/books/`). YAML free-cash and deposits are dual-written from ledger projections. See [plans/2026-08-09-financial-database-ledger-design.md](./plans/2026-08-09-financial-database-ledger-design.md).
+**Historical optional books implementation:** when `INVAGE_BOOKS_DATABASE_URL`
+is set, selected money mutations post to a separate PostgreSQL journal
+(`src/books/`). That ledger is keyed to users and is not an organization
+ledger. It is not enabled in the current production configuration. See
+[the earlier ledger design](./plans/2026-08-09-financial-database-ledger-design.md).
 
 ---
 

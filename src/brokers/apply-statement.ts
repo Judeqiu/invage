@@ -127,6 +127,12 @@ export async function applyBrokerStatement(
   const { state } = snapshot;
   const def = getBrokerConnector(connectorId);
   const channel = def.channel;
+  if (process.env.WALLETSTREET_ORG_FINANCE_ENABLED === 'true') {
+    const existingAccount = state.broker_connections?.[connectorId]?.last_sync?.account_id;
+    if (existingAccount && existingAccount !== doc.account_id) {
+      throw new Error(`Connector ${connectorId} is already linked to account ${existingAccount}; refusing to replace it with another account`);
+    }
+  }
   // Validate all incoming history before ledger writes or snapshot mutation.
   const executions = doc.option_executions === undefined ? undefined : mergeOptionExecutions(
     state.option_executions === undefined ? [] : state.option_executions,

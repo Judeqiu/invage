@@ -1,4 +1,4 @@
-import { saveInvestor, type InvestorSnapshot } from '../state/investor-store.js';
+import { assertInvestorFinanceCurrent, saveInvestor, type InvestorSnapshot } from '../state/investor-store.js';
 /**
  * Session-authenticated broker connection APIs.
  * Not agent tools. Principal is loadSessionState(req) only — no targetSlug.
@@ -40,6 +40,7 @@ async function sessionInvestor(req: Request): Promise<InvestorSnapshot> {
     throw Object.assign(new Error('No session user.'), { httpStatus: 401 });
   }
   const snapshot = await loadSessionState(req);
+  await assertInvestorFinanceCurrent(snapshot.state as InvestorState);
   return { state: snapshot.state as InvestorState, revision: snapshot.revision };
 }
 
