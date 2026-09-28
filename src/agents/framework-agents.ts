@@ -6,6 +6,7 @@
 import type { DomainExtension } from 'utarus';
 import { createBoundBinDriveTools } from '../tools/bindrive.js';
 import { createRawDataTools } from '../tools/raw_data.js';
+import { bindDomainToolsToUser } from '../tools/bound-identity.js';
 import { invageExtension } from '../extension.js';
 import { productHostLabel } from '../product-name.js';
 import { aidealExtension } from './aideal.js';
@@ -62,7 +63,7 @@ export function buildFrameworkAgentList(
         const tools = typeof original === 'function'
           ? await original(userSlug, isAdmin, incognito) : original;
         return [
-          ...tools,
+          ...bindDomainToolsToUser(tools, userSlug),
           ...createBoundBinDriveTools(userSlug, incognito),
           ...(incognito === true ? [] : createRawDataTools(userSlug)),
         ];

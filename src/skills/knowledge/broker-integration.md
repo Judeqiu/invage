@@ -16,7 +16,7 @@ Never invent numbers. Never echo Flex tokens, RSA PEMs, Tiger tokens, Webull app
 - `parse_broker_raw` — run that spec against archived raw → BrokerStatement (does not write books).
 - `apply_broker_statement` — same apply path as catalog sync.
 
-Settings → Brokers uses the same store. Off refuses pull; lots stay. `not_imported` must be quoted.
+Settings → Brokers uses the same store. For the user's configured brokers, call `list_broker_accounts` and report only its `accounts`; catalog names are available integrations, not user accounts. Off refuses pull; lots stay. `not_imported` must be quoted.
 
 ## Parse pipeline
 

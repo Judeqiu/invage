@@ -1,7 +1,7 @@
 import { Type } from 'typebox';
 import type { AgentTool, AgentToolResult } from '@earendil-works/pi-agent-core';
 import { patchBrokerConnection, syncBrokerConnection } from '../brokers/connections.js';
-import { patchBrokerAccount, patchBrokerSource, readBrokerAccountModel, resolveBrokerAccountId, syncBrokerAccount } from '../brokers/accounts.js';
+import { patchBrokerAccount, patchBrokerSource, publicBrokerAccounts, readBrokerAccountModel, resolveBrokerAccountId, syncBrokerAccount } from '../brokers/accounts.js';
 import { getBrokerConnector } from '../brokers/catalog.js';
 import { formatBrokerSkip } from '../brokers/statement.js';
 import { saveInvestor } from '../state/investor-store.js';
@@ -12,6 +12,27 @@ function ok<T>(text: string, details: T): AgentToolResult<T> {
 }
 function fail(text: string): AgentToolResult<null> {
   return { content: [{ type: 'text' as const, text }], details: null };
+}
+
+export function createListBrokerAccountsTool(): AgentTool {
+  return {
+    name: 'list_broker_accounts',
+    label: 'List my broker accounts',
+    description: 'List only broker accounts configured for the authenticated user. Use for questions about my brokers or connected accounts. The supported broker catalog is a separate concept; do not present catalog entries as configured accounts.',
+    parameters: Type.Object({ ...channelIdParams }),
+    execute: async (_id, raw) => {
+      try {
+        const { state } = await resolveInvestorFromChannel(raw as ChannelIds);
+        const accounts = publicBrokerAccounts(state).connections.map(({ id, broker_id, label, account_id, channel, enabled, status }) =>
+          ({ id, broker_id, label, account_id, channel, enabled, status }));
+        return ok(accounts.length
+          ? `Configured broker accounts (${accounts.length}):\n${accounts.map(a => `- ${a.label} (${a.broker_id}), ${a.status}`).join('\n')}`
+          : 'No broker accounts are configured for this user.', { accounts });
+      } catch (e) {
+        return fail(e instanceof Error ? e.message : String(e));
+      }
+    },
+  };
 }
 
 export function createConfigureBrokerTool(): AgentTool {

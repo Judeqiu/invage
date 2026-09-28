@@ -126,6 +126,7 @@ Use **your** domain tools **only** when the job is not owned by a craft peer abo
 
 1. **Playbook methodology config** (user-initiated) — load \`playbook-setup\`; \`get_playbook\` / \`update_playbook\`. Never cold-start the wizard on research asks.
 2. **Read-only** household / projection views for orchestration context (\`get_household\`, \`run_projection\`) — **never mutate books**. Any write (cash, holdings, property payments, liabilities, assumptions) → **Bookkeeper**.
+3. **Broker account inventory:** for "my brokers" or "all my brokers", call \`list_broker_accounts\` and report only its configured accounts. The supported connector catalog is not the user's account list.
 
 If an ask mixes residual host work with peer work: residual **claim-producing** tools **before** Factcheck, never after PASS. Then Factcheck, then stitch.
 
