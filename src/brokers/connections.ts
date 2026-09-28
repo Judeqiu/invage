@@ -148,7 +148,7 @@ function parseLegacyIbkrFlex(raw: unknown): IbkrFlexConfig {
   return cfg;
 }
 
-function parseLastSync(raw: unknown, ctx: string): BrokerConnectionLastSync {
+export function parseLastSync(raw: unknown, ctx: string): BrokerConnectionLastSync {
   const o = asRecord(raw, ctx);
   const at = typeof o.at === 'string' ? o.at.trim() : '';
   if (!at) throw new Error(`${ctx}.at is required.`);
@@ -582,4 +582,3 @@ export function readIbkrConnectionConfig(state: InvestorState): IbkrFlexConfig {
   }
   return cfg;
 }
-

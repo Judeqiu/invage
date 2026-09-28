@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { getBrokerAdapter } from '../src/brokers/adapter.js';
 import { getBrokerConnector } from '../src/brokers/catalog.js';
 import { BrokerParseError } from '../src/brokers/errors.js';
-import { fetchWebullRawBundle, parseWebullRegion } from '../src/webull/webull-client.js';
+import { checkWebullToken, createWebullToken, fetchWebullRawBundle, parseWebullRegion } from '../src/webull/webull-client.js';
 import { mapWebullBundleToStatement, marketForWebullSymbol } from '../src/webull/webull-map.js';
 import { rfc3986Encode, signWebullRequest, webullSignContent } from '../src/webull/webull-sign.js';
 import type { WebullRawBundle } from '../src/webull/webull-types.js';
@@ -15,7 +15,7 @@ const BALANCES = JSON.parse(readFileSync(join(FIX, 'balances.json'), 'utf8')) as
 const POSITIONS = JSON.parse(readFileSync(join(FIX, 'positions.json'), 'utf8')) as unknown;
 
 describe('Webull signing', () => {
-  it('builds the official path+sorted params string and HMAC-SHA256 with secret&', () => {
+  it('builds the official path+sorted params string and HMAC-SHA1 with secret&', () => {
     const encoded = webullSignContent({
       path: '/trading/accounts/list',
       query: {},
@@ -25,17 +25,31 @@ describe('Webull signing', () => {
       nonce: '48ef5afed43d4d91ae514aaeafbc29ba',
     });
     const raw =
-      '/trading/accounts/list&host=api.webull.com&x-app-key=776da210ab4a452795d74e726ebd74b6&x-signature-algorithm=HMAC-SHA256&x-signature-nonce=48ef5afed43d4d91ae514aaeafbc29ba&x-signature-version=1.0&x-timestamp=2022-01-04T03:55:31Z';
+      '/trading/accounts/list&host=api.webull.com&x-app-key=776da210ab4a452795d74e726ebd74b6&x-signature-algorithm=HMAC-SHA1&x-signature-nonce=48ef5afed43d4d91ae514aaeafbc29ba&x-signature-version=1.0&x-timestamp=2022-01-04T03:55:31Z';
     expect(encoded).toBe(rfc3986Encode(raw));
     const sig = signWebullRequest(encoded, '0f50a2e853334a9aae1a783bee120c1f');
     expect(sig).toMatch(/^[A-Za-z0-9+/=]+$/);
-    expect(Buffer.from(sig, 'base64').length).toBe(32);
+    expect(Buffer.from(sig, 'base64').length).toBe(20);
   });
 
   it('parses region ids', () => {
     expect(parseWebullRegion('US')).toBe('us');
     expect(parseWebullRegion('sg')).toBe('sg');
     expect(() => parseWebullRegion('cn')).toThrow(/region/);
+  });
+
+  it('matches Webull documented signature example with a JSON body', () => {
+    const encoded = webullSignContent({
+      path: '/trade/place_order',
+      query: { a1: 'webull', a2: '123', a3: 'xxx', q1: 'yyy' },
+      body: '{"k1":123,"k2":"this is the api request body","k3":true,"k4":{"foo":[1,2]}}',
+      host: 'api.webull.com',
+      appKey: '776da210ab4a452795d74e726ebd74b6',
+      timestamp: '2022-01-04T03:55:31Z',
+      nonce: '48ef5afed43d4d91ae514aaeafbc29ba',
+    });
+    expect(signWebullRequest(encoded, '0f50a2e853334a9aae1a783bee120c1f'))
+      .toBe('kvlS6opdZDhEBo5jq40nHYXaLvM=');
   });
 });
 
@@ -197,6 +211,35 @@ describe('Webull fetchRaw', () => {
     expect(() =>
       mapWebullBundleToStatement({ ...bundle(), schema: 'nope' } as WebullRawBundle, 'webull'),
     ).toThrow(BrokerParseError);
+  });
+});
+
+describe('Webull token flow', () => {
+  const credentials = { app_key: 'ak', app_secret: 'sk', region: 'us' as const };
+
+  it('creates a token with a signed POST and no existing access token', async () => {
+    const created = await createWebullToken(credentials, {
+      fetchImpl: async (url, init) => {
+        expect(String(url)).toBe('https://api.webull.com/auth/tokens/create');
+        expect(init?.method).toBe('POST');
+        const headers = init?.headers as Record<string, string>;
+        expect(headers['x-signature']).toBeTruthy();
+        expect(headers['x-access-token']).toBeUndefined();
+        return Response.json({ data: { token: 'private-token', status: 'PENDING' } });
+      },
+    });
+    expect(created).toEqual({ token: 'private-token', status: 'PENDING' });
+  });
+
+  it('checks the saved token without exposing it in the URL', async () => {
+    const checked = await checkWebullToken({ ...credentials, access_token: 'private-token' }, {
+      fetchImpl: async (url, init) => {
+        expect(String(url)).toBe('https://api.webull.com/auth/tokens/check');
+        expect((init?.headers as Record<string, string>)['x-access-token']).toBe('private-token');
+        return Response.json({ status: 'NORMAL' });
+      },
+    });
+    expect(checked).toEqual({ status: 'NORMAL' });
   });
 });
 

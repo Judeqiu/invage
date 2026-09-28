@@ -1,6 +1,7 @@
 import { Type } from 'typebox';
 import type { AgentTool, AgentToolResult } from '@earendil-works/pi-agent-core';
 import { patchBrokerConnection, syncBrokerConnection } from '../brokers/connections.js';
+import { patchBrokerAccount, patchBrokerSource, readBrokerAccountModel, resolveBrokerAccountId, syncBrokerAccount } from '../brokers/accounts.js';
 import { getBrokerConnector } from '../brokers/catalog.js';
 import { formatBrokerSkip } from '../brokers/statement.js';
 import { saveInvestor } from '../state/investor-store.js';
@@ -22,19 +23,35 @@ export function createConfigureBrokerTool(): AgentTool {
     parameters: Type.Object({
       ...channelIdParams,
       connector_id: Type.String({ description: 'Catalog connector id (ibkr, tiger, moomoo, webull).' }),
+      connection_id: Type.Optional(Type.String({ description: 'Required when more than one account uses this broker.' })),
       credentials: Type.Object({}, { additionalProperties: Type.String(), description: 'Credential field map from the catalog.' }),
     }),
     execute: async (_id, raw) => {
-      const p = raw as ChannelIds & { connector_id: string; credentials: Record<string, string> };
+      const p = raw as ChannelIds & { connector_id: string; connection_id?: string; credentials: Record<string, string> };
       try {
         const snapshot = await resolveInvestorFromChannel(p);
         const { state } = snapshot;
         const id = p.connector_id.trim();
         const def = getBrokerConnector(id);
-        const result = patchBrokerConnection(state, id, {
-          enabled: true,
-          credentials: p.credentials,
-        });
+        if (state.broker_sources) {
+          const connectionId = resolveBrokerAccountId(state, id, p.connection_id);
+          const model = readBrokerAccountModel(state);
+          const conn = model.connections[connectionId];
+          const sourcePatch: Record<string, string> = {};
+          const configPatch: Record<string, string> = {};
+          for (const [key, value] of Object.entries(p.credentials)) {
+            if (key in conn.config) configPatch[key] = value;
+            else if (key in model.sources[conn.source_id].credentials ||
+              def.credentialFields.some(f => f.id === key && !['activity_query_id', 'tradeconf_query_id', 'account', 'acc_id', 'account_id'].includes(key))) sourcePatch[key] = value;
+            else configPatch[key] = value;
+          }
+          if (Object.keys(sourcePatch).length) patchBrokerSource(state, conn.source_id, sourcePatch);
+          if (Object.keys(configPatch).length || !conn.enabled) patchBrokerAccount(state, connectionId, { enabled: true, config: configPatch });
+          await saveInvestor(snapshot);
+          return ok(`${def.displayName} access updated for ${state.user.slug}. Connection ${connectionId}.`,
+            { slug: state.user.slug, connector_id: id, connection_id: connectionId, channel: conn.channel });
+        }
+        const result = patchBrokerConnection(state, id, { enabled: true, credentials: p.credentials });
         await saveInvestor(snapshot);
         return ok(
           `${def.displayName} configured for ${state.user.slug}. Channel tag: ${def.channel}. Secrets stored (not shown). Run sync_broker.`,
@@ -56,15 +73,18 @@ export function createSyncBrokerTool(): AgentTool {
     parameters: Type.Object({
       ...channelIdParams,
       connector_id: Type.String({ description: 'Catalog connector id (ibkr, tiger, moomoo, webull).' }),
+      connection_id: Type.Optional(Type.String({ description: 'Required when more than one account uses this broker.' })),
     }),
     execute: async (_id, raw) => {
-      const p = raw as ChannelIds & { connector_id: string };
+      const p = raw as ChannelIds & { connector_id: string; connection_id?: string };
       try {
         const snapshot = await resolveInvestorFromChannel(p);
         const { state } = snapshot;
         const id = p.connector_id.trim();
         const def = getBrokerConnector(id);
-        const { applied } = await syncBrokerConnection(snapshot, id);
+        const { applied } = state.broker_sources
+          ? await syncBrokerAccount(snapshot, resolveBrokerAccountId(state, id, p.connection_id))
+          : await syncBrokerConnection(snapshot, id);
         const cashLine =
           applied.cash.length > 0
             ? `Cash: ${applied.cash.map((c) => `${c.currency} ${c.amount}`).join(', ')}`

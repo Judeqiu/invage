@@ -58,7 +58,7 @@ mapFlexDocToStatement                    src/ibkr/flex-map.ts
                          raw.xml + case.yaml  (triage, no books write)
 ```
 
-Entry points: Settings / Brokers **Sync**, tool `sync_broker` / `sync_ibkr_flex`. All of them call `syncBrokerConnection` (`src/brokers/connections.ts`).
+Entry points: Settings → Brokers **Sync**, tool `sync_broker` / `sync_ibkr_flex`. Account connections call `syncBrokerAccount` (`src/brokers/accounts.ts`); legacy connector-keyed configurations still call `syncBrokerConnection` (`src/brokers/connections.ts`) until migrated.
 
 A second path, **Trades → Import XML**, is `POST /trades/import` → `importOptionExecutions`. It parses **Trades only**, merges executions, and **does not** replace lots or cash and **does not** write `ibkr-flex/`.
 
@@ -225,7 +225,8 @@ For fills older than the Web Service window (~365 days, and IBKR may 1003 older 
 | `src/ibkr/flex-parse.ts` | XML → `FlexStatementDoc` |
 | `src/ibkr/flex-executions.ts` | OPT execution rows |
 | `src/ibkr/flex-map.ts` | → `BrokerStatement` |
-| `src/brokers/connections.ts` | `syncBrokerConnection` |
+| `src/brokers/accounts.ts` | Account-scoped `syncBrokerAccount`, multi-account Flex selection, and lazy legacy migration |
+| `src/brokers/connections.ts` | Legacy `syncBrokerConnection` compatibility path |
 | `src/brokers/apply-statement.ts` | Snapshot apply + execution merge |
 | `src/brokers/import-executions.ts` | Historical XML upload |
 | `src/ibkr/flex-apply.ts` | `ibkr-flex/` archive |

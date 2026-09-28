@@ -24,6 +24,9 @@ let payload = null;
 let forms = {};
 let inFlight = false;
 let abortWait = false;
+let moomooAccounts = null;
+let moomooAccountsLoading = false;
+let moomooAccountsError = '';
 
 function showError(message) {
   el.error.hidden = !message;
@@ -161,6 +164,32 @@ function fieldInput(conn, field) {
     </label>`;
 }
 
+function moomooAccountPicker(conn) {
+  const form = forms.moomoo;
+  const ready = conn.credentials.app_key?.configured && conn.credentials.private_key?.configured;
+  const selected = form.values.acc_id ?? conn.credentials.acc_id?.value ?? '';
+  const accounts = moomooAccounts;
+  const options = accounts?.map((account) => {
+    const suffix = account.trading_card_last4 || account.card_last4;
+    const label = [account.security_firm, suffix ? `account ••${suffix}` : '', account.account_id].filter(Boolean).join(' · ');
+    return `<option value="${escapeAttr(account.account_id)}" ${selected === account.account_id ? 'selected' : ''}>${escapeHtml(label)}</option>`;
+  }).join('') || '';
+  const chosen = accounts?.some((account) => account.account_id === selected) ? selected : '';
+  const requiresChoice = accounts && accounts.length > 1;
+  return `<div class="account-picker">
+    <label class="field" for="moomoo-account-choice">Trading account
+      <select id="moomoo-account-choice" data-account-choice="moomoo" ${!ready || !accounts?.length || inFlight ? 'disabled' : ''}>
+        <option value="" ${!chosen ? 'selected' : ''}>${requiresChoice ? 'Choose an account' : 'Automatically select the only account'}</option>
+        ${options}
+      </select>
+    </label>
+    <p class="help">${ready ? 'Accounts are retrieved from Moomoo using your AppKey. No ID needs to be typed.' : 'Save your AppKey and private key to find accounts.'}</p>
+    ${accounts?.length === 0 ? '<p class="account-message">Moomoo returned no authorized trading accounts for this AppKey.</p>' : ''}
+    ${moomooAccountsError ? `<p class="account-message">${escapeHtml(moomooAccountsError)}</p>` : ''}
+    <button type="button" class="ghost" data-discover-accounts="1" ${!ready || moomooAccountsLoading || inFlight ? 'disabled' : ''}>${moomooAccountsLoading ? 'Finding accounts…' : 'Refresh accounts'}</button>
+  </div>`;
+}
+
 function managePanel(conn) {
   const form = forms[conn.id];
   const saveDisabled = inFlight;
@@ -172,7 +201,8 @@ function managePanel(conn) {
         Enable channel
       </label>
       <p class="card-sub">Turning this off stops ${escapeHtml(conn.display_name)} syncs. Holdings tagged ${escapeHtml(conn.channel)} stay on the dashboard.</p>
-      <div class="credential-fields">${conn.credential_fields.map((f) => fieldInput(conn, f)).join('')}</div>
+      <div class="credential-fields">${conn.credential_fields.filter((f) => f.id !== 'acc_id' || conn.id !== 'moomoo').map((f) => fieldInput(conn, f)).join('')}</div>
+      ${conn.id === 'moomoo' ? moomooAccountPicker(conn) : ''}
       <details>
         <summary>How to get ${escapeHtml(conn.display_name)} credentials</summary>
         <ol>
@@ -212,7 +242,10 @@ function render() {
     const form = forms[conn.id];
     const wrap = document.createElement('div');
     wrap.className = 'metric-card broker-card';
-    const syncDisabled = inFlight || abortWait || form.dirty || !serverSyncEnabled(conn);
+    const selectedAccount = form.values.acc_id ?? conn.credentials.acc_id?.value ?? '';
+    const moomooNeedsChoice = conn.id === 'moomoo' && moomooAccounts?.length > 1 &&
+      !moomooAccounts.some((account) => account.account_id === selectedAccount);
+    const syncDisabled = inFlight || abortWait || form.dirty || !serverSyncEnabled(conn) || moomooNeedsChoice;
     const showSync = serverSyncEnabled(conn) || conn.status === 'connected' || conn.status === 'error';
     wrap.innerHTML = `
       <div class="card-head">
@@ -249,6 +282,7 @@ function bind() {
       }
       forms[id].expanded = !forms[id].expanded;
       render();
+      if (id === 'moomoo' && forms[id].expanded && moomooAccounts === null) void discoverMoomooAccounts();
     });
   });
   el.list.querySelectorAll('input[data-toggle]').forEach((input) => {
@@ -264,8 +298,21 @@ function bind() {
       const id = input.getAttribute('data-conn');
       const field = input.getAttribute('data-field');
       forms[id].values[field] = input.value;
+      if (id === 'moomoo' && (field === 'app_key' || field === 'private_key')) {
+        forms[id].values.acc_id = '';
+      }
       forms[id].dirty = true;
     });
+  });
+  el.list.querySelectorAll('select[data-account-choice]').forEach((select) => {
+    select.addEventListener('change', () => {
+      forms.moomoo.values.acc_id = select.value;
+      forms.moomoo.dirty = true;
+      render();
+    });
+  });
+  el.list.querySelectorAll('button[data-discover-accounts]').forEach((btn) => {
+    btn.addEventListener('click', () => void discoverMoomooAccounts());
   });
   el.list.querySelectorAll('button[data-save]').forEach((btn) => {
     btn.addEventListener('click', () => void save(btn.getAttribute('data-save')));
@@ -295,12 +342,35 @@ function patchBody(id, conn) {
       body.credentials[field.id] = null;
     }
   }
+  if (id === 'moomoo' && (body.credentials.app_key || body.credentials.private_key) &&
+      form.values.acc_id == null && conn.credentials.acc_id?.configured) {
+    body.credentials.acc_id = null;
+  }
   return body;
+}
+
+async function discoverMoomooAccounts() {
+  const conn = payload?.connectors.find((item) => item.id === 'moomoo');
+  if (!conn?.credentials.app_key?.configured || !conn.credentials.private_key?.configured) return;
+  moomooAccountsLoading = true;
+  moomooAccountsError = '';
+  render();
+  try {
+    const res = await fetch(`${API}/moomoo/accounts`, { credentials: 'include' });
+    const body = await readJson(res);
+    moomooAccounts = body.accounts;
+  } catch (error) {
+    moomooAccountsError = error instanceof Error ? error.message : String(error);
+  } finally {
+    moomooAccountsLoading = false;
+    render();
+  }
 }
 
 async function load() {
   const res = await fetch(API, { credentials: 'include' });
   payload = await readJson(res);
+  moomooAccounts = null;
   forms = {};
   for (const conn of payload.connectors) {
     forms[conn.id] = {
@@ -312,6 +382,7 @@ async function load() {
   }
   abortWait = false;
   render();
+  if (forms.moomoo?.expanded) void discoverMoomooAccounts();
 }
 
 async function save(id) {
@@ -331,6 +402,10 @@ async function save(id) {
     const idx = payload.connectors.findIndex((c) => c.id === id);
     payload.connectors[idx] = view;
     forms[id] = { enabled: view.enabled, values: {}, dirty: false, expanded: true };
+    if (id === 'moomoo') {
+      moomooAccounts = null;
+      void discoverMoomooAccounts();
+    }
   } catch (e) {
     showError(e instanceof Error ? e.message : String(e));
   } finally {

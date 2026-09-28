@@ -9,13 +9,14 @@ export function brokerParserDir(slug: string): string {
   return join(resolveDataRoot(), 'drive', slug, 'broker-parsers');
 }
 
-export function brokerParserPath(slug: string, connectorId: string): string {
+export function brokerParserPath(slug: string, connectorId: string, connectionId?: string): string {
   getBrokerConnector(connectorId);
-  return join(brokerParserDir(slug), `${connectorId}.json`);
+  if (connectionId && !/^[a-zA-Z0-9_-]+$/.test(connectionId)) throw new Error('Invalid connection ID for broker parser.');
+  return join(brokerParserDir(slug), `${connectionId ?? connectorId}.json`);
 }
 
-export function loadBrokerParserSpec(slug: string, connectorId: string): CsvTablesParserSpec | null {
-  const file = brokerParserPath(slug, connectorId);
+export function loadBrokerParserSpec(slug: string, connectorId: string, connectionId?: string): CsvTablesParserSpec | null {
+  const file = brokerParserPath(slug, connectorId, connectionId);
   if (!existsSync(file)) return null;
   let parsed: unknown;
   try {
@@ -30,11 +31,12 @@ export function saveBrokerParserSpec(
   slug: string,
   connectorId: string,
   spec: CsvTablesParserSpec,
+  connectionId?: string,
 ): string {
   getBrokerConnector(connectorId);
   const dir = brokerParserDir(slug);
   mkdirSync(dir, { recursive: true });
-  const file = brokerParserPath(slug, connectorId);
+  const file = brokerParserPath(slug, connectorId, connectionId);
   writeFileSync(file, `${JSON.stringify(spec, null, 2)}\n`, 'utf8');
   return file;
 }

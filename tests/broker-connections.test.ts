@@ -375,10 +375,8 @@ describe('createInvageWebUi brokers section', () => {
       },
     ]);
     expect(ui.apiRouters?.length).toBe(2);
-    expect(ui.nav?.some((n) => n.path === '/brokers')).toBe(true);
-    expect(ui.routes?.some((r) => r.path === '/brokers' && r.iframeSrc?.includes('/brokers/'))).toBe(
-      true,
-    );
+    expect(ui.nav?.some((n) => n.path === '/brokers')).toBe(false);
+    expect(ui.routes?.some((r) => r.path === '/brokers' && r.iframeSrc?.includes('/brokers/retired/'))).toBe(true);
     expect(ui.routes?.some((r) => r.path === '/brokers/guide')).toBe(true);
     const matchRoute = (path: string) => {
       for (const r of ui.routes ?? []) {
@@ -388,10 +386,10 @@ describe('createInvageWebUi brokers section', () => {
       return undefined;
     };
     expect(matchRoute('/brokers/guide')?.iframeSrc).toBe(
-      '/domain-assets/invage/brokers/guide/index.html',
+      '/domain-assets/invage/brokers/retired/index.html',
     );
     expect(matchRoute('/brokers')?.iframeSrc).toBe(
-      '/domain-assets/invage/brokers/index.html',
+      '/domain-assets/invage/brokers/retired/index.html',
     );
   });
 
@@ -411,9 +409,11 @@ describe('createInvageWebUi brokers section', () => {
     expect(
       readFileSync(join(process.cwd(), 'webui/brokers/guide/app.js'), 'utf8'),
     ).toContain('parent.location.hash');
-    const settings = readFileSync(join(process.cwd(), 'webui/settings/brokers/app.js'), 'utf8');
-    expect(settings).toMatch(/payload\.connectors/);
-    expect(settings).toMatch(/data-manage/);
+    const settings = readFileSync(join(process.cwd(), 'webui/settings/brokers/accounts.js'), 'utf8');
+    expect(settings).toMatch(/broker-accounts/);
+    expect(settings).toMatch(/data-action="manage"/);
+    expect(readFileSync(join(process.cwd(), 'webui/settings/brokers/index.html'), 'utf8'))
+      .toContain('accounts.js');
   });
 
   it('GET catalog lists IBKR, Tiger Brokers, MooMoo, and Webull as live connectors', () => {

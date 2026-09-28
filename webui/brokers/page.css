@@ -17,9 +17,13 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .credential-fields { display: grid; gap: 1.1rem; margin: 1.25rem 0; }
 label.field { display: block; min-width: 0; font-size: .85rem; font-weight: 600; line-height: 1.5; }
 label.field .help { display: block; margin-top: .4rem; font-size: .75rem; font-weight: 400; color: var(--muted-foreground); overflow-wrap: anywhere; }
-label.field input, label.field textarea { display: block; width: 100%; box-sizing: border-box; min-height: 44px; margin-top: .4rem; border: 1px solid var(--border); border-radius: .5rem; background: var(--card); color: var(--ink); padding: .65rem .75rem; font: inherit; font-size: 16px; font-weight: 400; }
+label.field input, label.field textarea, label.field select { display: block; width: 100%; box-sizing: border-box; min-height: 44px; margin-top: .4rem; border: 1px solid var(--border); border-radius: .5rem; background: var(--card); color: var(--ink); padding: .65rem .75rem; font: inherit; font-size: 16px; font-weight: 400; }
 label.field textarea { min-height: 100px; resize: vertical; font-family: ui-monospace, monospace; }
-label.field input:focus-visible, label.field textarea:focus-visible, button:focus-visible, summary:focus-visible, a:focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; }
+label.field input:focus-visible, label.field textarea:focus-visible, label.field select:focus-visible, button:focus-visible, summary:focus-visible, a:focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; }
+.account-picker { border-top: 1px solid var(--border); padding-top: 1rem; margin-top: .25rem; }
+.account-picker .help, .account-message { margin: .45rem 0 .7rem; color: var(--muted-foreground); font-size: .75rem; line-height: 1.5; }
+.account-picker button { font-family: inherit; font-size: .75rem; font-weight: 600; padding: .45rem .7rem; border: 1px solid var(--border); border-radius: .45rem; background: var(--card); color: var(--ink); cursor: pointer; }
+.account-message { color: var(--danger); }
 details { margin-top: .85rem; font-size: .8rem; line-height: 1.6; overflow-wrap: anywhere; }
 summary { cursor: pointer; font-weight: 500; }
 details ol, details ul { margin: .65rem 0 0; padding-left: 1.3rem; }

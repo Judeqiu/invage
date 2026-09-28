@@ -11,6 +11,10 @@ let payload = null;
 let forms = {};
 let inFlight = false;
 let abortWait = false;
+let moomooAccounts = null;
+let moomooAccountsLoading = false;
+let moomooAccountsError = '';
+let webullTokenStatus = '';
 
 function showError(message) {
   el.error.hidden = !message;
@@ -53,6 +57,8 @@ async function readJson(res) {
 async function load() {
   const res = await fetch(API, { credentials: 'include' });
   payload = await readJson(res);
+  moomooAccounts = null;
+  webullTokenStatus = '';
   forms = {};
   for (const conn of payload.connectors) {
     forms[conn.id] = {
@@ -64,6 +70,7 @@ async function load() {
   }
   abortWait = false;
   render();
+  if (forms.moomoo?.expanded) void discoverMoomooAccounts();
 }
 
 function markDirty(id) {
@@ -127,6 +134,31 @@ function fieldInput(conn, field) {
     </label>`;
 }
 
+function moomooAccountPicker(conn) {
+  const form = forms.moomoo;
+  const ready = conn.credentials.app_key?.configured && conn.credentials.private_key?.configured;
+  const selected = form.values.acc_id ?? conn.credentials.acc_id?.value ?? '';
+  const accounts = moomooAccounts;
+  const chosen = accounts?.some((account) => account.account_id === selected) ? selected : '';
+  const options = accounts?.map((account) => {
+    const suffix = account.trading_card_last4 || account.card_last4;
+    const label = [account.security_firm, suffix ? `account ••${suffix}` : '', account.account_id].filter(Boolean).join(' · ');
+    return `<option value="${escapeAttr(account.account_id)}" ${chosen === account.account_id ? 'selected' : ''}>${escapeHtml(label)}</option>`;
+  }).join('') || '';
+  return `<div class="account-picker">
+    <label class="field" for="moomoo-account-choice">Trading account
+      <select id="moomoo-account-choice" data-account-choice="moomoo" ${!ready || !accounts?.length || inFlight ? 'disabled' : ''}>
+        <option value="" ${!chosen ? 'selected' : ''}>${accounts?.length > 1 ? 'Choose an account' : 'Automatically select the only account'}</option>
+        ${options}
+      </select>
+    </label>
+    <p class="hint">${ready ? 'Accounts are retrieved from Moomoo using your AppKey. No ID needs to be typed.' : 'Save your AppKey and private key to find accounts.'}</p>
+    ${accounts?.length === 0 ? '<p class="account-message">Moomoo returned no authorized trading accounts for this AppKey.</p>' : ''}
+    ${moomooAccountsError ? `<p class="account-message">${escapeHtml(moomooAccountsError)}</p>` : ''}
+    <button type="button" data-discover-accounts="1" ${!ready || moomooAccountsLoading || inFlight ? 'disabled' : ''}>${moomooAccountsLoading ? 'Finding accounts…' : 'Refresh accounts'}</button>
+  </div>`;
+}
+
 function escapeHtml(s) {
   return String(s)
     .replace(/&/g, '&amp;')
@@ -156,7 +188,7 @@ function lastSyncLine(conn) {
 function managePanel(conn) {
   const form = forms[conn.id];
   const saveDisabled = inFlight;
-  const syncDisabled = inFlight || abortWait || form.dirty || !serverSyncEnabled(conn);
+  const syncDisabled = inFlight || abortWait || form.dirty || !serverSyncEnabled(conn) || moomooNeedsChoice(conn);
   const syncHint = form.dirty ? 'Save before sync' : '';
   return `
     <div class="manage">
@@ -164,7 +196,14 @@ function managePanel(conn) {
         <label class="toggle"><input type="checkbox" data-toggle="${escapeHtml(conn.id)}" ${form.enabled ? 'checked' : ''} ${inFlight ? 'disabled' : ''} /> Enable channel</label>
       </div>
       <p class="hint" style="margin:8px 0 0">Stops ${escapeHtml(conn.display_name)} pulls. Holdings tagged ${escapeHtml(conn.channel)} stay on the dashboard.</p>
-      ${conn.credential_fields.map((f) => fieldInput(conn, f)).join('')}
+      ${conn.credential_fields.filter((f) => f.id !== 'acc_id' || conn.id !== 'moomoo').map((f) => fieldInput(conn, f)).join('')}
+      ${conn.id === 'moomoo' ? moomooAccountPicker(conn) : ''}
+      ${conn.id === 'webull' ? `<div class="account-picker">
+        <p class="hint">Save App Key, App Secret, and region first. Create Token sends an approval request to your Webull app. Approve it within five minutes, then check its status and Sync.</p>
+        ${webullTokenStatus ? `<p class="account-message">Token status: ${escapeHtml(webullTokenStatus)}</p>` : ''}
+        <button type="button" data-webull-create="1" ${inFlight || form.dirty || !requiredComplete(conn) ? 'disabled' : ''}>Create token</button>
+        <button type="button" data-webull-check="1" ${inFlight || form.dirty || !conn.credentials.access_token?.configured ? 'disabled' : ''}>Check token status</button>
+      </div>` : ''}
       <details>
         <summary>How to get ${escapeHtml(conn.display_name)} credentials</summary>
         <ol>
@@ -183,6 +222,12 @@ function managePanel(conn) {
     </div>`;
 }
 
+function moomooNeedsChoice(conn) {
+  if (conn.id !== 'moomoo' || !moomooAccounts || moomooAccounts.length <= 1) return false;
+  const selected = forms.moomoo.values.acc_id ?? conn.credentials.acc_id?.value ?? '';
+  return !moomooAccounts.some((account) => account.account_id === selected);
+}
+
 function render() {
   if (!payload) return;
   el.list.replaceChildren();
@@ -196,7 +241,7 @@ function render() {
     const wrap = document.createElement('div');
     wrap.className = 'connector';
     const showSync = serverSyncEnabled(conn) || conn.status === 'connected' || conn.status === 'error';
-    const syncDisabled = inFlight || abortWait || form.dirty || !serverSyncEnabled(conn);
+    const syncDisabled = inFlight || abortWait || form.dirty || !serverSyncEnabled(conn) || moomooNeedsChoice(conn);
     wrap.innerHTML = `
       <div class="card-head">
         <div>
@@ -232,6 +277,7 @@ function bind() {
       }
       forms[id].expanded = !forms[id].expanded;
       render();
+      if (id === 'moomoo' && forms[id].expanded && moomooAccounts === null) void discoverMoomooAccounts();
     });
   });
   el.list.querySelectorAll('input[data-toggle]').forEach((input) => {
@@ -246,8 +292,27 @@ function bind() {
       const id = input.getAttribute('data-conn');
       const field = input.getAttribute('data-field');
       forms[id].values[field] = input.value;
+      if (id === 'moomoo' && (field === 'app_key' || field === 'private_key')) {
+        forms[id].values.acc_id = '';
+      }
       forms[id].dirty = true;
     });
+  });
+  el.list.querySelectorAll('select[data-account-choice]').forEach((select) => {
+    select.addEventListener('change', () => {
+      forms.moomoo.values.acc_id = select.value;
+      forms.moomoo.dirty = true;
+      render();
+    });
+  });
+  el.list.querySelectorAll('button[data-discover-accounts]').forEach((btn) => {
+    btn.addEventListener('click', () => void discoverMoomooAccounts());
+  });
+  el.list.querySelectorAll('button[data-webull-create]').forEach((btn) => {
+    btn.addEventListener('click', () => void webullTokenRequest('POST'));
+  });
+  el.list.querySelectorAll('button[data-webull-check]').forEach((btn) => {
+    btn.addEventListener('click', () => void webullTokenRequest('GET'));
   });
   el.list.querySelectorAll('button[data-save]').forEach((btn) => {
     btn.addEventListener('click', () => void save(btn.getAttribute('data-save')));
@@ -258,6 +323,27 @@ function bind() {
   el.list.querySelectorAll('button[data-refresh]').forEach((btn) => {
     btn.addEventListener('click', () => void refresh());
   });
+}
+
+async function webullTokenRequest(method) {
+  inFlight = true;
+  showError('');
+  render();
+  try {
+    const res = await fetch(`${API}/webull/token`, { method, credentials: 'include' });
+    const result = await readJson(res);
+    webullTokenStatus = result.status;
+    if (method === 'POST') {
+      const refreshed = await readJson(await fetch(API, { credentials: 'include' }));
+      payload = refreshed;
+      forms.webull = { enabled: refreshed.connectors.find((conn) => conn.id === 'webull').enabled, values: {}, dirty: false, expanded: true };
+    }
+  } catch (e) {
+    showError(e instanceof Error ? e.message : String(e));
+  } finally {
+    inFlight = false;
+    render();
+  }
 }
 
 function patchBody(id, conn) {
@@ -277,7 +363,28 @@ function patchBody(id, conn) {
       body.credentials[field.id] = null;
     }
   }
+  if (id === 'moomoo' && (body.credentials.app_key || body.credentials.private_key) &&
+      form.values.acc_id == null && conn.credentials.acc_id?.configured) {
+    body.credentials.acc_id = null;
+  }
   return body;
+}
+
+async function discoverMoomooAccounts() {
+  const conn = payload?.connectors.find((item) => item.id === 'moomoo');
+  if (!conn?.credentials.app_key?.configured || !conn.credentials.private_key?.configured) return;
+  moomooAccountsLoading = true;
+  moomooAccountsError = '';
+  render();
+  try {
+    const res = await fetch(`${API}/moomoo/accounts`, { credentials: 'include' });
+    moomooAccounts = (await readJson(res)).accounts;
+  } catch (error) {
+    moomooAccountsError = error instanceof Error ? error.message : String(error);
+  } finally {
+    moomooAccountsLoading = false;
+    render();
+  }
 }
 
 async function save(id) {
@@ -297,6 +404,11 @@ async function save(id) {
     const idx = payload.connectors.findIndex((c) => c.id === id);
     payload.connectors[idx] = view;
     forms[id] = { enabled: view.enabled, values: {}, dirty: false, expanded: true };
+    if (id === 'webull') webullTokenStatus = '';
+    if (id === 'moomoo') {
+      moomooAccounts = null;
+      void discoverMoomooAccounts();
+    }
   } catch (e) {
     showError(e instanceof Error ? e.message : String(e));
   } finally {

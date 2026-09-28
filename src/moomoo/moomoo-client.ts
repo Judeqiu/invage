@@ -113,10 +113,11 @@ function failIfError(env: MooMooEnvelope, what: string): void {
   );
 }
 
-interface AuthorizedAccount {
+export interface AuthorizedAccount {
   account_id: string;
   security_firm: string;
   card_last4: string;
+  trading_card_last4: string;
 }
 
 function authorizedAccounts(authorized: MooMooEnvelope): AuthorizedAccount[] {
@@ -135,13 +136,33 @@ function authorizedAccounts(authorized: MooMooEnvelope): AuthorizedAccount[] {
     if (!account_id) continue;
     const security_firm = typeof rec.security_firm === 'string' ? rec.security_firm.trim() : '';
     const card = String(rec.univs_account_card_number ?? rec.account_card_number ?? '').trim();
+    const tradingCard = String(rec.account_card_number ?? '').trim();
     out.push({
       account_id,
       security_firm,
       card_last4: card.length >= 4 ? card.slice(-4) : '',
+      trading_card_last4: tradingCard.length >= 4 ? tradingCard.slice(-4) : '',
     });
   }
   return out;
+}
+
+async function fetchAuthorizedEnvelope(credentials: MooMooCredentials, fetchImpl: typeof fetch): Promise<MooMooEnvelope> {
+  const authorized = await getWithSkewRetry({
+    path: '/api/v1.0/accounts/authorized_trd_accs',
+    credentials,
+    fetchImpl,
+  });
+  failIfError(authorized, 'authorized_trd_accs');
+  return authorized;
+}
+
+/** Safe account metadata for the connection form; never returns credentials or full card numbers. */
+export async function fetchMooMooAuthorizedAccounts(
+  credentials: MooMooCredentials,
+  opts?: { fetchImpl?: typeof fetch },
+): Promise<AuthorizedAccount[]> {
+  return authorizedAccounts(await fetchAuthorizedEnvelope(credentials, opts?.fetchImpl ?? fetch));
 }
 
 function describeAuthorized(accounts: AuthorizedAccount[]): string {
@@ -164,7 +185,7 @@ function pickAccId(authorized: MooMooEnvelope, stored?: string): string {
         ? ` Authorized account_id values: ${listed}.`
         : '';
       throw new BrokerParseError(
-        `acc_id ${stored.trim()} is not in the authorized trading accounts list.${hint} Paste one of those account_id values, or clear Trading account ID when only one account is listed. A moomoo ID and an account card number are different numbers.`,
+        `acc_id ${stored.trim()} is not in the authorized trading accounts list.${hint} Open Manage and refresh the discovered trading accounts to select an authorized account.`,
       );
     }
     return stored.trim();
@@ -174,7 +195,7 @@ function pickAccId(authorized: MooMooEnvelope, stored?: string): string {
     throw new BrokerParseError('MooMoo returned no authorized trading accounts.');
   }
   throw new BrokerParseError(
-    `multiple authorized accounts — paste acc_id. Authorized account_id values: ${listed}.`,
+    `Multiple authorized trading accounts. Open Manage and select one of the discovered accounts. Authorized account_id values: ${listed}.`,
   );
 }
 
@@ -183,12 +204,7 @@ export async function fetchMooMooRawBundle(
   opts?: { fetchImpl?: typeof fetch },
 ): Promise<MooMooRawBundle> {
   const fetchImpl = opts?.fetchImpl ?? fetch;
-  const authorized = await getWithSkewRetry({
-    path: '/api/v1.0/accounts/authorized_trd_accs',
-    credentials,
-    fetchImpl,
-  });
-  failIfError(authorized, 'authorized_trd_accs');
+  const authorized = await fetchAuthorizedEnvelope(credentials, fetchImpl);
   const acc_id = pickAccId(authorized, credentials.acc_id);
   const funds = await getWithSkewRetry({
     path: `/api/v1.0/accounts/${encodeURIComponent(acc_id)}/funds`,

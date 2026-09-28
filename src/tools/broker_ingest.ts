@@ -1,6 +1,8 @@
 import { Type } from 'typebox';
 import type { AgentTool, AgentToolResult } from '@earendil-works/pi-agent-core';
 import { applyBrokerStatement } from '../brokers/apply-statement.js';
+import { readBrokerAccountModel, resolveBrokerAccountId } from '../brokers/accounts.js';
+import { fetchRawData, latestBrokerRawData, listRawData } from '../raw-data/store.js';
 import { assertCsvTablesSpec, runCsvTablesSpec } from '../brokers/csv-tables.js';
 import { getBrokerAdapter } from '../brokers/adapter.js';
 import { getBrokerConnector } from '../brokers/catalog.js';
@@ -20,6 +22,32 @@ function fail(text: string): AgentToolResult<null> {
   return { content: [{ type: 'text' as const, text }], details: null };
 }
 
+function readAccountRaw(state: import('../state/portfolio-state.js').InvestorState, channel: string, requested?: string) {
+  const slug = state.user.slug;
+  let file = latestBrokerRawData(slug, channel);
+  if (requested) {
+    const files = [];
+    let offset = 0;
+    for (;;) {
+      const page = listRawData(slug, offset, 100, channel);
+      files.push(...page.files);
+      if (page.next_offset === null) break;
+      offset = page.next_offset;
+    }
+    file = files.find(f => f.id === requested || requested.endsWith(`/${f.id}`)) ?? null;
+  }
+  if (!file) throw new Error('No raw archive for this broker connection.');
+  const parts: Buffer[] = [];
+  let offset = 0;
+  for (;;) {
+    const page = fetchRawData(slug, file.id, file.version, offset, 65536, 'base64');
+    parts.push(Buffer.from(page.content, 'base64'));
+    if (page.next_offset === null) break;
+    offset = page.next_offset;
+  }
+  return { path: file.id, text: Buffer.concat(parts).toString('utf8') };
+}
+
 export function createListBrokerTriageTool(): AgentTool {
   return {
     name: 'list_broker_triage',
@@ -37,6 +65,22 @@ export function createListBrokerTriageTool(): AgentTool {
         const { state } = snapshot;
         const slug = state.user.slug;
         if (!slug) throw new Error('Investor state has no user.slug.');
+        if (state.broker_sources) {
+          const model = readBrokerAccountModel(state);
+          const targets = Object.entries(model.connections).filter(([, c]) => !p.connector_id || c.broker_id === p.connector_id);
+          const cases = targets.flatMap(([connection_id, conn]) => {
+            const rows = [];
+            let offset = 0;
+            for (;;) {
+              const page = listRawData(slug, offset, 100, conn.channel);
+              rows.push(...page.files.filter(f => f.source_kind === 'broker-triage' && !f.id.endsWith('/case.yaml')));
+              if (page.next_offset === null) break;
+              offset = page.next_offset;
+            }
+            return rows.map(f => ({ connection_id, channel: conn.channel, raw_path: f.id, at: f.modified_at, bytes: f.bytes }));
+          });
+          return ok(cases.length ? `Broker triage (${cases.length})` : 'No broker triage cases.', { cases });
+        }
         const cases = listBrokerTriageCases(slug, p.connector_id?.trim());
         const summaries = cases.map((c) => publicTriageSummary(c, slug));
         return ok(
@@ -61,17 +105,21 @@ export function createReadBrokerRawTool(): AgentTool {
     parameters: Type.Object({
       ...channelIdParams,
       connector_id: Type.String({ description: 'Catalog connector id (e.g. ibkr).' }),
+      connection_id: Type.Optional(Type.String({ description: 'Account connection ID when multiple accounts use this broker.' })),
       path: Type.Optional(Type.String({ description: 'Absolute path under broker-raw for this connector.' })),
     }),
     execute: async (_id, raw) => {
-      const p = raw as ChannelIds & { connector_id: string; path?: string };
+      const p = raw as ChannelIds & { connector_id: string; connection_id?: string; path?: string };
       try {
         const snapshot = await resolveInvestorFromChannel(p);
         const { state } = snapshot;
         const slug = state.user.slug;
         if (!slug) throw new Error('Investor state has no user.slug.');
         const id = p.connector_id.trim();
-        const got = readBrokerRawFile(slug, id, p.path);
+        const connectionId = state.broker_sources ? resolveBrokerAccountId(state, id, p.connection_id) : undefined;
+        const got = connectionId
+          ? readAccountRaw(state, readBrokerAccountModel(state).connections[connectionId].channel, p.path)
+          : readBrokerRawFile(slug, id, p.path);
         const csvHint = getBrokerAdapter(id).usesCsvTables
           ? 'Generate a csv_tables spec or a BrokerStatement JSON.'
           : 'Map this JSON to a BrokerStatement. Do not generate csv_tables.';
@@ -95,6 +143,7 @@ export function createSaveBrokerParserTool(): AgentTool {
     parameters: Type.Object({
       ...channelIdParams,
       connector_id: Type.String({ description: 'Catalog connector id (e.g. ibkr).' }),
+      connection_id: Type.Optional(Type.String({ description: 'Account connection ID when the new broker model is active.' })),
       spec: Type.Object(
         {},
         {
@@ -105,7 +154,7 @@ export function createSaveBrokerParserTool(): AgentTool {
       ),
     }),
     execute: async (_id, raw) => {
-      const p = raw as ChannelIds & { connector_id: string; spec: unknown };
+      const p = raw as ChannelIds & { connector_id: string; connection_id?: string; spec: unknown };
       try {
         const snapshot = await resolveInvestorFromChannel(p);
         const { state } = snapshot;
@@ -116,7 +165,9 @@ export function createSaveBrokerParserTool(): AgentTool {
           throw new Error(`csv_tables parsers are only for IBKR Flex, not "${id}".`);
         }
         const spec = assertCsvTablesSpec(p.spec);
-        const path = saveBrokerParserSpec(slug, id, spec);
+        const connectionId = state.broker_sources ? resolveBrokerAccountId(state, id, p.connection_id) : undefined;
+        const path = saveBrokerParserSpec(slug, id, spec, connectionId &&
+          readBrokerAccountModel(state).connections[connectionId].channel !== id ? connectionId : undefined);
         return ok(`Saved parser spec for ${p.connector_id.trim()} at ${path}. Call sync again or parse_broker_raw.`, {
           path,
           connector_id: p.connector_id.trim(),
@@ -137,13 +188,14 @@ export function createParseBrokerRawTool(): AgentTool {
     parameters: Type.Object({
       ...channelIdParams,
       connector_id: Type.String({ description: 'Catalog connector id (e.g. ibkr).' }),
+      connection_id: Type.Optional(Type.String({ description: 'Account connection ID when the new broker model is active.' })),
       path: Type.Optional(Type.String({ description: 'Raw archive path. Default: latest for this connector.' })),
       spec: Type.Optional(
         Type.Object({}, { additionalProperties: true, description: 'csv_tables spec; omit to use the saved spec.' }),
       ),
     }),
     execute: async (_id, raw) => {
-      const p = raw as ChannelIds & { connector_id: string; path?: string; spec?: unknown };
+      const p = raw as ChannelIds & { connector_id: string; connection_id?: string; path?: string; spec?: unknown };
       try {
         const snapshot = await resolveInvestorFromChannel(p);
         const { state } = snapshot;
@@ -155,10 +207,13 @@ export function createParseBrokerRawTool(): AgentTool {
           throw new Error(`csv_tables parsers are only for IBKR Flex, not "${id}".`);
         }
         const spec = p.spec != null ? assertCsvTablesSpec(p.spec) : null;
-        const saved = spec ?? loadBrokerParserSpec(slug, id);
+        const connectionId = state.broker_sources ? resolveBrokerAccountId(state, id, p.connection_id) : undefined;
+        const conn = connectionId ? readBrokerAccountModel(state).connections[connectionId] : undefined;
+        const saved = spec ?? loadBrokerParserSpec(slug, id, conn?.channel === id ? undefined : connectionId);
         if (!saved) throw new Error(`No parser spec for "${id}". Call save_broker_parser first.`);
-        const got = readBrokerRawFile(slug, id, p.path);
-        const statement = runCsvTablesSpec(got.text, saved, getBrokerConnector(id).channel);
+        const got = conn ? readAccountRaw(state, conn.channel, p.path) : readBrokerRawFile(slug, id, p.path);
+        const statement = runCsvTablesSpec(got.text, saved, conn?.channel ?? getBrokerConnector(id).channel);
+        if (conn?.account_id && statement.account_id !== conn.account_id) throw new Error('Parsed statement account differs from selected connection.');
         return ok(
           `Parsed ${id} raw via csv_tables: account ${statement.account_id}, cash ${statement.cash.length} sleeve(s), lots ${statement.lots.length}. Call apply_broker_statement to write books.`,
           { path: got.path, statement },
@@ -175,10 +230,11 @@ export function createApplyBrokerStatementTool(): AgentTool {
     name: 'apply_broker_statement',
     label: 'Apply broker statement',
     description:
-      'Apply a validated BrokerStatement (account_id, as_of, cash[].amount, lots[].holding) onto the catalog connector channel. Same apply path as catalog sync. This is the books snapshot — not Flex/CSV vendor rows. Use after LLM-reading raw text or parse_broker_raw. Never invent numbers.',
+      'Apply a validated BrokerStatement (account_id, as_of, cash[].amount, lots[].holding) onto the selected account connection channel. Supply connection_id when a broker has multiple accounts. This is the books snapshot — not Flex/CSV vendor rows. Use after LLM-reading raw text or parse_broker_raw. Never invent numbers.',
     parameters: Type.Object({
       ...channelIdParams,
       connector_id: Type.String({ description: 'Catalog connector id (e.g. ibkr).' }),
+      connection_id: Type.Optional(Type.String({ description: 'Required for multiple accounts of one broker.' })),
       statement: Type.Object(
         {},
         {
@@ -189,12 +245,21 @@ export function createApplyBrokerStatementTool(): AgentTool {
       ),
     }),
     execute: async (_id, raw) => {
-      const p = raw as ChannelIds & { connector_id: string; statement: unknown };
+      const p = raw as ChannelIds & { connector_id: string; connection_id?: string; statement: unknown };
       try {
         const snapshot = await resolveInvestorFromChannel(p);
         const { state } = snapshot;
         const doc = assertBrokerStatement(p.statement);
-        const applied = await applyBrokerStatement(snapshot, p.connector_id.trim(), doc);
+        let applied;
+        if (state.broker_sources) {
+          const id = resolveBrokerAccountId(state, p.connector_id.trim(), p.connection_id);
+          const conn = readBrokerAccountModel(state).connections[id];
+          if (doc.account_id !== conn.account_id) throw new Error('Statement account differs from selected broker connection.');
+          applied = await applyBrokerStatement(snapshot, id, doc, undefined, undefined,
+            { brokerId: conn.broker_id, channel: conn.channel });
+        } else {
+          applied = await applyBrokerStatement(snapshot, p.connector_id.trim(), doc);
+        }
         const skip =
           applied.skipped.length > 0
             ? [`Not imported (${applied.skipped.length}):`, ...applied.skipped.map((s) => `- ${formatBrokerSkip(s)}`)]

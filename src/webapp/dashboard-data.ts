@@ -8,8 +8,7 @@
  */
 
 import { loadInvestor } from '../state/investor-store.js';
-import { getBrokerConnector } from '../brokers/catalog.js';
-import { readBrokerConnections } from '../brokers/connections.js';
+import { readBrokerAccountModel } from '../brokers/accounts.js';
 import type { BrokerConnectionMetrics } from '../state/portfolio-state.js';
 import {
   equityQuoteSymbols,
@@ -338,11 +337,11 @@ export async function loadDashboardForSlug(
 
   let connectionMetrics: Record<string, BrokerConnectionMetrics> | undefined;
   try {
-    const conns = readBrokerConnections(state);
+    const conns = readBrokerAccountModel(state).connections;
     const mapped: Record<string, BrokerConnectionMetrics> = {};
     for (const [id, conn] of Object.entries(conns)) {
       if (conn.metrics == null) continue;
-      const ch = getBrokerConnector(id).channel;
+      const ch = conn.channel;
       mapped[ch] = conn.metrics;
     }
     if (Object.keys(mapped).length > 0) connectionMetrics = mapped;

@@ -266,14 +266,23 @@ Every mutation appends to `log[]`. The agent never manually logs — the framewo
 
 ### Broker connections
 
-Optional top-level `broker_connections` on the same user file. Key = connector id from the Invage catalog (`ibkr`, `tiger`, `moomoo`). Secrets (Flex token, RSA/Ed25519 PEM) live here — the Settings GET never returns them.
+Broker access and account connections are managed in **Settings → Brokers**. The catalog still defines broker types (`ibkr`, `tiger`, `moomoo`, `webull`), but a user may have multiple account connections of any type. `broker_sources` stores access credentials; `broker_connections` is keyed by immutable connection ID. Each account connection owns one immutable custody channel. Secrets are never returned by Settings GET.
 
 ```yaml
-broker_connections:
-  ibkr:
-    enabled: true
+broker_sources:
+  src_01:
+    broker_id: ibkr
     credentials:
       token: "123456789123456789"
+broker_connections:
+  conn_01:
+    broker_id: ibkr
+    source_id: src_01
+    label: "Personal IBKR"
+    account_id: "U1234567"
+    channel: ibkr
+    enabled: true
+    config:
       activity_query_id: "111222"
     last_sync:
       at: "2026-08-22T04:12:00.000Z"
@@ -286,7 +295,7 @@ broker_connections:
         - "ES: assetCategory FUT is not imported (supported: STK, ETF, OPT, FUND)"
 ```
 
-Legacy `ibkr_flex` is accepted on **read** only. The first Settings save, `configure_ibkr_flex`, or Flex sync (including a failed sync) writes `broker_connections` and **deletes** `ibkr_flex`. Both keys present is an error. Unknown connector or credential keys fail on read. **Disable does not delete** holdings tagged with that connector channel (`ibkr`, `tiger`, `moomoo`, `webull`). Successful Tiger/MooMoo/Webull snapshots archive under `drive/<slug>/tiger-raw/`, `moomoo-raw/`, and `webull-raw/` (`list_raw_data` `source_kind: broker-sync`). Channel `moomoo` is not `jude_futu`.
+Legacy connector-keyed `broker_connections` and `ibkr_flex` remain readable and convert lazily when Settings writes. Migrated connections preserve their old channel (`ibkr`, `tiger`, `moomoo`, or `webull`); newly added accounts receive a distinct channel. If the old account ID is not reliably known, Settings requires account selection before the next sync. Pausing does not delete holdings. New success and triage archives live under `drive/<slug>/broker-sync/<channel>/` and `broker-triage/<channel>/`; old archives remain readable. Channel `moomoo` is not `jude_futu`.
 
 ### Channel recon session
 

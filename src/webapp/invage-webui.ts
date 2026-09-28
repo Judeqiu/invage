@@ -1,8 +1,8 @@
 /**
  * Invage DomainExtension.webUi — Dashboard tab + chat empty-state guidance.
  *
- * Nav "Dashboard" / "Brokers" → iframe routes → static pages under
- * domain-assets that fetch /api/domain/invage/dashboard|watchlist|broker-connections.
+ * Nav "Dashboard" and Settings → Brokers → iframe routes → static pages under
+ * domain-assets that fetch /api/domain/invage/dashboard|watchlist|broker-accounts.
  *
  * chatEmptyState: WebUI-only hero on new / empty conversations
  * (utarus SPA manifest → ChatPage).
@@ -33,7 +33,7 @@ export const INVAGE_CHAT_EMPTY_STATE = {
   title: 'Your investment analyst — with household books',
   body: [
     'I analyze portfolios (live marks, playbook, undervalued screens) and can keep household books for cash flow and big decisions like buying a house.',
-    'Use the Dashboard tab for portfolio value and Brokers to connect read-only IBKR Flex, Tiger, MooMoo, or Webull. Bookkeeper journals the ledger; InvestmentAdvisor researches; AIDeal runs the Aideal sleeve pack; Factchecker audits numbers before the final answer.',
+    'Use the Dashboard tab for portfolio value and Settings → Brokers to connect read-only IBKR Flex, Tiger, MooMoo, or Webull. Bookkeeper journals the ledger; InvestmentAdvisor researches; AIDeal runs the Aideal sleeve pack; Factchecker audits numbers before the final answer.',
   ],
   bullets: [
     'Import or add holdings (equity / fund / options) · set free cash and fixed deposits',
@@ -88,7 +88,7 @@ export function chatEmptyStateFor(profile: ProductProfileId): {
       title: INVAGE_CHAT_EMPTY_STATE.title,
       body: [
         'I analyze portfolios (live marks, playbook, undervalued screens) and can keep household books for cash flow and big decisions.',
-        'Use the Dashboard tab for portfolio value and Brokers to connect read-only IBKR Flex, Tiger, MooMoo, or Webull. Bookkeeper journals the ledger; InvestmentAdvisor researches securities; OptionsExpert reads listed calls/puts; Factchecker audits numbers before the final answer.',
+        'Use the Dashboard tab for portfolio value and Settings → Brokers to connect read-only IBKR Flex, Tiger, MooMoo, or Webull. Bookkeeper journals the ledger; InvestmentAdvisor researches securities; OptionsExpert reads listed calls/puts; Factchecker audits numbers before the final answer.',
       ],
       bullets: [...INVAGE_CHAT_EMPTY_STATE.bullets],
       starters: [
@@ -148,13 +148,6 @@ export function createInvageWebUi(): DomainWebUiExtension {
         icon: 'sparkles',
         order: 14,
       },
-      {
-        id: 'brokers',
-        label: 'Brokers',
-        path: '/brokers',
-        icon: 'landmark',
-        order: 15,
-      },
     ],
     routes: [
       {
@@ -192,13 +185,13 @@ export function createInvageWebUi(): DomainWebUiExtension {
       {
         path: '/brokers/guide',
         pageKind: 'iframe',
-        iframeSrc: '/domain-assets/invage/brokers/guide/index.html',
+        iframeSrc: '/domain-assets/invage/brokers/retired/index.html',
         title: 'Connect a broker',
       },
       {
         path: '/brokers',
         pageKind: 'iframe',
-        iframeSrc: '/domain-assets/invage/brokers/index.html',
+        iframeSrc: '/domain-assets/invage/brokers/retired/index.html',
         title: 'Brokers',
       },
     ],

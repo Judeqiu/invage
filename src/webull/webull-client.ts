@@ -42,7 +42,7 @@ function errorFromBody(json: unknown, status: number, path: string): BrokerHttpE
   const message = rec ? String(rec.message ?? rec.msg ?? rec.error ?? '') : '';
   const hint =
     /token|2fa|verif/i.test(`${code} ${message}`) || status === 401
-      ? ' If Webull asked for an access token, approve the request in the Webull app (or paste access_token) and Sync again.'
+      ? ' If an access token is required, open Settings → Brokers → Webull, click Create token, approve it in the Webull app, check for NORMAL status, and Sync again.'
       : '';
   return new BrokerHttpError(
     `Webull ${path} HTTP ${status}${code ? ` ${code}` : ''}${message ? `: ${message}` : ''}.${hint}`,
@@ -84,7 +84,7 @@ export async function webullGet(args: {
     'x-app-key': args.credentials.app_key,
     'x-timestamp': timestamp,
     'x-signature': signature,
-    'x-signature-algorithm': 'HMAC-SHA256',
+    'x-signature-algorithm': 'HMAC-SHA1',
     'x-signature-version': '1.0',
     'x-signature-nonce': nonce,
     'x-version': 'v3',
@@ -100,6 +100,86 @@ export async function webullGet(args: {
   }
   if (!res.ok) throw errorFromBody(json, res.status, args.path);
   return json;
+}
+
+async function webullTokenRequest(args: {
+  credentials: WebullCredentials;
+  path: '/auth/tokens/create' | '/auth/tokens/check';
+  fetchImpl?: typeof fetch;
+}): Promise<Record<string, unknown>> {
+  const host = WEBULL_API_HOSTS[args.credentials.region];
+  const timestamp = isoTimestamp();
+  const nonce = randomBytes(16).toString('hex');
+  const signature = signWebullRequest(webullSignContent({
+    path: args.path,
+    query: {},
+    host,
+    appKey: args.credentials.app_key,
+    timestamp,
+    nonce,
+  }), args.credentials.app_secret);
+  const headers: Record<string, string> = {
+    Accept: 'application/json',
+    'Content-Type': 'application/json',
+    'x-app-key': args.credentials.app_key,
+    'x-timestamp': timestamp,
+    'x-signature': signature,
+    'x-signature-algorithm': 'HMAC-SHA1',
+    'x-signature-version': '1.0',
+    'x-signature-nonce': nonce,
+    'x-version': 'v3',
+  };
+  if (args.path === '/auth/tokens/check') {
+    if (!args.credentials.access_token) throw new BrokerParseError('Webull access token is missing. Create a token first.');
+    headers['x-access-token'] = args.credentials.access_token;
+  }
+  const res = await (args.fetchImpl ?? fetch)(`https://${host}${args.path}`, {
+    method: 'POST',
+    headers,
+  });
+  const raw = await res.text();
+  let json: unknown;
+  try {
+    json = raw ? JSON.parse(raw) : null;
+  } catch {
+    json = null;
+  }
+  if (!res.ok) throw errorFromBody(json, res.status, args.path);
+  const record = asRecord(json);
+  if (!record) throw new BrokerParseError(`Webull ${args.path} returned an invalid response.`);
+  return record;
+}
+
+function tokenPayload(json: Record<string, unknown>): Record<string, unknown> {
+  return asRecord(json.data) ?? json;
+}
+
+function tokenStatus(json: Record<string, unknown>): string {
+  const status = tokenPayload(json).status ?? tokenPayload(json).token_status;
+  return typeof status === 'string' ? status.trim().toUpperCase() : '';
+}
+
+export async function createWebullToken(
+  credentials: WebullCredentials,
+  opts?: { fetchImpl?: typeof fetch },
+): Promise<{ token: string; status: string }> {
+  const json = await webullTokenRequest({ credentials, path: '/auth/tokens/create', fetchImpl: opts?.fetchImpl });
+  const data = tokenPayload(json);
+  const token = data.token ?? data.access_token;
+  if (typeof token !== 'string' || !token.trim()) {
+    throw new BrokerParseError('Webull Create Token returned no token.');
+  }
+  return { token: token.trim(), status: tokenStatus(json) || 'PENDING' };
+}
+
+export async function checkWebullToken(
+  credentials: WebullCredentials,
+  opts?: { fetchImpl?: typeof fetch },
+): Promise<{ status: string }> {
+  const json = await webullTokenRequest({ credentials, path: '/auth/tokens/check', fetchImpl: opts?.fetchImpl });
+  const status = tokenStatus(json);
+  if (!status) throw new BrokerParseError('Webull Check Token returned no status.');
+  return { status };
 }
 
 function accountIdOf(row: unknown): string {
@@ -175,4 +255,22 @@ export async function fetchWebullRawBundle(
     balances,
     positions,
   };
+}
+
+/** Account choices for Settings; positions and balances are not fetched. */
+export async function listWebullAccounts(credentials: {
+  app_key: string; app_secret: string; region: string; access_token?: string;
+}, opts?: { fetchImpl?: typeof fetch }): Promise<Array<{ account_id: string; account_class: string }>> {
+  const selected: WebullCredentials = {
+    app_key: credentials.app_key,
+    app_secret: credentials.app_secret,
+    region: parseWebullRegion(credentials.region),
+  };
+  if (credentials.access_token) selected.access_token = credentials.access_token;
+  const accounts = accountsFromList(await webullGet({
+    host: WEBULL_API_HOSTS[selected.region], path: '/trading/accounts/list',
+    credentials: selected, fetchImpl: opts?.fetchImpl ?? fetch,
+  }));
+  return accounts.map(row => ({ account_id: accountIdOf(row), account_class: accountClassOf(row) }))
+    .filter(row => row.account_id && !SKIP_ACCOUNT_CLASS.has(row.account_class));
 }

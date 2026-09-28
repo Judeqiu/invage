@@ -147,24 +147,20 @@ describe('createInvageWebUi', () => {
     expect(existsSync(join(invageWebUiStaticDir(), 'dashboard', 'app.js'))).toBe(true);
   });
 
-  it('registers Brokers nav and iframe page', async () => {
+  it('keeps old Brokers URLs as Settings redirects without a Brokers nav item', async () => {
     const webUi = createInvageWebUi();
-    expect(webUi.nav?.some((n) => n.id === 'brokers' && n.path === '/brokers')).toBe(true);
+    expect(webUi.nav?.some((n) => n.id === 'brokers' && n.path === '/brokers')).toBe(false);
     const route = webUi.routes?.find((r) => r.path === '/brokers');
     expect(route?.pageKind).toBe('iframe');
-    expect(route?.iframeSrc).toBe('/domain-assets/invage/brokers/index.html');
-    expect(existsSync(join(invageWebUiStaticDir(), 'brokers', 'index.html'))).toBe(true);
-    expect(existsSync(join(invageWebUiStaticDir(), 'brokers', 'app.js'))).toBe(true);
+    expect(route?.iframeSrc).toBe('/domain-assets/invage/brokers/retired/index.html');
+    expect(existsSync(join(invageWebUiStaticDir(), 'brokers', 'retired', 'index.html'))).toBe(true);
     const guide = webUi.routes?.find((r) => r.path === '/brokers/guide');
-    expect(guide?.iframeSrc).toBe('/domain-assets/invage/brokers/guide/index.html');
-    expect(existsSync(join(invageWebUiStaticDir(), 'brokers', 'guide', 'index.html'))).toBe(true);
-    expect(existsSync(join(invageWebUiStaticDir(), 'brokers', 'guide', 'app.js'))).toBe(true);
+    expect(guide?.iframeSrc).toBe('/domain-assets/invage/brokers/retired/index.html');
     const paths = (webUi.routes ?? []).map((r) => r.path);
     expect(paths.indexOf('/brokers/guide')).toBeGreaterThanOrEqual(0);
     expect(paths.indexOf('/brokers/guide')).toBeLessThan(paths.indexOf('/brokers'));
-    expect(
-      readFileSync(join(invageWebUiStaticDir(), 'brokers', 'guide', 'app.js'), 'utf8'),
-    ).toContain('parent.location.hash');
+    expect(readFileSync(join(invageWebUiStaticDir(), 'brokers', 'retired', 'index.html'), 'utf8'))
+      .toContain('/settings/brokers');
   });
 
   it('registers Positions, Trades, Insights report pages', async () => {

@@ -246,11 +246,14 @@ function pickSegment(segments: Record<string, unknown>, key: string): Record<str
   return asRecord(segments[key]) ?? asRecord(segments[key.toLowerCase()]);
 }
 
-function mapPrimeAssets(data: unknown, asOf: string, skipped: BrokerSkip[]): {
+function mapPrimeAssets(data: unknown, account: string, asOf: string, skipped: BrokerSkip[]): {
   cash: BrokerCashSleeve[];
   metrics?: BrokerConnectionMetrics;
 } {
   const root = asRecord(data);
+  if (root?.account != null && String(root.account) !== account) {
+    throw new BrokerParseError(`Tiger assets do not match requested account ${account}.`);
+  }
   const segments = root?.segments;
   const sec = Array.isArray(segments)
     ? asRecord(segments.find((segment) => asRecord(segment)?.category === 'S'))
@@ -280,8 +283,11 @@ function mapGlobalAssets(data: unknown, account: string, asOf: string, skipped: 
   metrics?: BrokerConnectionMetrics;
 } {
   const rows = Array.isArray(data) ? data : data != null ? [data] : [];
-  const match =
-    rows.find((r) => asRecord(r)?.account === account) ?? rows[0];
+  const named = rows.filter(r => typeof asRecord(r)?.account === 'string');
+  const match = named.length
+    ? named.find(r => asRecord(r)?.account === account)
+    : rows.length === 1 ? rows[0] : undefined;
+  if (!match && rows.length > 0) throw new BrokerParseError(`Tiger assets do not uniquely match requested account ${account}.`);
   const rec = asRecord(match);
   if (!rec) return { cash: [] };
   const marketValues = currencyMap(rec.marketValues ?? rec.market_values);
@@ -323,7 +329,7 @@ export function mapTigerBundleToStatement(bundle: TigerRawBundle, channel: strin
   const assetsData = bundle.assets.envelope.data;
   const mapped =
     bundle.assets.method === 'prime_assets'
-      ? mapPrimeAssets(assetsData, as_of, skipped)
+      ? mapPrimeAssets(assetsData, bundle.account, as_of, skipped)
       : mapGlobalAssets(assetsData, bundle.account, as_of, skipped);
   if (mapped.cash.length === 0) {
     throw new BrokerParseError('Tiger assets have no importable cash sleeves.');

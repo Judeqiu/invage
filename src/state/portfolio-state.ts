@@ -273,6 +273,25 @@ export interface BrokerConnection {
   metrics?: BrokerConnectionMetrics;
 }
 
+/** Shared, write-only broker access for one or more account connections. */
+export interface BrokerAccessSource {
+  broker_id: string;
+  credentials: Record<string, string>;
+}
+
+/** One brokerage account and one immutable custody channel. */
+export interface BrokerAccountConnection {
+  broker_id: string;
+  source_id: string;
+  label: string;
+  account_id?: string;
+  channel: string;
+  enabled: boolean;
+  config: Record<string, string>;
+  last_sync?: BrokerConnectionLastSync;
+  metrics?: BrokerConnectionMetrics;
+}
+
 export interface InvestorState extends UserState {
   /** Imported execution history, independent of the current holdings snapshot. */
   option_executions?: import('../brokers/option-executions.js').OptionExecution[];
@@ -289,7 +308,8 @@ export interface InvestorState extends UserState {
    * Per-connector ingest config. Key = connector id (catalog).
    * Unknown keys fail on read.
    */
-  broker_connections?: Record<string, BrokerConnection>;
+  broker_connections?: Record<string, BrokerConnection | BrokerAccountConnection>;
+  broker_sources?: Record<string, BrokerAccessSource>;
 }
 
 export function getPortfolio(state: InvestorState): Record<string, Holding> {

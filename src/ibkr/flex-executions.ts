@@ -2,7 +2,7 @@ import { assertOptionExecution, decimal, mergeOptionExecutions, type OptionExecu
 import { SaxesParser } from 'saxes';
 
 /** Explicit IBKR schema enums; never infer trade intent from descriptions. */
-export function parseFlexOptionExecutions(xml: string): OptionExecution[] | undefined {
+export function parseFlexOptionExecutions(xml: string, channel = 'ibkr'): OptionExecution[] | undefined {
   const statements: Record<string, string>[] = [];
   const trades: Record<string, string>[] = [];
   const path: string[] = [];
@@ -58,7 +58,7 @@ export function parseFlexOptionExecutions(xml: string): OptionExecution[] | unde
     const quantity = decimal(required('quantity'));
     if (quantity.startsWith('-') !== (side === 'SELL')) throw new Error('Execution quantity sign disagrees with buySell');
     rows.push(assertOptionExecution({
-      channel: 'ibkr', account_id: account, execution_id: required('tradeID'), contract_id: required('conid'),
+      channel, account_id: account, execution_id: required('tradeID'), contract_id: required('conid'),
       executed_at: `${timestamp[1]}-${timestamp[2]}-${timestamp[3]}T${timestamp[4]}:${timestamp[5]}:${timestamp[6]}`,
       underlying: required('underlyingSymbol'), right: right === 'P' ? 'put' : 'call',
       expiry: `${expiry[1]}-${expiry[2]}-${expiry[3]}`, strike: required('strike'), multiplier: required('multiplier'),

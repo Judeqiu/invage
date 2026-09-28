@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { getBrokerAdapter } from '../src/brokers/adapter.js';
 import { getBrokerConnector } from '../src/brokers/catalog.js';
 import { BrokerParseError } from '../src/brokers/errors.js';
-import { fetchMooMooRawBundle } from '../src/moomoo/moomoo-client.js';
+import { fetchMooMooAuthorizedAccounts, fetchMooMooRawBundle } from '../src/moomoo/moomoo-client.js';
 import { looksLikeOptionCode, mapMooMooBundleToStatement } from '../src/moomoo/moomoo-map.js';
 import { moomooSignContent, parseSignAlg, signMooMooRequest } from '../src/moomoo/moomoo-sign.js';
 import type { MooMooEnvelope, MooMooRawBundle } from '../src/moomoo/moomoo-types.js';
@@ -210,6 +210,18 @@ describe('MooMoo fetchRaw', () => {
     expect(raw.funds).toEqual(FUNDS);
   });
 
+  it('discovers account choices with exact IDs and only masked card endings', async () => {
+    const accounts = await fetchMooMooAuthorizedAccounts(
+      { app_key: 'ak', private_key: ED, sign_alg: 'Ed25519' },
+      { fetchImpl: async () => new Response('{"s":"ok","d":{"accounts":[{"account_id":283726802396297711,"security_firm":"FUTUSG","univs_account_card_number":"1008200166158766","account_card_number":"1001100321501181"},{"account_id":283726798101330415,"security_firm":"FUTUSG","univs_account_card_number":"1008200166158766","account_card_number":"1001100521937583"}]}}') },
+    );
+    expect(accounts).toEqual([
+      { account_id: '283726802396297711', security_firm: 'FUTUSG', card_last4: '8766', trading_card_last4: '1181' },
+      { account_id: '283726798101330415', security_firm: 'FUTUSG', card_last4: '8766', trading_card_last4: '7583' },
+    ]);
+    expect(JSON.stringify(accounts)).not.toContain('1008200166158766');
+  });
+
   it('fails when multiple accounts and acc_id is omitted', async () => {
     const two = {
       s: 'ok',
@@ -225,7 +237,7 @@ describe('MooMoo fetchRaw', () => {
         { app_key: 'ak', private_key: ED, sign_alg: 'Ed25519' },
         { fetchImpl: mockFetch({ authorized: two, funds: FUNDS, positions: POSITIONS }) },
       ),
-    ).rejects.toThrow(/paste acc_id/);
+    ).rejects.toThrow(/select one of the discovered accounts/);
     await expect(
       fetchMooMooRawBundle(
         { app_key: 'ak', private_key: ED, sign_alg: 'Ed25519' },
@@ -270,11 +282,11 @@ describe('adapter + catalog', () => {
     const moomoo = getBrokerConnector('moomoo');
     expect(moomoo.displayName).toBe('MooMoo');
     const steps = (moomoo.helpSteps ?? []).join('\n');
-    expect(steps).toMatch(/Leave Trading account ID empty/);
-    expect(steps).toMatch(/moomoo ID/);
-    expect(moomoo.credentialFields.find((f) => f.id === 'acc_id')?.help).toMatch(/moomoo ID/);
+    expect(steps).toMatch(/discovers the authorized trading accounts/);
+    expect(steps).toMatch(/choose the account from the list/);
+    expect(moomoo.credentialFields.find((f) => f.id === 'acc_id')?.help).toMatch(/Select one here/);
     expect(readFileSync(join(process.cwd(), 'webui/brokers/guide/index.html'), 'utf8')).toMatch(
-      /Leave Trading account ID blank/,
+      /discovers authorized accounts automatically/,
     );
     expect(getBrokerAdapter('moomoo').usesCsvTables).toBe(false);
     expect(getBrokerAdapter('tiger').usesCsvTables).toBe(false);

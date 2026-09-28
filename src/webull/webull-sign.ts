@@ -18,7 +18,7 @@ export function webullSignContent(args: {
     ...args.query,
     'x-app-key': args.appKey,
     'x-timestamp': args.timestamp,
-    'x-signature-algorithm': 'HMAC-SHA256',
+    'x-signature-algorithm': 'HMAC-SHA1',
     'x-signature-version': '1.0',
     'x-signature-nonce': args.nonce,
     host: args.host,
@@ -29,11 +29,11 @@ export function webullSignContent(args: {
     .join('&');
   let str3 = `${args.path}&${str1}`;
   if (args.body) {
-    str3 += `&${createHash('sha256').update(args.body).digest('hex').toUpperCase()}`;
+    str3 += `&${createHash('md5').update(args.body).digest('hex').toUpperCase()}`;
   }
   return rfc3986Encode(str3);
 }
 
 export function signWebullRequest(encoded: string, appSecret: string): string {
-  return createHmac('sha256', `${appSecret}&`).update(encoded, 'utf8').digest('base64');
+  return createHmac('sha1', `${appSecret}&`).update(encoded, 'utf8').digest('base64');
 }

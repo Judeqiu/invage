@@ -70,7 +70,8 @@ mapFlexDocToStatement                    src/ibkr/flex-map.ts
         └─ parse fail → drive/&lt;slug&gt;/broker-raw/ibkr/&lt;id&gt;/
                          raw.xml + case.yaml  (triage, no books write)
 </code></pre>
-<p>Entry points: Settings / Brokers <strong>Sync</strong>, tool <code>sync_broker</code> / <code>sync_ibkr_flex</code>. All of them call <code>syncBrokerConnection</code> (<code>src/brokers/connections.ts</code>).</p>
+<p>Entry points: Settings → Brokers <strong>Sync</strong>, tool <code>sync_broker</code> / <code>sync_ibkr_flex</code>. Account connections call <code>syncBrokerAccount</code> (<code>src/brokers/accounts.ts</code>); legacy connector-keyed configurations still call <code>syncBrokerConnection</code> (<code>src/brokers/connections.ts</code>) until migrated.</p>
+<p><strong>Current account model:</strong> each selected IBKR account owns a distinct channel. New raw archives live under <code>broker-sync/&lt;channel&gt;/</code> or <code>broker-triage/&lt;channel&gt;/</code>. The older <code>ibkr-flex/</code> and <code>broker-raw/ibkr/</code> paths shown below remain readable legacy paths.</p>
 <p>A second path, <strong>Trades → Import XML</strong>, is <code>POST /trades/import</code> → <code>importOptionExecutions</code>. It parses <strong>Trades only</strong>, merges executions, and <strong>does not</strong> replace lots or cash and <strong>does not</strong> write <code>ibkr-flex/</code>.</p>
 <h2>Step 1 — Fetch</h2>
 <p><code>ibkrFlexAdapter.fetchRaw</code> calls <code>fetchFlexStatement({ token, queryId: activity_query_id })</code>.</p>
@@ -327,8 +328,12 @@ option_executions: []          # would list AMD SELLs if Trades were Executions-
 <td>→ <code>BrokerStatement</code></td>
 </tr>
 <tr>
+<td><code>src/brokers/accounts.ts</code></td>
+<td>Account-scoped <code>syncBrokerAccount</code> and multi-account Flex selection</td>
+</tr>
+<tr>
 <td><code>src/brokers/connections.ts</code></td>
-<td><code>syncBrokerConnection</code></td>
+<td>Legacy <code>syncBrokerConnection</code></td>
 </tr>
 <tr>
 <td><code>src/brokers/apply-statement.ts</code></td>

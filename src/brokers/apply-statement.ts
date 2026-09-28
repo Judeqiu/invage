@@ -123,10 +123,18 @@ export async function applyBrokerStatement(
   doc: BrokerStatement,
   _raw?: Buffer,
   beforeSave?: (result: BrokerApplyResult) => void,
+  connection?: { brokerId: string; channel: string },
 ): Promise<BrokerApplyResult> {
   const { state } = snapshot;
-  const def = getBrokerConnector(connectorId);
-  const channel = def.channel;
+  if (state.broker_sources && !connection) throw new Error('Account connection ID and channel are required for broker apply.');
+  if (connection) {
+    const stored = state.broker_connections?.[connectorId];
+    if (!stored || !('broker_id' in stored) || stored.broker_id !== connection.brokerId ||
+        stored.channel !== connection.channel || stored.account_id !== doc.account_id) {
+      throw new Error('Broker statement account/channel differs from selected connection.');
+    }
+  }
+  const channel = connection?.channel ?? getBrokerConnector(connectorId).channel;
   // Validate all incoming history before ledger writes or snapshot mutation.
   const executions = doc.option_executions === undefined ? undefined : mergeOptionExecutions(
     state.option_executions === undefined ? [] : state.option_executions,

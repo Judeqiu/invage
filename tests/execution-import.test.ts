@@ -13,6 +13,7 @@ const { createDashboardApiRouter } = await import('../src/webapp/dashboard-api.j
 const { parseFlexQueryXml } = await import('../src/ibkr/flex-parse.js');
 const { mapFlexDocToStatement } = await import('../src/ibkr/flex-map.js');
 const { applyBrokerStatement } = await import('../src/brokers/apply-statement.js');
+const { addBrokerAccount, addBrokerSource, readBrokerAccountModel } = await import('../src/brokers/accounts.js');
 const xml = `<FlexQueryResponse><FlexStatement accountId="U1" fromDate="20260909" toDate="20260909"><OpenPositions/><CashReport><CashReportCurrency currency="USD" endingCash="100"/></CashReport><Trades><Trade accountId="U1" levelOfDetail="EXECUTION" assetCategory="OPT" tradeID="1" conid="123" dateTime="20260909;103015" buySell="SELL" openCloseIndicator="O" quantity="-2" multiplier="100" underlyingSymbol="PATH" putCall="C" strike="20" expiry="20270319" currency="USD" proceeds="5140.00" ibCommission="-1.23456789" ibCommissionCurrency="USD"/></Trades></FlexStatement></FlexQueryResponse>`;
 let snapshot: InvestorSnapshot;
 beforeEach(() => {
@@ -46,6 +47,17 @@ it('aborts a conflicting sync before changing the holdings snapshot', async () =
 it('normal Flex parsing maps execution history into the canonical statement', () => {
   const doc = mapFlexDocToStatement(parseFlexQueryXml(xml), 'ibkr');
   expect(doc.option_executions?.[0].commission).toBe('-1.23456789');
+});
+
+it('imports execution history onto the selected account channel', async () => {
+  const source = addBrokerSource(snapshot.state, 'ibkr', { token: 'secret1234' });
+  const id = addBrokerAccount(snapshot.state, { source_id: source, account_id: 'U1', label: 'Main',
+    config: { activity_query_id: '111' } });
+  addBrokerAccount(snapshot.state, { source_id: source, account_id: 'U2', label: 'Second',
+    config: { activity_query_id: '111' } });
+  await importOptionExecutions(snapshot, xml, id);
+  expect(snapshot.state.option_executions?.[0].channel).toBe(readBrokerAccountModel(snapshot.state).connections[id].channel);
+  await expect(importOptionExecutions(snapshot, xml.replaceAll('U1', 'U3'))).rejects.toThrow(/No unique IBKR connection/);
 });
 
 function app(authenticated = true) {

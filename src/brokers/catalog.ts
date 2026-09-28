@@ -40,7 +40,7 @@ export const BROKER_CATALOG: readonly BrokerConnectorDef[] = [
     displayName: 'Interactive Brokers',
     channel: IBKR_CHANNEL,
     capability:
-      'Read-only IBKR Flex Web Service. Pulls Open Positions and Cash Report into channel ibkr and imports option execution history when Trades is included. Cannot trade or submit orders. Activity data is prior-day; dashboard marks stay Yahoo.',
+      'Read-only IBKR Flex Web Service. Pulls Open Positions and Cash Report into the selected account channel and imports option execution history when Trades is included. Cannot trade or submit orders. Activity data is prior-day; dashboard marks stay Yahoo.',
     credentialFields: [
       {
         id: 'token',
@@ -83,7 +83,7 @@ export const BROKER_CATALOG: readonly BrokerConnectorDef[] = [
     displayName: 'Tiger Brokers',
     channel: 'tiger',
     capability:
-      'Read-only Tiger Brokers OpenAPI. Pulls a live snapshot of stock, option, and fund positions plus per-currency cash into channel tiger. Cannot trade or submit orders. Snapshot time is the UTC date of Sync (not prior-day Flex). Dashboard marks stay Yahoo. Option fill history is not imported (IBKR Flex Trades only). Paper accounts ingest only if you paste a paper account id.',
+      'Read-only Tiger Brokers OpenAPI. Pulls a live snapshot of stock, option, and fund positions plus per-currency cash into the selected account channel. Cannot trade or submit orders. Snapshot time is the UTC date of Sync (not prior-day Flex). Dashboard marks stay Yahoo. Option fill history is not imported (IBKR Flex Trades only). Paper accounts ingest only if you select a paper account ID.',
     credentialFields: [
       {
         id: 'tiger_id',
@@ -132,7 +132,7 @@ export const BROKER_CATALOG: readonly BrokerConnectorDef[] = [
     ],
     helpNotes: [
       'Optional IP whitelist: if Settings shows an egress IPv4, paste it on the developer portal. Rotating egress without a whitelist is fine; a stale whitelist fails like IBKR 1013.',
-      'Invage never places or cancels orders. Do not paste a paper account unless you want sim lots on channel tiger.',
+      'Invage never places or cancels orders. Choose a paper account only if you want simulated lots in its own account channel.',
     ],
     helpSteps: [
       'Open a funded Tiger account and sign the API agreement at https://developer.itigerup.com/profile.',
@@ -149,7 +149,7 @@ export const BROKER_CATALOG: readonly BrokerConnectorDef[] = [
     displayName: 'MooMoo',
     channel: 'moomoo',
     capability:
-      'Read-only moomoo Cloud Open API (not the local OpenD gateway). Pulls a live snapshot of stock and listed option lots plus per-currency cash into channel moomoo. Cannot trade or submit orders. Requests trade:read only. Snapshot time is the UTC date of Sync. Dashboard marks stay Yahoo. Option fill history is not imported (IBKR Flex Trades only). Channel moomoo is not jude_futu — existing Futu-tagged lots and FDs stay until you move them.',
+      'Read-only moomoo Cloud Open API (not the local OpenD gateway). Pulls a live snapshot of stock and listed option lots plus per-currency cash into the selected account channel. Cannot trade or submit orders. Requests trade:read only. Snapshot time is the UTC date of Sync. Dashboard marks stay Yahoo. Option fill history is not imported (IBKR Flex Trades only). Broker-managed moomoo channels are separate from jude_futu — existing Futu-tagged lots and FDs stay until you move them.',
     credentialFields: [
       {
         id: 'app_key',
@@ -169,10 +169,10 @@ export const BROKER_CATALOG: readonly BrokerConnectorDef[] = [
       },
       {
         id: 'acc_id',
-        label: 'Trading account ID',
+        label: 'Trading account',
         type: 'text',
         required: false,
-        help: 'Leave blank on the first sync. Paste only the long OpenAPI account_id (about 18 digits) that Sync lists when more than one account is authorized. Do not paste your moomoo ID (牛牛号) or the account card number from the app.',
+        help: 'Invage discovers trading accounts from your AppKey. Select one here only if Moomoo authorizes more than one.',
       },
       {
         id: 'sign_alg',
@@ -184,15 +184,15 @@ export const BROKER_CATALOG: readonly BrokerConnectorDef[] = [
     ],
     helpNotes: [
       'Do not install OpenD and do not unlock trade. Invage talks only to https://webapi.moomoo.com.',
-      'Trading account ID is the OpenAPI account_id from Get Authorized Trading Accounts. The moomoo ID in the app profile and the card number on the account screen are different numbers and will fail sync.',
+      'Invage gets trading accounts from the OpenAPI Get Authorized Trading Accounts endpoint. The profile moomoo ID and account card number are different identifiers.',
       'jude_futu is a manual custody tag. Enabling moomoo does not move those lots or FDs.',
     ],
     helpSteps: [
       'Log in at https://open.moomoo.com/dashboard and open User Center.',
       'Create an AppKey. Choose Ed25519 or RSA, upload the matching public key, and keep the private key on this machine.',
       'Copy the AppKey ID into AppKey ID. Paste the private key into AppKey private key. Set Signature algorithm to the algorithm you chose (Ed25519 if you leave it blank).',
-      'Leave Trading account ID empty, Save, then Sync. If this AppKey can read one account, Invage uses that account_id.',
-      'If Sync lists several accounts, copy one long account_id from that message into Trading account ID, Save, and Sync again. Match the card ending (•• and four digits) to the account in the app. Do not paste your moomoo ID or the full card number.',
+      'Save the AppKey and private key. Invage discovers the authorized trading accounts automatically.',
+      'If Moomoo returns one account, Sync uses it. If it returns several, choose the account from the list using its account card ending, then Save and Sync.',
     ],
     helpHref: 'https://open.moomoo.com/api/overview/getting-started',
     helpHrefLabel: 'moomoo OpenAPI docs',
@@ -203,7 +203,7 @@ export const BROKER_CATALOG: readonly BrokerConnectorDef[] = [
     displayName: 'Webull',
     channel: 'webull',
     capability:
-      'Read-only Webull OpenAPI. Pulls a live snapshot of equity and single-leg listed option lots plus per-currency cash into channel webull. Cannot trade or submit orders. Snapshot time is the UTC date of Sync. Dashboard marks stay Yahoo. Combo/multi-leg options are skipped. Option fill history is not imported (IBKR Flex Trades only). Paper/sandbox hosts are not used.',
+      'Read-only Webull OpenAPI. Pulls a live snapshot of equity and single-leg listed option lots plus per-currency cash into the selected account channel. Cannot trade or submit orders. Snapshot time is the UTC date of Sync. Dashboard marks stay Yahoo. Combo/multi-leg options are skipped. Option fill history is not imported (IBKR Flex Trades only). Paper/sandbox hosts are not used.',
     credentialFields: [
       {
         id: 'app_key',
@@ -238,7 +238,7 @@ export const BROKER_CATALOG: readonly BrokerConnectorDef[] = [
         label: 'Access token',
         type: 'secret',
         required: false,
-        help: 'Paste if Sync says Webull requires an access token (in-app 2FA). Rotate when it expires. Invage does not poll the Webull app.',
+        help: 'For in-app 2FA, use Create token below and approve it in Webull, or paste a token here. Rotate when it expires.',
       },
     ],
     helpNotes: [
@@ -251,7 +251,7 @@ export const BROKER_CATALOG: readonly BrokerConnectorDef[] = [
       'Avatar → Developer Tool → My Application. Submit the API application and wait for approval (often 1–2 business days).',
       'API Keys Management → register the app → Generate Key. Copy App Key and App Secret (secret shown once).',
       'Paste App Key, App Secret, and region (us / hk / sg / … matching that site). Save, then Sync.',
-      'If Sync says multiple accounts, paste account_id from the account list. If it asks for an access token, approve the request in the Webull app (or paste the token) and Sync again.',
+      'If Sync says multiple accounts, paste account_id from the account list. If it asks for an access token, click Create token, approve it in the Webull app, check that its status is NORMAL, then Sync again.',
     ],
     helpHref: 'https://developer.webull.com/apis/docs/getting-started',
     helpHrefLabel: 'Webull OpenAPI docs',

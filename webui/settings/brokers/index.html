@@ -71,7 +71,7 @@
       color: #44403c;
     }
     label.field span.help { display: block; font-weight: 400; color: #78716c; margin-top: 2px; }
-    input[type="text"], input[type="password"], textarea {
+    input[type="text"], input[type="password"], textarea, select {
       width: 100%;
       margin-top: 4px;
       border: 1px solid #e7e5e4;
@@ -80,6 +80,9 @@
       font-size: 13px;
     }
     textarea { min-height: 5.5rem; font-family: ui-monospace, monospace; }
+    .account-picker { border-top: 1px solid #e7e5e4; margin-top: 14px; padding-top: 10px; }
+    .account-picker .hint { margin: 5px 0 8px; line-height: 1.5; }
+    .account-message { color: #9f1239; font-size: 11px; line-height: 1.5; }
     .toggle {
       display: flex;
       align-items: center;
@@ -113,11 +116,9 @@
   </style>
 </head>
 <body>
-  <p class="hint" style="margin-bottom:10px">
-    <a href="/brokers/guide" target="_parent">Setup guide</a> — how to get Interactive Brokers, Tiger, MooMoo, and Webull credentials.
-  </p>
+  <p class="hint" style="margin-bottom:10px">Connect and manage brokerage accounts here. Setup instructions appear with each broker.</p>
   <div id="error" class="error" hidden></div>
   <div id="list"></div>
-  <script src="app.js?v=20260924"></script>
+  <script src="accounts.js?v=20260927"></script>
 </body>
 </html>
