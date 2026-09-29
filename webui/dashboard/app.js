@@ -2064,16 +2064,8 @@ function renderDate(dateKey, channelKey = selectedChannel) {
   }
   syncDateControls();
 
-  destroyCharts();
   renderWarnings();
-  // High-level first, then charts, then detail tables.
   renderOverview(view);
-  renderAllocation(view);
-  renderBar(view);
-  renderCharts(view);
-  renderInsights(view);
-  renderDetailTables(view);
-  renderDepositsTable(view);
 }
 
 function historyDates() {
@@ -2202,21 +2194,6 @@ function renderEmpty(body) {
     el.channelPills.innerHTML =
       '<button type="button" class="chip-btn on" data-channel="merged">All platforms</button>';
   }
-  destroyCharts();
-  if (el.channelDetailBody) {
-    el.channelDetailBody.innerHTML =
-      `<tr><td colspan="13" class="muted" style="text-align:center;padding:1.5rem">${escapeHtml(body.message || 'No holdings yet.')}</td></tr>`;
-  }
-  if (el.channelDetailMeta) el.channelDetailMeta.textContent = '';
-  if (el.holdingsDetailBody) {
-    el.holdingsDetailBody.innerHTML =
-      '<tr><td colspan="15" class="muted" style="text-align:center;padding:1.5rem">No holdings yet.</td></tr>';
-  }
-  if (el.holdingsDetailMeta) el.holdingsDetailMeta.textContent = '';
-  el.allocationGrid.innerHTML = '';
-  el.barGrid.innerHTML = '';
-  el.chartGrid.innerHTML = '';
-  el.insightGrid.innerHTML = '';
   if (el.expiryBlock) el.expiryBlock.classList.add('hidden');
   if (el.premiumBlock) el.premiumBlock.classList.add('hidden');
   if (el.openOptionsBlock) el.openOptionsBlock.classList.add('hidden');

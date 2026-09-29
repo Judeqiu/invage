@@ -257,6 +257,9 @@ try {
   assert(!(await page.$('#openOptions .option-ledger-row')), 'month row collapses');
   await page.click('#openOptions [data-option-month="2026-09"]');
   assert(await page.$('#openOptions .option-ledger-row'), 'month row expands');
+  for (const label of ['Allocation', 'Performance by position', 'Performance over time', 'Key insights', 'Channel details', 'Holdings detail', 'Fixed deposits', 'Methodology']) {
+    assert(!(await page.$(`section[aria-label="${label}"]`)), `${label} section removed`);
+  }
   assert(await page.$('#channelPills [data-channel="moomoo"]'), 'dashboard moomoo chip');
   await page.click('#channelPills [data-channel="moomoo"]');
   await page.waitForFunction(() => /moomoo desk/i.test(document.getElementById('deskEyebrow')?.textContent || ''));

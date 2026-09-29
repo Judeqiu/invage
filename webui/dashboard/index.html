@@ -8,7 +8,6 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="../report.css" />
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <link rel="stylesheet" href="./page.css" />
 
 </head>
@@ -80,132 +79,9 @@
       <div id="channelStrip" class="controls-hidden"></div>
       <p id="overviewMeta" class="controls-hidden"></p>
 
-      <section class="section" aria-label="Allocation">
-        <div class="section-head">
-          <div class="section-title">Allocation</div>
-        </div>
-        <div class="allocation-grid" id="allocationGrid"></div>
-      </section>
-
-      <section class="section" aria-label="Performance by position">
-        <div class="section-head">
-          <div class="section-title">Performance by position</div>
-        </div>
-        <div class="bar-grid" id="barGrid"></div>
-      </section>
-
-      <section class="section" aria-label="Performance over time">
-        <div class="section-head">
-          <div class="section-title">Performance over time</div>
-        </div>
-        <div class="chart-grid" id="chartGrid"></div>
-      </section>
-
-      <section class="section insights" aria-label="Key insights">
-        <div class="section-title">Key insights</div>
-        <div class="insight-grid" id="insightGrid"></div>
-      </section>
-
-      <hr class="divider" />
-
-      <!-- ========== DETAIL ========== -->
-      <div class="level-label detail">Detail</div>
-
-      <section class="section" id="channelDetailSection" aria-label="Channel details">
-        <div class="section-head">
-          <div class="section-title">Channels</div>
-          <p class="section-meta" id="channelDetailMeta"></p>
-        </div>
-        <div class="table-wrap">
-          <table class="report detail-table" id="channelDetailTable">
-            <thead>
-              <tr>
-                <th>Channel</th>
-                <th class="num">Holdings</th>
-                <th class="num">Eq / Opt / Fd</th>
-                <th class="num">Positions MTM</th>
-                <th class="num">Cost</th>
-                <th class="num">P/L</th>
-                <th class="num">P/L %</th>
-                <th class="num">Cash</th>
-                <th class="num">FD Principal</th>
-                <th class="num">NAV</th>
-                <th class="num">Cash Wt</th>
-                <th class="num">Fund Idx</th>
-                <th class="num">vs Bench</th>
-              </tr>
-            </thead>
-            <tbody id="channelDetailBody"></tbody>
-          </table>
-        </div>
-      </section>
-
-      <section class="section" id="holdingsDetailSection" aria-label="Holdings detail">
-        <div class="section-head">
-          <div class="section-title">Holdings</div>
-          <p class="section-meta" id="holdingsDetailMeta"></p>
-        </div>
-        <div class="table-wrap">
-          <table class="report detail-table" id="holdingsDetailTable">
-            <thead>
-              <tr>
-                <th>Channel</th>
-                <th>Position</th>
-                <th>Type</th>
-                <th>Category</th>
-                <th class="num">Units</th>
-                <th class="num">Avg Cost</th>
-                <th class="num">Price</th>
-                <th class="num">Cost</th>
-                <th class="num">Value</th>
-                <th class="num">Weight</th>
-                <th class="num">P/L</th>
-                <th class="num">P/L %</th>
-                <th class="num">Index</th>
-                <th>Pricing</th>
-                <th>Notes</th>
-              </tr>
-            </thead>
-            <tbody id="holdingsDetailBody"></tbody>
-          </table>
-        </div>
-      </section>
-
-      <section class="section deposits-section hidden" id="depositsSection" aria-label="Fixed deposits">
-        <div class="section-head">
-          <div class="section-title">Fixed deposits</div>
-        </div>
-        <table class="report deposits-table">
-          <thead>
-            <tr>
-              <th>Deposit</th>
-              <th>Channel</th>
-              <th class="num">Principal</th>
-              <th class="num">Interest</th>
-              <th>Term</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody id="depositsTableBody"></tbody>
-        </table>
-      </section>
-
-      <section class="section methodology" aria-label="Methodology">
-        <h3>Methodology</h3>
-        <p>
-          <strong>Fund Index</strong> = (Current Portfolio Value / Base Portfolio Value) × 100<br>
-          <strong>Base Portfolio Value</strong> = Σ(Units × Actual Purchase Price) = Total Cost Basis<br>
-          <strong>Current Portfolio Value</strong> = Σ(Units × Current Stock Price)<br>
-          <strong>NAV</strong> = Positions MTM + free cash + fixed-deposit principal (interest not in NAV v1)<br>
-          <strong>Fixed deposits</strong> count in NAV but are <strong>not free cash</strong> (not deployable until maturity/remove)<br>
-          <strong>Benchmark Index</strong> = (Current ETF Price / ETF Price on Base Date) × 100<br><br>
-          Benchmark prices are <strong>Adjusted Close</strong> (accounts for dividends and splits).<br>
-          Fund and Benchmark are both rebased to 100 at the first snapshot date for direct comparison.
-        </p>
-      </section>
     </div>
   </div>
-  <footer>Live data · Yahoo Finance · Benchmark SPY · Not financial advice</footer>
+  <footer>Live data · Yahoo Finance · Broker snapshots · Not financial advice</footer>
   <script src="../report.js"></script>
   <script src="./app.js"></script>
 </body>
