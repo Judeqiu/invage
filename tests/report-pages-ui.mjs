@@ -16,7 +16,7 @@ if (!chrome) throw new Error('CHROME_PATH not set and no Chrome binary found');
 const payload = {
   slug: 'demo',
   displayName: 'Demo',
-  generatedAt: '2026-09-21T12:00:00.000Z',
+  generatedAt: '2026-09-16T12:00:00.000Z',
   empty: false,
   productProfile: 'consultant',
   productName: 'Victor Consultant',
@@ -66,12 +66,13 @@ const payload = {
           ticker: 'AAPL  260918P00140000',
           label: 'AAPL 19-SEP-26 140 Put',
           units: 1,
-          avgCost: 5,
-          price: 2,
-          cost: 500,
-          value: -200,
-          pl: 300,
-          plPct: 60,
+          avgCost: 500,
+          price: 300,
+          brokerMark: 200,
+          cost: -500,
+          value: -300,
+          pl: 200,
+          plPct: 40,
           weightPct: 1,
           instrument: 'option',
           channel: 'ibkr',
@@ -87,7 +88,7 @@ const payload = {
             multiplier: 100,
             underlying: 'AAPL',
             settlement: 'physical',
-            mark: 2,
+            mark: 200,
           },
         },
       ],
@@ -237,6 +238,25 @@ try {
   const dashText = await page.evaluate(() => document.body.innerText);
   assert(/Portfolio snapshot/i.test(dashText), 'dashboard h1');
   assert(/Premium\s*·\s*open/i.test(dashText), 'premium kpi');
+  assert(/Open options positions · broker view/i.test(dashText), 'open options section');
+  assert(/Assignment exposure/i.test(dashText), 'assignment exposure column');
+  assert(/Cst bss \(premium received\)/i.test(dashText), 'premium column');
+  assert(/% of max/i.test(dashText), 'premium capture column');
+  assert(await page.$('#openOptions .option-month-total'), 'expiry month total row');
+  assert(await page.$('#openOptions .option-ledger-row'), 'option contract row');
+  const optionCells = await page.$$eval('#openOptions .option-ledger-row td', (cells) => cells.map((cell) => cell.textContent.trim()));
+  assert.equal(optionCells[1], '-1', 'short position is signed');
+  assert.equal(optionCells[5], '5.00', 'average premium is per share');
+  assert.equal(optionCells[6], '2.00', 'broker mark wins over live option price');
+  assert.equal(optionCells[7], '-$200.00', 'market value uses broker mark');
+  assert.equal(optionCells[8], '$300.00', 'P&L uses broker mark');
+  await page.click('#openOptions [data-option-right="call"]');
+  assert(!(await page.$('#openOptions .option-ledger-row')), 'right filter removes put row');
+  await page.click('#openOptions [data-option-right="all"]');
+  await page.click('#openOptions [data-option-month="2026-09"]');
+  assert(!(await page.$('#openOptions .option-ledger-row')), 'month row collapses');
+  await page.click('#openOptions [data-option-month="2026-09"]');
+  assert(await page.$('#openOptions .option-ledger-row'), 'month row expands');
   assert(await page.$('#channelPills [data-channel="moomoo"]'), 'dashboard moomoo chip');
   await page.click('#channelPills [data-channel="moomoo"]');
   await page.waitForFunction(() => /moomoo desk/i.test(document.getElementById('deskEyebrow')?.textContent || ''));

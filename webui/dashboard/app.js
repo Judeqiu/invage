@@ -68,6 +68,9 @@ const el = {
 let payload = null;
 let selectedDate = 'live';
 let selectedChannel = MERGED_CHANNEL_VIEW;
+let optionBrokerFilter = 'all';
+let optionRightFilter = 'all';
+const collapsedOptionMonths = new Set();
 
 function normalizeChannelId(raw) {
   if (!raw || raw === 'all' || raw === MERGED_CHANNEL_VIEW) return MERGED_CHANNEL_VIEW;
@@ -1357,8 +1360,8 @@ function renderPremiumEngine(view) {
 
 function renderOpenOptions(view) {
   if (!el.openOptions || !el.openOptionsBlock) return;
-  const opts = (view.positions || []).filter((p) => p.instrument === 'option' && p.option);
-  if (opts.length === 0) {
+  const allOptions = (view.positions || []).filter((p) => p.instrument === 'option' && p.option);
+  if (allOptions.length === 0) {
     el.openOptionsBlock.classList.add('hidden');
     el.openOptions.innerHTML = '';
     return;
@@ -1368,58 +1371,115 @@ function renderOpenOptions(view) {
     el.openOptionsHead.innerHTML = sectionHead(
       'Section 03',
       'Open options positions · broker view',
-      'Grouped by expiry month. Marks are $ per contract.',
+      'The full open option book — position, mark vs average premium, market value, unrealized P&L, percentage of maximum premium captured and DTE — grouped by expiry month with one total row per month.',
     );
   }
-  const prices = payload?.equityPrices || {};
-  const groups = {};
+  const brokers = [...new Set(allOptions.map((p) => p.channel || DEFAULT_CHANNEL))].sort();
+  if (optionBrokerFilter !== 'all' && !brokers.includes(optionBrokerFilter)) optionBrokerFilter = 'all';
+  const opts = allOptions.filter((p) =>
+    (optionBrokerFilter === 'all' || p.channel === optionBrokerFilter) &&
+    (optionRightFilter === 'all' || p.option.right === optionRightFilter),
+  );
+  const chip = (kind, value, label, selected) =>
+    `<button type="button" class="chip-btn${selected ? ' on' : ''}" data-option-${kind}="${escapeHtml(value)}" aria-pressed="${selected}">${escapeHtml(label)}</button>`;
+  const filters = `<div class="option-ledger-filters">
+    <div class="option-filter-group"><span class="label-eyebrow">Broker</span>
+      ${chip('broker', 'all', 'All', optionBrokerFilter === 'all')}
+      ${brokers.map((b) => chip('broker', b, b === DEFAULT_CHANNEL ? 'Unassigned' : b.toUpperCase(), optionBrokerFilter === b)).join('')}
+    </div>
+    <div class="option-filter-group"><span class="label-eyebrow">Right</span>
+      ${['all', 'put', 'call'].map((r) => chip('right', r, r.toUpperCase() === 'ALL' ? 'All' : r.toUpperCase(), optionRightFilter === r)).join('')}
+    </div>
+  </div>`;
+  const groups = new Map();
   for (const p of opts) {
     const m = p.option.expiry.slice(0, 7);
-    if (!groups[m]) groups[m] = [];
-    groups[m].push(p);
+    if (!groups.has(m)) groups.set(m, []);
+    groups.get(m).push(p);
   }
-  const months = Object.keys(groups).sort();
+  const months = [...groups.keys()].sort();
   const ccy = reportingCcyCode(view);
-  const head = ['Contract', 'Right', 'Side', 'Strike', 'DTE', 'Contracts', 'Premium', 'Mark', 'P/L', 'Channel'];
-  let html = '';
+  const columns = ['Financial instrument', 'Pos', 'Assignment exposure', 'DTE', 'Cst bss (premium received)', 'Avg price', 'Mark', 'Market value', 'Unrealized P&L', '% of max', 'Broker'];
+  const money = (n, digits = 2) => fmtPrettyMoney(n, ccy, digits);
+  const details = (p) => {
+    const o = p.option;
+    const units = Number(p.units);
+    const direction = o.side === 'short' ? -1 : 1;
+    const mark = view.isLive && Number.isFinite(p.brokerMark) ? p.brokerMark : Number(p.price);
+    const premium = Number(p.avgCost) * units;
+    const marketValue = direction * mark * units;
+    const pl = marketValue - direction * premium;
+    const exposure = o.side === 'short'
+      ? (o.right === 'put' ? 1 : -1) * o.strike * o.multiplier * units
+      : 0;
+    const asOf = view.isLive
+      ? payload?.brokerAsOf?.[p.channel] || (payload?.generatedAt || '').slice(0, 10)
+      : view.label;
+    return { position: direction * units, premium, mark, marketValue, pl, exposure,
+      dte: daysToExpiry(o.expiry, asOf),
+      captured: o.side === 'short' && premium > 0 ? (pl / premium) * 100 : null };
+  };
+  let body = '';
   for (const m of months) {
-    const rows = groups[m];
-    const prem = rows.reduce((s, p) => s + (p.option.side === 'short' ? Number(p.premiumAbsolute || 0) : 0), 0);
-    const pl = rows.reduce((s, p) => s + Number(p.pl || 0), 0);
-    const cash = rows.reduce((s, p) => s + Number(p.contingentCashObligation || 0), 0);
-    html += `<div class="metric-card table-card" style="margin-bottom:1rem">
-      <div class="filters" style="padding:0.75rem 1.1rem;border-bottom:1px solid var(--border)">
-        <strong>${escapeHtml(m)}</strong>
-        <span class="metric-sub">${rows.length} lots · premium ${fmtPrettyMoney(prem, ccy, 0)} · P/L ${fmtPrettyMoney(pl, ccy, 0)} · if-assigned cash ${fmtPrettyMoney(cash, ccy, 0)}</span>
-      </div>
-      <div class="table-scroll"><table class="report">
-        <thead><tr>${head.map((h) => `<th>${escapeHtml(h)}</th>`).join('')}</tr></thead>
-        <tbody>${rows
-          .map((p) => {
-            const o = p.option;
-            const dte = dteDays(o.expiry);
-            const itm = optionItmState(p, prices);
-            const rowClass =
-              itm === 'itm' || dte <= 7 ? 'risk-danger' : dte <= 21 ? 'risk-warning' : '';
-            return `<tr class="${rowClass}">
-              <td><strong>${escapeHtml(o.underlying || p.ticker)}</strong><div class="metric-sub">${escapeHtml(p.label)}</div></td>
-              <td>${escapeHtml(o.right)}</td>
-              <td>${escapeHtml(o.side)}</td>
-              <td class="num">${fmtUsd2(o.strike)}</td>
-              <td class="num">${dte}d</td>
-              <td class="num">${p.units}</td>
-              <td class="num">${fmtUsd2(p.avgCost)}</td>
-              <td class="num">${fmtUsd2(p.price)}</td>
-              <td class="num ${plClass(p.pl)}">${fmtSignedUsd0(p.pl)}</td>
-              <td>${escapeHtml(p.channel === DEFAULT_CHANNEL ? 'Unassigned' : p.channel)}</td>
-            </tr>`;
-          })
-          .join('')}</tbody>
-      </table></div>
-    </div>`;
+    const rows = groups.get(m).sort((a, b) =>
+      a.option.expiry.localeCompare(b.option.expiry) ||
+      a.option.underlying.localeCompare(b.option.underlying) ||
+      a.option.strike - b.option.strike,
+    );
+    const values = rows.map((p) => ({ p, ...details(p) }));
+    const sum = (key) => values.reduce((s, x) => s + x[key], 0);
+    const monthLabel = new Date(`${m}-01T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' }).toUpperCase().replace(' ', " '");
+    const earliest = Math.min(...values.map((x) => x.dte ?? Infinity));
+    body += `<tr class="option-month-total" data-month="${m}">
+      <td><button type="button" class="option-month-toggle" data-option-month="${m}" aria-expanded="${!collapsedOptionMonths.has(m)}"><span aria-hidden="true">${collapsedOptionMonths.has(m) ? '▶' : '▼'}</span> TOTAL ${monthLabel} <span class="option-month-count">(${rows.length})</span></button></td>
+      <td class="num">${sum('position')}</td>
+      <td class="num">${money(sum('exposure'), 0)}</td>
+      <td class="num">${Number.isFinite(earliest) ? `${earliest}d earliest` : '—'}</td>
+      <td class="num">${money(values.reduce((s, x) => s + (x.p.option.side === 'short' ? x.premium : 0), 0))}</td>
+      <td></td><td></td><td class="num">${money(sum('marketValue'))}</td>
+      <td class="num ${plClass(sum('pl'))}">${money(sum('pl'))}</td><td></td><td></td>
+    </tr>`;
+    if (collapsedOptionMonths.has(m)) continue;
+    body += values.map(({ p, position, premium, mark, marketValue, pl, exposure, dte, captured }) => {
+      const o = p.option;
+      const label = `${o.underlying} ${o.side.toUpperCase()} ${o.right.toUpperCase()} $${o.strike} ${o.expiry} ×${p.units}`;
+      return `<tr class="option-ledger-row">
+        <td class="option-instrument">${escapeHtml(label)}</td>
+        <td class="num">${position}</td>
+        <td class="num">${exposure ? money(exposure, 0) : '—'}</td>
+        <td class="num">${dte == null ? '—' : `${dte}d`}</td>
+        <td class="num">${o.side === 'short' ? money(premium) : '—'}</td>
+        <td class="num">${(Number(p.avgCost) / o.multiplier).toFixed(2)}</td>
+        <td class="num">${(mark / o.multiplier).toFixed(2)}</td>
+        <td class="num">${money(marketValue)}</td>
+        <td class="num ${plClass(pl)}">${money(pl)}</td>
+        <td class="num ${plClass(captured)}">${captured == null ? '—' : `${captured.toFixed(1)}%`}</td>
+        <td>${escapeHtml(p.channel === DEFAULT_CHANNEL ? 'Unassigned' : p.channel.toUpperCase())}</td>
+      </tr>`;
+    }).join('');
   }
-  el.openOptions.innerHTML = html;
+  const markHelp = view.isLive
+    ? 'Broker snapshot mark per share when available; otherwise the displayed position mark per share. A short option’s market value is negative.'
+    : 'Captured position mark per share. A short option’s market value is negative.';
+  el.openOptions.innerHTML = `${filters}<div class="metric-card table-card option-ledger-card"><div class="table-scroll"><table class="report option-ledger">
+    <thead><tr>${columns.map((h) => `<th>${escapeHtml(h)}${h === 'Mark' ? `<button type="button" class="help-dot" title="${escapeHtml(markHelp)}" aria-label="What Mark means">?</button>` : ''}</th>`).join('')}</tr></thead>
+    <tbody>${body || `<tr><td colspan="11" class="empty">No open option positions match these filters.</td></tr>`}</tbody>
+  </table></div></div>`;
 }
+
+el.openOptions?.addEventListener('click', (event) => {
+  const button = event.target.closest('button');
+  if (!button) return;
+  if (button.dataset.optionBroker != null) optionBrokerFilter = button.dataset.optionBroker;
+  else if (button.dataset.optionRight != null) optionRightFilter = button.dataset.optionRight;
+  else if (button.dataset.optionMonth != null) {
+    const month = button.dataset.optionMonth;
+    if (collapsedOptionMonths.has(month)) collapsedOptionMonths.delete(month);
+    else collapsedOptionMonths.add(month);
+  } else return;
+  const view = buildView(selectedDate, selectedChannel);
+  if (view) renderOpenOptions(view);
+});
 
 function renderChannelPills(view) {
   if (!el.channelPills) return;

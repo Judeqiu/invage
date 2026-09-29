@@ -69,6 +69,8 @@ export interface DashboardPayload {
   equityPrices?: Record<string, number>;
   /** Optional margin snapshot keyed by holding channel. Omit when none recorded. */
   connectionMetrics?: Record<string, BrokerConnectionMetrics>;
+  /** Broker statement dates keyed by holding channel. */
+  brokerAsOf?: Record<string, string>;
   /** Env product profile — copy/section gates. Not a books field. */
   productProfile: ProductProfileId;
   /** UTARUS_AGENT_NAME. */
@@ -293,6 +295,12 @@ export async function loadDashboardForSlug(
       fx,
       { resilient: true },
     );
+    for (const position of live.positions) {
+      const stored = portfolio[position.ticker];
+      if (position.instrument === 'option' && stored?.option) {
+        position.brokerMark = stored.option.mark;
+      }
+    }
   } catch (e) {
     // Last-resort: still return something usable
     warnings.push({
@@ -336,15 +344,19 @@ export async function loadDashboardForSlug(
   }
 
   let connectionMetrics: Record<string, BrokerConnectionMetrics> | undefined;
+  let brokerAsOf: Record<string, string> | undefined;
   try {
     const conns = readBrokerAccountModel(state).connections;
     const mapped: Record<string, BrokerConnectionMetrics> = {};
+    const dates: Record<string, string> = {};
     for (const [id, conn] of Object.entries(conns)) {
+      if (conn.last_sync?.ok && conn.last_sync.as_of) dates[conn.channel] = conn.last_sync.as_of;
       if (conn.metrics == null) continue;
       const ch = conn.channel;
       mapped[ch] = conn.metrics;
     }
     if (Object.keys(mapped).length > 0) connectionMetrics = mapped;
+    if (Object.keys(dates).length > 0) brokerAsOf = dates;
   } catch (e) {
     warnings.push({
       code: 'connection_metrics_unread',
@@ -367,5 +379,6 @@ export async function loadDashboardForSlug(
   };
   if (Object.keys(market.prices).length > 0) out.equityPrices = market.prices;
   if (connectionMetrics) out.connectionMetrics = connectionMetrics;
+  if (brokerAsOf) out.brokerAsOf = brokerAsOf;
   return out;
 }

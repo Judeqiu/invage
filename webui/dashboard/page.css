@@ -16,6 +16,18 @@
 .status-line { min-height: 1.1em; font-size: 0.75rem; color: var(--muted-foreground); margin: 0.5rem 0 0; }
 .status-line.error { color: var(--danger); }
 .controls-hidden { display: none !important; }
+.option-ledger-filters { display: flex; flex-wrap: wrap; gap: 0.85rem 2rem; margin: 0 0 0.9rem; }
+.option-filter-group { display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem; }
+.option-filter-group .label-eyebrow { margin-right: 0.35rem; }
+.option-ledger { min-width: 1240px !important; }
+.option-ledger th:not(:first-child), .option-ledger td:not(:first-child) { text-align: right; }
+.option-ledger th:last-child, .option-ledger td:last-child { text-align: left; }
+.option-ledger th .help-dot { margin-left: 0.35rem; vertical-align: middle; }
+.option-ledger td { padding-top: 0.62rem; padding-bottom: 0.62rem; }
+.option-ledger .option-instrument { font-weight: 600; }
+.option-ledger .option-month-total td { background: var(--muted); font-weight: 700; }
+.option-month-toggle { border: 0; background: none; color: var(--ink); font: inherit; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.option-month-count { color: var(--muted-foreground); }
 .auto-label { display: flex; align-items: center; gap: 0.35rem; font-size: 0.8rem; color: var(--muted-foreground); }
 .kpi-row { display: grid; gap: 0.75rem; grid-template-columns: 1fr 1fr; margin-top: 1.5rem; }
 @media (min-width: 900px) { .kpi-row { grid-template-columns: repeat(4, 1fr); } }

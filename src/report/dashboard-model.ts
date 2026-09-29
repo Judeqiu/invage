@@ -44,6 +44,8 @@ export interface LivePosition {
   units: number;
   avgCost: number;
   price: number;
+  /** Broker snapshot mark per contract, retained when live pricing replaces price. */
+  brokerMark?: number;
   cost: number;
   value: number;
   pl: number;
