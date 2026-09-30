@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'fs';
 import {
   HOST_AGENT_ID,
   craftPeerIds,
@@ -101,12 +102,18 @@ describe('INVAGE_PRODUCT_PROFILE roster', () => {
 
   it('shows option shortcut cards on an empty Victor chat', () => {
     const empty = chatEmptyStateFor('consultant');
+    const catalog = JSON.parse(readFileSync(new URL('../l10n/en.json', import.meta.url), 'utf8')) as Record<string, string>;
     expect(empty.startersVariant).toBe('cards');
     expect(empty.startersPlacement).toBe('above');
     expect(empty.starters?.map((starter) => starter.id)).toEqual([
       'review_options', 'explore_chain', 'covered_call', 'cash_secured_put', 'protective_put',
     ]);
     expect(empty.starters?.every((starter) => starter.message && starter.description)).toBe(true);
+    for (const starter of empty.starters ?? []) {
+      for (const field of ['label', 'description', 'message'] as const) {
+        expect(catalog[`chat.empty.starter.${starter.id}.${field}`]).toBe(starter[field]);
+      }
+    }
     expect(JSON.stringify(empty)).not.toMatch(/household|undervalued|cash flow|Aideal/i);
   });
 });

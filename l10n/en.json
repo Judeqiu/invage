@@ -16,5 +16,20 @@
   "page.brokers.guide": "Connect a broker",
   "chat.empty.title": "Your investment analyst — with household books",
   "chat.empty.body": "I analyze portfolios (live marks, playbook, undervalued screens) and can keep household books for cash flow and big decisions like buying a house. Use the Dashboard tab for portfolio value and Brokers to connect read-only IBKR Flex, Tiger, MooMoo, or Webull.",
-  "chat.empty.footer": "Tables, code, and BinDrive reports render inline. Select text to quote it into your next message. Educational analysis only — not licensed financial advice."
+  "chat.empty.footer": "Tables, code, and BinDrive reports render inline. Select text to quote it into your next message. Educational analysis only — not licensed financial advice.",
+  "chat.empty.starter.review_options.label": "Review my options",
+  "chat.empty.starter.review_options.description": "Open positions and assignment risk",
+  "chat.empty.starter.review_options.message": "Review my open option positions across connected brokers. Show mark versus cost, expiry, assignment exposure, and any missing data.",
+  "chat.empty.starter.explore_chain.label": "Explore a call or put",
+  "chat.empty.starter.explore_chain.description": "Premium, breakeven, and liquidity",
+  "chat.empty.starter.explore_chain.message": "Show the nearest listed call and put chain for SPY. Pick a concrete contract from sourced data and explain premium, breakeven, time value, liquidity, and risk.",
+  "chat.empty.starter.covered_call.label": "Covered call",
+  "chat.empty.starter.covered_call.description": "Income versus upside cap",
+  "chat.empty.starter.covered_call.message": "Help me evaluate a covered call on a stock I own. Check my share position and the available chain, then compare premium, upside cap, and assignment risk.",
+  "chat.empty.starter.cash_secured_put.label": "Cash-secured put",
+  "chat.empty.starter.cash_secured_put.description": "Premium and assignment cash",
+  "chat.empty.starter.cash_secured_put.message": "Help me evaluate a cash-secured put on SPY using the nearest expiry. Check a concrete contract, assignment cash required, breakeven, and downside risk.",
+  "chat.empty.starter.protective_put.label": "Protective put",
+  "chat.empty.starter.protective_put.description": "Downside protection and cost",
+  "chat.empty.starter.protective_put.message": "Help me compare a protective put for a stock I own using available option contracts. Show protection, premium cost, and expiry tradeoffs."
 }
