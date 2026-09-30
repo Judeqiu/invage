@@ -172,6 +172,8 @@ describe('parseFlexQueryXml', () => {
     expect(doc.openPositions.map((p) => p.quantity)).toEqual([1700, -2]);
     const { lots } = holdingsFromOpenPositions(doc.openPositions, 'ibkr');
     expect(lots.map((l) => l.mapKey)).toEqual(['AMD@ibkr', 'AMD-P-230-20260918-S@ibkr']);
+    expect(lots[1].holding.avg_price).toBe(1854.193996);
+    expect(lots[1].holding.option?.mark).toBeCloseTo(0.42);
   });
 
   it('fails BASE_SUMMARY-only when EquitySummaryInBase cash disagrees', () => {
@@ -204,6 +206,7 @@ describe('holdingsFromOpenPositions', () => {
     expect(lots[1].holding.units).toBe(2);
     expect(lots[1].holding.option?.side).toBe('short');
     expect(lots[1].holding.option?.right).toBe('call');
+    expect(lots[1].holding.avg_price).toBe(265);
     expect(lots[1].holding.option?.mark).toBe(310);
     expect(skipped).toEqual([]);
   });

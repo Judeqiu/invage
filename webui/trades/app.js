@@ -92,7 +92,7 @@ function render() {
       render();
     });
   });
-  const head = ['Ticker', 'Right', 'Side', 'Strike', 'Expiry', 'DTE', 'Contracts', 'Avg premium', 'Mark', 'P&L', 'Mark / premium received', 'If assigned', 'Channel'];
+  const head = ['Ticker', 'Right', 'Side', 'Strike', 'Expiry', 'DTE', 'Contracts', 'Avg premium / contract', 'Mark / contract', 'P&L', 'Mark / premium received', 'If assigned', 'Channel'];
   const prices = (dash && dash.equityPrices) || {};
   const groups = {};
   for (const p of rows) {

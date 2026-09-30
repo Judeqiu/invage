@@ -246,8 +246,8 @@ try {
   assert(await page.$('#openOptions .option-ledger-row'), 'option contract row');
   const optionCells = await page.$$eval('#openOptions .option-ledger-row td', (cells) => cells.map((cell) => cell.textContent.trim()));
   assert.equal(optionCells[1], '-1', 'short position is signed');
-  assert.equal(optionCells[5], '5.00', 'average premium is per share');
-  assert.equal(optionCells[6], '2.00', 'broker mark wins over live option price');
+  assert.equal(optionCells[5], '$500.00', 'average premium is per contract');
+  assert.equal(optionCells[6], '$200.00', 'broker mark per contract wins over live option price');
   assert.equal(optionCells[7], '-$200.00', 'market value uses broker mark');
   assert.equal(optionCells[8], '$300.00', 'P&L uses broker mark');
   await page.click('#openOptions [data-option-right="call"]');

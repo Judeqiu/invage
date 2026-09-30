@@ -150,6 +150,7 @@ describe('MooMoo mapping', () => {
     expect(stmt.lots.map((l) => l.ticker)).toEqual(['AAPL-P-150-20250117-S']);
     expect(stmt.lots[0]?.holding.option?.side).toBe('short');
     expect(stmt.lots[0]?.holding.units).toBe(2);
+    expect(stmt.lots[0]?.holding.avg_price).toBe(310);
     expect(stmt.lots[0]?.holding.option?.mark).toBe(250);
   });
 });

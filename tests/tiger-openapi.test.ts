@@ -146,6 +146,7 @@ describe('Tiger position mapping', () => {
     const opt = stmt.lots[1]!.holding;
     expect(opt.instrument).toBe('option');
     expect(opt.option?.side).toBe('short');
+    expect(opt.avg_price).toBe(295.8904);
     expect(opt.option?.mark).toBe(210);
     expect(opt.option?.settlement).toBe('physical');
     expect(stmt.cash).toEqual([

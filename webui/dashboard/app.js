@@ -1399,7 +1399,7 @@ function renderOpenOptions(view) {
   }
   const months = [...groups.keys()].sort();
   const ccy = reportingCcyCode(view);
-  const columns = ['Financial instrument', 'Pos', 'Assignment exposure', 'DTE', 'Cst bss (premium received)', 'Avg price', 'Mark', 'Market value', 'Unrealized P&L', '% of max', 'Broker'];
+  const columns = ['Financial instrument', 'Pos', 'Assignment exposure', 'DTE', 'Cst bss (premium received)', 'Avg premium / contract', 'Mark / contract', 'Market value', 'Unrealized P&L', '% of max', 'Broker'];
   const money = (n, digits = 2) => fmtPrettyMoney(n, ccy, digits);
   const details = (p) => {
     const o = p.option;
@@ -1449,8 +1449,8 @@ function renderOpenOptions(view) {
         <td class="num">${exposure ? money(exposure, 0) : '—'}</td>
         <td class="num">${dte == null ? '—' : `${dte}d`}</td>
         <td class="num">${o.side === 'short' ? money(premium) : '—'}</td>
-        <td class="num">${(Number(p.avgCost) / o.multiplier).toFixed(2)}</td>
-        <td class="num">${(mark / o.multiplier).toFixed(2)}</td>
+        <td class="num">${money(Number(p.avgCost))}</td>
+        <td class="num">${money(mark)}</td>
         <td class="num">${money(marketValue)}</td>
         <td class="num ${plClass(pl)}">${money(pl)}</td>
         <td class="num ${plClass(captured)}">${captured == null ? '—' : `${captured.toFixed(1)}%`}</td>
@@ -1459,10 +1459,10 @@ function renderOpenOptions(view) {
     }).join('');
   }
   const markHelp = view.isLive
-    ? 'Broker snapshot mark per share when available; otherwise the displayed position mark per share. A short option’s market value is negative.'
-    : 'Captured position mark per share. A short option’s market value is negative.';
+    ? 'Broker snapshot mark per contract when available; otherwise the displayed position mark per contract. A short option’s market value is negative.'
+    : 'Captured position mark per contract. A short option’s market value is negative.';
   el.openOptions.innerHTML = `${filters}<div class="metric-card table-card option-ledger-card"><div class="table-scroll"><table class="report option-ledger">
-    <thead><tr>${columns.map((h) => `<th>${escapeHtml(h)}${h === 'Mark' ? `<button type="button" class="help-dot" title="${escapeHtml(markHelp)}" aria-label="What Mark means">?</button>` : ''}</th>`).join('')}</tr></thead>
+    <thead><tr>${columns.map((h) => `<th>${escapeHtml(h)}${h === 'Mark / contract' ? `<button type="button" class="help-dot" title="${escapeHtml(markHelp)}" aria-label="What Mark means">?</button>` : ''}</th>`).join('')}</tr></thead>
     <tbody>${body || `<tr><td colspan="11" class="empty">No open option positions match these filters.</td></tr>`}</tbody>
   </table></div></div>`;
 }
