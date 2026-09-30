@@ -91,6 +91,26 @@ const payload = {
             mark: 200,
           },
         },
+        {
+          ticker: 'AAPL  261016P00160000',
+          label: 'AAPL 16-OCT-26 160 Put',
+          units: 1,
+          avgCost: 1700,
+          price: 1500,
+          brokerMark: 1500,
+          cost: -1700,
+          value: -1500,
+          pl: 200,
+          instrument: 'option',
+          channel: 'ibkr',
+          premiumAbsolute: 1700,
+          contingentCashObligation: 16000,
+          contingentShareObligation: 0,
+          option: {
+            right: 'put', side: 'short', strike: 160, expiry: '2026-10-16',
+            multiplier: 100, underlying: 'AAPL', settlement: 'physical', mark: 1500,
+          },
+        },
       ],
       totalValue: 25000,
       totalCost: 10500,
@@ -242,6 +262,14 @@ try {
   assert(/Assignment exposure/i.test(dashText), 'assignment exposure column');
   assert(/Cst bss \(premium received\)/i.test(dashText), 'premium column');
   assert(/% of max/i.test(dashText), 'premium capture column');
+  assert(/Prob\. ITM/i.test(dashText), 'risk probability column');
+  assert(await page.$('#expiryTable .risk-row'), 'scored risk contract');
+  assert(/\$16,000/.test(await page.$eval('#expiryRow', (node) => node.textContent)), 'radar exposure uses scored contracts');
+  await page.click('#expiryTable [data-risk-right="call"]');
+  assert(!(await page.$('#expiryTable .risk-row')), 'risk right filter hides puts');
+  await page.click('#expiryTable [data-risk-right="all"]');
+  await page.click('#expiryTable .risk-row');
+  assert(await page.$('#openOptions .option-underlying-highlight'), 'risk row highlights same underlying in Section 03');
   assert(await page.$('#openOptions .option-month-total'), 'expiry month total row');
   assert(await page.$('#openOptions .option-ledger-row'), 'option contract row');
   const optionCells = await page.$$eval('#openOptions .option-ledger-row td', (cells) => cells.map((cell) => cell.textContent.trim()));
@@ -254,9 +282,9 @@ try {
   assert(!(await page.$('#openOptions .option-ledger-row')), 'right filter removes put row');
   await page.click('#openOptions [data-option-right="all"]');
   await page.click('#openOptions [data-option-month="2026-09"]');
-  assert(!(await page.$('#openOptions .option-ledger-row')), 'month row collapses');
+  assert(!(await page.$eval('#openOptions', (node) => node.textContent.includes('AAPL SHORT PUT $140 2026-09-18'))), 'month row collapses');
   await page.click('#openOptions [data-option-month="2026-09"]');
-  assert(await page.$('#openOptions .option-ledger-row'), 'month row expands');
+  assert(await page.$eval('#openOptions', (node) => node.textContent.includes('AAPL SHORT PUT $140 2026-09-18')), 'month row expands');
   for (const label of ['Allocation', 'Performance by position', 'Performance over time', 'Key insights', 'Channel details', 'Holdings detail', 'Fixed deposits', 'Methodology']) {
     assert(!(await page.$(`section[aria-label="${label}"]`)), `${label} section removed`);
   }

@@ -65,7 +65,7 @@ export interface DashboardPayload {
    * UI shows a banner; NAV may exclude unpriced cash or use book cost for marks.
    */
   warnings?: DashboardIssue[];
-  /** Live equity quotes used for option ITM checks. Omit when none. */
+  /** Live equity and option-underlying quotes used for the assignment radar. Omit when none. */
   equityPrices?: Record<string, number>;
   /** Optional margin snapshot keyed by holding channel. Omit when none recorded. */
   connectionMetrics?: Record<string, BrokerConnectionMetrics>;
@@ -226,6 +226,25 @@ export async function loadDashboardForSlug(
 
   const market = await resolveMarketResilient(portfolio, priceOverride);
   warnings.push(...market.issues);
+  // Options can exist without a share position. Fetch their underlyings as well
+  // so the assignment radar can score those contracts from an actual quote.
+  if (!priceOverride) {
+    const optionUnderlyings = [...new Set(Object.values(portfolio)
+      .filter((holding) => holding.instrument === 'option' && holding.option?.underlying)
+      .map((holding) => holding.option!.underlying.trim().toUpperCase()))]
+      .filter((symbol) => market.prices[symbol] == null);
+    if (optionUnderlyings.length > 0) {
+      try {
+        Object.assign(market.prices, await fetchPrices(optionUnderlyings));
+      } catch (error) {
+        warnings.push({
+          code: 'option_underlying_quote_failed',
+          message: error instanceof Error ? error.message : String(error),
+          severity: 'warning',
+        });
+      }
+    }
+  }
 
   const cashes = getCashes(state);
   const moneyCurrencies = [

@@ -70,6 +70,9 @@ let selectedDate = 'live';
 let selectedChannel = MERGED_CHANNEL_VIEW;
 let optionBrokerFilter = 'all';
 let optionRightFilter = 'all';
+let riskBrokerFilter = 'all';
+let riskRightFilter = 'all';
+let highlightedUnderlying = null;
 const collapsedOptionMonths = new Set();
 
 function normalizeChannelId(raw) {
@@ -136,6 +139,50 @@ function daysToExpiry(expiry, asOf) {
   const a = Date.parse(`${asOf}T00:00:00Z`);
   if (!Number.isFinite(e) || !Number.isFinite(a)) return null;
   return Math.round((e - a) / 86400000);
+}
+
+// Normal CDF approximation, used with Black–Scholes d2 below.
+function normalCdf(x) {
+  const z = Math.abs(x);
+  const t = 1 / (1 + 0.2316419 * z);
+  const density = Math.exp(-z * z / 2) / Math.sqrt(2 * Math.PI);
+  const tail = density * t * (0.319381530 + t * (-0.356563782 + t * (1.781477937 + t * (-1.821255978 + t * 1.330274429))));
+  return x >= 0 ? 1 - tail : tail;
+}
+
+function optionFinishItmProbability(position, spot, days) {
+  const o = position.option;
+  const strike = Number(o?.strike);
+  const multiplier = Number(o?.multiplier || 100);
+  const mark = Number.isFinite(position.brokerMark) ? position.brokerMark : position.price;
+  if (position.pricingMode === 'cost' || position.markSource === 'cost') return null;
+  if (!(spot > 0 && strike > 0 && multiplier > 0 && Number.isFinite(mark) && mark >= 0) || days == null) return null;
+  if (days <= 0) return { probability: o.right === 'put' ? Number(spot < strike) : Number(spot > strike), iv: null };
+  const years = Math.max(days, 1) / 365.25;
+  const premium = mark / multiplier;
+  const intrinsic = o.right === 'put' ? Math.max(strike - spot, 0) : Math.max(spot - strike, 0);
+  const upper = o.right === 'put' ? strike : spot;
+  if (premium < intrinsic - 0.01 || premium >= upper || premium <= 0) return null;
+  const priceAt = (vol) => {
+    const vsqrt = vol * Math.sqrt(years);
+    const d1 = (Math.log(spot / strike) + vsqrt * vsqrt / 2) / vsqrt;
+    const d2 = d1 - vsqrt;
+    return o.right === 'put'
+      ? strike * normalCdf(-d2) - spot * normalCdf(-d1)
+      : spot * normalCdf(d1) - strike * normalCdf(d2);
+  };
+  let lo = 0.0001;
+  let hi = 10;
+  if (premium < priceAt(lo) - 0.01 || premium > priceAt(hi)) return null;
+  for (let i = 0; i < 65; i += 1) {
+    const mid = (lo + hi) / 2;
+    if (priceAt(mid) < premium) lo = mid;
+    else hi = mid;
+  }
+  const iv = (lo + hi) / 2;
+  const vsqrt = iv * Math.sqrt(years);
+  const d2 = (Math.log(spot / strike) - vsqrt * vsqrt / 2) / vsqrt;
+  return { probability: Math.max(0, Math.min(1, o.right === 'put' ? normalCdf(-d2) : normalCdf(d2))), iv };
 }
 
 function metricCardHtml(label, value, sub, help, valueClass) {
@@ -1142,11 +1189,11 @@ function renderOverview(view) {
     ].join('');
   }
 
-  renderExpiryRisk(view, asOf, buying);
+  renderExpiryRisk(view, asOf);
   renderChannelPills(view);
 }
 
-function renderExpiryRisk(view, asOf, buying) {
+function renderExpiryRisk(view, asOf) {
   if (!el.expiryRow) return;
   const hasOptions = (view.optionCount || 0) > 0;
   if (el.expiryBlock) el.expiryBlock.classList.toggle('hidden', !hasOptions);
@@ -1162,76 +1209,60 @@ function renderExpiryRisk(view, asOf, buying) {
     renderOpenOptions(view);
     return;
   }
-  const prices = payload?.equityPrices || {};
+  const prices = view.isLive ? payload?.equityPrices || {} : {};
   const shorts = (view.positions || []).filter(
     (p) => p.instrument === 'option' && p.option?.side === 'short',
   );
-  let itmExposure = 0;
-  let itmKnown = false;
-  let unknownItm = 0;
-  for (const p of shorts) {
-    const uSym = p.option?.underlying;
-    const strike = p.option?.strike;
-    const px = uSym ? prices[uSym] : null;
-    const cashIf = Number(p.contingentCashObligation || 0);
-    if (p.option?.right === 'put' && px != null && strike != null) {
-      itmKnown = true;
-      if (px < strike) itmExposure += cashIf;
-    } else if (p.option?.right === 'call' && px != null && strike != null) {
-      itmKnown = true;
-      if (px > strike) itmExposure += Number(p.contingentShareObligation || 0) * px;
-    } else {
-      unknownItm += 1;
-    }
-  }
-  const contingent = Number(view.contingentCashObligation || 0);
+  const rows = shorts.map((p) => {
+    const o = p.option;
+    const spot = prices[o.underlying];
+    const rowAsOf = view.isLive ? payload?.brokerAsOf?.[p.channel] || asOf : asOf;
+    const days = daysToExpiry(o.expiry, rowAsOf);
+    const estimate = optionFinishItmProbability(p, spot, days);
+    const exposure = o.right === 'put'
+      ? Number(p.contingentCashObligation || 0)
+      : Number(o.strike) * Number(p.contingentShareObligation || 0);
+    return { p, spot, days, estimate, exposure };
+  });
+  const radar = rows.filter((r) => r.estimate?.probability > 0.3 && Number.isFinite(r.exposure) && r.exposure > 0);
+  const missing = rows.length - rows.filter((r) => r.estimate).length;
+  const exposure = radar.reduce((sum, r) => sum + r.exposure, 0);
+  const weighted = radar.reduce((sum, r) => sum + r.exposure * r.estimate.probability, 0);
   const cash = view.cashAmount;
-  const bp = buying ? buying.amount : null;
-  const dry = cash != null && bp != null ? cash + bp : cash != null ? cash : bp;
-  const cover =
-    itmKnown && itmExposure > 0 && cash != null ? (cash / itmExposure) * 100 : null;
+  const cover = exposure > 0 && cash != null ? (cash / exposure) * 100 : null;
 
   if (el.expiryLead) {
-    const n = shorts.length;
     el.expiryLead.textContent =
-      n === 0
+      shorts.length === 0
         ? 'No short option lots in this view. Section 03 (holdings table) lists every open position.'
-        : `Only short option lots from books. ITM uses live underlying vs strike when a quote exists. Assignment probability is not modeled. ${unknownItm ? `${unknownItm} short lot${unknownItm === 1 ? '' : 's'} have no underlying quote.` : ''}`;
+        : `Only open contracts with probability of finishing in the money above 30% are shown here, sorted by nearest expiry first and then by risk within the same expiry. Section 03 contains the complete open-positions ledger. Click a ticker to highlight the same underlying in Section 03.${missing ? ` ${missing} contract${missing === 1 ? '' : 's'} could not be scored because a usable quote or mark is missing.` : ''}`;
   }
 
   el.expiryRow.innerHTML = [
     metricCardHtml(
       'High-risk ITM exposure',
-      itmKnown ? fmtPrettyMoney(itmExposure, reportingCcyCode(view), 0) : '—',
-      itmKnown ? 'ITM vs live underlying quote' : 'Need an underlying quote to classify ITM',
-      'Short put ITM if last < strike; short call ITM if last > strike. Not a probability.',
+      radar.length ? fmtPrettyMoney(exposure, reportingCcyCode(view), 0) : '—',
+      '',
+      'Capital involved if every contract in this high-risk list finished in the money and was assigned or called away. This is the theoretical ceiling for the filtered radar, not the expected outcome.',
     ),
     metricCardHtml(
       'Probability-weighted exposure',
-      '—',
-      'Not modeled — no assignment probability on the books',
-      'Would require an explicit probability model. We do not invent one.',
-      'down',
+      radar.length ? fmtPrettyMoney(weighted, reportingCcyCode(view), 0) : '—',
+      '',
+      'Assignment capital weighted by each contract’s modeled probability of finishing in the money.',
+      radar.length ? 'down' : '',
     ),
     metricCardHtml(
-      'Cash + buying power',
-      dry != null ? fmtPrettyMoney(dry, view.cashCurrency || buying?.currency || reportingCcyCode(view), 0) : '—',
-      cash != null && bp != null
-        ? `Cash ${fmtPrettyMoney(cash, view.cashCurrency, 0)} + BP ${fmtPrettyMoney(bp, buying.currency, 0)}`
-        : cash != null
-          ? 'Buying power not recorded'
-          : 'Cash and/or buying power unknown',
-      'Sum only of recorded figures. Missing legs stay omitted.',
+      'Cash available',
+      cash != null ? fmtPrettyMoney(cash, view.cashCurrency || reportingCcyCode(view), 0) : '—',
+      '',
+      'Free cash in the account at the time of the broker pull. Margin capacity is separate from free cash.',
     ),
     metricCardHtml(
       'High-risk coverage',
       cover != null ? `${cover.toFixed(0)}%` : '—',
-      cover != null
-        ? 'Free cash / ITM assignment cash'
-        : contingent > 0
-          ? `Contingent cash ${fmtPrettyMoney(contingent, reportingCcyCode(view), 0)}`
-          : 'No short-put assignment cash',
-      'cash.amount ÷ ITM contingent cash. Not a margin-requirement ratio.',
+      '',
+      'Share of the high-risk bill that recorded free cash could cover. This is not a margin-requirement ratio.',
       cover != null && cover < 100 ? 'down' : '',
     ),
   ].join('');
@@ -1240,60 +1271,84 @@ function renderExpiryRisk(view, asOf, buying) {
     if (shorts.length === 0) {
       el.expiryTable.innerHTML = emptyCard('No short option lots in this view.');
     } else {
-      const sorted = [...shorts].sort((a, b) => dteDays(a.option.expiry) - dteDays(b.option.expiry));
-      const head = ['Contract', 'Spot', 'Strike', 'Moneyness', 'Expiry', 'DTE', 'ITM%', 'Mark', 'If assigned', 'Status', 'Channel'];
-      el.expiryTable.innerHTML = `<div class="metric-card table-card"><div class="table-scroll"><table class="report">
+      const brokers = [...new Set(shorts.map((p) => p.channel))].sort();
+      if (riskBrokerFilter !== 'all' && !brokers.includes(riskBrokerFilter)) riskBrokerFilter = 'all';
+      const chip = (kind, value, label, selected) =>
+        `<button type="button" class="chip-btn${selected ? ' on' : ''}" data-risk-${kind}="${escapeHtml(value)}" aria-pressed="${selected}">${escapeHtml(label)}</button>`;
+      const filtered = radar.filter((r) =>
+        (riskBrokerFilter === 'all' || r.p.channel === riskBrokerFilter) &&
+        (riskRightFilter === 'all' || r.p.option.right === riskRightFilter),
+      ).sort((a, b) => (a.days ?? Infinity) - (b.days ?? Infinity) || b.estimate.probability - a.estimate.probability);
+      const head = ['Contract', 'Spot', 'Strike', 'Moneyness %', 'Expiry', 'DTE', 'IV', 'Premium', 'If assigned', 'Prob. ITM', 'Broker'];
+      el.expiryTable.innerHTML = `<div class="metric-card table-card risk-card">
+        <div class="risk-toolbar">
+          <div class="option-filter-group"><span class="label-eyebrow">Broker</span>
+            ${chip('broker', 'all', 'All', riskBrokerFilter === 'all')}
+            ${brokers.map((b) => chip('broker', b, b === DEFAULT_CHANNEL ? 'Unassigned' : b.toUpperCase(), riskBrokerFilter === b)).join('')}
+          </div>
+          <div class="option-filter-group"><span class="label-eyebrow">Right</span>
+            ${['all', 'put', 'call'].map((r) => chip('right', r, r === 'all' ? 'All' : r.toUpperCase(), riskRightFilter === r)).join('')}
+          </div>
+          <div class="risk-legend">${riskPill('danger', 'Act now >60%')}${riskPill('warning', 'Caution 45–60%')}${riskPill('ok', 'Comfortable')}<span>${radar.length} of ${shorts.length} above 30%</span></div>
+        </div><div class="table-scroll"><table class="report risk-table">
         <thead><tr>${head.map((h) => `<th>${escapeHtml(h)}</th>`).join('')}</tr></thead>
-        <tbody>${sorted
-          .map((p) => {
+        <tbody>${filtered.length ? filtered.map(({ p, spot, days, estimate, exposure: assigned }) => {
             const o = p.option;
-            const dte = dteDays(o.expiry);
-            const itm = optionItmState(p, prices);
-            const px = prices[o.underlying];
-            const moneyNess =
-              typeof px === 'number' && o.strike
-                ? `${(((px - o.strike) / o.strike) * 100).toFixed(1)}%`
-                : '—';
-            const rowClass =
-              itm === 'itm' || dte <= 7 ? 'risk-danger' : dte <= 21 ? 'risk-warning' : 'risk-ok';
-            const pulse = itm === 'itm' && dte <= 7
-              ? '<span class="pulse-dot" aria-hidden="true"></span> '
-              : '';
-            const pill =
-              itm === 'itm'
-                ? riskPill('danger', 'ITM')
-                : itm === 'otm'
-                  ? riskPill('ok', 'OTM')
-                  : riskPill('muted', 'Unknown quote');
-            const dtePill =
-              dte <= 7 ? ` ${riskPill('danger', `DTE ${dte}d`)}` : dte <= 21 ? ` ${riskPill('warning', `DTE ${dte}d`)}` : '';
-            const assigned =
-              o.right === 'put'
-                ? fmtPrettyMoney(Number(p.contingentCashObligation || 0), reportingCcyCode(view), 0)
-                : `${Number(p.contingentShareObligation || 0)} sh`;
-            return `<tr class="${rowClass}">
-              <td>${pulse}<strong>${escapeHtml(o.underlying || p.ticker)}</strong>
-                <div class="metric-sub">${escapeHtml(o.right.toUpperCase())} · ${escapeHtml(o.side)} · ${p.units}x</div></td>
-              <td class="num">${typeof px === 'number' ? fmtUsd2(px) : '—'}</td>
-              <td class="num">${fmtUsd2(o.strike)}</td>
-              <td class="num">${moneyNess}</td>
-              <td class="num">${escapeHtml(o.expiry)}</td>
-              <td class="num">${dte}d</td>
-              <td class="num muted">—</td>
-              <td class="num">${fmtUsd2(p.price)}</td>
-              <td class="num">${assigned}</td>
-              <td>${pill}${dtePill}</td>
-              <td>${escapeHtml(p.channel === DEFAULT_CHANNEL ? 'Unassigned' : p.channel)}</td>
+            const probability = Math.round(estimate.probability * 100);
+            const tone = probability > 60 ? 'danger' : probability >= 45 ? 'warning' : 'ok';
+            const status = probability > 60 ? 'Act now' : probability >= 45 ? 'Watch' : 'OK';
+            const moneyness = ((spot - o.strike) / o.strike) * 100;
+            const itm = o.right === 'put' ? moneyness < 0 : moneyness > 0;
+            const premium = Number(p.premiumAbsolute || Number(p.avgCost) * Number(p.units));
+            return `<tr class="risk-row risk-row-${tone}" data-risk-underlying="${escapeHtml(o.underlying)}" tabindex="0" aria-label="Highlight ${escapeHtml(o.underlying)} in open options">
+              <td><span class="risk-contract">${tone === 'danger' ? '<span class="pulse-dot" aria-hidden="true"></span>' : ''}<strong>${escapeHtml(o.underlying || p.ticker)}</strong><span class="risk-contract-meta">${escapeHtml(o.right.toUpperCase())} · ${o.right === 'put' ? 'CSP' : 'CC'} · ${p.units}x</span></span></td>
+              <td class="num">${Number(spot).toFixed(2)}</td>
+              <td class="num">${fmtPrettyMoney(o.strike, reportingCcyCode(view), 0)}</td>
+              <td class="num ${itm ? 'down' : 'muted'}">${moneyness >= 0 ? '+' : ''}${moneyness.toFixed(1)}%</td>
+              <td class="num">${escapeHtml(new Date(`${o.expiry}T00:00:00Z`).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' }).replaceAll(' ', '-').toUpperCase())}</td>
+              <td class="num">${days}d</td>
+              <td class="num muted">${estimate.iv == null ? '—' : `${Math.round(estimate.iv * 100)}%`}</td>
+              <td class="num">${fmtPrettyMoney(premium, reportingCcyCode(view), 2)}</td>
+              <td class="num muted">${fmtPrettyMoney(assigned, reportingCcyCode(view), 0)}</td>
+              <td>${riskPill(tone, `${probability}% · ${status}`)}</td>
+              <td>${escapeHtml(p.channel === DEFAULT_CHANNEL ? 'Unassigned' : p.channel.toUpperCase())}</td>
             </tr>`;
-          })
-          .join('')}</tbody></table></div>
-        <div class="metric-sub" style="padding:0.75rem 1.1rem">How ITM is decided — short put if last &lt; strike; short call if last &gt; strike. Probability of finishing ITM is not on these books (see docs/report-missing-datapoints.md).</div>
+          }).join('') : '<tr><td colspan="11" class="empty">No scored contracts match these filters.</td></tr>'}</tbody></table></div>
+        <div class="risk-method">How Prob. ITM is calculated — implied volatility is solved from each contract’s mark, then used in Black–Scholes N(−d₂) for puts or N(d₂) for calls, with a zero rate and no dividend adjustment. Contracts without a usable underlying quote or mark are excluded from this radar.</div>
       </div>`;
     }
   }
   renderPremiumEngine(view);
   renderOpenOptions(view);
 }
+
+el.expiryTable?.addEventListener('click', (event) => {
+  const chip = event.target.closest('button');
+  if (chip?.dataset.riskBroker != null) riskBrokerFilter = chip.dataset.riskBroker;
+  else if (chip?.dataset.riskRight != null) riskRightFilter = chip.dataset.riskRight;
+  else {
+    const row = event.target.closest('[data-risk-underlying]');
+    if (!row) return;
+    highlightedUnderlying = row.dataset.riskUnderlying;
+    optionBrokerFilter = 'all';
+    optionRightFilter = 'all';
+    const view = buildView(selectedDate, selectedChannel);
+    if (view) renderOpenOptions(view);
+    const match = [...el.openOptions.querySelectorAll('[data-option-underlying]')]
+      .find((item) => item.dataset.optionUnderlying === highlightedUnderlying);
+    match?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return;
+  }
+  const view = buildView(selectedDate, selectedChannel);
+  if (view) renderExpiryRisk(view, view.isLive ? (payload.generatedAt || '').slice(0, 10) : view.label);
+});
+
+el.expiryTable?.addEventListener('keydown', (event) => {
+  if ((event.key === 'Enter' || event.key === ' ') && event.target.matches('[data-risk-underlying]')) {
+    event.preventDefault();
+    event.target.click();
+  }
+});
 
 function renderPremiumEngine(view) {
   if (!el.premiumEngine || !el.premiumBlock) return;
@@ -1443,7 +1498,7 @@ function renderOpenOptions(view) {
     body += values.map(({ p, position, premium, mark, marketValue, pl, exposure, dte, captured }) => {
       const o = p.option;
       const label = `${o.underlying} ${o.side.toUpperCase()} ${o.right.toUpperCase()} $${o.strike} ${o.expiry} ×${p.units}`;
-      return `<tr class="option-ledger-row">
+      return `<tr class="option-ledger-row${highlightedUnderlying === o.underlying ? ' option-underlying-highlight' : ''}" data-option-underlying="${escapeHtml(o.underlying)}">
         <td class="option-instrument">${escapeHtml(label)}</td>
         <td class="num">${position}</td>
         <td class="num">${exposure ? money(exposure, 0) : '—'}</td>
