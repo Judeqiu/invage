@@ -64,7 +64,7 @@ export const PRODUCT_PROFILES = {
     'aideal',
     'factchecker',
   ],
-  consultant: ['bookkeeper', 'investment-advisor', 'options-expert', 'factchecker'],
+  consultant: ['bookkeeper', 'options-expert', 'factchecker'],
 } as const;
 
 export type ProductProfileId = keyof typeof PRODUCT_PROFILES;
@@ -111,7 +111,10 @@ export function specialistTableMarkdown(profile: ProductProfileId): string {
     '| Peer | id | Capability — route when intent fits |\n|------|-----|--------------------------------------|';
   const rows = enabledPeerIds(profile).map((id) => {
     const p = PEER_CATALOG[id];
-    return `| **${p.label}** | \`${p.id}\` | ${p.capability} |`;
+    const capability = profile === 'consultant' && id === 'bookkeeper'
+      ? 'Option position and broker books: import/sync listed option lots and fills, reconcile positions, journal holdings and assignment cash'
+      : p.capability;
+    return `| **${p.label}** | \`${p.id}\` | ${capability} |`;
   });
   return `${header}\n${rows.join('\n')}`;
 }
@@ -183,19 +186,14 @@ export function hostNeverDoYourself(profile: ProductProfileId): string {
     '- Do not claim “I can handle that myself” when a peer owns the capability',
   );
   if (profile === 'consultant') {
-    lines.push(
-      '- **Not installed on this product:** payment-plan optimizer, Aideal production, physical-RE comps/duties. Do not `invoke_local_agent` / `handoff_to_agent` to `financial-planner`, `aideal`, or `real-estate-expert`. Closest installed fit: Bookkeeper (ledger / household writes), InvestmentAdvisor (securities), or OptionsExpert (listed calls/puts). If none fit, say the specialist is not on this product — do not DIY the missing craft.',
-    );
+    lines.push('- Keep the conversation on listed options. For unrelated requests, give a brief scope redirect.');
   }
   return lines.join('\n');
 }
 
 export function hostScopeIn(profile: ProductProfileId): string {
   if (profile === 'consultant') {
-    return (
-      'craft peers (Bookkeeper, InvestmentAdvisor, OptionsExpert) + Factchecker + residual host tools ' +
-      '(playbook config, read-only household/projection) + **scheduled follow-ups** via `create_task` when work needs time'
-    );
+    return 'listed options research, strategy and risk; option lots, fills, broker sync and assignment cash via Bookkeeper; Factchecker; options follow-ups via `create_task`';
   }
   return (
     'craft peers + Factchecker + residual host tools (books, payments, securities research, physical RE, non-property cash path, playbook config) + **scheduled follow-ups** via `create_task` when work needs time'
@@ -203,12 +201,8 @@ export function hostScopeIn(profile: ProductProfileId): string {
 }
 
 export function hostScopeOut(profile: ProductProfileId): string {
-  const extra =
-    profile === 'consultant'
-      ? 'Aideal production; payment-plan optimizer; physical RE comps/duties (not installed); '
-      : '';
-  return (
-    extra +
-    'tax/licensed advice as advice; trade execution; multi-unit listing shopping packs (offer single-unit path); topics with no household/market/property link. Everything else → action plan, not a brush-off.'
-  );
+  if (profile === 'consultant') {
+    return 'stock picking, general portfolio research, household planning, property, debt optimization, Aideal production, tax/licensed advice, and trade execution. Briefly redirect unrelated requests.';
+  }
+  return 'tax/licensed advice as advice; trade execution; multi-unit listing shopping packs (offer single-unit path); topics with no household/market/property link. Everything else → action plan, not a brush-off.';
 }

@@ -67,6 +67,12 @@ function registerFactcheckerSkills(): Skill[] {
 
 const FACTCHECKER_SKILLS = registerFactcheckerSkills();
 
+const OPTIONS_FACTCHECKER_PURPOSE = `You are **Factchecker**, the options claim auditor for ${HOST_LABEL}.
+
+Audit the structured claim list from OptionsExpert, Bookkeeper, or the host. Re-run only the read-only tools needed to verify option chain values, contract terms, payoff math, position marks, fills, and assignment cash. Distinguish live chain quotes per share from book marks per contract; never infer execution history from open lots. Source IV, volume, and open interest before accepting them. Greeks are unavailable unless a tool explicitly supplies them.
+
+Call \`submit_factcheck_verdict\` on every audit turn with PASS, PASS_WITH_CAVEATS, or FAIL. Always include \`redo\` and \`caveats\`: PASS has zero failed claims and \`redo: null\`; PASS_WITH_CAVEATS has zero failed claims, \`redo: null\`, and nonempty caveats; FAIL has at least one failed claim and a redo object. On FAIL, use only these redo targets: \`options-expert\`, \`bookkeeper\`, or \`invage\`. For a live mark that drifted by at most 0.5%, use PASS_WITH_CAVEATS and label both values; larger drift fails. Tool errors or unsourced material values cannot pass silently. Do not write books, create strategy advice, execute trades, or synthesize the final answer. Be concise and cite the tool fields that support the verdict.`;
+
 /** Short auditor help-first — NOT full HELP_FIRST_AND_ASYNC_TASKS craft recipes. */
 const AUDITOR_HELP_FIRST = `## Auditor help-first (Factchecker only)
 
@@ -143,6 +149,11 @@ If peer asserted journal facts without DB → PASS_WITH_CAVEATS or FAIL that fin
 ${AUDITOR_HELP_FIRST}`;
 
 function factcheckerContextPrefix(investor: InvestorState, ctx: EnrichMessageContext): string {
+  if (PROFILE === 'consultant') {
+    const optionLots = Object.values(getPortfolio(investor)).filter((holding) => holding.option != null).length;
+    const channelHint = ctx.telegramUserId != null ? `telegram_user_id=${ctx.telegramUserId}` : ctx.slackUserId ? `slack_user_id="${ctx.slackUserId}"` : ctx.userSlug ? `user_slug="${ctx.userSlug}"` : '';
+    return `[Options audit context: user "${investor.user.slug}"; option lots recorded: ${optionLots}. ${channelHint}. Re-run relevant tools and submit_factcheck_verdict. No strategy craft or book writes.]\n`;
+  }
   const portfolio = getPortfolio(investor);
   const n = Object.keys(portfolio).length;
   const cashes = getCashes(investor);
@@ -173,7 +184,7 @@ function factcheckerContextPrefix(investor: InvestorState, ctx: EnrichMessageCon
 
 export const factcheckerExtension: DomainExtension = {
   l10n: PEER_L10N,
-  purpose: FACTCHECKER_PURPOSE,
+  purpose: PROFILE === 'consultant' ? OPTIONS_FACTCHECKER_PURPOSE : FACTCHECKER_PURPOSE,
 
   tools: () => createFactcheckerTools(),
 

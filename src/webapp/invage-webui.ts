@@ -10,7 +10,7 @@
 
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
-import type { DomainWebUiExtension } from 'utarus';
+import type { ChatEmptyState, DomainWebUiExtension } from 'utarus';
 import { productDisplayName } from '../product-name.js';
 import { type ProductProfileId, readProductProfile } from '../agents/roster.js';
 import { readFlexEgressIpv4 } from '../brokers/egress.js';
@@ -76,30 +76,54 @@ export const INVAGE_CHAT_EMPTY_STATE = {
     'Tables, code, and BinDrive reports render inline. Select text to quote it into your next message. Educational analysis only — not licensed financial advice.',
 } as const;
 
-export function chatEmptyStateFor(profile: ProductProfileId): {
-  title: string;
-  body: string[];
-  bullets: string[];
-  starters: Array<{ label: string; message: string }>;
-  footer: string;
-} {
+export function chatEmptyStateFor(profile: ProductProfileId): ChatEmptyState {
   if (profile === 'consultant') {
     return {
-      title: INVAGE_CHAT_EMPTY_STATE.title,
+      title: `Explore options with ${productDisplayName()}`,
       body: [
-        'I analyze portfolios (live marks, playbook, undervalued screens) and can keep household books for cash flow and big decisions.',
-        'Use the Dashboard tab for portfolio value and Settings → Brokers to connect read-only IBKR Flex, Tiger, MooMoo, or Webull. Bookkeeper journals the ledger; InvestmentAdvisor researches securities; OptionsExpert reads listed calls/puts; Factchecker audits numbers before the final answer.',
+        'Explore listed calls and puts, compare risk and payoff, or review the option positions in your connected brokers.',
+        'Choose a shortcut below or ask about a ticker and expiry. Chain quotes and IV are checked when available; missing data is called out.',
       ],
-      bullets: [...INVAGE_CHAT_EMPTY_STATE.bullets],
+      bullets: [
+        'Compare a covered call, protective put, or cash-secured put',
+        'Check breakeven, max loss, assignment, and liquidity',
+        'Review option lots and fills from connected brokers',
+      ],
+      startersVariant: 'cards',
+      startersPlacement: 'above',
       starters: [
-        ...INVAGE_CHAT_EMPTY_STATE.starters.filter((s) => s.label !== 'Aideal sleeve pack'),
         {
-          label: 'Options insight',
-          message:
-            'If I have option lots, analyse those contracts. Otherwise show the listed call/put chain on my largest equity (or SPY) for the nearest expiry: moneyness, time value, and defined vs undefined risk. Do not invent IV or Greeks.',
+          id: 'review_options',
+          label: 'Review my options',
+          description: 'Open positions and assignment risk',
+          message: 'Review my open option positions across connected brokers. Show mark versus cost, expiry, assignment exposure, and any missing data.',
+        },
+        {
+          id: 'explore_chain',
+          label: 'Explore a call or put',
+          description: 'Premium, breakeven, and liquidity',
+          message: 'Show the nearest listed call and put chain for SPY. Pick a concrete contract from sourced data and explain premium, breakeven, time value, liquidity, and risk.',
+        },
+        {
+          id: 'covered_call',
+          label: 'Covered call',
+          description: 'Income versus upside cap',
+          message: 'Help me evaluate a covered call on a stock I own. Check my share position and the available chain, then compare premium, upside cap, and assignment risk.',
+        },
+        {
+          id: 'cash_secured_put',
+          label: 'Cash-secured put',
+          description: 'Premium and assignment cash',
+          message: 'Help me evaluate a cash-secured put on SPY using the nearest expiry. Check a concrete contract, assignment cash required, breakeven, and downside risk.',
+        },
+        {
+          id: 'protective_put',
+          label: 'Protective put',
+          description: 'Downside protection and cost',
+          message: 'Help me compare a protective put for a stock I own using available option contracts. Show protection, premium cost, and expiry tradeoffs.',
         },
       ],
-      footer: INVAGE_CHAT_EMPTY_STATE.footer,
+      footer: 'Options analysis is educational. Quotes change; verify the live chain before placing an order.',
     };
   }
   return {

@@ -49,7 +49,7 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const INVAGE_SKILLS: Skill[] = registerInvageSkills();
+const INVAGE_SKILLS: Skill[] = registerInvageSkills(readProductProfile());
 
 /** Web multi-agent handoff harness (utarus ≥ 3.0.0-beta.15). Opt-in via env. */
 const HANDOFF_MODE = process.env.UTARUS_AGENT_HANDOFF === 'true';
@@ -67,6 +67,12 @@ On every return from a peer (implicit return or handoff back), follow **in order
 }
 
 function handoffOrchestration(profile: ProductProfileId): string {
+  if (profile === 'consultant') {
+    const transfer = HANDOFF_MODE
+      ? 'On Web, use `handoff_to_agent` for one craft peer at a time. When control returns, continue any remaining option records or analysis before auditing.'
+      : 'Use `invoke_local_agent` for each craft peer in this turn.';
+    return `**Options routing:** Choose by capability fit and the requested outcome. ${transfer} A transfer tool must actually run; a text promise is not a handoff.\n\n${specialistTableMarkdown(profile)}\n\nAfter craft results, do an always-last Factcheck: invoke Factchecker once with a structured list of material option and money claims. Synthesize only after PASS or PASS_WITH_CAVEATS. On FAIL, use the suggested installed peer for one focused redo; block contested numbers if verification still fails. For pure explanation without current prices or position claims, an audit is unnecessary. Never add new numeric claims after the audit.`;
+  }
   const table = specialistTableMarkdown(profile);
   const ladder = peerReturnLadder(profile);
   if (HANDOFF_MODE) {
@@ -114,6 +120,21 @@ const HOST_DISPLAY = productDisplayName();
 export function buildHostPurpose(
   profile: ProductProfileId = readProductProfile(),
 ): string {
+  if (profile === 'consultant') {
+    return `You are **${HOST}**, an options specialist host. Help users understand listed calls and puts, compare option structures, assess payoff and assignment risk, and review their option positions. Keep the conversation focused on options.
+
+**Route by capability:** OptionsExpert owns chain facts, premiums, IV when sourced, moneyness, payoff, and strategy comparisons. Bookkeeper owns broker connection/sync, option lot and fill records, reconciliation, and cash journal entries. You coordinate their results; do not invent their analysis or modify books yourself.
+
+${handoffOrchestration(profile)}
+
+For options analysis, consult or hand off to OptionsExpert this turn. For broker sync or position and fill records, route to Bookkeeper. When both are needed, get the records before assessing their risk. Verify material numeric claims with Factchecker after specialist work, then give a concise answer with the sourced values, risk, and missing data. Do not add unverified Greeks, IV, live premiums, or balances. Never suggest a naked short call as a default strategy or execute a trade.
+
+For missing ticker, strike, or expiry, use available chain data to identify a concrete contract when possible; otherwise ask one focused question. For unrelated topics, briefly state that ${HOST} focuses on options and invite an options question.
+
+**Options follow-ups:** When the user asks to monitor a contract or revisit an event, use \`create_task\` with the contract, check, date/time, and delivery channel. On the scheduled run, consult OptionsExpert and Factchecker before reporting numbers.
+
+Voice: clear, concise options desk colleague. Educational analysis only; no trade execution. Never expose internal tool names, IDs, or credentials.`;
+  }
   return `You are **${HOST}** — the **default host orchestrator** for this product (Telegram, Slack, Web — ${HOST_DISPLAY}). You are **not** a research analyst, bookkeeper, payment planner, real-estate analyst, or factchecker yourself. You **only** orchestrate: understand intent, **always** route real craft work to the specialist peer whose **capability** fits, run **always-last Factcheck** on material claims, then synthesize the audited answer for the user. You are not a licensed advisor.
 
 **Default posture:** help first. Convert the user ask into an action plan (do now / ask once if blocked / schedule follow-up). Do not lightly reject.
@@ -180,6 +201,18 @@ const INVAGE_PURPOSE = buildHostPurpose();
  * (utarus resolveInboundMessage). Do not re-implement invite Q&A here.
  */
 function investorContextPrefix(investor: InvestorState, ctx: EnrichMessageContext): string {
+  if (readProductProfile() === 'consultant') {
+    const portfolio = getPortfolio(investor);
+    const optionLots = Object.values(portfolio).filter((holding) => holding.option != null).length;
+    const channelHint = ctx.telegramUserId != null
+      ? `telegram_user_id=${ctx.telegramUserId}`
+      : ctx.slackUserId
+        ? `slack_user_id="${ctx.slackUserId}"`
+        : ctx.userSlug
+          ? `user_slug="${ctx.userSlug}"`
+          : '';
+    return `[Options host context: user "${investor.user.slug}" (${investor.profile.display_name}); option lots recorded: ${optionLots}. ${channelHint}. Route options analysis to OptionsExpert; option records and broker sync to Bookkeeper; audit material numbers with Factchecker. Stay on options.]\n`;
+  }
   const portfolio = getPortfolio(investor);
   const n = Object.keys(portfolio).length;
   const cashes = getCashes(investor);

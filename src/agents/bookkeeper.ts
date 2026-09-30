@@ -31,6 +31,10 @@ import {
 } from '../state/household-state.js';
 import { HELP_FIRST_AND_ASYNC_TASKS } from './help-first.js';
 import { PEER_L10N } from './peer-l10n.js';
+import { readProductProfile } from './roster.js';
+import { productHostLabel } from '../product-name.js';
+
+const PROFILE = readProductProfile();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -50,7 +54,9 @@ function registerBookkeeperSkills(): Skill[] {
       id: 'bookkeeping',
       name: 'Bookkeeping',
       description:
-        'Journal/reconcile/read books. Load for cash/deposits/holdings ledger, fund import (instrument=fund), gaps, and the channel recon walk (start_recon → source_recon_channel → decide_recon_line → apply_recon_channel). Full recipes in agent KB (search_kb). Tools: get_household, get_portfolio, post_opening_balance, post_adjustment, transfer_cash, holding CRUD, recon session. Broker ingest → broker-integration skill. Never set absolute cash. Not stock picking.',
+        PROFILE === 'consultant'
+          ? 'Option position records: read and reconcile listed option lots and IBKR Flex fills; journal holdings and assignment cash. Use get_portfolio and channel recon tools. Never infer fills from open lots or set absolute cash. Broker ingest → broker-integration.'
+          : 'Journal/reconcile/read books. Load for cash/deposits/holdings ledger, fund import (instrument=fund), gaps, and the channel recon walk (start_recon → source_recon_channel → decide_recon_line → apply_recon_channel). Full recipes in agent KB (search_kb). Tools: get_household, get_portfolio, post_opening_balance, post_adjustment, transfer_cash, holding CRUD, recon session. Broker ingest → broker-integration skill. Never set absolute cash. Not stock picking.',
     },
     {
       id: 'broker-integration',
@@ -90,14 +96,24 @@ function registerBookkeeperSkills(): Skill[] {
     },
   ];
   const skills: Skill[] = [];
-  for (const raw of catalog) {
-    registerDomainSkill(raw.id, readKnowledge(raw.id));
+  for (const raw of catalog.filter((skill) => PROFILE === 'full' || skill.id !== 'family-treasury')) {
+    const knowledgeId = PROFILE === 'consultant' && raw.id === 'bookkeeping'
+      ? 'options-bookkeeping' : raw.id;
+    registerDomainSkill(raw.id, readKnowledge(knowledgeId));
     skills.push({ ...raw, kind: 'knowledge' });
   }
   return skills;
 }
 
 const BOOKKEEPER_SKILLS = registerBookkeeperSkills();
+
+const OPTIONS_BOOKKEEPER_PURPOSE = `You are **Bookkeeper**, the option position and broker records specialist for ${productHostLabel()}.
+
+Own broker connection and sync, option lot and fill records, cash needed for assignment, and reconciliation of option positions across IBKR, Tiger, MooMoo, and Webull. Use the broker-integration and bookkeeping skills for these tasks. Stay within option records and their cash effects.
+
+Use tools before stating positions or balances. Option lots are keyed by contract and broker channel; keep premium units clear (chain per share, book cost or mark per contract). Quote skipped or incomplete imported rows as \`not_imported\`. Do not infer fills from current holdings. For a cash change, use balanced journal entries; never overwrite an absolute cash balance. Verify each write with a read and report only confirmed changes. Never echo broker credentials.
+
+For option pricing, IV, payoff, or strategy analysis, return the task to ${productHostLabel()} for OptionsExpert. Do not execute trades or invent market data. When consulted, finish the records task with tools and return a concise result.`;
 
 const BOOKKEEPER_PURPOSE = `You are **Bookkeeper** — a local specialist on the WalletStreet (Invage) host.
 
@@ -164,6 +180,11 @@ Load skill \`bookkeeping\` for journal/reconcile/read recipes (including fund sc
 ${HELP_FIRST_AND_ASYNC_TASKS}`;
 
 function bookkeeperContextPrefix(investor: InvestorState, ctx: EnrichMessageContext): string {
+  if (PROFILE === 'consultant') {
+    const optionLots = Object.values(getPortfolio(investor)).filter((holding) => holding.option != null).length;
+    const channelHint = ctx.telegramUserId != null ? `telegram_user_id=${ctx.telegramUserId}` : ctx.slackUserId ? `slack_user_id="${ctx.slackUserId}"` : ctx.userSlug ? `user_slug="${ctx.userSlug}"` : '';
+    return `[Options books context: user "${investor.user.slug}"; option lots recorded: ${optionLots}. ${channelHint}. Sync and reconcile broker option positions/fills; journal assignment cash only when requested. Verify writes.]\n`;
+  }
   const portfolio = getPortfolio(investor);
   const n = Object.keys(portfolio).length;
   const cashes = getCashes(investor);
@@ -206,7 +227,7 @@ function bookkeeperContextPrefix(investor: InvestorState, ctx: EnrichMessageCont
 
 export const bookkeeperExtension: DomainExtension = {
   l10n: PEER_L10N,
-  purpose: BOOKKEEPER_PURPOSE,
+  purpose: PROFILE === 'consultant' ? OPTIONS_BOOKKEEPER_PURPOSE : BOOKKEEPER_PURPOSE,
 
   tools: () => createBookkeeperTools(),
 

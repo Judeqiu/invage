@@ -72,6 +72,9 @@ function taskInstructionExamples(profile: ProductProfileId): string {
 export function helpFirstAndAsyncTasks(
   profile: ProductProfileId = readProductProfile(),
 ): string {
+  if (profile === 'consultant') {
+    return `Help with listed options now using sourced chain and position data. Ask one focused question only when a contract or account cannot be identified. For user-requested monitoring or a future event check, use \`create_task\` with a self-contained options contract, check, schedule and delivery channel; the task runner must consult options-expert and audit material numbers with factchecker. Report the task schedule only after the tool confirms it. Do not turn unrelated requests into household or general investment workflows.${SPECIALIST_HANDOFF_NOTE}`;
+  }
   return `## Help-first (mandatory — all agents)
 
 Do **not** lightly reject, dismiss, or stall when the ask touches household books, markets, securities, property, cash path, or planning.

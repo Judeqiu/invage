@@ -8,6 +8,7 @@ import { readFileSync, existsSync } from 'fs';
 import { resolve, dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { registerDomainSkill, type Skill } from 'utarus';
+import { type ProductProfileId, readProductProfile } from './agents/roster.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -49,9 +50,9 @@ function readContent(id: string): string {
   return readFileSync(filePath, 'utf-8');
 }
 
-export function registerInvageSkills(): Skill[] {
+export function registerInvageSkills(profile: ProductProfileId = readProductProfile()): Skill[] {
   const skills: Skill[] = [];
-  for (const raw of CATALOG) {
+  for (const raw of CATALOG.filter((entry) => profile === 'full' || entry.id === 'bindrive')) {
     const content = readContent(raw.id);
     registerDomainSkill(raw.id, content);
     skills.push({ ...raw, kind: 'knowledge' });

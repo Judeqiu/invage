@@ -11,6 +11,7 @@ import {
 } from '../src/agents/roster.js';
 import { buildFrameworkAgentList } from '../src/agents/framework-agents.js';
 import { buildHostPurpose } from '../src/extension.js';
+import { chatEmptyStateFor } from '../src/webapp/invage-webui.js';
 import { helpFirstAndAsyncTasks } from '../src/agents/help-first.js';
 
 describe('INVAGE_PRODUCT_PROFILE roster', () => {
@@ -33,20 +34,19 @@ describe('INVAGE_PRODUCT_PROFILE roster', () => {
     ]);
   });
 
-  it('consultant profile drops FinancialPlanner, AIDeal, and RealEstateExpert', () => {
+  it('consultant profile keeps only options craft and records peers', () => {
     const ids = enabledPeerIds('consultant');
-    expect(ids).toEqual(['bookkeeper', 'investment-advisor', 'options-expert', 'factchecker']);
+    expect(ids).toEqual(['bookkeeper', 'options-expert', 'factchecker']);
+    expect(peerEnabled('consultant', 'investment-advisor')).toBe(false);
     expect(peerEnabled('consultant', 'financial-planner')).toBe(false);
     expect(peerEnabled('consultant', 'aideal')).toBe(false);
     expect(peerEnabled('consultant', 'real-estate-expert')).toBe(false);
     expect(craftPeerIds('consultant')).toEqual([
       'bookkeeper',
-      'investment-advisor',
       'options-expert',
     ]);
     expect(redoTargetIds('consultant')).toEqual([
       'bookkeeper',
-      'investment-advisor',
       'options-expert',
       HOST_AGENT_ID,
     ]);
@@ -58,22 +58,21 @@ describe('INVAGE_PRODUCT_PROFILE roster', () => {
     expect(agents.map((a) => a.id)).toEqual([
       'invage',
       'bookkeeper',
-      'investment-advisor',
       'options-expert',
       'factchecker',
     ]);
     expect(agents.map((a) => a.label)).toContain('Bookkeeper');
-    expect(agents.map((a) => a.label)).toContain('InvestmentAdvisor');
+    expect(agents.map((a) => a.label)).not.toContain('InvestmentAdvisor');
     expect(agents.map((a) => a.label)).toContain('Factchecker');
   });
 
   it('consultant host purpose orchestrates remaining peers only', () => {
     const purpose = buildHostPurpose('consultant');
-    expect(purpose).toMatch(/orchestrat/i);
+    expect(purpose).toMatch(/coordinate/i);
     expect(purpose).toMatch(/invoke_local_agent/);
     expect(purpose).toMatch(/capability fit/i);
     expect(purpose).toMatch(/Bookkeeper/);
-    expect(purpose).toMatch(/InvestmentAdvisor/);
+    expect(purpose).not.toMatch(/InvestmentAdvisor/);
     expect(purpose).toMatch(/OptionsExpert/);
     expect(purpose).toMatch(/Factchecker/);
     expect(purpose).toMatch(/always-last Factcheck/i);
@@ -81,10 +80,11 @@ describe('INVAGE_PRODUCT_PROFILE roster', () => {
     expect(purpose).not.toMatch(/\*\*AIDeal\*\*/);
     expect(purpose).not.toMatch(/\*\*RealEstateExpert\*\*/);
     expect(purpose).not.toMatch(/Real Estate Expert/);
-    expect(purpose).toMatch(/Not installed on this product/);
+    expect(purpose).toMatch(/listed calls and puts/i);
+    expect(purpose).not.toMatch(/run_projection|playbook-setup|family-treasury/);
     const table = specialistTableMarkdown('consultant');
     expect(table).toMatch(/bookkeeper/);
-    expect(table).toMatch(/investment-advisor/);
+    expect(table).not.toMatch(/investment-advisor/);
     expect(table).not.toMatch(/financial-planner/);
     expect(table).not.toMatch(/aideal/);
     expect(hostNeverDoYourself('consultant')).not.toMatch(/→ \*\*FinancialPlanner\*\*/);
@@ -92,10 +92,21 @@ describe('INVAGE_PRODUCT_PROFILE roster', () => {
 
   it('consultant help-first examples omit uninstalled specialists', () => {
     const text = helpFirstAndAsyncTasks('consultant');
-    expect(text).toMatch(/investment-advisor/);
+    expect(text).not.toMatch(/investment-advisor/);
     expect(text).toMatch(/factchecker/);
     expect(text).not.toMatch(/Consult aideal/);
     expect(text).not.toMatch(/financial-planner/);
     expect(text).not.toMatch(/real-estate-expert/);
+  });
+
+  it('shows option shortcut cards on an empty Victor chat', () => {
+    const empty = chatEmptyStateFor('consultant');
+    expect(empty.startersVariant).toBe('cards');
+    expect(empty.startersPlacement).toBe('above');
+    expect(empty.starters?.map((starter) => starter.id)).toEqual([
+      'review_options', 'explore_chain', 'covered_call', 'cash_secured_put', 'protective_put',
+    ]);
+    expect(empty.starters?.every((starter) => starter.message && starter.description)).toBe(true);
+    expect(JSON.stringify(empty)).not.toMatch(/household|undervalued|cash flow|Aideal/i);
   });
 });
