@@ -24,6 +24,8 @@ import { mapFlexDocToStatement } from '../ibkr/flex-map.js';
 import { loadBrokerParserSpec } from './parser-store.js';
 import { runCsvTablesSpec } from './csv-tables.js';
 import { recordBrokerSyncRun } from './sync-history.js';
+import { brokerSyncFacts, captureBrokerSyncSnapshot, publishBrokerSyncFailure,
+  publishBrokerSyncSuccess } from './sync-notification.js';
 
 export interface BrokerAccountModel {
   sources: Record<string, BrokerAccessSource>;
@@ -486,6 +488,7 @@ export async function syncBrokerAccount(snapshot: InvestorSnapshot, id: string, 
   if (!conn) throw new Error('Unknown broker connection.');
   const def = getBrokerConnector(conn.broker_id);
   const credentials = combinedCredentials(model, conn);
+  const before = captureBrokerSyncSnapshot(state, conn.channel);
   const key = `${state.user.slug}:${id}`;
   if (inflight.has(key)) throw new Error('Sync already in progress.');
   inflight.add(key);
@@ -522,12 +525,16 @@ export async function syncBrokerAccount(snapshot: InvestorSnapshot, id: string, 
       if (raw && !archivePath) archivePath = archive(state.user.slug, conn, raw, at.slice(0, 10), false, message);
       recordBrokerSyncRun(state.user.slug, conn.channel, { at, trigger, ok: false, error: message,
         ...(rawId() ? { raw_data_id: rawId() } : {}) });
-      const fresh = await loadInvestor(state.user.slug);
-      const current = readBrokerAccountModel(fresh.state);
-      if (current.connections[id]) {
-        current.connections[id].last_sync = { at, ok: false, error: message };
-        persistBrokerAccountModel(fresh.state, current);
-        await saveInvestor(fresh);
+      try {
+        const fresh = await loadInvestor(state.user.slug);
+        const current = readBrokerAccountModel(fresh.state);
+        if (current.connections[id]) {
+          current.connections[id].last_sync = { at, ok: false, error: message };
+          persistBrokerAccountModel(fresh.state, current);
+          await saveInvestor(fresh);
+        }
+      } finally {
+        await publishBrokerSyncFailure(state.user.slug, def.displayName, conn.label, message);
       }
       throw new Error(message);
     }
@@ -535,6 +542,13 @@ export async function syncBrokerAccount(snapshot: InvestorSnapshot, id: string, 
       account_id: applied.accountId, lots_upserted: applied.lotsUpserted, lots_removed: applied.lotsRemoved,
       ...(rawId() ? { raw_data_id: rawId() } : {}) });
     applied.archivePath = archivePath;
+    try {
+      await publishBrokerSyncSuccess(state.user.slug, state.user.admin === true,
+        brokerSyncFacts(def.displayName, conn.label, before, captureBrokerSyncSnapshot(state, conn.channel), applied,
+          conn.last_sync?.ok === true));
+    } catch (error) {
+      console.error('[broker/sync-notification] comparison failed:', error);
+    }
     return { applied };
   } finally {
     inflight.delete(key);

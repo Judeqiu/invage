@@ -5,7 +5,12 @@ import { tmpdir } from 'node:os';
 import type { InvestorState } from '../src/state/portfolio-state.js';
 
 const mocks = vi.hoisted(() => ({ load: vi.fn(), save: vi.fn() }));
+const notices = vi.hoisted(() => ({ success: vi.fn(), failure: vi.fn() }));
 vi.mock('../src/state/investor-store.js', () => ({ loadInvestor: mocks.load, saveInvestor: mocks.save }));
+vi.mock('../src/brokers/sync-notification.js', async importOriginal => ({
+  ...await importOriginal<object>(), publishBrokerSyncSuccess: notices.success,
+  publishBrokerSyncFailure: notices.failure,
+}));
 
 const { addBrokerAccount, addBrokerSource, readBrokerAccountModel, syncBrokerAccount } = await import('../src/brokers/accounts.js');
 const { listBrokerSyncRuns } = await import('../src/brokers/sync-history.js');
@@ -26,6 +31,8 @@ beforeEach(() => {
     config: { activity_query_id: '111' } });
   revision = 1;
   mocks.load.mockImplementation(async () => ({ state: structuredClone(stored), revision }));
+  notices.success.mockResolvedValue(undefined);
+  notices.failure.mockResolvedValue(undefined);
   mocks.save.mockImplementation(async snapshot => {
     stored = structuredClone(snapshot.state);
     snapshot.revision = ++revision;
@@ -40,8 +47,11 @@ it('records successful and failed sync attempts with their original raw response
   await syncBrokerAccount({ state: structuredClone(stored), revision }, id, undefined, 'scheduled');
   const channel = readBrokerAccountModel(stored).connections[id].channel;
   expect(readBrokerAccountModel(stored).connections[id].last_sync?.ok).toBe(true);
+  expect(notices.success).toHaveBeenCalledOnce();
+  expect(notices.success.mock.calls[0]?.[2]).toMatchObject({ initial: true, positions_total: 0 });
   fetch.mockResolvedValue({ kind: 'xml', body: Buffer.from('<bad>raw response</bad>') });
   await expect(syncBrokerAccount({ state: structuredClone(stored), revision }, id)).rejects.toThrow();
+  expect(notices.failure).toHaveBeenCalledOnce();
   const runs = listBrokerSyncRuns('alice', channel).runs;
   expect(runs).toHaveLength(2);
   expect(runs.map(run => [run.trigger, run.ok])).toEqual([['manual', false], ['scheduled', true]]);
@@ -51,4 +61,16 @@ it('records successful and failed sync attempts with their original raw response
     const body = fetchRawData('alice', file!.id, file!.version, 0, 65536, 'base64').content;
     expect(Buffer.from(body, 'base64').toString()).toContain(run.ok ? 'FlexQueryResponse' : 'raw response');
   }
+});
+
+it('keeps a completed sync successful when notification delivery fails', async () => {
+  const valid = `<FlexQueryResponse><FlexStatements count="1"><FlexStatement accountId="U1" fromDate="20260930" toDate="20261001"><OpenPositions/><CashReport><CashReportCurrency accountId="U1" currency="USD" endingCash="100"/></CashReport></FlexStatement></FlexStatements></FlexQueryResponse>`;
+  vi.spyOn(adapters.ibkr, 'fetchRaw').mockResolvedValue({ kind: 'xml', body: Buffer.from(valid) });
+  notices.success.mockRejectedValueOnce(new Error('inbox unavailable'));
+  const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+  const result = await syncBrokerAccount({ state: structuredClone(stored), revision }, id);
+  expect(result.applied.accountId).toBe('U1');
+  expect(readBrokerAccountModel(stored).connections[id].last_sync?.ok).toBe(true);
+  expect(notices.failure).not.toHaveBeenCalled();
+  expect(log).toHaveBeenCalledWith('[broker/sync-notification] comparison failed:', expect.any(Error));
 });

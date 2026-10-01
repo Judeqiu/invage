@@ -19,6 +19,8 @@ import { loadBrokerParserSpec } from './parser-store.js';
 import type { BrokerStatement } from './statement.js';
 import { formatBrokerSkip, type BrokerApplyResult } from './statement.js';
 import { archiveBrokerTriage } from './triage.js';
+import { brokerSyncFacts, captureBrokerSyncSnapshot, publishBrokerSyncFailure,
+  publishBrokerSyncSuccess } from './sync-notification.js';
 import {
   assertBrokerConnectionMetrics,
   type BrokerConnection,
@@ -491,6 +493,8 @@ export async function syncBrokerConnection(
   const { state } = snapshot;
   const slug = state.user.slug;
   if (!slug) throw new Error('Investor state has no user.slug.');
+  const broker = getBrokerConnector(id);
+  const before = captureBrokerSyncSnapshot(state, broker.channel);
   const key = inflightKey(slug, id);
   if (inflight.has(key)) throw new SyncInProgressError();
   inflight.add(key);
@@ -535,8 +539,19 @@ export async function syncBrokerConnection(
       writeLastSync(state, id, last_sync, secrets);
     });
     applied.archivePath = archivePath;
+    try {
+      await publishBrokerSyncSuccess(slug, state.user.admin === true,
+        brokerSyncFacts(def.displayName, def.displayName, before, captureBrokerSyncSnapshot(state, def.channel), applied,
+          conn.last_sync?.ok === true));
+    } catch (error) {
+      console.error('[broker/sync-notification] comparison failed:', error);
+    }
     return { view: publicConnectorView(def, readBrokerConnections(state)[id]), applied };
 
+  } catch (error) {
+    await publishBrokerSyncFailure(slug, broker.displayName, broker.displayName,
+      redactSecrets(error instanceof Error ? error.message : String(error), secrets));
+    throw error;
   } finally {
     inflight.delete(key);
   }
