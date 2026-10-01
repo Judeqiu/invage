@@ -154,8 +154,12 @@ function mapOnePosition(
   if (latest == null) return { skip: skipPos(symbol || undefined, 'option missing mark') };
   const mark = latest * multiplier;
   if (!Number.isFinite(mark)) return { skip: skipPos(symbol || undefined, 'option missing mark') };
-  const avg = parseNum(item.averageCost ?? item.average_cost);
-  if (avg == null || !(avg > 0)) return { skip: skipPos(symbol || undefined, 'missing averageCost') };
+  const avgPerShare = parseNum(item.averageCost ?? item.average_cost);
+  if (avgPerShare == null || !(avgPerShare > 0)) {
+    return { skip: skipPos(symbol || undefined, 'missing averageCost') };
+  }
+  const avg = avgPerShare * multiplier;
+  if (!Number.isFinite(avg)) return { skip: skipPos(symbol || undefined, 'missing averageCost') };
   const side = qty < 0 ? 'short' : 'long';
   const units = Math.abs(qty);
   if (!(units > 0)) return { skip: skipPos(symbol || undefined, 'option quantity is zero') };
