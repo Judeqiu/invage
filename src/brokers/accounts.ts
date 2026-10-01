@@ -477,6 +477,10 @@ export async function syncBrokerAccount(snapshot: InvestorSnapshot, id: string, 
       throw new Error(redactSecrets(message, secrets));
     }
     const archivePath = archive(state.user.slug, conn, fetched.raw, statement.as_of, true);
+    // A legacy connector-keyed connection is normalized in memory by
+    // readBrokerAccountModel(). Persist that canonical shape before the apply
+    // layer verifies the selected account and channel against stored state.
+    if (!state.broker_sources) persistBrokerAccountModel(state, model);
     const applied = await applyBrokerStatement(snapshot, id, statement, fetched.raw, result => {
       const current = readBrokerAccountModel(state);
       current.connections[id].last_sync = { at, ok: true, as_of: result.asOf, account_id: result.accountId,
