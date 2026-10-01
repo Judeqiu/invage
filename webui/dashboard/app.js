@@ -72,6 +72,7 @@ let optionBrokerFilter = 'all';
 let optionRightFilter = 'all';
 let riskBrokerFilter = 'all';
 let riskRightFilter = 'all';
+let riskShowAll = false;
 let highlightedUnderlying = null;
 const collapsedOptionMonths = new Set();
 
@@ -155,14 +156,17 @@ function optionFinishItmProbability(position, spot, days) {
   const strike = Number(o?.strike);
   const multiplier = Number(o?.multiplier || 100);
   const mark = Number.isFinite(position.brokerMark) ? position.brokerMark : position.price;
-  if (position.pricingMode === 'cost' || position.markSource === 'cost') return null;
-  if (!(spot > 0 && strike > 0 && multiplier > 0 && Number.isFinite(mark) && mark >= 0) || days == null) return null;
+  const unavailable = (reason) => ({ probability: null, iv: null, reason });
+  if (!(spot > 0)) return unavailable('No spot quote');
+  if (!(strike > 0 && multiplier > 0) || days == null) return unavailable('Incomplete contract');
+  if (position.pricingMode === 'cost' || position.markSource === 'cost' || !Number.isFinite(mark)) return unavailable('No market mark');
+  if (mark <= 0) return unavailable('Zero market mark');
   if (days <= 0) return { probability: o.right === 'put' ? Number(spot < strike) : Number(spot > strike), iv: null };
   const years = Math.max(days, 1) / 365.25;
   const premium = mark / multiplier;
   const intrinsic = o.right === 'put' ? Math.max(strike - spot, 0) : Math.max(spot - strike, 0);
   const upper = o.right === 'put' ? strike : spot;
-  if (premium < intrinsic - 0.01 || premium >= upper || premium <= 0) return null;
+  if (premium < intrinsic - 0.01 || premium >= upper) return unavailable('Mark and spot disagree');
   const priceAt = (vol) => {
     const vsqrt = vol * Math.sqrt(years);
     const d1 = (Math.log(spot / strike) + vsqrt * vsqrt / 2) / vsqrt;
@@ -173,7 +177,7 @@ function optionFinishItmProbability(position, spot, days) {
   };
   let lo = 0.0001;
   let hi = 10;
-  if (premium < priceAt(lo) - 0.01 || premium > priceAt(hi)) return null;
+  if (premium < priceAt(lo) - 0.01 || premium > priceAt(hi)) return unavailable('Cannot solve IV');
   for (let i = 0; i < 65; i += 1) {
     const mid = (lo + hi) / 2;
     if (priceAt(mid) < premium) lo = mid;
@@ -1224,8 +1228,8 @@ function renderExpiryRisk(view, asOf) {
       : Number(o.strike) * Number(p.contingentShareObligation || 0);
     return { p, spot, days, estimate, exposure };
   });
-  const radar = rows.filter((r) => r.estimate?.probability > 0.3 && Number.isFinite(r.exposure) && r.exposure > 0);
-  const missing = rows.length - rows.filter((r) => r.estimate).length;
+  const radar = rows.filter((r) => r.estimate.probability > 0.3 && Number.isFinite(r.exposure) && r.exposure > 0);
+  const missing = rows.filter((r) => r.estimate.probability == null).length;
   const exposure = radar.reduce((sum, r) => sum + r.exposure, 0);
   const weighted = radar.reduce((sum, r) => sum + r.exposure * r.estimate.probability, 0);
   const cash = view.cashAmount;
@@ -1235,7 +1239,7 @@ function renderExpiryRisk(view, asOf) {
     el.expiryLead.textContent =
       shorts.length === 0
         ? 'No short option lots in this view. Section 03 (holdings table) lists every open position.'
-        : `Only open contracts with probability of finishing in the money above 30% are shown here, sorted by nearest expiry first and then by risk within the same expiry. Section 03 contains the complete open-positions ledger. Click a ticker to highlight the same underlying in Section 03.${missing ? ` ${missing} contract${missing === 1 ? '' : 's'} could not be scored because a usable quote or mark is missing.` : ''}`;
+        : `The risk radar prioritizes open contracts with probability of finishing in the money above 30%, sorted by nearest expiry first and then by risk. Use All open to inspect the other contracts; when none qualify, they appear automatically. Section 03 contains the complete open-positions ledger. Click a ticker to highlight the same underlying in Section 03.${missing ? ` ${missing} contract${missing === 1 ? '' : 's'} could not be scored from the available quote and mark.` : ''}`;
   }
 
   el.expiryRow.innerHTML = [
@@ -1275,10 +1279,11 @@ function renderExpiryRisk(view, asOf) {
       if (riskBrokerFilter !== 'all' && !brokers.includes(riskBrokerFilter)) riskBrokerFilter = 'all';
       const chip = (kind, value, label, selected) =>
         `<button type="button" class="chip-btn${selected ? ' on' : ''}" data-risk-${kind}="${escapeHtml(value)}" aria-pressed="${selected}">${escapeHtml(label)}</button>`;
-      const filtered = radar.filter((r) =>
+      const showAll = riskShowAll || radar.length === 0;
+      const filtered = (showAll ? rows : radar).filter((r) =>
         (riskBrokerFilter === 'all' || r.p.channel === riskBrokerFilter) &&
         (riskRightFilter === 'all' || r.p.option.right === riskRightFilter),
-      ).sort((a, b) => (a.days ?? Infinity) - (b.days ?? Infinity) || b.estimate.probability - a.estimate.probability);
+      ).sort((a, b) => (a.days ?? Infinity) - (b.days ?? Infinity) || (b.estimate.probability ?? -1) - (a.estimate.probability ?? -1));
       const head = ['Contract', 'Spot', 'Strike', 'Moneyness %', 'Expiry', 'DTE', 'IV', 'Premium', 'If assigned', 'Prob. ITM', 'Broker'];
       el.expiryTable.innerHTML = `<div class="metric-card table-card risk-card">
         <div class="risk-toolbar">
@@ -1289,32 +1294,35 @@ function renderExpiryRisk(view, asOf) {
           <div class="option-filter-group"><span class="label-eyebrow">Right</span>
             ${['all', 'put', 'call'].map((r) => chip('right', r, r === 'all' ? 'All' : r.toUpperCase(), riskRightFilter === r)).join('')}
           </div>
+          <div class="option-filter-group"><span class="label-eyebrow">Show</span>
+            ${chip('scope', 'high', 'Above 30%', !showAll)}${chip('scope', 'all', 'All open', showAll)}
+          </div>
           <div class="risk-legend">${riskPill('danger', 'Act now >60%')}${riskPill('warning', 'Caution 45–60%')}${riskPill('ok', 'Comfortable')}<span>${radar.length} of ${shorts.length} above 30%</span></div>
-        </div><div class="table-scroll"><table class="report risk-table">
+        </div>${radar.length === 0 ? `<div class="risk-empty-note">No contracts are currently scored above 30%; showing all ${shorts.length} open short contracts. ${missing ? `${missing} could not be scored from the available quote and mark.` : 'All scored contracts are below the threshold.'}</div>` : ''}<div class="table-scroll"><table class="report risk-table">
         <thead><tr>${head.map((h) => `<th>${escapeHtml(h)}</th>`).join('')}</tr></thead>
         <tbody>${filtered.length ? filtered.map(({ p, spot, days, estimate, exposure: assigned }) => {
             const o = p.option;
-            const probability = Math.round(estimate.probability * 100);
-            const tone = probability > 60 ? 'danger' : probability >= 45 ? 'warning' : 'ok';
-            const status = probability > 60 ? 'Act now' : probability >= 45 ? 'Watch' : 'OK';
-            const moneyness = ((spot - o.strike) / o.strike) * 100;
-            const itm = o.right === 'put' ? moneyness < 0 : moneyness > 0;
+            const probability = estimate.probability == null ? null : Math.round(estimate.probability * 100);
+            const tone = probability == null ? 'muted' : probability > 60 ? 'danger' : probability >= 45 ? 'warning' : 'ok';
+            const status = probability == null ? estimate.reason : probability > 60 ? 'Act now' : probability >= 45 ? 'Watch' : probability > 30 ? 'OK' : 'Below 30%';
+            const moneyness = spot > 0 && o.strike > 0 ? ((spot - o.strike) / o.strike) * 100 : null;
+            const itm = moneyness != null && (o.right === 'put' ? moneyness < 0 : moneyness > 0);
             const premium = Number(p.premiumAbsolute || Number(p.avgCost) * Number(p.units));
             return `<tr class="risk-row risk-row-${tone}" data-risk-underlying="${escapeHtml(o.underlying)}" tabindex="0" aria-label="Highlight ${escapeHtml(o.underlying)} in open options">
               <td><span class="risk-contract">${tone === 'danger' ? '<span class="pulse-dot" aria-hidden="true"></span>' : ''}<strong>${escapeHtml(o.underlying || p.ticker)}</strong><span class="risk-contract-meta">${escapeHtml(o.right.toUpperCase())} · ${o.right === 'put' ? 'CSP' : 'CC'} · ${p.units}x</span></span></td>
-              <td class="num">${Number(spot).toFixed(2)}</td>
+              <td class="num">${spot > 0 ? Number(spot).toFixed(2) : '—'}</td>
               <td class="num">${fmtPrettyMoney(o.strike, reportingCcyCode(view), 0)}</td>
-              <td class="num ${itm ? 'down' : 'muted'}">${moneyness >= 0 ? '+' : ''}${moneyness.toFixed(1)}%</td>
+              <td class="num ${itm ? 'down' : 'muted'}">${moneyness == null ? '—' : `${moneyness >= 0 ? '+' : ''}${moneyness.toFixed(1)}%`}</td>
               <td class="num">${escapeHtml(new Date(`${o.expiry}T00:00:00Z`).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' }).replaceAll(' ', '-').toUpperCase())}</td>
-              <td class="num">${days}d</td>
+              <td class="num">${days == null ? '—' : `${days}d`}</td>
               <td class="num muted">${estimate.iv == null ? '—' : `${Math.round(estimate.iv * 100)}%`}</td>
-              <td class="num">${fmtPrettyMoney(premium, reportingCcyCode(view), 2)}</td>
-              <td class="num muted">${fmtPrettyMoney(assigned, reportingCcyCode(view), 0)}</td>
-              <td>${riskPill(tone, `${probability}% · ${status}`)}</td>
+              <td class="num">${Number.isFinite(premium) ? fmtPrettyMoney(premium, reportingCcyCode(view), 2) : '—'}</td>
+              <td class="num muted">${Number.isFinite(assigned) && assigned > 0 ? fmtPrettyMoney(assigned, reportingCcyCode(view), 0) : '—'}</td>
+              <td>${riskPill(tone, probability == null ? `— · ${status}` : `${probability}% · ${status}`)}</td>
               <td>${escapeHtml(p.channel === DEFAULT_CHANNEL ? 'Unassigned' : p.channel.toUpperCase())}</td>
             </tr>`;
-          }).join('') : '<tr><td colspan="11" class="empty">No scored contracts match these filters.</td></tr>'}</tbody></table></div>
-        <div class="risk-method">How Prob. ITM is calculated — implied volatility is solved from each contract’s mark, then used in Black–Scholes N(−d₂) for puts or N(d₂) for calls, with a zero rate and no dividend adjustment. Contracts without a usable underlying quote or mark are excluded from this radar.</div>
+          }).join('') : '<tr><td colspan="11" class="empty">No open short contracts match these filters.</td></tr>'}</tbody></table></div>
+        <div class="risk-method">How Prob. ITM is calculated — implied volatility is solved from each contract’s mark, then used in Black–Scholes N(−d₂) for puts or N(d₂) for calls, with a zero rate and no dividend adjustment. Unscored contracts remain visible in All open and are excluded from risk totals.</div>
       </div>`;
     }
   }
@@ -1326,6 +1334,7 @@ el.expiryTable?.addEventListener('click', (event) => {
   const chip = event.target.closest('button');
   if (chip?.dataset.riskBroker != null) riskBrokerFilter = chip.dataset.riskBroker;
   else if (chip?.dataset.riskRight != null) riskRightFilter = chip.dataset.riskRight;
+  else if (chip?.dataset.riskScope != null) riskShowAll = chip.dataset.riskScope === 'all';
   else {
     const row = event.target.closest('[data-risk-underlying]');
     if (!row) return;

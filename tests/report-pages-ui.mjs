@@ -265,6 +265,10 @@ try {
   assert(/Prob\. ITM/i.test(dashText), 'risk probability column');
   assert(await page.$('#expiryTable .risk-row'), 'scored risk contract');
   assert(/\$16,000/.test(await page.$eval('#expiryRow', (node) => node.textContent)), 'radar exposure uses scored contracts');
+  await page.click('#expiryTable [data-risk-scope="all"]');
+  assert.equal(await page.$$eval('#expiryTable .risk-row', (rows) => rows.length), 2, 'all-open view includes lower-risk contracts');
+  await page.click('#expiryTable [data-risk-scope="high"]');
+  assert.equal(await page.$$eval('#expiryTable .risk-row', (rows) => rows.length), 1, 'radar view keeps only contracts above threshold');
   await page.click('#expiryTable [data-risk-right="call"]');
   assert(!(await page.$('#expiryTable .risk-row')), 'risk right filter hides puts');
   await page.click('#expiryTable [data-risk-right="all"]');
@@ -294,6 +298,12 @@ try {
   assert(!dashText.includes('#0d1117'), 'no github hex in text');
   const css = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
   assert(css !== 'rgb(13, 17, 23)', `body not github dark, got ${css}`);
+
+  payload.equityPrices = {};
+  await page.goto(`http://127.0.0.1:${port}/dashboard/`);
+  await page.waitForFunction(() => document.getElementById('expiryTable')?.textContent?.includes('No spot quote'));
+  assert.equal(await page.$$eval('#expiryTable .risk-row', (rows) => rows.length), 2, 'unscored open contracts remain visible');
+  assert(/0 of 2 above 30%/.test(await page.$eval('#expiryTable', (node) => node.textContent)), 'radar count stays honest');
 
   await page.goto(`http://127.0.0.1:${port}/positions/`);
   await page.waitForFunction(() => document.getElementById('hello')?.textContent?.includes('Shares you own'));

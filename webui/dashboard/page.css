@@ -40,6 +40,7 @@
 .risk-toolbar .chip-btn { padding: 0.28rem 0.7rem; }
 .risk-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin-left: auto; font-size: 0.72rem; color: var(--muted-foreground); }
 .risk-legend > span:last-child { margin-left: 0.25rem; }
+.risk-empty-note { padding: 0.7rem 1.15rem; border-bottom: 1px solid var(--border); color: var(--muted-foreground); font-size: 0.78rem; }
 .risk-table { min-width: 1160px !important; }
 .risk-table th, .risk-table td { padding: 0.7rem 0.95rem !important; }
 .risk-table th:first-child, .risk-table td:first-child { position: sticky; left: 0; min-width: 205px; z-index: 3; }
@@ -49,6 +50,7 @@
 .risk-table .risk-row-danger, .risk-table .risk-row-danger td { background: color-mix(in oklab, var(--danger) 10%, var(--card)); }
 .risk-table .risk-row-warning, .risk-table .risk-row-warning td { background: color-mix(in oklab, var(--warning) 9%, var(--card)); }
 .risk-table .risk-row-ok, .risk-table .risk-row-ok td { background: var(--card); }
+.risk-table .risk-row-muted, .risk-table .risk-row-muted td { background: var(--card); }
 .risk-table .risk-row:hover, .risk-table .risk-row:hover td { background: color-mix(in oklab, var(--brand) 10%, var(--card)); }
 .risk-table .risk-row:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
 .risk-contract { display: flex; align-items: center; gap: 0.4rem; }
