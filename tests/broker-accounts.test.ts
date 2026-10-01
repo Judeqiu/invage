@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { InvestorState } from '../src/state/portfolio-state.js';
 import {
   addBrokerAccount, addBrokerSource, ibkrStatements, patchBrokerAccount, previewBrokerAccount, publicBrokerAccounts,
-  persistBrokerAccountModel, readBrokerAccountModel, resolveBrokerAccountId,
+  persistBrokerAccountModel, readBrokerAccountModel, resolveBrokerAccountId, nextBrokerSyncAt,
 } from '../src/brokers/accounts.js';
 import { adapters } from '../src/brokers/adapter.js';
 
@@ -21,6 +21,25 @@ function flex(id: string, cash: number): string {
 }
 
 describe('account-based broker connections', () => {
+  it('configures and validates account sync schedules', () => {
+    const state = investor();
+    const source = addBrokerSource(state, 'ibkr', { token: 'secret1234' });
+    const id = addBrokerAccount(state, { source_id: source, account_id: 'U1', label: 'Main',
+      config: { activity_query_id: '111' } });
+    const before = Date.now();
+    patchBrokerAccount(state, id, { sync_frequency: 'hourly' });
+    const schedule = readBrokerAccountModel(state).connections[id].sync_schedule!;
+    expect(schedule.frequency).toBe('hourly');
+    expect(Date.parse(schedule.next_run_at)).toBeGreaterThanOrEqual(before + 3_600_000);
+    expect(Date.parse(schedule.next_run_at)).toBeLessThanOrEqual(Date.now() + 3_600_000);
+    patchBrokerAccount(state, id, { sync_frequency: 'hourly' });
+    expect(readBrokerAccountModel(state).connections[id].sync_schedule?.next_run_at).toBe(schedule.next_run_at);
+    expect(nextBrokerSyncAt('daily', new Date('2026-10-01T00:00:00Z'))).toBe('2026-10-02T00:00:00.000Z');
+    expect(nextBrokerSyncAt('weekly', new Date('2026-10-01T00:00:00Z'))).toBe('2026-10-08T00:00:00.000Z');
+    expect(() => patchBrokerAccount(state, id, { sync_frequency: 'monthly' as 'daily' })).toThrow(/Invalid sync frequency/);
+    patchBrokerAccount(state, id, { sync_frequency: null });
+    expect(readBrokerAccountModel(state).connections[id].sync_schedule).toBeUndefined();
+  });
   it('lazily maps old IBKR into one source and preserves its channel and last sync', () => {
     const state = investor({ broker_connections: {
       ibkr: { enabled: true, credentials: { token: 'secret1234', activity_query_id: '111' },

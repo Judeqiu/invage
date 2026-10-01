@@ -289,6 +289,7 @@ export interface BrokerAccountConnection {
   enabled: boolean;
   config: Record<string, string>;
   last_sync?: BrokerConnectionLastSync;
+  sync_schedule?: { frequency: 'hourly' | 'daily' | 'weekly'; next_run_at: string };
   metrics?: BrokerConnectionMetrics;
 }
 

@@ -23,7 +23,8 @@ import { FlexHttpError } from '../ibkr/flex-client.js';
 import { FlexProtocolError } from '../ibkr/flex-parse.js';
 import { formatBrokerSkip } from '../brokers/statement.js';
 import { getBrokerConnector } from '../brokers/catalog.js';
-import { fetchRawData, latestBrokerRawData } from '../raw-data/store.js';
+import { brokerRawDataFile, fetchRawData, latestBrokerRawData } from '../raw-data/store.js';
+import { getBrokerSyncRun, listBrokerSyncRuns } from '../brokers/sync-history.js';
 import { readBrokerConnections } from '../brokers/connections.js';
 import { redactSecrets } from '../brokers/connections.js';
 import { fetchMooMooAuthorizedAccounts } from '../moomoo/moomoo-client.js';
@@ -260,16 +261,30 @@ export function createBrokerConnectionsRouter(): Router {
       res.json(await syncBrokerAccount(snapshot, String(req.params.id)));
     } catch (e) { accountError(res, e); }
   });
+  router.get('/broker-accounts/:id/sync-history', async (req: Request, res: Response) => {
+    try {
+      const snapshot = await sessionInvestor(req);
+      const conn = readBrokerAccountModel(snapshot.state).connections[String(req.params.id)];
+      if (!conn) throw new Error('Unknown broker connection.');
+      const offset = req.query.offset === undefined ? 0 : Number(req.query.offset);
+      res.setHeader('Cache-Control', 'private, no-store');
+      res.json(listBrokerSyncRuns(snapshot.state.user.slug, conn.channel, offset));
+    } catch (e) { accountError(res, e); }
+  });
   router.get('/broker-accounts/:id/raw-data', async (req: Request, res: Response) => {
     try {
       const snapshot = await sessionInvestor(req);
       const conn = readBrokerAccountModel(snapshot.state).connections[String(req.params.id)];
       if (!conn) throw new Error('Unknown broker connection.');
-      const file = latestBrokerRawData(snapshot.state.user.slug, conn.channel);
+      const runId = typeof req.query.run === 'string' ? req.query.run : undefined;
+      const run = runId ? getBrokerSyncRun(snapshot.state.user.slug, conn.channel, runId) : null;
+      const file = runId
+        ? run?.raw_data_id ? brokerRawDataFile(snapshot.state.user.slug, conn.channel, run.raw_data_id) : null
+        : latestBrokerRawData(snapshot.state.user.slug, conn.channel);
       if (!file) { jsonError(res, 404, 'raw_data_not_found', 'No raw data for this connection.'); return; }
       let page = fetchRawData(snapshot.state.user.slug, file.id, file.version, 0, 65536, 'base64');
       res.setHeader('Content-Type', file.id.endsWith('.xml') ? 'application/xml' : 'application/json');
-      res.setHeader('Content-Disposition', 'attachment; filename="broker-raw"');
+      res.setHeader('Content-Disposition', `attachment; filename="broker-raw-${runId || 'latest'}${file.id.endsWith('.xml') ? '.xml' : '.json'}"`);
       res.setHeader('Content-Length', String(file.bytes));
       res.setHeader('Cache-Control', 'private, no-store');
       for (;;) {

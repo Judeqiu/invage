@@ -12,13 +12,14 @@ async function main(): Promise<void> {
   const database = await openDatabaseRuntime({ env: process.env, mode: 'personal', onError: error => { throw error; } });
   const release = bindDatabaseRuntime(database);
   let framework: Framework | undefined;
+  let brokerScheduler: { stop: () => Promise<void> } | undefined;
   let stopping: Promise<void> | undefined;
   let startup: Promise<void>;
   const stop = (error?: unknown): Promise<void> => {
     if (error !== undefined) { console.error('[FATAL]', error); process.exitCode = 1; }
     if (!stopping) stopping = (async () => {
       try { await startup; } catch (error) { console.error('[Startup]', error); process.exitCode = 1; }
-      try { if (framework) await framework.stop(); }
+      try { await brokerScheduler?.stop(); if (framework) await framework.stop(); }
       finally { release(); await database.close(); }
     })();
     return stopping;
@@ -54,6 +55,8 @@ async function main(): Promise<void> {
     }
     if (stopping) return;
     framework.startTaskScheduler();
+    const { startBrokerSyncScheduler } = await import('./brokers/scheduler.js');
+    brokerScheduler = startBrokerSyncScheduler();
     if (process.env.WEB_ONLY === 'true') {
       if (!process.env.WEBAPP_PORT) throw new Error('WEB_ONLY requires WEBAPP_PORT');
       return;

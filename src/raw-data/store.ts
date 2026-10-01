@@ -59,6 +59,17 @@ export function latestBrokerRawData(slug:string,channel:string):RawFile|null {
     offset=page.next_offset;
   }
 }
+export function brokerRawDataFile(slug:string,channel:string,id:string):RawFile|null {
+  let offset=0;
+  for(;;){
+    const page=listRawData(slug,offset,100,channel);
+    const file=page.files.find(item=>item.id===id&&
+      (item.source_kind==='broker-sync'||item.source_kind==='broker-triage'));
+    if(file)return file;
+    if(page.next_offset===null)return null;
+    offset=page.next_offset;
+  }
+}
 export function fetchRawData(slug:string,id:string,expectedVersion:string,offset:number,maxBytes:number,encoding:'utf8'|'base64') {
   if(!id||id.includes('\\')||id.split('/').some(p=>!p||p==='.'||p==='..'))throw new Error('Invalid relative raw-data ID');
   if(!Number.isSafeInteger(offset)||offset<0||!Number.isSafeInteger(maxBytes)||maxBytes<4||maxBytes>65536)throw new Error('Invalid raw-data byte pagination');

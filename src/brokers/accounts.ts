@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { resolveDataRoot } from 'utarus';
-import { saveInvestor, type InvestorSnapshot } from '../state/investor-store.js';
+import { loadInvestor, saveInvestor, type InvestorSnapshot } from '../state/investor-store.js';
 import type {
   BrokerAccessSource,
   BrokerAccountConnection,
@@ -23,6 +23,7 @@ import { parseFlexQueryXml, xmlElementText } from '../ibkr/flex-parse.js';
 import { mapFlexDocToStatement } from '../ibkr/flex-map.js';
 import { loadBrokerParserSpec } from './parser-store.js';
 import { runCsvTablesSpec } from './csv-tables.js';
+import { recordBrokerSyncRun } from './sync-history.js';
 
 export interface BrokerAccountModel {
   sources: Record<string, BrokerAccessSource>;
@@ -42,6 +43,9 @@ const ACCOUNT_FIELD: Record<string, string | undefined> = {
   webull: 'account_id',
 };
 const inflight = new Set<string>();
+export function brokerSyncInProgress(slug: string, id: string): boolean {
+  return inflight.has(`${slug}:${id}`);
+}
 
 function record(raw: unknown, name: string): Record<string, unknown> {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error(`${name} must be a mapping.`);
@@ -80,7 +84,7 @@ function parseSource(id: string, raw: unknown): BrokerAccessSource {
 }
 function parseConnection(id: string, raw: unknown, sources: Record<string, BrokerAccessSource>): BrokerAccountConnection {
   const o = record(raw, `broker_connections.${id}`);
-  const allowed = new Set(['broker_id', 'source_id', 'label', 'account_id', 'channel', 'enabled', 'config', 'last_sync', 'metrics']);
+  const allowed = new Set(['broker_id', 'source_id', 'label', 'account_id', 'channel', 'enabled', 'config', 'last_sync', 'metrics', 'sync_schedule']);
   if (Object.keys(o).some(k => !allowed.has(k))) throw new Error(`broker_connections.${id} has unknown fields.`);
   const broker_id = nonempty(o.broker_id, 'broker_id');
   const def = getBrokerConnector(broker_id);
@@ -100,6 +104,15 @@ function parseConnection(id: string, raw: unknown, sources: Record<string, Broke
   }
   if (o.last_sync != null) conn.last_sync = parseLastSync(o.last_sync, `broker_connections.${id}.last_sync`);
   if (o.metrics != null) conn.metrics = assertBrokerConnectionMetrics(o.metrics, `broker_connections.${id}.metrics`);
+  if (o.sync_schedule != null) {
+    const schedule = record(o.sync_schedule, `broker_connections.${id}.sync_schedule`);
+    if (Object.keys(schedule).some(k => k !== 'frequency' && k !== 'next_run_at') ||
+        !isSyncFrequency(schedule.frequency) || typeof schedule.next_run_at !== 'string' ||
+        !Number.isFinite(Date.parse(schedule.next_run_at))) {
+      throw new Error(`broker_connections.${id}.sync_schedule is invalid.`);
+    }
+    conn.sync_schedule = { frequency: schedule.frequency, next_run_at: schedule.next_run_at };
+  }
   return conn;
 }
 function accountNamespace(conn: BrokerAccountConnection, sources: Record<string, BrokerAccessSource>): string {
@@ -201,6 +214,14 @@ export function resolveBrokerAccountId(state: InvestorState, brokerId: string, c
 function requiredComplete(def: BrokerConnectorDef, values: Record<string, string>): boolean {
   return def.credentialFields.every(f => !f.required || Boolean(values[f.id]?.trim()));
 }
+export type SyncFrequency = 'hourly' | 'daily' | 'weekly';
+export function isSyncFrequency(value: unknown): value is SyncFrequency {
+  return value === 'hourly' || value === 'daily' || value === 'weekly';
+}
+export function nextBrokerSyncAt(frequency: SyncFrequency, from: Date): string {
+  const hours = frequency === 'hourly' ? 1 : frequency === 'daily' ? 24 : 168;
+  return new Date(from.getTime() + hours * 60 * 60 * 1000).toISOString();
+}
 function publicValue(value: string | undefined, secret: boolean): { configured: boolean; value?: string; last4?: string } {
   if (!value) return { configured: false };
   if (!secret) return { configured: true, value };
@@ -231,6 +252,7 @@ export function publicBrokerAccounts(state: InvestorState) {
       return {
         id, broker_id: conn.broker_id, source_id: conn.source_id, label: conn.label,
         account_id: conn.account_id ?? null, channel: conn.channel, enabled: conn.enabled,
+        sync_schedule: conn.sync_schedule ?? null,
         account_binding_editable: canRebind(state, conn),
         status, config: Object.fromEntries(def.credentialFields.filter(f => configFields(def.id).has(f.id))
           .map(f => [f.id, publicValue(conn.config[f.id], f.type === 'secret')])),
@@ -298,6 +320,7 @@ export function addBrokerAccount(state: InvestorState, args: {
 }
 export function patchBrokerAccount(state: InvestorState, id: string, patch: {
   label?: string; enabled?: boolean; account_id?: string; config?: Record<string, string | null>;
+  sync_frequency?: SyncFrequency | null;
 }): void {
   const model = readBrokerAccountModel(state);
   const conn = model.connections[id];
@@ -318,6 +341,19 @@ export function patchBrokerAccount(state: InvestorState, id: string, patch: {
   if (patch.enabled !== undefined) {
     if (typeof patch.enabled !== 'boolean') throw new Error('enabled must be boolean.');
     conn.enabled = patch.enabled;
+  }
+  if (patch.sync_frequency !== undefined) {
+    if (patch.sync_frequency === null) delete conn.sync_schedule;
+    else {
+      if (!isSyncFrequency(patch.sync_frequency)) throw new Error('Invalid sync frequency.');
+      if (!conn.account_id) throw new Error('Select a broker account before scheduling sync.');
+      if (!requiredComplete(getBrokerConnector(conn.broker_id), combinedCredentials(model, conn))) {
+        throw new Error('Required broker fields are incomplete.');
+      }
+      if (conn.sync_schedule?.frequency !== patch.sync_frequency) {
+        conn.sync_schedule = { frequency: patch.sync_frequency, next_run_at: nextBrokerSyncAt(patch.sync_frequency, new Date()) };
+      }
+    }
   }
   if (patch.config) {
     const def = getBrokerConnector(conn.broker_id);
@@ -442,52 +478,62 @@ function archive(slug: string, conn: BrokerAccountConnection, raw: Buffer, asOf:
     `broker_id: ${JSON.stringify(conn.broker_id)}\nchannel: ${JSON.stringify(conn.channel)}\naccount_id: ${JSON.stringify(conn.account_id ?? '')}\nerror: ${JSON.stringify(error ?? 'parse failed')}\n`);
   return file;
 }
-export async function syncBrokerAccount(snapshot: InvestorSnapshot, id: string, transport?: AdapterTransport): Promise<{ applied: BrokerApplyResult }> {
+export async function syncBrokerAccount(snapshot: InvestorSnapshot, id: string, transport?: AdapterTransport,
+  trigger: 'manual' | 'scheduled' = 'manual'): Promise<{ applied: BrokerApplyResult }> {
   const state = snapshot.state;
   const model = readBrokerAccountModel(state);
   const conn = model.connections[id];
   if (!conn) throw new Error('Unknown broker connection.');
-  if (!conn.enabled) throw new Error('Broker connection is paused.');
-  if (!conn.account_id) throw new Error('Broker account binding is required.');
   const def = getBrokerConnector(conn.broker_id);
   const credentials = combinedCredentials(model, conn);
-  if (!requiredComplete(def, credentials)) throw new Error('Required broker fields are incomplete.');
   const key = `${state.user.slug}:${id}`;
   if (inflight.has(key)) throw new Error('Sync already in progress.');
   inflight.add(key);
   const at = new Date().toISOString();
+  let raw: Buffer | undefined;
+  let archivePath: string | undefined;
+  const rawId = () => archivePath
+    ? relative(join(resolveDataRoot(), 'drive', state.user.slug), archivePath).replaceAll('\\', '/') : undefined;
   try {
-    let fetched: Awaited<ReturnType<typeof fetchStatements>>;
-    let statement: BrokerStatement;
-    let failedRaw: Buffer | undefined;
+    let applied: BrokerApplyResult;
     try {
-      fetched = await fetchStatements(model, conn, id, state.user.slug, transport, body => { failedRaw = body; });
-      const selected = fetched.statements.find(s => s.account_id === conn.account_id);
-      if (!selected) throw new Error(`Broker statement account mismatch: expected ${conn.account_id}.`);
-      statement = selected;
+      if (!conn.enabled) throw new Error('Broker connection is paused.');
+      if (!conn.account_id) throw new Error('Broker account binding is required.');
+      if (!requiredComplete(def, credentials)) throw new Error('Required broker fields are incomplete.');
+      const fetched = await fetchStatements(model, conn, id, state.user.slug, transport, body => { raw = body; });
+      raw = fetched.raw;
+      const statement = fetched.statements.find(s => s.account_id === conn.account_id);
+      if (!statement) throw new Error(`Broker statement account mismatch: expected ${conn.account_id}.`);
+      archivePath = archive(state.user.slug, conn, fetched.raw, statement.as_of, true);
+      // A legacy connector-keyed connection is normalized in memory by
+      // readBrokerAccountModel(). Persist that canonical shape before the apply
+      // layer verifies the selected account and channel against stored state.
+      if (!state.broker_sources) persistBrokerAccountModel(state, model);
+      applied = await applyBrokerStatement(snapshot, id, statement, fetched.raw, result => {
+        const current = readBrokerAccountModel(state);
+        current.connections[id].last_sync = { at, ok: true, as_of: result.asOf, account_id: result.accountId,
+          lots_upserted: result.lotsUpserted, lots_removed: result.lotsRemoved,
+          ...(result.skipped.length ? { not_imported: result.skipped.map(formatBrokerSkip) } : {}) };
+        persistBrokerAccountModel(state, current);
+      }, { brokerId: conn.broker_id, channel: conn.channel });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      const secrets = Object.entries(credentials).filter(([k]) => def.credentialFields.some(f => f.id === k && f.type === 'secret')).map(([,v]) => v);
-      if (failedRaw) archive(state.user.slug, conn, failedRaw, new Date().toISOString().slice(0, 10), false,
-        redactSecrets(message, secrets));
-      const current = readBrokerAccountModel(state);
-      current.connections[id].last_sync = { at, ok: false, error: redactSecrets(message, secrets) };
-      persistBrokerAccountModel(state, current);
-      await saveInvestor(snapshot);
-      throw new Error(redactSecrets(message, secrets));
+      const secrets = def.credentialFields.filter(f => f.type === 'secret').map(f => credentials[f.id]).filter((v): v is string => !!v);
+      const message = redactSecrets(error instanceof Error ? error.message : String(error), secrets);
+      if (raw && !archivePath) archivePath = archive(state.user.slug, conn, raw, at.slice(0, 10), false, message);
+      recordBrokerSyncRun(state.user.slug, conn.channel, { at, trigger, ok: false, error: message,
+        ...(rawId() ? { raw_data_id: rawId() } : {}) });
+      const fresh = await loadInvestor(state.user.slug);
+      const current = readBrokerAccountModel(fresh.state);
+      if (current.connections[id]) {
+        current.connections[id].last_sync = { at, ok: false, error: message };
+        persistBrokerAccountModel(fresh.state, current);
+        await saveInvestor(fresh);
+      }
+      throw new Error(message);
     }
-    const archivePath = archive(state.user.slug, conn, fetched.raw, statement.as_of, true);
-    // A legacy connector-keyed connection is normalized in memory by
-    // readBrokerAccountModel(). Persist that canonical shape before the apply
-    // layer verifies the selected account and channel against stored state.
-    if (!state.broker_sources) persistBrokerAccountModel(state, model);
-    const applied = await applyBrokerStatement(snapshot, id, statement, fetched.raw, result => {
-      const current = readBrokerAccountModel(state);
-      current.connections[id].last_sync = { at, ok: true, as_of: result.asOf, account_id: result.accountId,
-        lots_upserted: result.lotsUpserted, lots_removed: result.lotsRemoved,
-        ...(result.skipped.length ? { not_imported: result.skipped.map(formatBrokerSkip) } : {}) };
-      persistBrokerAccountModel(state, current);
-    }, { brokerId: conn.broker_id, channel: conn.channel });
+    recordBrokerSyncRun(state.user.slug, conn.channel, { at, trigger, ok: true, as_of: applied.asOf,
+      account_id: applied.accountId, lots_upserted: applied.lotsUpserted, lots_removed: applied.lotsRemoved,
+      ...(rawId() ? { raw_data_id: rawId() } : {}) });
     applied.archivePath = archivePath;
     return { applied };
   } finally {

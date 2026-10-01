@@ -10,6 +10,7 @@ let wizard = null;
 let preview = {};
 let managedAccounts = {};
 let dirty = new Set();
+let history = {};
 
 function esc(value) {
   return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;')
@@ -52,7 +53,28 @@ async function run(task) {
 }
 async function load() {
   data = await call('/broker-accounts');
+  if (managed) await loadHistory(managed, false);
   render();
+}
+async function loadHistory(id, more = false) {
+  const prior = more ? history[id] : null;
+  const page = await call(`/broker-accounts/${encodeURIComponent(id)}/sync-history${prior?.next_offset != null ? `?offset=${prior.next_offset}` : ''}`);
+  history[id] = { ...page, runs: [...(prior?.runs || []), ...page.runs] };
+  render();
+}
+function when(value) {
+  return value ? new Date(value).toLocaleString() : '—';
+}
+function historyHtml(c) {
+  const page = history[c.id];
+  if (!page) return '<p class="hint">Loading sync history…</p>';
+  if (!page.runs.length) return '<p class="hint">No sync runs yet.</p>';
+  return `<div class="sync-history">${page.runs.map(run => `<div class="sync-run">
+    <div><strong>${esc(when(run.at))}</strong> · ${run.trigger === 'scheduled' ? 'Scheduled' : 'Manual'} · ${run.ok ? 'Succeeded' : 'Failed'}</div>
+    <div class="hint">${run.ok ? `${esc(run.as_of || '')}${run.lots_upserted != null ? ` · ${esc(run.lots_upserted)} lots` : ''}` : esc(run.error || 'Sync failed')}</div>
+    ${run.raw_data_id ? `<a href="${ROOT}/broker-accounts/${encodeURIComponent(c.id)}/raw-data?run=${encodeURIComponent(run.id)}" download>Download raw data</a>` : '<span class="hint">No raw response received</span>'}
+  </div>`).join('')}</div>
+  ${page.next_offset != null ? `<button data-action="history-more" data-id="${esc(c.id)}" ${dirty.has(c.id) ? 'disabled' : ''}>Show older runs</button>` : ''}`;
 }
 function broker(id) { return data.catalog.find(c => c.id === id); }
 function source(id) { return data.sources.find(s => s.id === id); }
@@ -129,8 +151,16 @@ function existingCard(c) {
       <button data-action="token-check" data-id="${esc(c.id)}" ${busy ? 'disabled' : ''}>Check token</button>` : ''}</div>
       <h3>Account settings</h3>
       ${fields(b, 'connection').filter(f => f.id !== 'acc_id' && f.id !== 'account_id' && f.id !== 'account').map(f => fieldHtml(f, c.config, 'config')).join('')}
+      <label class="field" for="sync-frequency">Automatic sync
+        <select id="sync-frequency" ${!c.account_id ? 'disabled' : ''}>
+          ${[['', 'Off'], ['hourly', 'Every hour'], ['daily', 'Every day'], ['weekly', 'Every week']].map(([value, label]) =>
+            `<option value="${value}" ${c.sync_schedule?.frequency === value || !c.sync_schedule && !value ? 'selected' : ''}>${label}</option>`).join('')}
+        </select></label>
+      <p class="hint">${c.sync_schedule ? `Next automatic sync: ${esc(when(c.sync_schedule.next_run_at))}${!c.enabled ? ' · Paused while this account is disabled' : ''}` : 'Automatic sync is off.'}</p>
       <div class="actions"><button data-action="save-account" data-id="${esc(c.id)}" ${busy ? 'disabled' : ''}>Save account</button></div>
       ${guide(b)}
+      <h3>Sync history</h3>
+      ${historyHtml(c)}
     </div>` : ''}
   </section>`;
 }
@@ -187,6 +217,7 @@ function render() {
       if (!managed) return;
       dirty.add(managed);
       for (const button of el.list.querySelectorAll(`[data-action="preview"][data-id="${managed}"], [data-action="sync"][data-id="${managed}"]`)) button.disabled = true;
+      for (const button of el.list.querySelectorAll(`[data-action="history-more"][data-id="${managed}"]`)) button.disabled = true;
     });
   }
   el.list.querySelector('#source-choice')?.addEventListener('change', e => {
@@ -210,6 +241,13 @@ async function action(node) {
     }
     managed = managed === id ? '' : id;
     render();
+    if (managed) {
+      try { await loadHistory(id); } catch (e) { error(e instanceof Error ? e.message : String(e)); }
+    }
+    return;
+  }
+  if (a === 'history-more') {
+    try { await loadHistory(id, true); } catch (e) { error(e instanceof Error ? e.message : String(e)); }
     return;
   }
   if (a === 'refresh') {
@@ -278,6 +316,7 @@ async function action(node) {
       await call(`/broker-accounts/${encodeURIComponent(id)}`, 'PATCH', {
         label: document.getElementById('account-label').value.trim(),
         enabled: document.getElementById('account-enabled').checked,
+        sync_frequency: document.getElementById('sync-frequency').value || null,
         ...(!c.account_binding_editable || !document.getElementById('account-binding')?.value.trim() ? {}
           : { account_id: document.getElementById('account-binding').value.trim() }),
         config: values('config', b, c.config),
