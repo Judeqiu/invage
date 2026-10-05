@@ -59,6 +59,15 @@ describe('loadDashboardForSlug', () => {
           MSFT: { avg_price: 200, units: 5 },
         },
       });
+    await createInvestorFixture({
+        user: {
+          id: '00000000-0000-4000-8000-000000000041',
+          slug: 'dave', created_at: '2026-06-27',
+          telegram_user_ids: [], auth_token: '00000000-0000-4000-8000-000000000042',
+        },
+        profile: { display_name: 'Dave', contact_email: 'd@example.com' },
+        log: [{ ts: '2026-06-27', action: 'created' }],
+      });
 
     const drive = join(dataRoot, 'drive', 'alice');
     mkdirSync(drive, { recursive: true });
@@ -72,6 +81,10 @@ describe('loadDashboardForSlug', () => {
     };
     writeFileSync(join(drive, 'snapshot-2026-07-01.json'), JSON.stringify(snap), 'utf-8');
     writeFileSync(join(drive, 'snapshots.json'), JSON.stringify(['snapshot-2026-07-01.json']), 'utf-8');
+    const oldDrive = join(dataRoot, 'drive', 'dave');
+    mkdirSync(oldDrive, { recursive: true });
+    writeFileSync(join(oldDrive, 'snapshot-2026-07-01.json'), JSON.stringify(snap), 'utf-8');
+    writeFileSync(join(oldDrive, 'snapshots.json'), JSON.stringify(['snapshot-2026-07-01.json']), 'utf-8');
   });
 
   afterAll(() => {
@@ -121,6 +134,13 @@ describe('loadDashboardForSlug', () => {
     const payload = await loadDashboardForSlug('bob');
     expect(payload.empty).toBe(true);
     expect(payload.benchmark).toBeNull();
+  });
+
+  it('keeps saved dates available after the current portfolio becomes empty', async () => {
+    const payload = await loadDashboardForSlug('dave', {}, null);
+    expect(payload.empty).toBe(false);
+    expect(payload.model?.live.positions).toEqual([]);
+    expect(payload.model?.history.map(row => row.date)).toEqual(['2026-07-01']);
   });
 
   it('loads at book cost with warnings when a price is missing (resilient)', async () => {

@@ -49,6 +49,8 @@ export interface SnapshotPosition {
 
 export interface Snapshot {
   date: string;
+  /** Broker position date used at capture time, by channel. Older files omit this. */
+  brokerAsOf?: Record<string, string>;
   totalValue: number;
   totalCost: number;
   totalPL: number;

@@ -120,6 +120,7 @@ export interface ChannelTotals {
 
 export interface HistoryRow {
   date: string;
+  brokerAsOf?: Record<string, string>;
   totalValue: number;
   totalCost: number;
   totalPL: number;
@@ -936,6 +937,7 @@ export function buildDashboardModel(
     }));
     const base: Omit<HistoryRow, 'deltaValue' | 'deltaPct'> = {
       date: snap.date,
+      brokerAsOf: snap.brokerAsOf,
       totalValue: snap.totalValue,
       totalCost: snap.totalCost,
       totalPL: snap.totalPL,

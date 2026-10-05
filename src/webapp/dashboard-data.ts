@@ -9,6 +9,7 @@
 
 import { loadInvestor } from '../state/investor-store.js';
 import { readBrokerAccountModel } from '../brokers/accounts.js';
+import { latestSuccessfulBrokerSyncRun } from '../brokers/sync-history.js';
 import type { BrokerConnectionMetrics } from '../state/portfolio-state.js';
 import {
   equityQuoteSymbols,
@@ -206,10 +207,19 @@ export async function loadDashboardForSlug(
 
   const portfolio = getPortfolio(state);
   const deposits = getDeposits(state);
+  const cashes = getCashes(state);
   const displayName = state.profile.display_name;
   const tickers = Object.keys(portfolio);
 
-  if (tickers.length === 0 && deposits.length === 0) {
+  let snapshots: Snapshot[] = [];
+  try {
+    snapshots = loadSnapshots(slug);
+  } catch (e) {
+    warnings.push({ code: 'snapshot_load_failed',
+      message: e instanceof Error ? e.message : String(e), severity: 'warning' });
+  }
+
+  if (tickers.length === 0 && deposits.length === 0 && cashes.length === 0 && snapshots.length === 0) {
     return {
       slug,
       displayName,
@@ -246,7 +256,6 @@ export async function loadDashboardForSlug(
     }
   }
 
-  const cashes = getCashes(state);
   const moneyCurrencies = [
     ...new Set(
       [
@@ -342,17 +351,6 @@ export async function loadDashboardForSlug(
   }
   live.issues = mergedIssues;
 
-  let snapshots: Snapshot[] = [];
-  try {
-    snapshots = loadSnapshots(slug);
-  } catch (e) {
-    live.issues.push({
-      code: 'snapshot_load_failed',
-      message: e instanceof Error ? e.message : String(e),
-      severity: 'warning',
-    });
-  }
-
   const model = buildDashboardModel(live, snapshots);
   let benchmark: BenchmarkData | null = null;
   try {
@@ -370,10 +368,21 @@ export async function loadDashboardForSlug(
     const dates: Record<string, string> = {};
     for (const [id, conn] of Object.entries(conns)) {
       if (conn.last_sync?.ok && conn.last_sync.as_of) dates[conn.channel] = conn.last_sync.as_of;
+      const previous = latestSuccessfulBrokerSyncRun(slug, conn.channel);
+      if (previous?.as_of) dates[conn.channel] = previous.as_of;
       if (conn.metrics == null) continue;
       const ch = conn.channel;
       mapped[ch] = conn.metrics;
     }
+    const lastObserved: Record<string, { at: string; asOf: string }> = {};
+    for (const observation of state.option_observations ?? []) {
+      if (observation.source !== 'broker') continue;
+      const prior = lastObserved[observation.channel];
+      if (!prior || observation.observed_at > prior.at) {
+        lastObserved[observation.channel] = { at: observation.observed_at, asOf: observation.as_of };
+      }
+    }
+    for (const [channel, row] of Object.entries(lastObserved)) dates[channel] = row.asOf;
     if (Object.keys(mapped).length > 0) connectionMetrics = mapped;
     if (Object.keys(dates).length > 0) brokerAsOf = dates;
   } catch (e) {

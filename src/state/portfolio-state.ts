@@ -296,6 +296,8 @@ export interface BrokerAccountConnection {
 export interface InvestorState extends UserState {
   /** Imported execution history, independent of the current holdings snapshot. */
   option_executions?: import('../brokers/option-executions.js').OptionExecution[];
+  /** Successful broker option observations, committed with the current books. */
+  option_observations?: import('../brokers/option-history.js').OptionObservation[];
   /** Bookkeeper channel recon session. Omit when none. Unknown keys fail on read. */
   recon?: import('../recon/types.js').ChannelReconSession;
   portfolio?: Record<string, Holding>;

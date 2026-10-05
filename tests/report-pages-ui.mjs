@@ -211,6 +211,22 @@ const server = createServer(async (req, res) => {
       res.end(JSON.stringify(payload));
       return;
     }
+    if (url === '/api/domain/invage/option-history') {
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({
+        episodes: [{ id: 'past-option', broker_id: 'ibkr', connection_id: 'ibkr', channel: 'ibkr',
+          account_id: 'U1', contract: { underlying: 'MSFT', side: 'short', right: 'call',
+            strike: 400, expiry: '2026-08-21', units: 1, mark: 50, currency: 'USD' },
+          first_seen: '2026-08-19', last_seen_open: '2026-08-20', first_seen_absent: '2026-08-24',
+          status: 'no_longer_observed', observations: [{ as_of: '2026-08-20', observed_at: '2026-08-21T01:00:00Z',
+            source: 'broker', units: 1, avg_price: 100, mark: 50 }], executions: [] }],
+        total: 1, next_offset: null, history_started: true,
+        connections: [{ id: 'ibkr', broker_id: 'ibkr', channel: 'ibkr', label: 'IBKR', account_id: 'U1',
+          schedule: 'daily', position_as_of: '2026-09-15', last_success_at: '2026-09-16T01:00:00Z',
+          last_attempt: { ok: true, at: '2026-09-16T01:00:00Z' } }],
+      }));
+      return;
+    }
     const file = files.get(url);
     if (!file) {
       res.statusCode = 404;
@@ -276,6 +292,12 @@ try {
   assert(await page.$('#openOptions .option-underlying-highlight'), 'risk row highlights same underlying in Section 03');
   assert(await page.$('#openOptions .option-month-total'), 'expiry month total row');
   assert(await page.$('#openOptions .option-ledger-row'), 'option contract row');
+  await page.click('#optionHistoryTab');
+  await page.waitForFunction(() => document.getElementById('optionHistoryTable')?.textContent?.includes('MSFT'));
+  assert(/No longer observed/.test(await page.$eval('#optionHistoryTable', node => node.textContent)), 'historical option status');
+  await page.click('#optionHistoryTable [data-history-id]');
+  assert(/first observed absent 2026-08-24/.test(await page.$eval('#optionHistoryDetail', node => node.textContent)), 'history detail preserves absence date');
+  await page.click('#optionOpenTab');
   const optionCells = await page.$$eval('#openOptions .option-ledger-row td', (cells) => cells.map((cell) => cell.textContent.trim()));
   assert.equal(optionCells[1], '-1', 'short position is signed');
   assert.equal(optionCells[5], '$500.00', 'average premium is per contract');
@@ -304,6 +326,16 @@ try {
   await page.waitForFunction(() => document.getElementById('expiryTable')?.textContent?.includes('No spot quote'));
   assert.equal(await page.$$eval('#expiryTable .risk-row', (rows) => rows.length), 2, 'unscored open contracts remain visible');
   assert(/0 of 2 above 30%/.test(await page.$eval('#expiryTable', (node) => node.textContent)), 'radar count stays honest');
+
+  const savedModel = payload.model;
+  payload.empty = true;
+  payload.model = null;
+  await page.goto(`http://127.0.0.1:${port}/dashboard/`);
+  await page.click('#optionHistoryTab');
+  await page.waitForFunction(() => document.getElementById('optionHistoryTable')?.textContent?.includes('MSFT'));
+  assert(/No longer observed/.test(await page.$eval('#optionHistoryTable', node => node.textContent)), 'history survives an empty current portfolio');
+  payload.empty = false;
+  payload.model = savedModel;
 
   await page.goto(`http://127.0.0.1:${port}/positions/`);
   await page.waitForFunction(() => document.getElementById('hello')?.textContent?.includes('Shares you own'));

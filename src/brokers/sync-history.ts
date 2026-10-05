@@ -22,10 +22,10 @@ function historyDir(slug: string, channel: string): string {
   return join(resolveDataRoot(), 'broker-sync-history', slug, channel);
 }
 
-export function recordBrokerSyncRun(slug: string, channel: string, run: Omit<BrokerSyncRun, 'id'>): BrokerSyncRun {
+export function recordBrokerSyncRun(slug: string, channel: string, run: Omit<BrokerSyncRun, 'id'> & { id?: string }): BrokerSyncRun {
   const dir = historyDir(slug, channel);
   mkdirSync(dir, { recursive: true, mode: 0o700 });
-  const entry = { id: randomUUID(), ...run };
+  const entry = { id: run.id ?? randomUUID(), ...run };
   const temp = join(dir, `${entry.id}.tmp`);
   writeFileSync(temp, JSON.stringify(entry), { flag: 'wx', mode: 0o600 });
   renameSync(temp, join(dir, `${entry.id}.json`));
@@ -57,5 +57,17 @@ export function getBrokerSyncRun(slug: string, channel: string, id: string): Bro
   catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
     throw error;
+  }
+}
+
+/** Latest confirmed statement date, retained even when the most recent attempt failed. */
+export function latestSuccessfulBrokerSyncRun(slug: string, channel: string): BrokerSyncRun | null {
+  let offset = 0;
+  for (;;) {
+    const page = listBrokerSyncRuns(slug, channel, offset, 100);
+    const success = page.runs.find(run => run.ok && run.as_of);
+    if (success) return success;
+    if (page.next_offset == null) return null;
+    offset = page.next_offset;
   }
 }

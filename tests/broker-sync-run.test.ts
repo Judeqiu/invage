@@ -47,6 +47,10 @@ it('records successful and failed sync attempts with their original raw response
   await syncBrokerAccount({ state: structuredClone(stored), revision }, id, undefined, 'scheduled');
   const channel = readBrokerAccountModel(stored).connections[id].channel;
   expect(readBrokerAccountModel(stored).connections[id].last_sync?.ok).toBe(true);
+  expect(stored.option_observations).toHaveLength(1);
+  expect(stored.option_observations?.[0]).toMatchObject({
+    channel, account_id: 'U1', as_of: '2026-10-01', complete: true, options: [],
+  });
   expect(notices.success).toHaveBeenCalledOnce();
   expect(notices.success.mock.calls[0]?.[2]).toMatchObject({ initial: true, positions_total: 0 });
   fetch.mockResolvedValue({ kind: 'xml', body: Buffer.from('<bad>raw response</bad>') });
@@ -55,6 +59,7 @@ it('records successful and failed sync attempts with their original raw response
   const runs = listBrokerSyncRuns('alice', channel).runs;
   expect(runs).toHaveLength(2);
   expect(runs.map(run => [run.trigger, run.ok])).toEqual([['manual', false], ['scheduled', true]]);
+  expect(stored.option_observations?.map(row => row.id)).toEqual([runs[1].id]);
   for (const run of runs) {
     const file = brokerRawDataFile('alice', channel, run.raw_data_id!);
     expect(file).not.toBeNull();

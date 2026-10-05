@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-05
 
-**Status:** Reviewed design, not implemented
+**Status:** Observation history and dashboard view implemented; confirmed realized P&L and expiry or assignment events remain future work
 
 **Scope:** Historical option positions on the dashboard across IBKR, Tiger, MooMoo, and Webull. This document also defines how valuation snapshots relate to broker syncs and how the UI handles missing syncs.
 
@@ -138,3 +138,9 @@ Acceptance cases: consecutive successful observations with disappearance; same c
 **Limits retained:** The four connectors do not currently supply a common option lifecycle feed. IBKR can supply fills only when configured for execution-level Trades; the other three supply no fills today. No connector in this implementation supplies a general confirmed expiry/assignment event. Historical backfill is limited by retained raw responses and imported fills. The first release therefore cannot promise an exact exit date or realized P&L for every option.
 
 **Implementation risks to address:** Preserve the last successful position date through failed syncs; prevent skipped rows from creating false exits; make observation persistence recoverable across a crash; avoid conflating repeated syncs with economic trades; and keep old snapshots usable when the current portfolio is empty. These are acceptance conditions for implementation, not optional UI polish.
+
+## Implemented scope
+
+Successful syncs now append option observations in the same revision checked investor-state save as the current broker books. The history API also reads older successful sync runs and reconstructs observations from their archived raw responses where possible; failures appear as coverage gaps. The dashboard has Open and History views, contract filters and detail, per-broker position dates, and access to history when current books are empty. New valuation snapshots carry broker as-of dates. The current release labels removed contracts **No longer observed** and leaves realized P&L unknown. Matching IBKR fills are shown as evidence, without claiming a complete lifecycle calculation.
+
+The first implementation keeps observations in investor state for atomicity. As history grows, move the same data contract to an indexed tenant scoped store with transactional or repairable sync linkage; avoid unbounded aggregate growth. Archived backfill is read only and may be slower for accounts with many past raw files. Older runs without a usable archive remain explicit gaps.

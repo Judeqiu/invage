@@ -66,6 +66,34 @@
       <div class="grid-2" id="premiumEngine"></div>
       </div>
 
+      <section id="optionsWorkspace" class="options-workspace" aria-label="Option position history">
+        <div class="options-workspace-head">
+          <div>
+            <div class="label-eyebrow">Options</div>
+            <h2>Position record</h2>
+          </div>
+          <div class="option-view-tabs" role="group" aria-label="Option position view">
+            <button type="button" class="chip-btn on" id="optionOpenTab" aria-pressed="true">Open</button>
+            <button type="button" class="chip-btn" id="optionHistoryTab" aria-pressed="false">History</button>
+          </div>
+        </div>
+        <p id="optionFreshness" class="option-freshness"></p>
+        <div id="optionOpenEmpty" class="metric-card empty hidden">No open option positions in this view.</div>
+        <div id="optionHistoryPanel" class="hidden">
+          <div class="option-ledger-filters history-filters">
+            <label>Broker <select id="historyBroker"><option value="">All brokers</option></select></label>
+            <label>Right <select id="historyRight"><option value="">All rights</option><option value="put">Put</option><option value="call">Call</option></select></label>
+            <label>Status <select id="historyStatus"><option value="historical">No longer observed</option><option value="all">All</option><option value="unverified">Unverified</option></select></label>
+            <label>From <input id="historyFrom" type="date" /></label>
+            <label>To <input id="historyTo" type="date" /></label>
+            <label>Contract <input id="historySearch" type="search" placeholder="Ticker, strike, expiry" /></label>
+          </div>
+          <div id="optionHistoryTable"></div>
+          <div id="optionHistoryDetail"></div>
+          <button type="button" class="chip-btn hidden" id="historyMore">Show older records</button>
+        </div>
+      </section>
+
       <div id="openOptionsBlock">
       <div class="section-gap" id="openOptionsHead"></div>
       <div id="openOptions"></div>

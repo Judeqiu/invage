@@ -1,5 +1,6 @@
 import { saveInvestor, type InvestorSnapshot } from '../state/investor-store.js';
 import { mergeOptionExecutions } from './option-executions.js';
+import { appendOptionObservation } from './option-history.js';
 /**
  * Channel snapshot apply — writes only public books types
  * (Holding, CashBalance, optional connection metrics).
@@ -124,6 +125,7 @@ export async function applyBrokerStatement(
   _raw?: Buffer,
   beforeSave?: (result: BrokerApplyResult) => void,
   connection?: { brokerId: string; channel: string },
+  observation?: { syncId?: string; observedAt?: string; rawDataId?: string },
 ): Promise<BrokerApplyResult> {
   const { state } = snapshot;
   if (state.broker_sources && !connection) throw new Error('Account connection ID and channel are required for broker apply.');
@@ -222,6 +224,12 @@ export async function applyBrokerStatement(
     }
   }
 
+  appendOptionObservation(state, {
+    statement: doc, brokerId: connection?.brokerId ?? connectorId,
+    connectionId: connectorId, channel,
+    syncId: observation?.syncId, observedAt: observation?.observedAt,
+    rawDataId: observation?.rawDataId,
+  });
   setPortfolio(state, next);
   if (!isBooksEnabled()) {
     setCashes(state, replaceChannelCash(getCashes(state), doc.cash, channel, today));

@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { brokerRawDataFile } from '../src/raw-data/store.js';
-import { getBrokerSyncRun, listBrokerSyncRuns, recordBrokerSyncRun } from '../src/brokers/sync-history.js';
+import { getBrokerSyncRun, latestSuccessfulBrokerSyncRun, listBrokerSyncRuns, recordBrokerSyncRun } from '../src/brokers/sync-history.js';
 
 let root: string;
 beforeEach(() => { root = mkdtempSync(join(tmpdir(), 'broker-history-')); process.env.UTARUS_DATA_ROOT = root; });
@@ -27,5 +27,6 @@ describe('broker sync history', () => {
     expect(brokerRawDataFile('alice', 'ibkr-abc', second.raw_data_id!)?.id).toBe(second.raw_data_id);
     expect(brokerRawDataFile('alice', 'other', second.raw_data_id!)).toBeNull();
     expect(getBrokerSyncRun('bob', 'ibkr-abc', first.id)).toBeNull();
+    expect(latestSuccessfulBrokerSyncRun('alice', 'ibkr-abc')?.id).toBe(first.id);
   });
 });

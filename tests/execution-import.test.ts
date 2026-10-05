@@ -14,11 +14,12 @@ const { parseFlexQueryXml } = await import('../src/ibkr/flex-parse.js');
 const { mapFlexDocToStatement } = await import('../src/ibkr/flex-map.js');
 const { applyBrokerStatement } = await import('../src/brokers/apply-statement.js');
 const { addBrokerAccount, addBrokerSource, readBrokerAccountModel } = await import('../src/brokers/accounts.js');
+const { appendOptionObservation } = await import('../src/brokers/option-history.js');
 const xml = `<FlexQueryResponse><FlexStatement accountId="U1" fromDate="20260909" toDate="20260909"><OpenPositions/><CashReport><CashReportCurrency currency="USD" endingCash="100"/></CashReport><Trades><Trade accountId="U1" levelOfDetail="EXECUTION" assetCategory="OPT" tradeID="1" conid="123" dateTime="20260909;103015" buySell="SELL" openCloseIndicator="O" quantity="-2" multiplier="100" underlyingSymbol="PATH" putCall="C" strike="20" expiry="20270319" currency="USD" proceeds="5140.00" ibCommission="-1.23456789" ibCommissionCurrency="USD"/></Trades></FlexStatement></FlexQueryResponse>`;
 let snapshot: InvestorSnapshot;
 beforeEach(() => {
   vi.clearAllMocks();
-  snapshot = { revision: 4, state: { user: { id: 'u', slug: 'alice', created_at: '2026-01-01', telegram_user_ids: [], auth_token: 'token' }, profile: { display_name: 'Alice', contact_email: 'a@example.com' }, log: [], cash: { amount: 193400, currency: 'USD' }, portfolio: { PATH: { units: 10, avg_price: 12 } } } };
+  snapshot = { revision: 4, state: { user: { id: 'u', slug: 'alice', created_at: '2026-01-01', telegram_user_ids: [], auth_token: 'token' }, profile: { display_name: 'Alice', contact_email: 'a@example.com' }, log: [], cash: { amount: 193400, currency: 'USD', updated_at: '2026-01-01' }, portfolio: { PATH: { units: 10, avg_price: 12 } } } };
   mocks.session.mockResolvedValue(snapshot);
   mocks.load.mockResolvedValue(snapshot);
   mocks.target.mockResolvedValue('alice');
@@ -70,8 +71,30 @@ function app(authenticated = true) {
 
 it('requires authentication for reads and historical uploads', async () => {
   expect((await request(app(false)).get('/trades')).status).toBe(401);
+  expect((await request(app(false)).get('/option-history')).status).toBe(401);
   expect((await request(app(false)).post('/trades/import').type('application/xml').send(xml)).status).toBe(401);
   expect(mocks.save).not.toHaveBeenCalled();
+});
+
+it('serves filtered option history without needing a current position', async () => {
+  const source = addBrokerSource(snapshot.state, 'ibkr', { token: 'secret1234' });
+  const id = addBrokerAccount(snapshot.state, { source_id: source, account_id: 'U1', label: 'Main',
+    config: { activity_query_id: '111' } });
+  const channel = readBrokerAccountModel(snapshot.state).connections[id].channel;
+  const contract = { underlying: 'AAPL', right: 'put' as const, side: 'short' as const,
+    strike: 150, expiry: '2026-11-20', multiplier: 100, settlement: 'physical' as const, mark: 200 };
+  appendOptionObservation(snapshot.state, { statement: { account_id: 'U1', as_of: '2026-10-01',
+    cash: [], skipped: [], lots: [{ ticker: 'AAPL-P-150-20261120-S', currency: 'USD',
+      holding: { instrument: 'option', units: 1, avg_price: 500, option: contract } }] },
+    brokerId: 'ibkr', connectionId: id, channel, observedAt: '2026-10-01T12:00:00Z', syncId: 'open' });
+  appendOptionObservation(snapshot.state, { statement: { account_id: 'U1', as_of: '2026-10-04',
+    cash: [], skipped: [], lots: [] }, brokerId: 'ibkr', connectionId: id, channel,
+    observedAt: '2026-10-04T12:00:00Z', syncId: 'absent' });
+  const response = await request(app()).get('/option-history?status=historical&right=put&from=2026-10-03');
+  expect(response.status).toBe(200);
+  expect(response.body.episodes).toHaveLength(1);
+  expect(response.body.episodes[0].first_seen_absent).toBe('2026-10-04');
+  expect((await request(app()).get('/option-history?from=2026-10-05&to=2026-10-01')).status).toBe(400);
 });
 
 it('uploads for the session user and returns exact money through the API', async () => {

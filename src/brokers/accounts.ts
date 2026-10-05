@@ -493,6 +493,7 @@ export async function syncBrokerAccount(snapshot: InvestorSnapshot, id: string, 
   if (inflight.has(key)) throw new Error('Sync already in progress.');
   inflight.add(key);
   const at = new Date().toISOString();
+  const syncId = randomUUID();
   let raw: Buffer | undefined;
   let archivePath: string | undefined;
   const rawId = () => archivePath
@@ -518,12 +519,13 @@ export async function syncBrokerAccount(snapshot: InvestorSnapshot, id: string, 
           lots_upserted: result.lotsUpserted, lots_removed: result.lotsRemoved,
           ...(result.skipped.length ? { not_imported: result.skipped.map(formatBrokerSkip) } : {}) };
         persistBrokerAccountModel(state, current);
-      }, { brokerId: conn.broker_id, channel: conn.channel });
+      }, { brokerId: conn.broker_id, channel: conn.channel },
+      { syncId, observedAt: at, rawDataId: rawId() });
     } catch (error) {
       const secrets = def.credentialFields.filter(f => f.type === 'secret').map(f => credentials[f.id]).filter((v): v is string => !!v);
       const message = redactSecrets(error instanceof Error ? error.message : String(error), secrets);
       if (raw && !archivePath) archivePath = archive(state.user.slug, conn, raw, at.slice(0, 10), false, message);
-      recordBrokerSyncRun(state.user.slug, conn.channel, { at, trigger, ok: false, error: message,
+      recordBrokerSyncRun(state.user.slug, conn.channel, { id: syncId, at, trigger, ok: false, error: message,
         ...(rawId() ? { raw_data_id: rawId() } : {}) });
       try {
         const fresh = await loadInvestor(state.user.slug);
@@ -538,7 +540,7 @@ export async function syncBrokerAccount(snapshot: InvestorSnapshot, id: string, 
       }
       throw new Error(message);
     }
-    recordBrokerSyncRun(state.user.slug, conn.channel, { at, trigger, ok: true, as_of: applied.asOf,
+    recordBrokerSyncRun(state.user.slug, conn.channel, { id: syncId, at, trigger, ok: true, as_of: applied.asOf,
       account_id: applied.accountId, lots_upserted: applied.lotsUpserted, lots_removed: applied.lotsRemoved,
       ...(rawId() ? { raw_data_id: rawId() } : {}) });
     applied.archivePath = archivePath;

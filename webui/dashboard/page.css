@@ -16,6 +16,21 @@
 .status-line { min-height: 1.1em; font-size: 0.75rem; color: var(--muted-foreground); margin: 0.5rem 0 0; }
 .status-line.error { color: var(--danger); }
 .controls-hidden { display: none !important; }
+.options-workspace { margin-top: 2rem; }
+.options-workspace-head { display: flex; justify-content: space-between; align-items: end; gap: 1rem; flex-wrap: wrap; }
+.options-workspace-head h2 { margin: 0.25rem 0 0; font-family: var(--font-serif); color: var(--ink); }
+.option-view-tabs { display: flex; gap: 0.4rem; }
+.option-freshness { color: var(--muted-foreground); font-size: 0.8rem; margin: 0.7rem 0 1rem; }
+.history-filters label { display: flex; align-items: center; gap: 0.4rem; font-size: 0.78rem; color: var(--muted-foreground); }
+.history-filters input, .history-filters select { border: 1px solid var(--border); border-radius: 0.4rem; padding: 0.4rem 0.5rem; background: var(--card); color: var(--foreground); font: inherit; }
+.history-table { min-width: 850px; }
+.history-table th, .history-table td { padding: 0.65rem 0.8rem; }
+.history-table td:first-child { font-weight: 600; }
+.history-detail { margin-top: 1rem; padding: 1rem 1.2rem; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--card); }
+.history-detail h3 { margin: 0 0 0.7rem; font-family: var(--font-serif); }
+.history-detail p { margin: 0.4rem 0; font-size: 0.82rem; }
+.history-detail ul { margin: 0.4rem 0 0; padding-left: 1.2rem; font-size: 0.8rem; }
+#historyMore { margin-top: 0.8rem; }
 .option-ledger-filters { display: flex; flex-wrap: wrap; gap: 0.85rem 2rem; margin: 0 0 0.9rem; }
 .option-filter-group { display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem; }
 .option-filter-group .label-eyebrow { margin-right: 0.35rem; }

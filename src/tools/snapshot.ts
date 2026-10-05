@@ -3,6 +3,8 @@ import type { AgentTool, AgentToolResult } from '@earendil-works/pi-agent-core';
 import { writeFileSync, mkdirSync, existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { resolveDataRoot } from 'utarus';
+import { readBrokerAccountModel } from '../brokers/accounts.js';
+import { latestSuccessfulBrokerSyncRun } from '../brokers/sync-history.js';
 import { resolvePortfolioMarket, valuePortfolio } from '../market/index.js';
 import { totalCashLive } from '../market/sum-to-reporting.js';
 import { getCashes, getPortfolio } from '../state/portfolio-state.js';
@@ -125,6 +127,19 @@ export function createSnapshotTool(): AgentTool[] {
           }
         }
 
+        const connections = Object.values(readBrokerAccountModel(state).connections);
+        const brokerAsOf = Object.fromEntries(connections
+          .filter(conn => conn.last_sync?.ok && conn.last_sync.as_of)
+          .map(conn => [conn.channel, conn.last_sync!.as_of!]));
+        for (const conn of connections) {
+          const prior = latestSuccessfulBrokerSyncRun(state.user.slug, conn.channel);
+          if (prior?.as_of) brokerAsOf[conn.channel] = prior.as_of;
+        }
+        for (const row of [...(state.option_observations ?? [])]
+          .filter(item => item.source === 'broker')
+          .sort((a, b) => a.observed_at.localeCompare(b.observed_at))) {
+          brokerAsOf[row.channel] = row.as_of;
+        }
         const snapshot: Snapshot = {
           date: new Date().toISOString().slice(0, 10),
           totalValue,
@@ -137,6 +152,7 @@ export function createSnapshotTool(): AgentTool[] {
           optionsPremiumPaid,
           equityValue,
           equityCost,
+          brokerAsOf,
           ...(cash != null
             ? {
                 cashAmount: cash.amount,

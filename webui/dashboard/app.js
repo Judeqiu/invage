@@ -44,6 +44,20 @@ const el = {
   openOptionsBlock: document.getElementById('openOptionsBlock'),
   openOptionsHead: document.getElementById('openOptionsHead'),
   openOptions: document.getElementById('openOptions'),
+  optionOpenTab: document.getElementById('optionOpenTab'),
+  optionHistoryTab: document.getElementById('optionHistoryTab'),
+  optionHistoryPanel: document.getElementById('optionHistoryPanel'),
+  optionHistoryTable: document.getElementById('optionHistoryTable'),
+  optionHistoryDetail: document.getElementById('optionHistoryDetail'),
+  optionFreshness: document.getElementById('optionFreshness'),
+  optionOpenEmpty: document.getElementById('optionOpenEmpty'),
+  historyBroker: document.getElementById('historyBroker'),
+  historyRight: document.getElementById('historyRight'),
+  historyStatus: document.getElementById('historyStatus'),
+  historyFrom: document.getElementById('historyFrom'),
+  historyTo: document.getElementById('historyTo'),
+  historySearch: document.getElementById('historySearch'),
+  historyMore: document.getElementById('historyMore'),
   statusBadge: document.getElementById('statusBadge'),
   status: document.getElementById('status'),
   refreshBtn: document.getElementById('refreshBtn'),
@@ -74,6 +88,11 @@ let riskBrokerFilter = 'all';
 let riskRightFilter = 'all';
 let riskShowAll = false;
 let highlightedUnderlying = null;
+let optionTab = 'open';
+let optionHistory = { episodes: [], connections: [], next_offset: null, total: 0, history_started: false, gaps: [] };
+let optionHistoryError = '';
+let optionHistoryRequest = 0;
+let historySearchTimer = null;
 const collapsedOptionMonths = new Set();
 
 function normalizeChannelId(raw) {
@@ -258,6 +277,140 @@ function channelBadgeHtml(channel) {
   const cls = ch === DEFAULT_CHANNEL ? 'badge-channel-default' : 'badge-channel';
   return `<span class="card-badge ${cls}">${escapeHtml(ch)}</span>`;
 }
+
+function setOptionTab(tab) {
+  optionTab = tab;
+  const showHistory = tab === 'history';
+  el.optionOpenTab.classList.toggle('on', !showHistory);
+  el.optionHistoryTab.classList.toggle('on', showHistory);
+  el.optionOpenTab.setAttribute('aria-pressed', String(!showHistory));
+  el.optionHistoryTab.setAttribute('aria-pressed', String(showHistory));
+  el.optionHistoryPanel.classList.toggle('hidden', !showHistory);
+  const view = payload?.model ? buildView(selectedDate, selectedChannel) : null;
+  const hasOpen = Boolean(view?.positions?.some(p => p.instrument === 'option' && p.option));
+  el.optionOpenEmpty.classList.toggle('hidden', showHistory || hasOpen);
+  if (el.openOptionsBlock) el.openOptionsBlock.classList.toggle('hidden', showHistory || !hasOpen);
+}
+
+function renderOptionFreshness() {
+  if (!el.optionFreshness) return;
+  const rows = optionHistory.connections || [];
+  const summary = rows.length ? rows.map(row => {
+    const name = row.label || row.broker_id.toUpperCase();
+    const confirmed = row.position_as_of ? `positions as of ${row.position_as_of}` : 'no confirmed position date';
+    const failed = row.last_attempt?.ok === false ? `; last attempt failed ${row.last_attempt.at.slice(0, 10)}` : '';
+    const schedule = row.schedule ? `; ${row.schedule} sync` : '; manual sync';
+    const interval = row.schedule === 'hourly' ? 1 : row.schedule === 'daily' ? 24 : row.schedule === 'weekly' ? 168 : null;
+    const late = interval && row.last_success_at && Date.now() - Date.parse(row.last_success_at) > (interval + 1) * 3600000 ? '; sync overdue' : '';
+    return `${name}: ${confirmed}${failed}${schedule}${late}${row.enabled ? '' : '; paused'}`;
+  }).join(' · ') : 'Option history begins with broker observations. Valuation snapshots do not confirm position status.';
+  const gaps = optionHistory.gaps?.length ? ` · ${optionHistory.gaps.length} older sync${optionHistory.gaps.length === 1 ? '' : 's'} could not be reconstructed` : '';
+  el.optionFreshness.textContent = summary + gaps;
+}
+
+function historyContractLabel(row) {
+  const c = row.contract;
+  return `${c.underlying} ${c.side.toUpperCase()} ${c.right.toUpperCase()} ${c.strike} ${c.expiry}`;
+}
+
+function renderOptionHistory() {
+  renderOptionFreshness();
+  if (!el.optionHistoryTable) return;
+  if (optionHistoryError) {
+    el.optionHistoryTable.innerHTML = `<div class="metric-card empty">${escapeHtml(optionHistoryError)}</div>`;
+    return;
+  }
+  const broker = el.historyBroker.value;
+  const right = el.historyRight.value;
+  const status = el.historyStatus.value;
+  const search = el.historySearch.value.trim().toUpperCase();
+  const from = el.historyFrom.value;
+  const to = el.historyTo.value;
+  const rows = optionHistory.episodes.filter(row =>
+    (!broker || row.channel === broker) && (!right || row.contract.right === right) &&
+    (status === 'all' || status === 'historical' && row.status === 'no_longer_observed' || row.status === status) &&
+    (!search || historyContractLabel(row).toUpperCase().includes(search)) &&
+    (!from || (row.first_seen_absent || row.last_seen_open) >= from) &&
+    (!to || (row.first_seen_absent || row.last_seen_open) <= to));
+  if (!rows.length) {
+    el.optionHistoryTable.innerHTML = `<div class="metric-card empty">${optionHistory.history_started
+      ? 'No option records match these filters. A missing contract is recorded only after a complete successful broker sync.'
+      : 'No broker option observations have been saved yet. The next successful sync starts this history.'}</div>`;
+  } else {
+    el.optionHistoryTable.innerHTML = `<div class="metric-card table-card"><div class="table-scroll"><table class="report history-table">
+      <thead><tr><th>Contract</th><th>Broker / account</th><th>Last seen open</th><th>First seen absent</th><th>Status</th><th>Outcome / P&amp;L</th><th></th></tr></thead>
+      <tbody>${rows.map(row => `<tr><td>${escapeHtml(historyContractLabel(row))}</td>
+        <td>${escapeHtml(row.broker_id.toUpperCase())} · ${escapeHtml(row.account_id)}</td>
+        <td>${escapeHtml(row.last_seen_open)}</td><td>${row.first_seen_absent ? escapeHtml(row.first_seen_absent) : '—'}</td>
+        <td>${row.status === 'no_longer_observed' ? 'No longer observed' : row.status === 'unverified' ? 'Status unverified' : 'Open as of date'}</td>
+        <td>Unknown · —</td><td><button type="button" class="chip-btn" data-history-id="${escapeHtml(row.id)}">Details</button></td>
+      </tr>`).join('')}</tbody></table></div></div>`;
+  }
+  el.historyMore.classList.toggle('hidden', optionHistory.next_offset == null);
+}
+
+function showOptionHistoryDetail(id) {
+  const row = optionHistory.episodes.find(item => item.id === id);
+  if (!row) return;
+  const checkpoints = (payload?.model?.history || []).filter(snapshot =>
+    snapshot.positions?.some(p => p.instrument === 'option' && p.option &&
+      p.channel === row.channel && p.option.underlying === row.contract.underlying &&
+      p.option.right === row.contract.right && p.option.side === row.contract.side &&
+      p.option.strike === row.contract.strike && p.option.expiry === row.contract.expiry)).map(s => s.date);
+  el.optionHistoryDetail.innerHTML = `<div class="history-detail"><h3>${escapeHtml(historyContractLabel(row))}</h3>
+    <p><strong>Evidence:</strong> Last observed open ${escapeHtml(row.last_seen_open)}${row.first_seen_absent ? `; first observed absent ${escapeHtml(row.first_seen_absent)}` : ''}. Disappearance does not establish a close, expiry, or assignment.</p>
+    ${row.uncertain_as_of ? `<p><strong>Coverage gap:</strong> The ${escapeHtml(row.uncertain_as_of)} response did not confirm this contract. ${row.uncertain_skips?.length ? escapeHtml(row.uncertain_skips.map(skip => `${skip.symbol || 'Unidentified row'}: ${skip.reason}`).join('; ')) : 'One or more position rows were skipped.'}</p>` : ''}
+    <p><strong>Broker observations:</strong></p><ul>${row.observations.map(o => `<li>${escapeHtml(o.as_of)} · ${o.units} contract${o.units === 1 ? '' : 's'} · broker mark ${fmtPrettyMoney(o.mark, row.contract.currency)}${o.source === 'prior_books' ? ' · prior books' : ''}</li>`).join('')}</ul>
+    <p><strong>Imported IBKR fills for this contract:</strong> ${row.executions.length ? `${row.executions.length} execution${row.executions.length === 1 ? '' : 's'}. Dates can precede the first position observation; a same-day reopen may share fills across episodes.` : 'None available.'}</p>
+    ${row.executions.length ? `<ul>${row.executions.map(fill => `<li>${escapeHtml(fill.executed_at.replace('T', ' '))} · ${escapeHtml(fill.side.toUpperCase())} to ${escapeHtml(fill.effect)} · ${escapeHtml(fill.contracts)} contracts · gross ${escapeHtml(fill.gross_premium)} ${escapeHtml(fill.currency)} · commission ${escapeHtml(fill.commission)} ${escapeHtml(fill.currency)}</li>`).join('')}</ul>` : ''}
+    <p><strong>Saved valuation checkpoints:</strong> ${checkpoints.length ? escapeHtml(checkpoints.join(', ')) : 'None. A checkpoint is a valuation, not broker confirmation.'}</p>
+  </div>`;
+}
+
+async function loadOptionHistory(more = false) {
+  const offset = more ? optionHistory.next_offset : 0;
+  if (more && offset == null) return;
+  const request = ++optionHistoryRequest;
+  const params = new URLSearchParams({ offset: String(offset), limit: '100' });
+  if (el.historyBroker.value) params.set('channel', el.historyBroker.value);
+  if (el.historyRight.value) params.set('right', el.historyRight.value);
+  if (el.historyStatus.value !== 'all') params.set('status', el.historyStatus.value);
+  if (el.historyFrom.value) params.set('from', el.historyFrom.value);
+  if (el.historyTo.value) params.set('to', el.historyTo.value);
+  if (el.historySearch.value.trim()) params.set('q', el.historySearch.value.trim());
+  try {
+    const res = await fetch(`/api/domain/invage/option-history?${params}`, { credentials: 'include' });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.message || `HTTP ${res.status}`);
+    if (request !== optionHistoryRequest) return;
+    optionHistory = { ...body, episodes: more ? [...optionHistory.episodes, ...body.episodes] : body.episodes };
+    optionHistoryError = '';
+    const selected = el.historyBroker.value;
+    el.historyBroker.innerHTML = `<option value="">All brokers</option>${body.connections.map(row => `<option value="${escapeHtml(row.channel)}">${escapeHtml(row.label || row.broker_id)}</option>`).join('')}`;
+    el.historyBroker.value = selected;
+  } catch (error) {
+    if (request !== optionHistoryRequest) return;
+    optionHistoryError = error instanceof Error ? error.message : String(error);
+  }
+  renderOptionHistory();
+}
+
+el.optionOpenTab?.addEventListener('click', () => setOptionTab('open'));
+el.optionHistoryTab?.addEventListener('click', () => setOptionTab('history'));
+for (const control of [el.historyBroker, el.historyRight, el.historyStatus, el.historyFrom, el.historyTo, el.historySearch]) {
+  control?.addEventListener(control === el.historySearch ? 'input' : 'change', () => {
+    renderOptionHistory();
+    if (control === el.historySearch) {
+      clearTimeout(historySearchTimer);
+      historySearchTimer = setTimeout(() => loadOptionHistory(), 250);
+    } else loadOptionHistory();
+  });
+}
+el.optionHistoryTable?.addEventListener('click', event => {
+  const id = event.target.closest('[data-history-id]')?.dataset.historyId;
+  if (id) showOptionHistoryDetail(id);
+});
+el.historyMore?.addEventListener('click', () => loadOptionHistory(true));
 
 function fundIndex(value, cost) {
   // Short-option credits make totalCost non-positive; use abs only when cost is
@@ -1117,7 +1270,14 @@ function renderOverview(view) {
     const e = view.equityCount || 0;
     const o = view.optionCount || 0;
     const f = view.fundCount || 0;
-    el.heroLead.textContent = `${n} holdings — ${e} equity, ${o} option, ${f} fund. Pick a date to replay numbers captured at that day's close.`;
+    const archive = view.isLive ? '' : (() => {
+      const row = payload.model?.history?.find(item => item.date === view.label);
+      const dates = Object.entries(row?.brokerAsOf || {});
+      return dates.length
+        ? ` Broker positions as of ${dates.map(([channel, date]) => `${channel} ${date}`).join(', ')}.`
+        : ' Broker position dates unavailable for this older snapshot.';
+    })();
+    el.heroLead.textContent = `${n} holdings — ${e} equity, ${o} option, ${f} fund. Pick a date to replay saved valuations.${archive}`;
   }
   if (el.navValue) {
     el.navValue.textContent = fmtPrettyMoney(view.totalValue, repCcy, 2);
@@ -1220,9 +1380,10 @@ function renderExpiryRisk(view, asOf) {
   const rows = shorts.map((p) => {
     const o = p.option;
     const spot = prices[o.underlying];
-    const rowAsOf = view.isLive ? payload?.brokerAsOf?.[p.channel] || asOf : asOf;
-    const days = daysToExpiry(o.expiry, rowAsOf);
-    const estimate = optionFinishItmProbability(p, spot, days);
+    const days = daysToExpiry(o.expiry, asOf);
+    const estimate = view.isLive && days < 0
+      ? { probability: null, iv: null, reason: 'Past expiry; broker status unverified' }
+      : optionFinishItmProbability(p, spot, days);
     const exposure = o.right === 'put'
       ? Number(p.contingentCashObligation || 0)
       : Number(o.strike) * Number(p.contingentShareObligation || 0);
@@ -1476,9 +1637,7 @@ function renderOpenOptions(view) {
     const exposure = o.side === 'short'
       ? (o.right === 'put' ? 1 : -1) * o.strike * o.multiplier * units
       : 0;
-    const asOf = view.isLive
-      ? payload?.brokerAsOf?.[p.channel] || (payload?.generatedAt || '').slice(0, 10)
-      : view.label;
+    const asOf = view.isLive ? (payload?.generatedAt || '').slice(0, 10) : view.label;
     return { position: direction * units, premium, mark, marketValue, pl, exposure,
       dte: daysToExpiry(o.expiry, asOf),
       captured: o.side === 'short' && premium > 0 ? (pl / premium) * 100 : null };
@@ -2130,6 +2289,7 @@ function renderDate(dateKey, channelKey = selectedChannel) {
 
   renderWarnings();
   renderOverview(view);
+  setOptionTab(optionTab);
 }
 
 function historyDates() {
@@ -2262,6 +2422,7 @@ function renderEmpty(body) {
   if (el.premiumBlock) el.premiumBlock.classList.add('hidden');
   if (el.openOptionsBlock) el.openOptionsBlock.classList.add('hidden');
   if (el.expiryTable) el.expiryTable.innerHTML = '';
+  setOptionTab(optionTab);
 }
 
 async function load() {
@@ -2282,6 +2443,7 @@ async function load() {
     } else {
       initDashboard();
     }
+    await loadOptionHistory();
     el.status.textContent = `Last refresh ${new Date().toLocaleTimeString()}`;
   } catch (e) {
     el.status.className = 'status-line error';
