@@ -3,6 +3,7 @@ import type { Holding, OptionSpec } from '../market/types.js';
 import { getPortfolio, type InvestorState } from '../state/portfolio-state.js';
 import type { BrokerSkip, BrokerStatement } from './statement.js';
 import { addDecimals, type OptionExecution } from './option-executions.js';
+import type { OptionLifecycleEvent } from './option-events.js';
 
 export interface ObservedOption {
   key: string;
@@ -49,10 +50,15 @@ export interface OptionEpisode {
   first_seen_absent: string | null;
   uncertain_as_of?: string;
   uncertain_skips?: BrokerSkip[];
-  status: 'open' | 'unverified' | 'no_longer_observed' | 'closed_by_fills';
+  status: 'open' | 'unverified' | 'no_longer_observed' | 'closed_by_fills' |
+    'expired' | 'assigned' | 'exercised' | 'cash_settled' | 'mixed_outcomes' |
+    'partially_explained' | 'conflicting_evidence';
   observations: Array<{ as_of: string; observed_at: string; source: OptionObservation['source']; units: number; avg_price: number; mark: number }>;
   executions: OptionExecution[];
+  events: OptionLifecycleEvent[];
+  event_coverage_gap?: string;
   matched_trade_pl?: { amount: string; currency: string; opened: string; closed: string; fees: string };
+  broker_event_pl?: { amount: string; currency: string };
 }
 
 /** Contract identity is independent of broker quantity and cost changes. */
@@ -136,13 +142,17 @@ export function appendOptionObservation(state: InvestorState, args: {
   state.option_observations = history;
 }
 
-function matchingExecutions(state: InvestorState, episode: OptionEpisode, episodes: OptionEpisode[]): OptionExecution[] {
-  const c = episode.contract;
-  const previousAbsence = episodes.filter(other => other !== episode &&
+function previousAbsenceFor(episode: OptionEpisode, episodes: OptionEpisode[]): string | undefined {
+  return episodes.filter(other => other !== episode &&
     other.channel === episode.channel && other.account_id === episode.account_id &&
-    other.contract.key === c.key && other.first_seen_absent != null &&
+    other.contract.key === episode.contract.key && other.first_seen_absent != null &&
     other.first_seen_absent <= episode.first_seen)
     .map(other => other.first_seen_absent!).sort().at(-1);
+}
+
+function matchingExecutions(state: InvestorState, episode: OptionEpisode, episodes: OptionEpisode[]): OptionExecution[] {
+  const c = episode.contract;
+  const previousAbsence = previousAbsenceFor(episode, episodes);
   return (state.option_executions ?? []).filter(row =>
     row.channel === episode.channel && row.account_id === episode.account_id &&
     row.underlying.toUpperCase() === c.underlying.toUpperCase() && row.right === c.right &&
@@ -152,6 +162,69 @@ function matchingExecutions(state: InvestorState, episode: OptionEpisode, episod
     (!previousAbsence || row.executed_at.slice(0, 10) > previousAbsence) &&
     (episode.first_seen_absent == null || row.executed_at.slice(0, 10) <= episode.first_seen_absent)
   );
+}
+
+function matchingEvents(state: InvestorState, episode: OptionEpisode, episodes: OptionEpisode[]): OptionLifecycleEvent[] {
+  const c = episode.contract;
+  const previousAbsence = previousAbsenceFor(episode, episodes);
+  return (state.option_events ?? []).filter(row =>
+    row.channel === episode.channel && row.account_id === episode.account_id &&
+    row.underlying.toUpperCase() === c.underlying.toUpperCase() && row.right === c.right &&
+    row.expiry === c.expiry && Number(row.strike) === c.strike &&
+    Number(row.multiplier) === c.multiplier &&
+    (!c.broker_contract_id || !row.contract_id || row.contract_id === c.broker_contract_id) &&
+    row.date >= episode.first_seen && (!previousAbsence || row.date > previousAbsence) &&
+    (episode.first_seen_absent == null || row.date <= episode.first_seen_absent)
+  ).sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
+}
+
+function eventCouldBeContract(skip: BrokerSkip, option: ObservedOption): boolean {
+  if (skip.kind !== 'event') return false;
+  if (!skip.symbol) return true;
+  const symbol = skip.symbol.toUpperCase();
+  return symbol.includes(option.underlying.toUpperCase()) ||
+    Boolean(option.broker_contract_id && symbol.includes(option.broker_contract_id));
+}
+
+function classifyTerminalEvents(episode: OptionEpisode): void {
+  if (!episode.first_seen_absent) return;
+  // Daily snapshots have no intraday ordering. An event dated on the last
+  // observed-open day cannot prove that it happened after that observation.
+  const terminal = episode.events.filter(event => event.date > episode.last_seen_open);
+  if (!terminal.length) return;
+  const lastUnits = episode.observations.at(-1)?.units;
+  if (!Number.isSafeInteger(lastUnits) || !(lastUnits! > 0)) return;
+  const eventCount = Number(addDecimals(...terminal.map(event => event.contracts)));
+  const intervalExecutions = episode.executions.filter(row =>
+    row.executed_at.slice(0, 10) >= episode.last_seen_open);
+  const closeCount = intervalExecutions.some(row => row.effect === 'open') ? NaN :
+    Number(addDecimals('0', ...intervalExecutions.filter(row => row.effect === 'close').map(row => row.contracts)));
+  if (!Number.isSafeInteger(eventCount) || !Number.isSafeInteger(closeCount) || eventCount + closeCount > lastUnits!) {
+    episode.status = 'conflicting_evidence';
+    return;
+  }
+  if (eventCount + closeCount < lastUnits!) {
+    episode.status = 'partially_explained';
+    return;
+  }
+  if (terminal.some(event =>
+    event.kind === 'assignment' && episode.contract.side !== 'short' ||
+    event.kind === 'exercise' && episode.contract.side !== 'long')) {
+    episode.status = 'conflicting_evidence';
+    return;
+  }
+  if (closeCount > 0) { episode.status = 'mixed_outcomes'; return; }
+  const cash = terminal.every(event => event.kind === 'cash_settlement' || event.settlement === 'cash');
+  const kinds = new Set(terminal.map(event => event.kind));
+  episode.status = cash ? 'cash_settled' : kinds.size > 1 ? 'mixed_outcomes' :
+    terminal[0].kind === 'expiration' ? 'expired' :
+      terminal[0].kind === 'assignment' ? 'assigned' :
+        terminal[0].kind === 'exercise' ? 'exercised' : 'cash_settled';
+  if ((episode.status === 'expired' || episode.status === 'cash_settled') &&
+      terminal.every(event => event.broker_realized_pl !== undefined && event.currency === terminal[0].currency)) {
+    episode.broker_event_pl = { amount: addDecimals(...terminal.map(event => event.broker_realized_pl!)),
+      currency: terminal[0].currency };
+  }
 }
 
 /** Exact execution cash flow, only when it reconciles every observed quantity to a flat close. */
@@ -224,7 +297,7 @@ export function buildOptionEpisodes(state: InvestorState, now = new Date()): Opt
           connection_id: run.connection_id, channel: run.channel,
           account_id: run.account_id, contract: option,
           first_seen: run.as_of, last_seen_open: run.as_of,
-          first_seen_absent: null, status: 'open', observations: [], executions: [],
+          first_seen_absent: null, status: 'open', observations: [], executions: [], events: [],
         };
         episodes.push(episode);
         active.set(identity, episode);
@@ -245,6 +318,8 @@ export function buildOptionEpisodes(state: InvestorState, now = new Date()): Opt
       }
       episode.first_seen_absent = run.as_of;
       episode.status = 'no_longer_observed';
+      const skippedEvent = (run.skipped ?? []).find(skip => eventCouldBeContract(skip, episode.contract));
+      if (skippedEvent) episode.event_coverage_gap = skippedEvent.reason;
       active.delete(identity);
     }
   }
@@ -267,8 +342,16 @@ export function buildOptionEpisodes(state: InvestorState, now = new Date()): Opt
   }
   for (const episode of episodes) {
     episode.executions = matchingExecutions(state, episode, episodes);
+    episode.events = matchingEvents(state, episode, episodes);
     episode.matched_trade_pl = matchedTradePl(episode);
     if (episode.matched_trade_pl) episode.status = 'closed_by_fills';
+    if (episode.events.length) {
+      const terminalEvents = episode.events.filter(event => event.date > episode.last_seen_open);
+      if (episode.matched_trade_pl && terminalEvents.length) {
+        episode.status = 'conflicting_evidence';
+        delete episode.matched_trade_pl;
+      } else if (!episode.matched_trade_pl) classifyTerminalEvents(episode);
+    }
   }
   return episodes.sort((a, b) =>
     (b.first_seen_absent ?? b.last_seen_open).localeCompare(a.first_seen_absent ?? a.last_seen_open) ||

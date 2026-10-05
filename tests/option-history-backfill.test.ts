@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { InvestorState } from '../src/state/portfolio-state.js';
 import { addBrokerAccount, addBrokerSource, readBrokerAccountModel } from '../src/brokers/accounts.js';
+import { ibkrStatements } from '../src/brokers/accounts.js';
+import { optionObservationFromStatement } from '../src/brokers/option-history.js';
 import { recordBrokerSyncRun } from '../src/brokers/sync-history.js';
 import { optionHistoryForState } from '../src/webapp/option-history-data.js';
 
@@ -11,7 +13,7 @@ let root: string;
 beforeEach(() => { root = mkdtempSync(join(tmpdir(), 'option-backfill-')); process.env.UTARUS_DATA_ROOT = root; });
 afterEach(() => { rmSync(root, { recursive: true, force: true }); delete process.env.UTARUS_DATA_ROOT; });
 
-function flex(date: string, option: boolean): string {
+function flex(date: string, option: boolean, event = false): string {
   const ymd = date.replaceAll('-', '');
   const row = option ? `<OpenPosition accountId="U1" currency="USD" assetCategory="OPT"
     symbol="AAPL  261120P00150000" underlyingSymbol="AAPL" conid="123"
@@ -20,6 +22,7 @@ function flex(date: string, option: boolean): string {
   return `<FlexQueryResponse><FlexStatements count="1"><FlexStatement accountId="U1"
     fromDate="${ymd}" toDate="${ymd}"><OpenPositions>${row}</OpenPositions>
     <CashReport><CashReportCurrency accountId="U1" currency="USD" endingCash="100"/></CashReport>
+    ${event ? '<OptionEAEList><OptionEAE accountId="U1" assetCategory="OPT" tradeID="assignment-1" conid="123" underlyingSymbol="AAPL" putCall="P" strike="150" expiry="20261120" multiplier="100" date="20261003" transactionType="Assignment" quantity="1" currency="USD"/></OptionEAEList>' : ''}
     </FlexStatement></FlexStatements></FlexQueryResponse>`;
 }
 
@@ -43,4 +46,32 @@ it('reconstructs option presence and absence from successful IBKR raw archives',
   expect(result.episodes).toHaveLength(1);
   expect(result.episodes[0]).toMatchObject({ first_seen: '2026-10-01',
     last_seen_open: '2026-10-01', first_seen_absent: '2026-10-04', status: 'no_longer_observed' });
+});
+
+it('backfills lifecycle events from archived Flex XML even for already saved observations', () => {
+  const state: InvestorState = { user: { id: 'u1', slug: 'bob', created_at: '2026-01-01' },
+    profile: { display_name: 'Bob', contact_email: 'bob@example.com' }, log: [] };
+  const source = addBrokerSource(state, 'ibkr', { token: 'secret1234' });
+  const id = addBrokerAccount(state, { source_id: source, account_id: 'U1', label: 'Main',
+    config: { activity_query_id: '111' } });
+  const channel = readBrokerAccountModel(state).connections[id].channel;
+  const dir = join(root, 'drive', 'bob', 'broker-sync', channel);
+  mkdirSync(dir, { recursive: true });
+  for (const [date, present] of [['2026-10-01', true], ['2026-10-04', false]] as const) {
+    const name = `${date}.xml`;
+    const raw = flex(date, present, !present);
+    writeFileSync(join(dir, name), raw);
+    const run = recordBrokerSyncRun('bob', channel, { at: `${date}T12:00:00Z`, trigger: 'scheduled',
+      ok: true, account_id: 'U1', as_of: date, raw_data_id: `broker-sync/${channel}/${name}` });
+    state.option_observations = [...(state.option_observations ?? []), optionObservationFromStatement({
+      statement: ibkrStatements(Buffer.from(raw), channel)[0], brokerId: 'ibkr', connectionId: id,
+      channel, observedAt: `${date}T12:00:00Z`, syncId: run.id,
+    })];
+  }
+  // Saved observations must not suppress event extraction from the raw archive.
+  const result = optionHistoryForState(state);
+  expect(result.gaps).toEqual([]);
+  expect(result.episodes).toHaveLength(1);
+  expect(result.episodes[0]).toMatchObject({ status: 'assigned',
+    events: [{ kind: 'assignment', id: 'assignment-1' }] });
 });

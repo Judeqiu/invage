@@ -313,6 +313,23 @@ function historyContractLabel(row) {
   return `${c.underlying} ${c.side.toUpperCase()} ${c.right.toUpperCase()} ${c.strike} ${c.expiry}`;
 }
 
+function optionHistoryStatus(row) {
+  return ({ closed_by_fills: 'Closed by fills', expired: 'Expired', assigned: 'Assigned',
+    exercised: 'Exercised', cash_settled: 'Cash settled', mixed_outcomes: 'Mixed outcomes',
+    partially_explained: 'Partly explained', conflicting_evidence: 'Conflicting evidence',
+    no_longer_observed: 'No longer observed', unverified: 'Status unverified',
+    open: 'Open as of date' })[row.status] || 'Status unknown';
+}
+
+function optionHistoryOutcome(row) {
+  if (row.matched_trade_pl) return `Matched trade P&amp;L ${fmtPrettyMoney(Number(row.matched_trade_pl.amount), row.matched_trade_pl.currency)}`;
+  if (row.broker_event_pl) return `Broker event P&amp;L ${fmtPrettyMoney(Number(row.broker_event_pl.amount), row.broker_event_pl.currency)}`;
+  if ((row.status === 'assigned' || row.status === 'exercised') && row.events?.every(event => event.settlement === 'physical')) {
+    return 'Underlying delivery · combined P&amp;L pending';
+  }
+  return 'P&amp;L unavailable';
+}
+
 function renderOptionHistory() {
   renderOptionFreshness();
   if (!el.optionHistoryTable) return;
@@ -342,8 +359,8 @@ function renderOptionHistory() {
       <tbody>${rows.map(row => `<tr><td>${escapeHtml(historyContractLabel(row))}</td>
         <td>${escapeHtml(row.broker_id.toUpperCase())} · ${escapeHtml(row.account_id)}</td>
         <td>${escapeHtml(row.last_seen_open)}</td><td>${row.first_seen_absent ? escapeHtml(row.first_seen_absent) : '—'}</td>
-        <td>${row.status === 'closed_by_fills' ? 'Closed by fills' : row.status === 'no_longer_observed' ? 'No longer observed' : row.status === 'unverified' ? 'Status unverified' : 'Open as of date'}</td>
-        <td>${row.matched_trade_pl ? `Matched trade P&amp;L ${fmtPrettyMoney(Number(row.matched_trade_pl.amount), row.matched_trade_pl.currency)}` : 'Unknown · —'}</td><td><button type="button" class="chip-btn" data-history-id="${escapeHtml(row.id)}">Details</button></td>
+        <td>${optionHistoryStatus(row)}</td>
+        <td>${optionHistoryOutcome(row)}</td><td><button type="button" class="chip-btn" data-history-id="${escapeHtml(row.id)}">Details</button></td>
       </tr>`).join('')}</tbody></table></div></div>`;
   }
   el.historyMore.classList.toggle('hidden', optionHistory.next_offset == null);
@@ -358,12 +375,17 @@ function showOptionHistoryDetail(id) {
       p.option.right === row.contract.right && p.option.side === row.contract.side &&
       p.option.strike === row.contract.strike && p.option.expiry === row.contract.expiry)).map(s => s.date);
   el.optionHistoryDetail.innerHTML = `<div class="history-detail"><h3>${escapeHtml(historyContractLabel(row))}</h3>
-    <p><strong>Evidence:</strong> Last observed open ${escapeHtml(row.last_seen_open)}${row.first_seen_absent ? `; first observed absent ${escapeHtml(row.first_seen_absent)}` : ''}. ${row.matched_trade_pl ? 'Imported opening and closing fills reconcile to a flat position.' : 'Disappearance alone does not establish a close, expiry, or assignment.'}</p>
+    <p><strong>Evidence:</strong> Last observed open ${escapeHtml(row.last_seen_open)}${row.first_seen_absent ? `; first observed absent ${escapeHtml(row.first_seen_absent)}` : ''}. ${row.matched_trade_pl ? 'Imported opening and closing fills reconcile to a flat position.' : row.events?.length ? 'Broker lifecycle records are listed below; partial or conflicting records do not establish a complete outcome.' : 'Disappearance alone does not establish a close, expiry, or assignment.'}</p>
     ${row.uncertain_as_of ? `<p><strong>Coverage gap:</strong> The ${escapeHtml(row.uncertain_as_of)} response did not confirm this contract. ${row.uncertain_skips?.length ? escapeHtml(row.uncertain_skips.map(skip => `${skip.symbol || 'Unidentified row'}: ${skip.reason}`).join('; ')) : 'One or more position rows were skipped.'}</p>` : ''}
+    ${row.event_coverage_gap ? `<p><strong>Event coverage gap:</strong> ${escapeHtml(row.event_coverage_gap)}</p>` : ''}
     <p><strong>Broker observations:</strong></p><ul>${row.observations.map(o => `<li>${escapeHtml(o.as_of)} · ${o.units} contract${o.units === 1 ? '' : 's'} · broker mark ${fmtPrettyMoney(o.mark, row.contract.currency)}${o.source === 'prior_books' ? ' · prior books' : ''}</li>`).join('')}</ul>
-    <p><strong>Imported IBKR fills for this contract:</strong> ${row.executions.length ? `${row.executions.length} execution${row.executions.length === 1 ? '' : 's'}. Dates can precede the first position observation; a same-day reopen may share fills across episodes.` : 'None available.'}</p>
+    <p><strong>Imported fills for this contract:</strong> ${row.executions.length ? `${row.executions.length} execution${row.executions.length === 1 ? '' : 's'}. Dates can precede the first position observation; a same-day reopen may share fills across episodes.` : 'None available.'}</p>
     ${row.executions.length ? `<ul>${row.executions.map(fill => `<li>${escapeHtml(fill.executed_at.replace('T', ' '))} · ${escapeHtml(fill.side.toUpperCase())} to ${escapeHtml(fill.effect)} · ${escapeHtml(fill.contracts)} contracts · gross ${escapeHtml(fill.gross_premium)} ${escapeHtml(fill.currency)} · commission ${escapeHtml(fill.commission)} ${escapeHtml(fill.currency)}</li>`).join('')}</ul>` : ''}
+    <p><strong>Broker lifecycle events:</strong> ${row.events?.length ? `${row.events.length} record${row.events.length === 1 ? '' : 's'}.` : row.broker_id === 'ibkr' ? 'None imported. Include Option Exercises, Assignments &amp; Expirations in the Activity Flex query to capture them.' : 'None imported. This broker connection currently supplies position snapshots only.'}</p>
+    ${row.events?.length ? `<ul>${row.events.map(event => `<li>${escapeHtml(event.date)} · ${escapeHtml(event.kind.replaceAll('_', ' '))} · ${escapeHtml(event.contracts)} contracts · ${escapeHtml(event.settlement)} settlement${event.proceeds !== undefined ? ` · proceeds ${escapeHtml(event.proceeds)} ${escapeHtml(event.currency)}` : ''}${event.broker_realized_pl !== undefined ? ` · broker option P&amp;L ${escapeHtml(event.broker_realized_pl)} ${escapeHtml(event.currency)}` : ''}</li>`).join('')}</ul>` : ''}
     ${row.matched_trade_pl ? `<p><strong>Matched trade P&amp;L:</strong> ${escapeHtml(row.matched_trade_pl.amount)} ${escapeHtml(row.matched_trade_pl.currency)} from ${escapeHtml(row.matched_trade_pl.opened)} opened and ${escapeHtml(row.matched_trade_pl.closed)} closed contracts, including ${escapeHtml(row.matched_trade_pl.fees)} ${escapeHtml(row.matched_trade_pl.currency)} in reported commissions. Other taxes or charges outside these fills are not included.</p>` : ''}
+    ${row.broker_event_pl ? `<p><strong>Broker-reported option event P&amp;L:</strong> ${escapeHtml(row.broker_event_pl.amount)} ${escapeHtml(row.broker_event_pl.currency)}. This is the broker's event amount, not a calculation from position disappearance.</p>` : ''}
+    ${(row.status === 'assigned' || row.status === 'exercised') && row.events?.every(event => event.settlement === 'physical') ? '<p>Physical delivery changes the underlying transaction basis or proceeds. The option row alone does not establish combined trade P&amp;L.</p>' : ''}
     <p><strong>Saved valuation checkpoints:</strong> ${checkpoints.length ? escapeHtml(checkpoints.join(', ')) : 'None. A checkpoint is a valuation, not broker confirmation.'}</p>
   </div>`;
 }

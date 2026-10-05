@@ -140,7 +140,8 @@ function canRebind(state: InvestorState, conn: BrokerAccountConnection): boolean
   return conn.last_sync?.ok !== true && !conn.last_sync?.account_id &&
     !Object.values(getPortfolio(state)).some(h => h.channel === conn.channel) &&
     !getCashes(state).some(c => c.channel === conn.channel) &&
-    !(state.option_executions ?? []).some(e => e.channel === conn.channel);
+    !(state.option_executions ?? []).some(e => e.channel === conn.channel) &&
+    !(state.option_events ?? []).some(e => e.channel === conn.channel);
 }
 
 /** Read legacy connector-keyed state as one account connection per type, without mutating it. */
@@ -395,6 +396,7 @@ export function ibkrStatements(raw: Buffer, channel: string): BrokerStatement[] 
   const out = matches.map(m => {
     const statement = mapFlexDocToStatement(parseFlexQueryXml(m[0]), channel);
     if (statement.option_executions) statement.option_executions = statement.option_executions.map(row => ({ ...row, channel }));
+    if (statement.option_events) statement.option_events = statement.option_events.map(row => ({ ...row, channel }));
     return statement;
   });
   const ids = new Set<string>();

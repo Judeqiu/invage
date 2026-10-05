@@ -3,13 +3,14 @@ import { readBrokerAccountModel, ibkrStatements } from '../brokers/accounts.js';
 import { getBrokerAdapter } from '../brokers/adapter.js';
 import { listBrokerSyncRuns } from '../brokers/sync-history.js';
 import { buildOptionEpisodes, optionObservationFromStatement, type OptionObservation } from '../brokers/option-history.js';
+import { mergeOptionLifecycleEvents, type OptionLifecycleEvent } from '../brokers/option-events.js';
 import { loadBrokerParserSpec } from '../brokers/parser-store.js';
 import { runCsvTablesSpec } from '../brokers/csv-tables.js';
 import type { InvestorState } from '../state/portfolio-state.js';
 import type { BrokerStatement } from '../brokers/statement.js';
 
 const MAX_RAW_BYTES = 10 * 1024 * 1024;
-const parsedArchiveCache = new Map<string, OptionObservation>();
+const parsedArchiveCache = new Map<string, { observation: OptionObservation; events: OptionLifecycleEvent[] }>();
 
 function archivedBytes(slug: string, channel: string, id: string): Buffer {
   const file = brokerRawDataFile(slug, channel, id);
@@ -44,6 +45,7 @@ export function optionHistoryForState(state: InvestorState, now = new Date()) {
   const model = readBrokerAccountModel(state);
   const observations: OptionObservation[] = [...(state.option_observations ?? [])];
   const known = new Set(observations.map(row => row.id));
+  const archivedEvents: OptionLifecycleEvent[] = [];
   const gaps: Array<{ channel: string; as_of: string; reason: string }> = [];
   for (const [id, conn] of Object.entries(model.connections)) {
     if (!conn.account_id) continue;
@@ -51,16 +53,17 @@ export function optionHistoryForState(state: InvestorState, now = new Date()) {
     for (;;) {
       const page = listBrokerSyncRuns(state.user.slug, conn.channel, offset, 100);
       for (const run of page.runs) {
-        if (!run.ok || known.has(run.id)) continue;
+        if (!run.ok) continue;
         const cacheKey = `${state.user.slug}:${conn.channel}:${run.id}`;
         const cached = parsedArchiveCache.get(cacheKey);
         if (cached) {
-          observations.push(cached);
-          known.add(run.id);
+          if (!known.has(run.id)) { observations.push(cached.observation); known.add(run.id); }
+          archivedEvents.push(...cached.events);
           continue;
         }
         if (!run.raw_data_id || !run.as_of) {
-          gaps.push({ channel: conn.channel, as_of: run.as_of ?? run.at.slice(0, 10), reason: 'Raw archive unavailable' });
+          gaps.push({ channel: conn.channel, as_of: run.as_of ?? run.at.slice(0, 10),
+            reason: 'Raw archive unavailable; lifecycle events cannot be checked' });
           continue;
         }
         try {
@@ -72,19 +75,20 @@ export function optionHistoryForState(state: InvestorState, now = new Date()) {
             statement, brokerId: conn.broker_id, connectionId: id,
             channel: conn.channel, observedAt: run.at, rawDataId: run.raw_data_id, syncId: run.id,
           });
-          observations.push(observation);
-          known.add(run.id);
+          if (!known.has(run.id)) { observations.push(observation); known.add(run.id); }
+          archivedEvents.push(...(statement.option_events ?? []));
           if (parsedArchiveCache.size >= 1000) parsedArchiveCache.clear();
-          parsedArchiveCache.set(cacheKey, observation);
+          parsedArchiveCache.set(cacheKey, { observation, events: statement.option_events ?? [] });
         } catch (error) {
           gaps.push({ channel: conn.channel, as_of: run.as_of,
-            reason: 'Archived response could not be reconstructed' });
+            reason: 'Archived response could not be reconstructed; lifecycle events cannot be checked' });
         }
       }
       if (page.next_offset == null) break;
       offset = page.next_offset;
     }
   }
-  const episodes = buildOptionEpisodes({ ...state, option_observations: observations }, now);
+  const events = mergeOptionLifecycleEvents(state.option_events ?? [], archivedEvents);
+  const episodes = buildOptionEpisodes({ ...state, option_observations: observations, option_events: events }, now);
   return { episodes, observations, gaps };
 }

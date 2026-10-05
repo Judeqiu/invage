@@ -1,5 +1,6 @@
 import { saveInvestor, type InvestorSnapshot } from '../state/investor-store.js';
 import { mergeOptionExecutions } from './option-executions.js';
+import { mergeOptionLifecycleEvents } from './option-events.js';
 import { appendOptionObservation } from './option-history.js';
 /**
  * Channel snapshot apply — writes only public books types
@@ -145,6 +146,12 @@ export async function applyBrokerStatement(
   if (doc.option_executions?.some(row => row.channel !== channel || row.account_id !== doc.account_id)) {
     throw new Error('Execution channel/account differs from broker statement');
   }
+  const optionEvents = doc.option_events === undefined ? undefined : mergeOptionLifecycleEvents(
+    state.option_events === undefined ? [] : state.option_events, doc.option_events);
+  if (doc.option_events?.some(row => row.channel !== channel || row.account_id !== doc.account_id ||
+      row.broker_id !== (connection?.brokerId ?? connectorId))) {
+    throw new Error('Option event broker/channel/account differs from broker statement');
+  }
   const stamped = stampLots(doc.lots, channel);
   const portfolio = { ...getPortfolio(state) };
   const { next, removedKeys } = replaceChannelHoldings(portfolio, stamped, channel);
@@ -236,6 +243,7 @@ export async function applyBrokerStatement(
   }
   writeConnectionMetrics(state, connectorId, doc);
   if (executions !== undefined) state.option_executions = executions;
+  if (optionEvents !== undefined) state.option_events = optionEvents;
 
   state.log.push({
     ts: today,

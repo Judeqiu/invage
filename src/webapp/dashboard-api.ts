@@ -47,7 +47,9 @@ export function createDashboardApiRouter(): Router {
       const to = typeof req.query.to === 'string' ? req.query.to : '';
       const q = typeof req.query.q === 'string' ? req.query.q.trim().toUpperCase().slice(0, 100) : '';
       if (right && right !== 'put' && right !== 'call' ||
-          status && !['historical', 'open', 'unverified', 'no_longer_observed', 'closed_by_fills'].includes(status) ||
+          status && !['historical', 'open', 'unverified', 'no_longer_observed', 'closed_by_fills',
+            'expired', 'assigned', 'exercised', 'cash_settled', 'mixed_outcomes',
+            'partially_explained', 'conflicting_evidence'].includes(status) ||
           from && !validDate(from) || to && !validDate(to) ||
           from && to && from > to) {
         res.status(400).json({ error: 'invalid_filter', message: 'Invalid option history filter.' }); return;

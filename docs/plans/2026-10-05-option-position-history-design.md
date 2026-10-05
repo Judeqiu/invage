@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-05
 
-**Status:** Observation history, dashboard view, and fully matched execution P&L implemented; expiry or assignment events and general broker realized P&L remain future work
+**Status:** Observation history, dashboard view, fully matched execution P&L, and IBKR Flex option lifecycle events implemented. Tiger, MooMoo, and Webull still supply position observations only.
 
 **Scope:** Historical option positions on the dashboard across IBKR, Tiger, MooMoo, and Webull. This document also defines how valuation snapshots relate to broker syncs and how the UI handles missing syncs.
 
@@ -19,7 +19,8 @@ The first release should show the historical contract, its broker account, the l
 | Current broker books | Successful manual or scheduled sync | `applyBrokerStatement` replaces positions and cash for the selected channel. A removed option no longer appears in the current dashboard. |
 | Broker sync run and raw archive | Sync attempt | Run metadata records success or error; successful raw XML/JSON is archived. The run record does not contain the full prior position inventory. |
 | Dashboard valuation snapshot | Explicit `save_snapshot` tool call | Captures the books' positions plus market valuation at that call. Sync does not invoke this tool. One `snapshot-YYYY-MM-DD.json` file is written per UTC day; another save that day overwrites it. |
-| Option execution journal | IBKR Flex Trades at Executions level or historical Flex XML import | Retains individual option fills independently of current positions. Tiger, MooMoo, and Webull currently do not import fills. It does not include a general expiry or assignment event model. |
+| Option execution journal | IBKR Flex Trades at Executions level or historical Flex XML import | Retains individual option fills independently of current positions. Tiger, MooMoo, and Webull currently do not import fills. |
+| Option lifecycle event journal | IBKR Flex Options, Exercises and Expirations section | Retains explicit expiry, assignment, exercise, or cash settlement records. A missing section is not proof that no event occurred. |
 
 The dashboard assembles its live view from the *current* books and newly resolved market marks. Its archive dates come only from saved valuation snapshots. A saved snapshot can therefore value positions from an older broker pull; its date is not proof that those positions were still open that day. When there are no current holdings or deposits, the dashboard currently returns an empty model before it loads prior snapshots.
 
@@ -31,7 +32,7 @@ Relevant implementation: `src/brokers/apply-statement.ts`, `src/brokers/accounts
 
 | Broker | Position source and `as_of` | Fill coverage | History consequence |
 |---|---|---|---|
-| IBKR | Activity Flex `OpenPositions`; statement `toDate`. Activity data is prior-day. | `Trades` at `EXECUTION` level when included in the Activity query, or a history-only XML import. | Observations and imported fills can be displayed together. A missing or incomplete Trades section cannot establish a close or realized P&L. |
+| IBKR | Activity Flex `OpenPositions`; statement `toDate`. Activity data is prior-day. | `Trades` at `EXECUTION` level when included in the Activity query, or a history-only XML import. `OptionEAE` events when included in the Activity query. | Observations, fills, and broker lifecycle events can be displayed together. Missing sections cannot establish a close or event outcome. |
 | Tiger | OpenAPI stock, option, and fund positions; UTC fetch date. | None imported. | Record presence and absence, with exit outcome unknown. |
 | MooMoo | Cloud Open API stock and listed option positions; UTC fetch date. | None imported. | Record presence and absence, with exit outcome unknown. |
 | Webull | OpenAPI equity and supported single-leg option positions; UTC fetch date. Combo and multi-leg rows may be skipped. | None imported. | Record presence and absence for imported contracts; skipped rows must not be interpreted as closures. |
@@ -106,7 +107,7 @@ The interval for a disappeared position is `(last_seen_open_as_of, first_seen_ab
 | Latest observation is old, sync is paused/late, or a later attempt failed | Status unverified, last confirmed open as of date | Last confirmed quantity; any newer quote explicitly labeled. Suppress current exposure conclusions after expiry. |
 | Later complete observation omits the contract | No longer observed, between two dates | Last observed mark and cost only. Realized P&L unavailable. |
 | Complete matched IBKR opening/closing executions reconcile to zero and account/contract identity matches | Closed by fills | Gross proceeds, exact signed fees, and realized P&L only after a documented matching method handles partial fills and currency. |
-| Authoritative expiry or assignment event is imported and reconciled | Expired or assigned | Event-specific proceeds and position/cash/share effects; no inferred zero-value close. This is a later capability, not available from current connector records. |
+| Authoritative expiry or assignment event is imported and reconciled | Expired or assigned | Broker event P&L only where complete and appropriate; no inferred zero-value close. IBKR Flex can now supply these records when the section is configured. |
 
 Do not call daily or cumulative net premium **realized P&L**. The current execution journal groups short-option sell-to-open and buy-to-close cash flow; it does not match complete position lifecycles. A snapshot's `totalPL` is valuation versus recorded cost for the then-current book, not lifetime option profit. Also do not use the books ledger's broker-sync close/open postings as trade evidence: `applyBrokerStatement` closes and reopens imported holdings during reconciliation even when a position persists.
 
@@ -135,7 +136,7 @@ Acceptance cases: consecutive successful observations with disappearance; same c
 
 **What this resolves:** Historical visibility no longer depends on periodic valuation snapshots or the current open book. Every successful broker observation can establish presence or absence, including an empty option list. The UI keeps missing days and missing broker events explicit.
 
-**Limits retained:** The four connectors do not currently supply a common option lifecycle feed. IBKR can supply fills only when configured for execution-level Trades; the other three supply no fills today. No connector in this implementation supplies a general confirmed expiry/assignment event. Historical backfill is limited by retained raw responses and imported fills. The first release therefore cannot promise an exact exit date or realized P&L for every option.
+**Limits retained:** The four connectors do not supply a common option lifecycle feed. IBKR can supply fills when configured for execution-level Trades and lifecycle events when configured for Options, Exercises and Expirations; the other three currently supply neither. Historical backfill is limited by retained raw responses. No connector can promise an exact exit date or realized P&L for every option.
 
 **Implementation risks to address:** Preserve the last successful position date through failed syncs; prevent skipped rows from creating false exits; make observation persistence recoverable across a crash; avoid conflating repeated syncs with economic trades; and keep old snapshots usable when the current portfolio is empty. These are acceptance conditions for implementation, not optional UI polish.
 
@@ -144,3 +145,33 @@ Acceptance cases: consecutive successful observations with disappearance; same c
 Successful syncs now append option observations in the same revision checked investor-state save as the current broker books. The history API also reads older successful sync runs and reconstructs observations from their archived raw responses where possible; failures appear as coverage gaps. The dashboard has Open and History views, contract filters and detail, per-broker position dates, and access to history when current books are empty. New valuation snapshots carry broker as-of dates. Removed contracts without sufficient fills remain **No longer observed**, with P&L unknown. For an IBKR episode whose opening and closing executions have one account, contract, and currency, a nonnegative running quantity, no intervening flat/reopen, a final flat quantity, and quantities that agree with every broker observation, the dashboard reports **Closed by fills** and exact trade cash flow including imported commissions. This calculation omits taxes or charges absent from the imported executions and is not a substitute for broker reported realized P&L.
 
 The first implementation keeps observations in investor state for atomicity. As history grows, move the same data contract to an indexed tenant scoped store with transactional or repairable sync linkage; avoid unbounded aggregate growth. Archived backfill is read only and may be slower for accounts with many past raw files. Older runs without a usable archive remain explicit gaps.
+
+## Lifecycle model and outcome review (2026-10-06)
+
+An **episode** is one continuous observed holding of an account, contract, and side. Quantity and cost may change within it. A complete successful position snapshot establishes an open quantity or its absence at the statement `as_of` date. Fills and lifecycle events form separate journals, keyed by broker, account/channel, contract terms, and broker record ID. Repeated imports deduplicate; conflicting copies fail. A later reopened contract starts a new episode. A missing or failed daily sync extends the uncertainty interval and never creates a broker event. A saved valuation snapshot never advances the broker observation date.
+
+| Evidence after last observed open | Dashboard status | P&L rule |
+|---|---|---|
+| Exact opening and closing option fills reconcile to flat, with no intervening flat/reopen | Closed by fills | Sum execution proceeds and commissions in original currency. No estimate from average cost or mark. |
+| Full quantity of broker expiration events, followed by observed absence | Expired | Show broker reported option realized P&L only if every matched terminal event reports it. Expiry date or zero mark alone is insufficient. |
+| Full quantity of broker assignment events, followed by observed absence | Assigned | Physical delivery creates an underlying position/cash transaction. The option event alone does not prove combined option-plus-underlying trade P&L. |
+| Full quantity of broker exercise events, followed by observed absence | Exercised | Treat physical delivery as underlying acquisition/disposition; combined trade P&L needs the underlying's eventual disposal and basis. |
+| Full quantity of explicitly cash-settled option events, followed by observed absence | Cash settled | Show broker reported option event P&L when complete. Cash settlement may arise from an index option assignment/exercise. |
+| Both fills and events explain disjoint parts of the previously observed quantity | Mixed outcomes | Do not collapse to one total unless every component's proceeds, fees, and basis are independently reconciled. |
+| Events/fills account for less than observed quantity | Partly explained | No whole-episode P&L. |
+| Claimed event/fill quantities exceed observed quantity, wrong side, or fully matched fills overlap a terminal event | Conflicting evidence | Suppress computed P&L until records are reconciled. |
+| Complete later position snapshot says absent, but no complete transaction evidence | No longer observed | P&L unavailable. Could be a close, expiry, assignment, transfer, adjustment, or correction. |
+| Last open snapshot is stale, sync failed/missed, or position row might have been skipped | Status unverified | Keep the last known open observation; no inferred outcome. |
+
+The classifier requires events **dated after** the last observed-open day and no later than the first observed-absent day. Same-day ordering is unavailable in daily snapshots. Event quantities must reconcile to the last observed open quantity. Explicit events occurring during an episode remain visible even when they do not establish its final disposition. Physical assignment/exercise can alter the underlying's cost basis or proceeds, so reporting just the option premium as a final strategy profit would be misleading. Transfers, contract adjustments, corporate actions, and broker corrections need their own authoritative activity records; these are currently displayed as unexplained absence, never relabeled as expiry.
+
+### Broker evidence coverage
+
+| Broker | Current data imported | Outcome automatically confirmed here | Remaining work |
+|---|---|---|---|
+| IBKR | Flex Open Positions, Cash Report; optional execution-level Trades and OptionEAE section | Exact fill close or explicit full-quantity expiration, assignment, exercise, cash settlement | Require those Flex sections/fields in the user's query; reconcile any excluded activity, transfers, or corrections. |
+| Tiger | OpenAPI current option positions and assets | Presence/absence only | Import authenticated historical fills and lifecycle activity with broker IDs and explicit event semantics. |
+| MooMoo | MooMoo **Cloud** current positions and assets | Presence/absence only | Verify a Cloud transaction-history API and its entitlement; OpenD documentation does not establish the Cloud API contract. |
+| Webull | OpenAPI current supported option positions and balances | Presence/absence only | Verify execution and lifecycle history for this account/API product, including supported option spreads. |
+
+Primary references: [IBKR Flex Options, Exercises and Expirations](https://www.ibkrguides.com/reportingreference/reportguide/options_exercises_expirations_fq.htm), [IBKR Flex Trades](https://www.ibkrguides.com/reportingreference/reportguide/tradesfq.htm), [Options Industry Council: Exercising Options](https://prd-web.optionseducation.org/optionsoverview/exercising-options), [Tiger OpenAPI trade history](https://quant.itigerup.com/openapi/en/python/operation/trade/tradeList.html), and [MooMoo OpenD historical fills](https://openapi.moomoo.com/moomoo-api-doc/en/trade/get-history-order-fill-list.html). The MooMoo reference describes OpenD, while this connector uses Cloud; it is not treated as proof of a compatible endpoint.

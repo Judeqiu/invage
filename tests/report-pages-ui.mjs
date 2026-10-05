@@ -231,8 +231,17 @@ const server = createServer(async (req, res) => {
             executions: [{ executed_at: '2026-09-18T09:33:53', side: 'sell', effect: 'open',
               contracts: '1', gross_premium: '315', commission: '-1.040079', currency: 'USD' },
               { executed_at: '2026-10-01T09:54:28', side: 'buy', effect: 'close', contracts: '1',
-                gross_premium: '-15', commission: '-1.04028', currency: 'USD' }] }],
-        total: 2, next_offset: null, history_started: true,
+                gross_premium: '-15', commission: '-1.04028', currency: 'USD' }] },
+          { id: 'expired-option', broker_id: 'ibkr', connection_id: 'ibkr', channel: 'ibkr',
+            account_id: 'U1', contract: { underlying: 'AAPL', side: 'short', right: 'put',
+              strike: 150, expiry: '2026-10-09', units: 1, mark: 0, currency: 'USD' },
+            first_seen: '2026-10-08', last_seen_open: '2026-10-08', first_seen_absent: '2026-10-10',
+            status: 'expired', broker_event_pl: { amount: '298.50', currency: 'USD' },
+            observations: [{ as_of: '2026-10-08', observed_at: '2026-10-08T12:00:00Z',
+              source: 'broker', units: 1, avg_price: 300, mark: 0 }], executions: [],
+            events: [{ id: 'e1', date: '2026-10-09', kind: 'expiration', settlement: 'unknown',
+              contracts: '1', currency: 'USD', broker_realized_pl: '298.50' }] }],
+        total: 3, next_offset: null, history_started: true,
         connections: [{ id: 'ibkr', broker_id: 'ibkr', channel: 'ibkr', label: 'IBKR', account_id: 'U1',
           schedule: 'daily', position_as_of: '2026-09-15', last_success_at: '2026-09-16T01:00:00Z',
           last_attempt: { ok: true, at: '2026-09-16T01:00:00Z' } }],
@@ -313,6 +322,9 @@ try {
   assert(/\$297\.92/.test(await page.$eval('#optionHistoryTable', node => node.textContent)), 'matched trade P&L appears');
   await page.click('#optionHistoryTable [data-history-id="matched-option"]');
   assert(/297\.919641 USD/.test(await page.$eval('#optionHistoryDetail', node => node.textContent)), 'exact matched trade P&L appears in detail');
+  assert(/Expired/.test(await page.$eval('#optionHistoryTable', node => node.textContent)), 'broker expiry status appears');
+  await page.click('#optionHistoryTable [data-history-id="expired-option"]');
+  assert(/298\.50 USD/.test(await page.$eval('#optionHistoryDetail', node => node.textContent)), 'broker event P&L appears in detail');
   await page.click('#optionOpenTab');
   const optionCells = await page.$$eval('#openOptions .option-ledger-row td', (cells) => cells.map((cell) => cell.textContent.trim()));
   assert.equal(optionCells[1], '-1', 'short position is signed');

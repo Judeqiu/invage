@@ -6,6 +6,7 @@
 
 import type { Holding } from '../market/types.js';
 import { mergeOptionExecutions, type OptionExecution } from './option-executions.js';
+import { mergeOptionLifecycleEvents, type OptionLifecycleEvent } from './option-events.js';
 import { assertHolding, HOLDING_KEY_CHANNEL_SEP } from '../market/position-value.js';
 import {
   assertBrokerConnectionMetrics,
@@ -13,7 +14,7 @@ import {
 } from '../state/portfolio-state.js';
 
 export interface BrokerSkip {
-  kind: 'position' | 'cash';
+  kind: 'position' | 'cash' | 'event';
   reason: string;
   symbol?: string;
   currency?: string;
@@ -42,6 +43,7 @@ export interface BrokerLot {
 
 export interface BrokerStatement {
   option_executions?: OptionExecution[];
+  option_events?: OptionLifecycleEvent[];
   account_id: string;
   as_of: string;
   from_date?: string;
@@ -160,8 +162,8 @@ function assertSkip(raw: unknown, i: number): BrokerSkip {
     throw new Error(`Broker statement skipped[${i}] must be an object.`);
   }
   const r = raw as Record<string, unknown>;
-  if (r.kind !== 'position' && r.kind !== 'cash') {
-    throw new Error(`Broker statement skipped[${i}].kind must be position or cash.`);
+  if (r.kind !== 'position' && r.kind !== 'cash' && r.kind !== 'event') {
+    throw new Error(`Broker statement skipped[${i}].kind must be position, cash, or event.`);
   }
   if (typeof r.reason !== 'string' || !r.reason.trim()) {
     throw new Error(`Broker statement skipped[${i}].reason is required.`);
@@ -188,7 +190,7 @@ export function assertBrokerStatement(raw: unknown): BrokerStatement {
   }
   const o = raw as Record<string, unknown>;
   rejectVendorShape(o);
-  const allowed = new Set(['account_id', 'as_of', 'from_date', 'cash', 'lots', 'skipped', 'metrics', 'option_executions']);
+  const allowed = new Set(['account_id', 'as_of', 'from_date', 'cash', 'lots', 'skipped', 'metrics', 'option_executions', 'option_events']);
   for (const k of Object.keys(o)) {
     if (!allowed.has(k)) {
       throw new Error(`Broker statement: unknown field "${k}".`);
@@ -246,6 +248,10 @@ export function assertBrokerStatement(raw: unknown): BrokerStatement {
   if (o.option_executions !== undefined) {
     doc.option_executions = mergeOptionExecutions([], o.option_executions);
     if (doc.option_executions.some(row => row.account_id !== doc.account_id)) throw new Error('Execution account differs from statement account');
+  }
+  if (o.option_events !== undefined) {
+    doc.option_events = mergeOptionLifecycleEvents([], o.option_events);
+    if (doc.option_events.some(row => row.account_id !== doc.account_id)) throw new Error('Option event account differs from statement account');
   }
   return doc;
 }

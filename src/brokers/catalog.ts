@@ -54,7 +54,7 @@ export const BROKER_CATALOG: readonly BrokerConnectorDef[] = [
         label: 'Activity Flex Query ID',
         type: 'text',
         required: true,
-        help: 'Info icon on the Flex Queries list. Query must include Open Positions and Cash Report, format XML. Include Trades at Executions level for the option journal: accountId, tradeID, conid, dateTime (YYYYMMDD;HHMMSS), assetCategory, levelOfDetail, buySell, openCloseIndicator, quantity, multiplier, underlyingSymbol, putCall, strike, expiry (YYYYMMDD), currency, proceeds, ibCommission and ibCommissionCurrency. Multi-currency cash is imported; BASE_SUMMARY is dropped.',
+        help: 'Info icon on the Flex Queries list. Query must include Open Positions and Cash Report, format XML. Include Trades at Executions level for the option journal: accountId, tradeID, conid, dateTime (YYYYMMDD;HHMMSS), assetCategory, levelOfDetail, buySell, openCloseIndicator, quantity, multiplier, underlyingSymbol, putCall, strike, expiry (YYYYMMDD), currency, proceeds, ibCommission and ibCommissionCurrency. Include Options, Exercises and Expirations for broker-confirmed outcomes: accountId, assetCategory, tradeID, conid, underlyingSymbol, putCall, strike, expiry, multiplier, date, transactionType, quantity, currency, proceeds, commTax and realizedPnl. Multi-currency cash is imported; BASE_SUMMARY is dropped.',
       },
       {
         id: 'tradeconf_query_id',

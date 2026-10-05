@@ -1,4 +1,5 @@
 import { parseFlexOptionExecutions } from './flex-executions.js';
+import { parseFlexOptionEvents } from './flex-events.js';
 
 export class FlexProtocolError extends Error {
   constructor(
@@ -44,7 +45,7 @@ export interface FlexCashRow {
 }
 
 export interface FlexSkip {
-  kind: 'position' | 'cash';
+  kind: 'position' | 'cash' | 'event';
   reason: string;
   symbol?: string;
   assetCategory?: string;
@@ -58,6 +59,7 @@ export function formatFlexSkip(skip: FlexSkip): string {
 
 export interface FlexStatementDoc {
   optionExecutions?: import('../brokers/option-executions.js').OptionExecution[];
+  optionEvents?: import('../brokers/option-events.js').OptionLifecycleEvent[];
   accountId: string;
   fromDate: string;
   toDate: string;
@@ -373,5 +375,10 @@ export function parseFlexQueryXml(xml: string | Buffer): FlexStatementDoc {
   if (stAttrs.period) doc.period = stAttrs.period;
   const executions = parseFlexOptionExecutions(text);
   if (executions !== undefined) doc.optionExecutions = executions;
+  const events = parseFlexOptionEvents(text);
+  if (events !== undefined) {
+    doc.optionEvents = events.events;
+    doc.skipped.push(...events.skipped);
+  }
   return doc;
 }

@@ -98,6 +98,7 @@ export function mapFlexDocToStatement(doc: FlexStatementDoc, channel: string): B
     })),
     skipped: [...doc.skipped, ...mapSkipped].map(brokerSkipFromFlex),
     ...(doc.optionExecutions !== undefined ? { option_executions: doc.optionExecutions } : {}),
+    ...(doc.optionEvents !== undefined ? { option_events: doc.optionEvents } : {}),
   };
 }
 
