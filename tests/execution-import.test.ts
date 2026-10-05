@@ -2,6 +2,7 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { type InvestorSnapshot } from '../src/state/investor-store.js';
+import type { OptionExecution } from '../src/brokers/option-executions.js';
 
 const mocks = vi.hoisted(() => ({ save: vi.fn(), load: vi.fn(), session: vi.fn(), target: vi.fn() }));
 vi.mock('../src/state/investor-store.js', () => ({ saveInvestor: mocks.save, loadInvestor: mocks.load }));
@@ -90,10 +91,19 @@ it('serves filtered option history without needing a current position', async ()
   appendOptionObservation(snapshot.state, { statement: { account_id: 'U1', as_of: '2026-10-04',
     cash: [], skipped: [], lots: [] }, brokerId: 'ibkr', connectionId: id, channel,
     observedAt: '2026-10-04T12:00:00Z', syncId: 'absent' });
+  const opening: OptionExecution = { channel, account_id: 'U1', execution_id: 'open', contract_id: '123',
+    executed_at: '2026-09-30T09:33:53', underlying: 'AAPL', right: 'put', expiry: '2026-11-20',
+    strike: '150', multiplier: '100', contracts: '1', side: 'sell', effect: 'open', currency: 'USD',
+    gross_premium: '315', commission: '-1.040079' };
+  snapshot.state.option_executions = [opening, { ...opening, execution_id: 'close',
+    executed_at: '2026-10-04T09:54:28', side: 'buy', effect: 'close', gross_premium: '-15', commission: '-1.04028' }];
   const response = await request(app()).get('/option-history?status=historical&right=put&from=2026-10-03');
   expect(response.status).toBe(200);
   expect(response.body.episodes).toHaveLength(1);
   expect(response.body.episodes[0].first_seen_absent).toBe('2026-10-04');
+  expect(response.body.episodes[0]).toMatchObject({ status: 'closed_by_fills',
+    matched_trade_pl: { amount: '297.919641', currency: 'USD' } });
+  expect((await request(app()).get('/option-history?status=closed_by_fills')).body.total).toBe(1);
   expect((await request(app()).get('/option-history?from=2026-10-05&to=2026-10-01')).status).toBe(400);
 });
 

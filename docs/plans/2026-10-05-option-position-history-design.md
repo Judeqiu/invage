@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-05
 
-**Status:** Observation history and dashboard view implemented; confirmed realized P&L and expiry or assignment events remain future work
+**Status:** Observation history, dashboard view, and fully matched execution P&L implemented; expiry or assignment events and general broker realized P&L remain future work
 
 **Scope:** Historical option positions on the dashboard across IBKR, Tiger, MooMoo, and Webull. This document also defines how valuation snapshots relate to broker syncs and how the UI handles missing syncs.
 
@@ -141,6 +141,6 @@ Acceptance cases: consecutive successful observations with disappearance; same c
 
 ## Implemented scope
 
-Successful syncs now append option observations in the same revision checked investor-state save as the current broker books. The history API also reads older successful sync runs and reconstructs observations from their archived raw responses where possible; failures appear as coverage gaps. The dashboard has Open and History views, contract filters and detail, per-broker position dates, and access to history when current books are empty. New valuation snapshots carry broker as-of dates. The current release labels removed contracts **No longer observed** and leaves realized P&L unknown. Matching IBKR fills are shown as evidence, without claiming a complete lifecycle calculation.
+Successful syncs now append option observations in the same revision checked investor-state save as the current broker books. The history API also reads older successful sync runs and reconstructs observations from their archived raw responses where possible; failures appear as coverage gaps. The dashboard has Open and History views, contract filters and detail, per-broker position dates, and access to history when current books are empty. New valuation snapshots carry broker as-of dates. Removed contracts without sufficient fills remain **No longer observed**, with P&L unknown. For an IBKR episode whose opening and closing executions have one account, contract, and currency, a nonnegative running quantity, no intervening flat/reopen, a final flat quantity, and quantities that agree with every broker observation, the dashboard reports **Closed by fills** and exact trade cash flow including imported commissions. This calculation omits taxes or charges absent from the imported executions and is not a substitute for broker reported realized P&L.
 
 The first implementation keeps observations in investor state for atomicity. As history grows, move the same data contract to an indexed tenant scoped store with transactional or repairable sync linkage; avoid unbounded aggregate growth. Archived backfill is read only and may be slower for accounts with many past raw files. Older runs without a usable archive remain explicit gaps.

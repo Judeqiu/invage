@@ -328,7 +328,7 @@ function renderOptionHistory() {
   const to = el.historyTo.value;
   const rows = optionHistory.episodes.filter(row =>
     (!broker || row.channel === broker) && (!right || row.contract.right === right) &&
-    (status === 'all' || status === 'historical' && row.status === 'no_longer_observed' || row.status === status) &&
+    (status === 'all' || status === 'historical' && row.first_seen_absent || row.status === status) &&
     (!search || historyContractLabel(row).toUpperCase().includes(search)) &&
     (!from || (row.first_seen_absent || row.last_seen_open) >= from) &&
     (!to || (row.first_seen_absent || row.last_seen_open) <= to));
@@ -342,8 +342,8 @@ function renderOptionHistory() {
       <tbody>${rows.map(row => `<tr><td>${escapeHtml(historyContractLabel(row))}</td>
         <td>${escapeHtml(row.broker_id.toUpperCase())} · ${escapeHtml(row.account_id)}</td>
         <td>${escapeHtml(row.last_seen_open)}</td><td>${row.first_seen_absent ? escapeHtml(row.first_seen_absent) : '—'}</td>
-        <td>${row.status === 'no_longer_observed' ? 'No longer observed' : row.status === 'unverified' ? 'Status unverified' : 'Open as of date'}</td>
-        <td>Unknown · —</td><td><button type="button" class="chip-btn" data-history-id="${escapeHtml(row.id)}">Details</button></td>
+        <td>${row.status === 'closed_by_fills' ? 'Closed by fills' : row.status === 'no_longer_observed' ? 'No longer observed' : row.status === 'unverified' ? 'Status unverified' : 'Open as of date'}</td>
+        <td>${row.matched_trade_pl ? `Matched trade P&amp;L ${fmtPrettyMoney(Number(row.matched_trade_pl.amount), row.matched_trade_pl.currency)}` : 'Unknown · —'}</td><td><button type="button" class="chip-btn" data-history-id="${escapeHtml(row.id)}">Details</button></td>
       </tr>`).join('')}</tbody></table></div></div>`;
   }
   el.historyMore.classList.toggle('hidden', optionHistory.next_offset == null);
@@ -358,11 +358,12 @@ function showOptionHistoryDetail(id) {
       p.option.right === row.contract.right && p.option.side === row.contract.side &&
       p.option.strike === row.contract.strike && p.option.expiry === row.contract.expiry)).map(s => s.date);
   el.optionHistoryDetail.innerHTML = `<div class="history-detail"><h3>${escapeHtml(historyContractLabel(row))}</h3>
-    <p><strong>Evidence:</strong> Last observed open ${escapeHtml(row.last_seen_open)}${row.first_seen_absent ? `; first observed absent ${escapeHtml(row.first_seen_absent)}` : ''}. Disappearance does not establish a close, expiry, or assignment.</p>
+    <p><strong>Evidence:</strong> Last observed open ${escapeHtml(row.last_seen_open)}${row.first_seen_absent ? `; first observed absent ${escapeHtml(row.first_seen_absent)}` : ''}. ${row.matched_trade_pl ? 'Imported opening and closing fills reconcile to a flat position.' : 'Disappearance alone does not establish a close, expiry, or assignment.'}</p>
     ${row.uncertain_as_of ? `<p><strong>Coverage gap:</strong> The ${escapeHtml(row.uncertain_as_of)} response did not confirm this contract. ${row.uncertain_skips?.length ? escapeHtml(row.uncertain_skips.map(skip => `${skip.symbol || 'Unidentified row'}: ${skip.reason}`).join('; ')) : 'One or more position rows were skipped.'}</p>` : ''}
     <p><strong>Broker observations:</strong></p><ul>${row.observations.map(o => `<li>${escapeHtml(o.as_of)} · ${o.units} contract${o.units === 1 ? '' : 's'} · broker mark ${fmtPrettyMoney(o.mark, row.contract.currency)}${o.source === 'prior_books' ? ' · prior books' : ''}</li>`).join('')}</ul>
     <p><strong>Imported IBKR fills for this contract:</strong> ${row.executions.length ? `${row.executions.length} execution${row.executions.length === 1 ? '' : 's'}. Dates can precede the first position observation; a same-day reopen may share fills across episodes.` : 'None available.'}</p>
     ${row.executions.length ? `<ul>${row.executions.map(fill => `<li>${escapeHtml(fill.executed_at.replace('T', ' '))} · ${escapeHtml(fill.side.toUpperCase())} to ${escapeHtml(fill.effect)} · ${escapeHtml(fill.contracts)} contracts · gross ${escapeHtml(fill.gross_premium)} ${escapeHtml(fill.currency)} · commission ${escapeHtml(fill.commission)} ${escapeHtml(fill.currency)}</li>`).join('')}</ul>` : ''}
+    ${row.matched_trade_pl ? `<p><strong>Matched trade P&amp;L:</strong> ${escapeHtml(row.matched_trade_pl.amount)} ${escapeHtml(row.matched_trade_pl.currency)} from ${escapeHtml(row.matched_trade_pl.opened)} opened and ${escapeHtml(row.matched_trade_pl.closed)} closed contracts, including ${escapeHtml(row.matched_trade_pl.fees)} ${escapeHtml(row.matched_trade_pl.currency)} in reported commissions. Other taxes or charges outside these fills are not included.</p>` : ''}
     <p><strong>Saved valuation checkpoints:</strong> ${checkpoints.length ? escapeHtml(checkpoints.join(', ')) : 'None. A checkpoint is a valuation, not broker confirmation.'}</p>
   </div>`;
 }

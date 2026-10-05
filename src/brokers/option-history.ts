@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { Holding, OptionSpec } from '../market/types.js';
 import { getPortfolio, type InvestorState } from '../state/portfolio-state.js';
 import type { BrokerSkip, BrokerStatement } from './statement.js';
-import type { OptionExecution } from './option-executions.js';
+import { addDecimals, type OptionExecution } from './option-executions.js';
 
 export interface ObservedOption {
   key: string;
@@ -49,9 +49,10 @@ export interface OptionEpisode {
   first_seen_absent: string | null;
   uncertain_as_of?: string;
   uncertain_skips?: BrokerSkip[];
-  status: 'open' | 'unverified' | 'no_longer_observed';
+  status: 'open' | 'unverified' | 'no_longer_observed' | 'closed_by_fills';
   observations: Array<{ as_of: string; observed_at: string; source: OptionObservation['source']; units: number; avg_price: number; mark: number }>;
   executions: OptionExecution[];
+  matched_trade_pl?: { amount: string; currency: string; opened: string; closed: string; fees: string };
 }
 
 /** Contract identity is independent of broker quantity and cost changes. */
@@ -148,9 +149,54 @@ function matchingExecutions(state: InvestorState, episode: OptionEpisode, episod
     row.expiry === c.expiry && Number(row.strike) === c.strike &&
     Number(row.multiplier) === c.multiplier &&
     (!c.broker_contract_id || row.contract_id === c.broker_contract_id) &&
-    (!previousAbsence || row.executed_at.slice(0, 10) >= previousAbsence) &&
+    (!previousAbsence || row.executed_at.slice(0, 10) > previousAbsence) &&
     (episode.first_seen_absent == null || row.executed_at.slice(0, 10) <= episode.first_seen_absent)
   );
+}
+
+/** Exact execution cash flow, only when it reconciles every observed quantity to a flat close. */
+function matchedTradePl(episode: OptionEpisode): OptionEpisode['matched_trade_pl'] {
+  if (!episode.first_seen_absent || !episode.executions.length || !episode.observations.length) return undefined;
+  const rows = [...episode.executions].sort((a, b) =>
+    a.executed_at.localeCompare(b.executed_at) || a.execution_id.localeCompare(b.execution_id));
+  const first = rows[0];
+  if (episode.contract.currency && first.currency !== episode.contract.currency) return undefined;
+  if (rows.some(row => row.currency !== first.currency || row.contract_id !== first.contract_id)) return undefined;
+  const decimals = rows.map(row => row.contracts.split('.')[1]?.length ?? 0);
+  const scale = Math.max(...decimals);
+  const units = (value: string): bigint => {
+    const [whole, fraction = ''] = value.split('.');
+    return BigInt(whole + fraction.padEnd(scale, '0'));
+  };
+  let balance = 0n;
+  let opened = 0n;
+  let closed = 0n;
+  const short = episode.contract.side === 'short';
+  for (const [index, row] of rows.entries()) {
+    const opening = row.effect === 'open' && row.side === (short ? 'sell' : 'buy');
+    const closing = row.effect === 'close' && row.side === (short ? 'buy' : 'sell');
+    if (!opening && !closing) return undefined;
+    const quantity = units(row.contracts);
+    if (opening) { opened += quantity; balance += quantity; }
+    else { closed += quantity; balance -= quantity; }
+    if (balance < 0n) return undefined;
+    if (balance === 0n && index < rows.length - 1) return undefined;
+  }
+  if (balance !== 0n || opened === 0n || closed !== opened) return undefined;
+  for (const observation of episode.observations) {
+    let atDate = 0n;
+    for (const row of rows) if (row.executed_at.slice(0, 10) <= observation.as_of) {
+      atDate += row.effect === 'open' ? units(row.contracts) : -units(row.contracts);
+    }
+    if (Number(atDate) / 10 ** scale !== observation.units) return undefined;
+  }
+  const amount = addDecimals(...rows.flatMap(row => [row.gross_premium, row.commission]));
+  const fees = addDecimals(...rows.map(row => row.commission));
+  const quantityText = (value: bigint) => scale
+    ? `${(value / 10n ** BigInt(scale)).toString()}.${(value % 10n ** BigInt(scale)).toString().padStart(scale, '0')}`
+    : value.toString();
+  return { amount, currency: first.currency, opened: quantityText(opened),
+    closed: quantityText(closed), fees };
 }
 
 function skipCouldBeContract(run: OptionObservation, option: ObservedOption): boolean {
@@ -219,7 +265,11 @@ export function buildOptionEpisodes(state: InvestorState, now = new Date()): Opt
       episode.status = 'unverified';
     }
   }
-  for (const episode of episodes) episode.executions = matchingExecutions(state, episode, episodes);
+  for (const episode of episodes) {
+    episode.executions = matchingExecutions(state, episode, episodes);
+    episode.matched_trade_pl = matchedTradePl(episode);
+    if (episode.matched_trade_pl) episode.status = 'closed_by_fills';
+  }
   return episodes.sort((a, b) =>
     (b.first_seen_absent ?? b.last_seen_open).localeCompare(a.first_seen_absent ?? a.last_seen_open) ||
     a.channel.localeCompare(b.channel) || a.id.localeCompare(b.id));

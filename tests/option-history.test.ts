@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { InvestorState } from '../src/state/portfolio-state.js';
 import type { BrokerStatement } from '../src/brokers/statement.js';
+import type { OptionExecution } from '../src/brokers/option-executions.js';
 import { appendOptionObservation, buildOptionEpisodes } from '../src/brokers/option-history.js';
 
 const option = {
@@ -25,6 +26,50 @@ function observe(s: InvestorState, date: string, present: boolean, skipped = fal
 }
 
 describe('option observation episodes', () => {
+  it('calculates exact commission-inclusive P&L only for a fully matched close', () => {
+    const s = state();
+    observe(s, '2026-09-30', true);
+    observe(s, '2026-10-01', false);
+    const base: OptionExecution = { channel: 'ibkr', account_id: 'U1', execution_id: 'open',
+      contract_id: '123', executed_at: '2026-09-18T09:33:53', underlying: 'AAPL',
+      right: 'put', expiry: '2026-11-20', strike: '150', multiplier: '100',
+      contracts: '1', side: 'sell', effect: 'open', currency: 'USD',
+      gross_premium: '315', commission: '-1.040079' };
+    const close: OptionExecution = { ...base, execution_id: 'close',
+      executed_at: '2026-10-01T09:54:28', side: 'buy', effect: 'close',
+      gross_premium: '-15', commission: '-1.04028' };
+    s.option_executions = [base, close];
+    const [episode] = buildOptionEpisodes(s, new Date('2026-10-02T00:00:00Z'));
+    expect(episode.status).toBe('closed_by_fills');
+    expect(episode.matched_trade_pl).toEqual({ amount: '297.919641', currency: 'USD',
+      opened: '1', closed: '1', fees: '-2.080359' });
+    s.option_executions = [close];
+    expect(buildOptionEpisodes(s)[0].matched_trade_pl).toBeUndefined();
+    s.option_executions = [base, { ...close, contracts: '0.5' }];
+    expect(buildOptionEpisodes(s)[0].matched_trade_pl).toBeUndefined();
+  });
+
+  it('does not assign same-day reopening fills to an earlier closed episode', () => {
+    const s = state();
+    observe(s, '2026-09-30', true);
+    observe(s, '2026-10-01', false);
+    observe(s, '2026-10-02', true);
+    observe(s, '2026-10-03', false);
+    const base: OptionExecution = { channel: 'ibkr', account_id: 'U1', execution_id: '1',
+      contract_id: '123', executed_at: '2026-09-18T09:33:53', underlying: 'AAPL',
+      right: 'put', expiry: '2026-11-20', strike: '150', multiplier: '100',
+      contracts: '1', side: 'sell', effect: 'open', currency: 'USD',
+      gross_premium: '315', commission: '-1' };
+    s.option_executions = [base,
+      { ...base, execution_id: '2', executed_at: '2026-10-01T09:00:00', side: 'buy', effect: 'close', gross_premium: '-15' },
+      { ...base, execution_id: '3', executed_at: '2026-10-01T10:00:00', gross_premium: '100' },
+      { ...base, execution_id: '4', executed_at: '2026-10-03T09:00:00', side: 'buy', effect: 'close', gross_premium: '-10' }];
+    const episodes = buildOptionEpisodes(s);
+    expect(episodes).toHaveLength(2);
+    expect(episodes[1].matched_trade_pl).toBeUndefined();
+    expect(episodes[0].matched_trade_pl).toBeUndefined();
+  });
+
   it('preserves a position through a missed day and a partial response, then records the absence interval and reopening', () => {
     const s = state();
     observe(s, '2026-10-01', true);

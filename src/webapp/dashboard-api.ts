@@ -47,14 +47,14 @@ export function createDashboardApiRouter(): Router {
       const to = typeof req.query.to === 'string' ? req.query.to : '';
       const q = typeof req.query.q === 'string' ? req.query.q.trim().toUpperCase().slice(0, 100) : '';
       if (right && right !== 'put' && right !== 'call' ||
-          status && !['historical', 'open', 'unverified', 'no_longer_observed'].includes(status) ||
+          status && !['historical', 'open', 'unverified', 'no_longer_observed', 'closed_by_fills'].includes(status) ||
           from && !validDate(from) || to && !validDate(to) ||
           from && to && from > to) {
         res.status(400).json({ error: 'invalid_filter', message: 'Invalid option history filter.' }); return;
       }
       const matches = episodes.filter(row =>
         (!channel || row.channel === channel) && (!right || row.contract.right === right) &&
-        (!status || row.status === (status === 'historical' ? 'no_longer_observed' : status)) &&
+        (!status || status === 'historical' && row.first_seen_absent != null || row.status === status) &&
         (!from || (row.first_seen_absent ?? row.last_seen_open) >= from) &&
         (!to || (row.first_seen_absent ?? row.last_seen_open) <= to) &&
         (!q || `${row.contract.underlying} ${row.contract.expiry} ${row.contract.strike}`.toUpperCase().includes(q)));
