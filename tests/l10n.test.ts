@@ -10,6 +10,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const HOST_CHROME_KEYS = [
   'nav.dashboard',
   'nav.positions',
+  'nav.book',
   'nav.watchlist',
   'nav.trades',
   'nav.insights',
@@ -18,6 +19,7 @@ const HOST_CHROME_KEYS = [
   'settings.brokers.description',
   'page.dashboard',
   'page.positions',
+  'page.book',
   'page.watchlist',
   'page.trades',
   'page.insights',

@@ -1,6 +1,7 @@
 {
   "nav.dashboard": "Dashboard",
   "nav.positions": "Positions",
+  "nav.book": "Book",
   "nav.watchlist": "Watch List",
   "nav.trades": "Trades",
   "nav.insights": "Insights",
@@ -9,6 +10,7 @@
   "settings.brokers.description": "Connect read-only brokerage channels",
   "page.dashboard": "Portfolio Dashboard",
   "page.positions": "Positions",
+  "page.book": "Book",
   "page.watchlist": "Watch List",
   "page.trades": "Trades",
   "page.insights": "Insights",
