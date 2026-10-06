@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseFlexQueryXml } from '../src/ibkr/flex-parse.js';
-import { holdingsFromOpenPositions, yahooSymbolFromFlex } from '../src/ibkr/flex-map.js';
+import { holdingsFromOpenPositions, mapFlexDocToStatement, yahooSymbolFromFlex } from '../src/ibkr/flex-map.js';
 import { replaceChannelCash, replaceChannelHoldings } from '../src/ibkr/flex-apply.js';
 import { assertHolding } from '../src/market/position-value.js';
 import { getCashes, type InvestorState } from '../src/state/portfolio-state.js';
@@ -25,6 +25,20 @@ const SAMPLE = `<?xml version="1.0" encoding="UTF-8"?>
 </FlexQueryResponse>`;
 
 describe('parseFlexQueryXml', () => {
+  it('maps option history onto the account-specific broker channel', () => {
+    const history = `<Trades><Trade accountId="U1234567" levelOfDetail="EXECUTION" assetCategory="OPT" tradeID="1" conid="123" dateTime="20260812;103015" buySell="SELL" openCloseIndicator="O" quantity="-2" multiplier="100" underlyingSymbol="AAPL" putCall="C" strike="200" expiry="20270115" currency="USD" proceeds="5140.00" ibCommission="-1.25" ibCommissionCurrency="USD"/></Trades>
+      <OptionEAEList><OptionEAE accountId="U1234567" assetCategory="OPT" tradeID="e1" conid="123" underlyingSymbol="AAPL" putCall="C" strike="200" expiry="20270115" multiplier="100" date="20260813" transactionType="Expiration" quantity="-1" currency="USD"/></OptionEAEList>`;
+    const parsed = parseFlexQueryXml(SAMPLE.replace('</FlexStatement>', `${history}</FlexStatement>`));
+    expect(parsed.optionExecutions?.[0]?.channel).toBe('ibkr');
+    expect(parsed.optionEvents?.[0]?.channel).toBe('ibkr');
+    const mapped = mapFlexDocToStatement(parsed, 'ibkr-7763b73e');
+    expect(mapped.option_executions?.[0]).toMatchObject({ channel: 'ibkr-7763b73e', account_id: 'U1234567' });
+    expect(mapped.option_events?.[0]).toMatchObject({ channel: 'ibkr-7763b73e', account_id: 'U1234567' });
+    expect(() => mapFlexDocToStatement({ ...parsed, optionExecutions: [
+      { ...parsed.optionExecutions![0]!, channel: 'other' },
+    ] }, 'ibkr-7763b73e')).toThrow(/source differs/);
+  });
+
   it('reads statement window, open positions, and cash', () => {
     const doc = parseFlexQueryXml(SAMPLE);
     expect(doc.accountId).toBe('U1234567');

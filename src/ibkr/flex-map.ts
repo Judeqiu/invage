@@ -82,6 +82,18 @@ export function brokerSkipFromFlex(skip: FlexSkip): BrokerSkip {
 
 export function mapFlexDocToStatement(doc: FlexStatementDoc, channel: string): BrokerStatement {
   const { lots, skipped: mapSkipped } = holdingsFromOpenPositions(doc.openPositions, channel);
+  const optionExecutions = doc.optionExecutions?.map((row) => {
+    if (row.channel !== IBKR_CHANNEL || row.account_id !== doc.accountId) {
+      throw new Error('IBKR option execution source differs from the Flex account.');
+    }
+    return { ...row, channel };
+  });
+  const optionEvents = doc.optionEvents?.map((row) => {
+    if (row.broker_id !== 'ibkr' || row.channel !== IBKR_CHANNEL || row.account_id !== doc.accountId) {
+      throw new Error('IBKR option event source differs from the Flex account.');
+    }
+    return { ...row, channel };
+  });
   const cash: BrokerCashSleeve[] = doc.cash.map((row) => ({
     currency: row.currency,
     amount: row.endingCash,
@@ -97,8 +109,8 @@ export function mapFlexDocToStatement(doc: FlexStatementDoc, channel: string): B
       holding: lot.holding,
     })),
     skipped: [...doc.skipped, ...mapSkipped].map(brokerSkipFromFlex),
-    ...(doc.optionExecutions !== undefined ? { option_executions: doc.optionExecutions } : {}),
-    ...(doc.optionEvents !== undefined ? { option_events: doc.optionEvents } : {}),
+    ...(optionExecutions !== undefined ? { option_executions: optionExecutions } : {}),
+    ...(optionEvents !== undefined ? { option_events: optionEvents } : {}),
   };
 }
 
