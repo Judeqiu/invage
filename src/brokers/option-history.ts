@@ -282,7 +282,11 @@ function skipCouldBeContract(run: OptionObservation, option: ObservedOption): bo
 /** Build episodes from observations. Partial responses can add presence, never prove absence. */
 export function buildOptionEpisodes(state: InvestorState, now = new Date()): OptionEpisode[] {
   const observations = [...(state.option_observations ?? [])]
-    .sort((a, b) => a.observed_at.localeCompare(b.observed_at) || a.id.localeCompare(b.id));
+    // A newly fetched statement can describe an older position date. Build the
+    // position timeline from statement dates, using fetch order only to resolve
+    // repeated observations of the same day.
+    .sort((a, b) => a.as_of.localeCompare(b.as_of) ||
+      a.observed_at.localeCompare(b.observed_at) || a.id.localeCompare(b.id));
   const episodes: OptionEpisode[] = [];
   const active = new Map<string, OptionEpisode>();
   for (const run of observations) {
@@ -324,7 +328,10 @@ export function buildOptionEpisodes(state: InvestorState, now = new Date()): Opt
     }
   }
   const latestByChannel = new Map<string, OptionObservation>();
-  for (const run of observations) if (run.source === 'broker') latestByChannel.set(run.channel, run);
+  for (const run of observations) if (run.source === 'broker') {
+    const latest = latestByChannel.get(run.channel);
+    if (!latest || run.observed_at > latest.observed_at) latestByChannel.set(run.channel, run);
+  }
   const connections = state.broker_connections ?? {};
   for (const episode of episodes) {
     if (episode.first_seen_absent != null) continue;

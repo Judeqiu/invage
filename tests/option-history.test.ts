@@ -89,6 +89,33 @@ describe('option observation episodes', () => {
     expect(episodes[1].first_seen_absent).toBe('2026-10-04');
   });
 
+  it('does not turn a newer open position into history when an older statement arrives later', () => {
+    const s = state();
+    appendOptionObservation(s, { statement: statement('2026-10-02', true), brokerId: 'ibkr',
+      connectionId: 'ibkr', channel: 'ibkr', observedAt: '2026-10-02T12:00:00Z', syncId: 'newer-open' });
+    appendOptionObservation(s, { statement: statement('2026-09-30', false), brokerId: 'ibkr',
+      connectionId: 'ibkr', channel: 'ibkr', observedAt: '2026-10-03T12:00:00Z', syncId: 'older-absent' });
+    expect(buildOptionEpisodes(s, new Date('2026-10-03T13:00:00Z'))).toMatchObject([
+      { first_seen: '2026-10-02', last_seen_open: '2026-10-02',
+        first_seen_absent: null, status: 'open' },
+    ]);
+  });
+
+  it('keeps a genuine earlier exit separate from a later open episode after backfill', () => {
+    const s = state();
+    appendOptionObservation(s, { statement: statement('2026-10-02', true), brokerId: 'ibkr',
+      connectionId: 'ibkr', channel: 'ibkr', observedAt: '2026-10-02T12:00:00Z', syncId: 'newer-open' });
+    appendOptionObservation(s, { statement: statement('2026-09-29', true), brokerId: 'ibkr',
+      connectionId: 'ibkr', channel: 'ibkr', observedAt: '2026-10-03T12:00:00Z', syncId: 'older-open' });
+    appendOptionObservation(s, { statement: statement('2026-09-30', false), brokerId: 'ibkr',
+      connectionId: 'ibkr', channel: 'ibkr', observedAt: '2026-10-04T12:00:00Z', syncId: 'older-absent' });
+    const episodes = buildOptionEpisodes(s, new Date('2026-10-04T13:00:00Z'));
+    expect(episodes).toHaveLength(2);
+    expect(episodes[0]).toMatchObject({ first_seen: '2026-10-02', first_seen_absent: null, status: 'open' });
+    expect(episodes[1]).toMatchObject({ first_seen: '2026-09-29', last_seen_open: '2026-09-29',
+      first_seen_absent: '2026-09-30', status: 'no_longer_observed' });
+  });
+
   it('keeps identical contracts in separate broker channels and does not duplicate a sync', () => {
     const s = state();
     observe(s, '2026-10-01', true, false, 'ibkr');
