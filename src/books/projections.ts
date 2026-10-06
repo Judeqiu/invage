@@ -89,6 +89,7 @@ export async function listJournalEntries(
     value_date: string;
     entry_type: string;
     request_id: string;
+    external_ref: string | null;
     tool_name: string | null;
     memo: string | null;
     created_by: string;
@@ -111,11 +112,12 @@ export async function listJournalEntries(
     value_date: string;
     entry_type: string;
     request_id: string;
+    external_ref: string | null;
     tool_name: string | null;
     memo: string | null;
     created_by: string;
   }>(
-    `SELECT id, value_date::text, entry_type, request_id, tool_name, memo, created_by
+    `SELECT id, value_date::text, entry_type, request_id, external_ref, tool_name, memo, created_by
      FROM journal_entries
      WHERE household_id = $1::uuid
      ORDER BY booked_at DESC, id DESC
@@ -145,6 +147,7 @@ export async function listJournalEntries(
       value_date: e.value_date.slice(0, 10),
       entry_type: e.entry_type,
       request_id: e.request_id,
+      external_ref: e.external_ref,
       tool_name: e.tool_name,
       memo: e.memo,
       created_by: e.created_by,

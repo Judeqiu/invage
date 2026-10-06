@@ -144,6 +144,7 @@ export async function postOpeningBalance(
     memo: string;
     requestId: string;
     toolName?: string;
+    externalRef?: string;
   },
 ): Promise<{
   posted: PostedEntry;
@@ -178,6 +179,7 @@ export async function postOpeningBalance(
     requestId: args.requestId,
     toolName: args.toolName ?? 'post_opening_balance',
     memo,
+    externalRef: args.externalRef,
     lines: [
       { accountId: cash.id, amountMinor: target, currency: ccy },
       { accountId: equity.id, amountMinor: -target, currency: ccy },
@@ -209,6 +211,7 @@ export async function postCashAdjustment(
     contra: CashContraKind;
     requestId: string;
     toolName?: string;
+    externalRef?: string;
   },
 ): Promise<{
   posted: PostedEntry;
@@ -259,6 +262,7 @@ export async function postCashAdjustment(
     requestId: args.requestId,
     toolName: args.toolName ?? 'post_adjustment',
     memo,
+    externalRef: args.externalRef,
     lines: [
       { accountId: cash.id, amountMinor: delta, currency: ccy },
       { accountId: contra.id, amountMinor: -delta, currency: ccy },

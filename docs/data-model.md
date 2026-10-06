@@ -111,6 +111,8 @@ Each user gets a **single YAML file** at `data/users/<slug>.yaml`. This file is 
 
 **Books of record (optional, recommended):** when `INVAGE_BOOKS_DATABASE_URL` is set, money mutations (cash, deposits, holding cash legs) post to an **append-only PostgreSQL journal** (`src/books/`). YAML free-cash and deposits are dual-written from ledger projections. See [plans/2026-08-09-financial-database-ledger-design.md](./plans/2026-08-09-financial-database-ledger-design.md).
 
+Broker ingest maps vendor rows to `BrokerStatement`, then stamps validated `Holding.currency` and cash sleeves in the internal model. With books enabled, one broker snapshot reconciles changed position cost/quantity and cash balances in a single journal transaction with a source fingerprint in `external_ref`; an identical repeat adds no entries. The user aggregate is saved afterward with an optimistic revision check. If that save fails, retry the same broker statement to complete the aggregate update without duplicating journal entries. Opening import from pre-existing v4 state creates balanced `import_yaml` journals before the first live broker reconciliation. Snapshot reconcile entries are not broker executions or identified external deposits.
+
 ---
 
 ## Layer 1: System Access

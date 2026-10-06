@@ -2,6 +2,7 @@ import { saveInvestor, type InvestorSnapshot } from '../state/investor-store.js'
 import { mergeOptionExecutions } from './option-executions.js';
 import { mergeOptionLifecycleEvents } from './option-events.js';
 import { appendOptionObservation } from './option-history.js';
+import { createHash } from 'node:crypto';
 /**
  * Channel snapshot apply — writes only public books types
  * (Holding, CashBalance, optional connection metrics).
@@ -9,13 +10,9 @@ import { appendOptionObservation } from './option-history.js';
  */
 
 
-import {
-  booksPostAdjustment,
-  booksPostHoldingClose,
-  booksPostHoldingOpen,
-  booksPostOpeningBalance,
-  isBooksEnabled,
-} from '../books/index.js';
+import { isBooksEnabled } from '../books/index.js';
+import { booksApplyBrokerSnapshot } from '../books/broker-snapshot.js';
+import { assertCurrency } from '../books/money.js';
 import type { Holding } from '../market/types.js';
 import {
   assertHolding,
@@ -24,8 +21,6 @@ import {
 } from '../market/position-value.js';
 import {
   cashSlotKey,
-  findCashForSlot,
-  findCashesForChannel,
   getCashes,
   getPortfolio,
   setCashes,
@@ -97,10 +92,14 @@ function stampLots(lots: BrokerLot[], channel: string): Array<{ mapKey: string; 
         `Broker statement lots[${i}] (${lot.ticker}) channel "${existingCh}" does not match connector channel "${channel}".`,
       );
     }
-    const holding: Holding = { ...lot.holding, channel };
+    const currency = assertCurrency(lot.currency);
+    if (lot.holding.currency != null && lot.holding.currency !== currency) {
+      throw new Error(`Broker statement lots[${i}] currency differs from holding currency.`);
+    }
+    const holding: Holding = { ...lot.holding, channel, currency };
     const mapKey = buildHoldingKey(lot.ticker, channel);
     assertHolding(mapKey, holding);
-    return { mapKey, holding, currency: lot.currency };
+    return { mapKey, holding, currency };
   });
 }
 
@@ -153,6 +152,9 @@ export async function applyBrokerStatement(
     throw new Error('Option event broker/channel/account differs from broker statement');
   }
   const stamped = stampLots(doc.lots, channel);
+  if (new Set(stamped.map((lot) => lot.mapKey)).size !== stamped.length) {
+    throw new Error(`Broker statement has duplicate lot keys on channel ${channel}.`);
+  }
   const portfolio = { ...getPortfolio(state) };
   const { next, removedKeys } = replaceChannelHoldings(portfolio, stamped, channel);
   const today = doc.as_of;
@@ -160,75 +162,9 @@ export async function applyBrokerStatement(
   const removed = removedKeys.filter((k) => !stamped.some((l) => l.mapKey === k)).length;
 
   if (isBooksEnabled()) {
-    for (const key of removedKeys) {
-      const holding = existing[key];
-      if (!holding) continue;
-      if (stamped.some((l) => l.mapKey === key)) continue;
-      await booksPostHoldingClose(state, {
-        mapKey: key,
-        holding,
-        valueDate: today,
-        adjustCash: false,
-      });
-    }
-    for (const lot of stamped) {
-      const prior = existing[lot.mapKey];
-      if (prior && isChannelLot(prior, channel)) {
-        await booksPostHoldingClose(state, {
-          mapKey: lot.mapKey,
-          holding: prior,
-          valueDate: today,
-          adjustCash: false,
-        });
-      }
-      await booksPostHoldingOpen(state, {
-        mapKey: lot.mapKey,
-        holding: lot.holding,
-        purchaseUnits: lot.holding.units,
-        purchaseAvg: lot.holding.avg_price,
-        valueDate: today,
-        adjustCash: false,
-        currency: lot.currency,
-      });
-    }
-    const incoming = new Set(doc.cash.map((row) => row.currency));
-    for (const prior of findCashesForChannel(getCashes(state), channel)) {
-      if (incoming.has(prior.currency)) continue;
-      if (prior.amount !== 0) {
-        await booksPostAdjustment(state, {
-          amount: -prior.amount,
-          currency: prior.currency,
-          channel,
-          valueDate: today,
-          memo: `Broker ${channel} statement ${today} close ${prior.currency}`,
-          contra: 'adjustment',
-        });
-      }
-    }
-    for (const row of doc.cash) {
-      const prior = findCashForSlot(getCashes(state), channel, row.currency);
-      if (!prior) {
-        await booksPostOpeningBalance(state, {
-          amount: row.amount,
-          currency: row.currency,
-          channel,
-          valueDate: today,
-          memo: `Broker ${channel} statement ${today} opening ${row.currency}`,
-        });
-      } else {
-        const delta = row.amount - prior.amount;
-        if (delta !== 0) {
-          await booksPostAdjustment(state, {
-            amount: delta,
-            currency: row.currency,
-            channel,
-            valueDate: today,
-            memo: `Broker ${channel} statement ${today} reconcile`,
-            contra: 'adjustment',
-          });
-        }
-      }
-    }
+    const fingerprint = createHash('sha256').update(_raw ?? JSON.stringify(doc)).digest('hex');
+    await booksApplyBrokerSnapshot(state, channel, doc, stamped,
+      `broker:${connectorId}:${doc.account_id}:${today}:${fingerprint}`);
   }
 
   appendOptionObservation(state, {
@@ -238,9 +174,7 @@ export async function applyBrokerStatement(
     rawDataId: observation?.rawDataId,
   });
   setPortfolio(state, next);
-  if (!isBooksEnabled()) {
-    setCashes(state, replaceChannelCash(getCashes(state), doc.cash, channel, today));
-  }
+  setCashes(state, replaceChannelCash(getCashes(state), doc.cash, channel, today));
   writeConnectionMetrics(state, connectorId, doc);
   if (executions !== undefined) state.option_executions = executions;
   if (optionEvents !== undefined) state.option_events = optionEvents;

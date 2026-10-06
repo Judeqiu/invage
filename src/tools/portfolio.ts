@@ -809,11 +809,11 @@ export function createPortfolioTools(): AgentTool[] {
           const delta = cashDeltaForHoldingChange(before, holding);
           cashResult = {
             cashes: posted.cashes,
-            cash: findCashForSlot(posted.cashes, holding.channel, 'USD'),
+            cash: findCashForSlot(posted.cashes, holding.channel, holding.currency ?? 'USD'),
             cashDelta: adjustCash ? delta : 0,
             adjusted: adjustCash && delta !== 0,
             note: adjustCash
-              ? `Cash books trade delta ${delta.toFixed(2)} USD`
+              ? `Cash books trade delta ${delta.toFixed(2)} ${holding.currency ?? 'USD'}`
               : 'Cash ledger not adjusted (adjust_cash=false).',
           };
         } else {
@@ -1012,11 +1012,11 @@ export function createPortfolioTools(): AgentTool[] {
           const delta = cashDeltaForHoldingChange(removed, null);
           cashResult = {
             cashes: posted.cashes,
-            cash: findCashForSlot(posted.cashes, removed.channel, 'USD'),
+            cash: findCashForSlot(posted.cashes, removed.channel, removed.currency ?? 'USD'),
             cashDelta: adjustCash ? delta : 0,
             adjusted: adjustCash && delta !== 0,
             note: adjustCash
-              ? `Cash books close delta ${delta.toFixed(2)} USD`
+              ? `Cash books close delta ${delta.toFixed(2)} ${removed.currency ?? 'USD'}`
               : 'Cash ledger not adjusted (adjust_cash=false).',
           };
         } else {
@@ -2689,7 +2689,7 @@ export function createListJournalEntriesTool(): AgentTool {
     label: 'List Journal Entries',
     description:
       'List recent books-of-record journal entries (double-entry) for the household. ' +
-      'Requires INVAGE_BOOKS_DATABASE_URL. Use for reconcile / audit. ' +
+      'Requires INVAGE_BOOKS_DATABASE_URL. Use to verify broker sync, source provenance, and cash/position journals; entries are not NAV marks. ' +
       'Pass telegram_user_id or slack_user_id from the message context.',
     parameters: Type.Object({
       ...channelIdParams,
@@ -2727,6 +2727,7 @@ export function createListJournalEntriesTool(): AgentTool {
             .join('\n');
           return (
             `${e.value_date} ${e.entry_type} (${e.request_id})\n` +
+            (e.external_ref ? `  source: ${e.external_ref}\n` : '') +
             (e.memo ? `  memo: ${e.memo}\n` : '') +
             legs
           );

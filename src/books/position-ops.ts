@@ -53,12 +53,15 @@ export async function postHoldingOpen(
     adjustCash: boolean;
     currency?: string;
     toolName?: string;
+    entryType?: string;
+    memo?: string;
+    externalRef?: string;
   },
 ): Promise<PostedEntry> {
   await ensureHousehold(client, ctx.householdId, ctx.slug);
   const h = args.holding;
   const kind = holdingInstrument(h);
-  const ccy = assertCurrency(args.currency ?? 'USD');
+  const ccy = assertCurrency(args.currency ?? h.currency ?? 'USD');
   if (!(args.purchaseUnits > 0) || !Number.isFinite(args.purchaseUnits)) {
     throw new Error('postHoldingOpen: purchaseUnits must be > 0.');
   }
@@ -107,11 +110,12 @@ export async function postHoldingOpen(
     return postEntry(client, {
       householdId: ctx.householdId,
       valueDate: args.valueDate,
-      entryType: 'trade',
+      entryType: args.entryType ?? 'trade',
       createdBy: ctx.actor,
       requestId: args.requestId,
       toolName: args.toolName ?? 'add_holding',
-      memo: `open/buy ${args.mapKey}`,
+      memo: args.memo ?? `open/buy ${args.mapKey}`,
+      externalRef: args.externalRef,
       lines: [
         {
           accountId: pos.id,
@@ -129,11 +133,12 @@ export async function postHoldingOpen(
   return postEntry(client, {
     householdId: ctx.householdId,
     valueDate: args.valueDate,
-    entryType: 'trade_import',
+    entryType: args.entryType ?? 'trade_import',
     createdBy: ctx.actor,
     requestId: args.requestId,
     toolName: args.toolName ?? 'add_holding',
-    memo: `import position ${args.mapKey}`,
+    memo: args.memo ?? `import position ${args.mapKey}`,
+    externalRef: args.externalRef,
     lines: [
       {
         accountId: pos.id,
@@ -159,10 +164,13 @@ export async function postHoldingClose(
     adjustCash: boolean;
     currency?: string;
     toolName?: string;
+    entryType?: string;
+    memo?: string;
+    externalRef?: string;
   },
 ): Promise<PostedEntry> {
   await ensureHousehold(client, ctx.householdId, ctx.slug);
-  const ccy = assertCurrency(args.currency ?? 'USD');
+  const ccy = assertCurrency(args.currency ?? args.holding.currency ?? 'USD');
   const kind = holdingInstrument(args.holding);
   const isShort = kind === 'option' && args.holding.option?.side === 'short';
   const notional = costNotional(args.holding);
@@ -191,10 +199,12 @@ export async function postHoldingClose(
     return postEntry(client, {
       householdId: ctx.householdId,
       valueDate: args.valueDate,
-      entryType: 'trade_close',
+      entryType: args.entryType ?? 'trade_close',
       createdBy: ctx.actor,
       requestId: args.requestId,
       toolName: args.toolName ?? 'remove_holding',
+      memo: args.memo,
+      externalRef: args.externalRef,
       lines: [
         {
           accountId: pos.id,
@@ -215,10 +225,12 @@ export async function postHoldingClose(
   return postEntry(client, {
     householdId: ctx.householdId,
     valueDate: args.valueDate,
-    entryType: 'trade_close_import',
+    entryType: args.entryType ?? 'trade_close_import',
     createdBy: ctx.actor,
     requestId: args.requestId,
     toolName: args.toolName ?? 'remove_holding',
+    memo: args.memo,
+    externalRef: args.externalRef,
     lines: [
       {
         accountId: pos.id,

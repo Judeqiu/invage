@@ -203,17 +203,6 @@ CREATE POLICY audit_events_tenant ON audit_events
   USING (household_id::text = current_setting('app.household_id', true))
   WITH CHECK (household_id::text = current_setting('app.household_id', true));
 
--- App role (created if missing). Superusers bypass RLS — production must use invage_app.
-DO $role$
-BEGIN
-  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'invage_app') THEN
-    CREATE ROLE invage_app LOGIN PASSWORD 'invage_dev_only';
-  END IF;
-END
-$role$;
-GRANT USAGE ON SCHEMA public TO invage_app;
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO invage_app;
-GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO invage_app;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public
-  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO invage_app;
-
+-- Run migrations as the dedicated owner of this books database. Provision its
+-- login and SCRAM credential outside this schema; never create a shared role
+-- with a built-in password from application migration SQL.

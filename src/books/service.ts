@@ -68,7 +68,7 @@ export function newRequestId(prefix: string): string {
  * Safe no-op when already seeded or YAML has nothing to import.
  * Must run before any books mutation so transfers see existing free cash.
  */
-export async function ensureBooksSeeded(state: InvestorState): Promise<{
+export async function ensureBooksSeeded(state: InvestorState, opts?: { requirePositionCurrency?: boolean }): Promise<{
   seeded: boolean;
   journalCount: number;
 }> {
@@ -89,6 +89,13 @@ export async function ensureBooksSeeded(state: InvestorState): Promise<{
     const cashes = getCashes(state);
     const deposits = getDeposits(state);
     const portfolio = getPortfolio(state);
+    if (opts?.requirePositionCurrency) {
+      for (const [key, holding] of Object.entries(portfolio)) {
+        if (holding.currency == null) {
+          throw new Error(`Books bootstrap required before broker sync: ${key} has no verified currency.`);
+        }
+      }
+    }
     const hasMoney =
       cashes.length > 0 ||
       deposits.length > 0 ||
@@ -393,7 +400,7 @@ export async function booksMatureDeposit(
 
 export async function booksImportState(
   state: InvestorState,
-  opts?: { force?: boolean },
+  opts?: { force?: boolean; positionSources?: Record<string, string> },
 ): Promise<import('./import-yaml.js').ImportResult> {
   const ctx = householdContextFromState(state);
   return withHouseholdTx(ctx.householdId, async (client) => {

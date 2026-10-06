@@ -42,7 +42,7 @@ function portfolioLotKey(ticker: string, channel: string | undefined): string {
 export async function importInvestorStateToBooks(
   client: BooksClient,
   state: InvestorState,
-  opts?: { force?: boolean },
+  opts?: { force?: boolean; positionSources?: Record<string, string> },
 ): Promise<ImportResult> {
   const householdId = state.user?.id;
   const slug = state.user?.slug;
@@ -117,7 +117,7 @@ export async function importInvestorStateToBooks(
   let positions = 0;
   for (const [mapKey, holding] of Object.entries(portfolio)) {
     const kind = holdingInstrument(holding);
-    const ccy = 'USD'; // holdings historically USD-notional cost; fail if we later store ccy
+    const ccy = holding.currency ?? 'USD'; // legacy manual holdings were USD-notional
     // Cost basis in cash units (avg_price * units for long; short option negative handled below)
     const notional = holding.avg_price * holding.units;
     if (!(notional >= 0) || !Number.isFinite(notional)) {
@@ -140,6 +140,7 @@ export async function importInvestorStateToBooks(
     const costMinor = toMinor(notional);
     const unitCost = toMinor(holding.avg_price);
     const requestId = `import-pos-${slug}-${externalKey}`;
+    const externalRef = opts?.positionSources?.[externalKey];
     requestIds.push(requestId);
 
     let qty = holding.units;
@@ -154,6 +155,7 @@ export async function importInvestorStateToBooks(
         createdBy: ctx.actor,
         requestId,
         toolName: 'import_yaml',
+        externalRef,
         memo: `open short option ${mapKey}`,
         lines: [
           {
@@ -174,6 +176,7 @@ export async function importInvestorStateToBooks(
         createdBy: ctx.actor,
         requestId,
         toolName: 'import_yaml',
+        externalRef,
         memo: `open position ${mapKey}`,
         lines: [
           {

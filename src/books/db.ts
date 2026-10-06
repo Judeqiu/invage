@@ -66,6 +66,8 @@ export async function withHouseholdTx<T>(
     await client.query(`SELECT set_config('app.household_id', $1, true)`, [
       householdId.trim(),
     ]);
+    // Serialize journal/projection mutations for one household across workers.
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [householdId.trim()]);
     const result = await fn(client);
     await client.query('COMMIT');
     return result;

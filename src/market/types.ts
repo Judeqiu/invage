@@ -176,6 +176,8 @@ export interface HoldingBrokerRef {
 export interface Holding {
   avg_price: number;
   units: number;
+  /** Cost-basis currency supplied by a broker. Legacy manual holdings may omit it. */
+  currency?: string;
   category?: string;
   /**
    * Broker / custody source for multi-broker portfolios (e.g. moomoo, ibkr, webull, tiger).

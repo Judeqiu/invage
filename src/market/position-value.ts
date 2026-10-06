@@ -89,6 +89,7 @@ export function assertHoldingBrokerRef(key: string, raw: unknown): HoldingBroker
 
 /** Copy optional custody fields so economic merges do not drop statement extras. */
 export function attachHoldingCustody(target: Holding, source: Holding): Holding {
+  if (source.currency != null) target.currency = source.currency;
   if (source.encumbrance != null) target.encumbrance = source.encumbrance;
   if (source.broker_ref != null) target.broker_ref = source.broker_ref;
   return target;
@@ -563,6 +564,10 @@ export function assertHolding(key: string, h: Holding): void {
   }
   if (!(h.units > 0) || !Number.isFinite(h.units)) {
     throw new Error(`Holding ${key}: units must be positive.`);
+  }
+  if (h.currency != null &&
+      (typeof h.currency !== 'string' || !/^[A-Z]{3,4}$/.test(h.currency))) {
+    throw new Error(`Holding ${key}: currency must be an uppercase 3–4 letter code.`);
   }
   // Validate optional channel; empty is allowed (unassigned) but wrong types fail.
   normalizeOptionalChannel(h.channel, `Holding ${key}: channel`);
