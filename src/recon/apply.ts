@@ -61,6 +61,7 @@ function holdingFromStatement(
     avg_price,
     units: row.units,
     ...(channelArg(channel) ? { channel: channelArg(channel) } : {}),
+    ...(existing?.currency ? { currency: existing.currency } : {}),
   };
   if (instrument === 'fund') {
     const quote_source = row.fund_quote_source ?? existing?.fund?.quote_source;
