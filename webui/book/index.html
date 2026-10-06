@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Book · Books of record</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../report.css" />
+  <link rel="stylesheet" href="page.css" />
+</head>
+<body>
+  <main class="page book-page">
+    <div class="breadcrumb label-eyebrow">Book / Books of record</div>
+    <div class="book-hero">
+      <div class="hero">
+        <div class="label-eyebrow">The accounting record</div>
+        <h1>Every balance has a trail.</h1>
+        <p>Read the balances and the entries behind them, directly from the journal database. Book balances reflect cost and principal, not live market value or portfolio return.</p>
+      </div>
+      <button type="button" class="refresh" id="refresh">Refresh book</button>
+    </div>
+    <div id="error" class="error" role="alert" hidden></div>
+    <div id="status" class="book-status" role="status">Loading the book…</div>
+    <section id="metrics" class="grid-4 book-metrics" aria-label="Book summary"></section>
+
+    <section class="book-section" aria-labelledby="accounts-title">
+      <div class="book-section-head">
+        <div>
+          <div class="label-eyebrow">01 / Current state</div>
+          <h2 id="accounts-title">Account balances</h2>
+          <p>Signed ledger balances. Position rows show recorded cost basis; cash and deposit rows show booked amounts.</p>
+        </div>
+        <div class="book-account-controls">
+          <label for="account-scope">Show</label>
+          <select id="account-scope">
+            <option value="assets">Assets and positions</option>
+            <option value="all">All accounts</option>
+          </select>
+          <label for="account-search">Find</label>
+          <input id="account-search" type="search" placeholder="Account or ticker" autocomplete="off" />
+        </div>
+      </div>
+      <div id="accounts" class="metric-card table-card"><div class="empty">Loading account balances…</div></div>
+    </section>
+
+    <section class="book-section" aria-labelledby="journal-title">
+      <div class="book-section-head">
+        <div>
+          <div class="label-eyebrow">02 / Change history</div>
+          <h2 id="journal-title">Journal entries</h2>
+          <p>Open an entry to see every debit and credit. Amounts are shown in the entry’s original currency.</p>
+        </div>
+        <span id="journal-count" class="book-count"></span>
+      </div>
+      <form id="filters" class="book-filters">
+        <label>Channel <select id="channel"><option value="__all__">All channels</option></select></label>
+        <label>Currency <select id="currency"><option value="">All currencies</option></select></label>
+        <label>Entry type <select id="entry-type"><option value="">All types</option></select></label>
+        <label>From <input id="from" type="date" /></label>
+        <label>To <input id="to" type="date" /></label>
+        <button type="submit" class="book-apply">Apply</button>
+        <button type="button" class="book-clear" id="clear-filters">Clear</button>
+      </form>
+      <div id="journal" class="book-journal"><div class="metric-card empty">Loading journal entries…</div></div>
+      <div class="book-pager">
+        <span id="page-label"></span>
+        <div>
+          <button type="button" class="refresh" id="previous">Previous</button>
+          <button type="button" class="refresh" id="next">Next</button>
+        </div>
+      </div>
+    </section>
+    <section class="book-section" aria-labelledby="audit-title">
+      <div class="book-section-head">
+        <div>
+          <div class="label-eyebrow">03 / Save audit</div>
+          <h2 id="audit-title">Portfolio updates</h2>
+          <p>Recent portfolio saves recorded in the books database. A save can have zero new monetary entries when only metadata changes.</p>
+        </div>
+      </div>
+      <div id="updates" class="metric-card table-card"><div class="empty">Loading portfolio updates…</div></div>
+    </section>
+    <footer>Books of record · Read only · Values in original currencies</footer>
+  </main>
+  <script src="../report.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -183,9 +183,9 @@ describe('createInvageWebUi', () => {
       .toContain('/settings/brokers');
   });
 
-  it('registers Positions, Trades, Insights report pages', async () => {
+  it('registers Positions, Book, Trades, Insights report pages', async () => {
     const webUi = createInvageWebUi();
-    for (const id of ['positions', 'trades', 'insights']) {
+    for (const id of ['positions', 'book', 'trades', 'insights']) {
       expect(webUi.nav?.some((n) => n.id === id && n.path === `/${id}`)).toBe(true);
       const route = webUi.routes?.find((r) => r.path === `/${id}`);
       expect(route?.iframeSrc).toBe(`/domain-assets/invage/${id}/index.html`);

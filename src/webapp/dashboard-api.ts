@@ -12,9 +12,53 @@ import { buildExecutionJournal, validDate } from '../brokers/option-executions.j
 import { readBrokerAccountModel } from '../brokers/accounts.js';
 import { latestSuccessfulBrokerSyncRun } from '../brokers/sync-history.js';
 import { optionHistoryForState } from './option-history-data.js';
+import { isBooksEnabled } from '../books/db.js';
+import { loadBookPage } from './book-data.js';
 
 export function createDashboardApiRouter(): Router {
   const router = Router();
+
+  router.get('/book', async (req: Request, res: Response) => {
+    try {
+      const user = (req as Request & { user?: AuthUser }).user;
+      if (!user?.slug) { res.status(401).json({ error: 'unauthorized', message: 'No session user.' }); return; }
+      if (!isBooksEnabled()) {
+        res.status(503).json({ error: 'books_unavailable', message: 'Books of record are not configured.' });
+        return;
+      }
+      const offset = Number(req.query.offset ?? 0);
+      const limit = Number(req.query.limit ?? 25);
+      const channel = req.query.channel;
+      const currency = req.query.currency;
+      const entryType = req.query.type;
+      const from = req.query.from;
+      const to = req.query.to;
+      if (!Number.isSafeInteger(offset) || offset < 0 || offset > 100000 ||
+          !Number.isSafeInteger(limit) || limit < 1 || limit > 100 ||
+          channel !== undefined && (typeof channel !== 'string' || channel.length > 120) ||
+          currency !== undefined && (typeof currency !== 'string' || !/^[A-Z]{3,4}$/.test(currency)) ||
+          entryType !== undefined && (typeof entryType !== 'string' || !entryType.trim() || entryType.length > 120) ||
+          from !== undefined && (typeof from !== 'string' || !validDate(from)) ||
+          to !== undefined && (typeof to !== 'string' || !validDate(to)) ||
+          typeof from === 'string' && typeof to === 'string' && from > to) {
+        res.status(400).json({ error: 'invalid_filter', message: 'Invalid Book filter or page.' });
+        return;
+      }
+      const snapshot = await loadInvestor(await targetSlug(req, user));
+      const payload = await loadBookPage(snapshot.state.user.id, {
+        offset, limit,
+        ...(channel !== undefined ? { channel: channel as string } : {}),
+        ...(currency !== undefined ? { currency: currency as string } : {}),
+        ...(entryType !== undefined ? { entryType: entryType as string } : {}),
+        ...(from !== undefined ? { from: from as string } : {}),
+        ...(to !== undefined ? { to: to as string } : {}),
+      });
+      res.json(payload);
+    } catch (e) {
+      console.error('Book page failed:', e);
+      res.status(500).json({ error: 'book_failed', message: 'Could not load the books of record.' });
+    }
+  });
 
   router.get('/trades', async (req: Request, res: Response) => {
     try {

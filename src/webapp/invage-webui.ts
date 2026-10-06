@@ -159,6 +159,13 @@ export function createInvageWebUi(): DomainWebUiExtension {
         order: 11,
       },
       {
+        id: 'book',
+        label: 'Book',
+        path: '/book',
+        icon: 'notebook-pen',
+        order: 12,
+      },
+      {
         id: 'trades',
         label: 'Trades',
         path: '/trades',
@@ -185,6 +192,12 @@ export function createInvageWebUi(): DomainWebUiExtension {
         pageKind: 'iframe',
         iframeSrc: '/domain-assets/invage/positions/index.html',
         title: 'Positions',
+      },
+      {
+        path: '/book',
+        pageKind: 'iframe',
+        iframeSrc: '/domain-assets/invage/book/index.html',
+        title: 'Book',
       },
       {
         path: '/watchlist',

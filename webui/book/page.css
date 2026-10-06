@@ -1,0 +1,93 @@
+.book-page { max-width: 1480px; }
+.book-hero { display: flex; justify-content: space-between; align-items: flex-end; gap: 1.5rem; flex-wrap: wrap; }
+.book-hero .hero { max-width: 48rem; }
+.book-hero .refresh { margin-bottom: 0.2rem; }
+.book-status { min-height: 1.5rem; margin-top: 1.15rem; color: var(--muted-foreground); font-size: 0.78rem; }
+.book-metrics { margin-top: 0.8rem; }
+.book-section { margin-top: 2.7rem; }
+.book-section-head { display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 0.9rem 1.5rem; margin-bottom: 0.95rem; }
+.book-section-head h2 { margin-top: 0.3rem; color: var(--ink); font-size: 1.75rem; }
+.book-section-head p { max-width: 60rem; margin-top: 0.35rem; color: var(--muted-foreground); font-size: 0.82rem; }
+.book-count { display: inline-flex; align-items: center; padding: 0.35rem 0.75rem; border: 1px solid var(--border); border-radius: 999px; background: var(--card); color: var(--muted-foreground); font-family: var(--font-mono); font-size: 0.72rem; }
+.book-account-controls, .book-filters { display: flex; align-items: end; flex-wrap: wrap; gap: 0.55rem 0.75rem; }
+.book-account-controls label, .book-filters label { display: flex; flex-direction: column; gap: 0.3rem; color: var(--muted-foreground); font-family: var(--font-mono); font-size: 0.65rem; letter-spacing: 0.05em; text-transform: uppercase; }
+.book-account-controls select, .book-account-controls input, .book-filters select, .book-filters input {
+  min-height: 2.25rem; max-width: 100%; border: 1px solid var(--border); border-radius: 0.55rem;
+  padding: 0.45rem 0.65rem; background: var(--card); color: var(--foreground); font: 0.78rem var(--font-sans);
+}
+.book-account-controls input { width: 12rem; }
+.book-filters { padding: 1rem; border: 1px solid var(--border); border-radius: 0.85rem; background: var(--card); margin-bottom: 1rem; box-shadow: var(--shadow-card); }
+.book-filters select { min-width: 9rem; }
+.book-filters button { min-height: 2.25rem; border-radius: 0.55rem; padding: 0.4rem 0.85rem; font: 600 0.76rem var(--font-sans); cursor: pointer; }
+.book-apply { border: 1px solid var(--ink); background: var(--ink); color: white; }
+.book-clear { border: 1px solid var(--border); background: var(--card); color: var(--foreground); }
+.book-account-table { min-width: 850px; }
+.book-account-table th:last-child, .book-account-table td:last-child { text-align: right; }
+.book-account-table td:nth-last-child(2), .book-account-table th:nth-last-child(2) { text-align: right; }
+.book-account-name { color: var(--ink); font-weight: 600; }
+.book-account-key { display: block; margin-top: 0.2rem; color: var(--muted-foreground); font-family: var(--font-mono); font-size: 0.67rem; }
+.book-kind { display: inline-flex; align-items: center; border-radius: 999px; padding: 0.17rem 0.55rem; background: var(--muted); color: var(--foreground); font-size: 0.7rem; text-transform: capitalize; }
+.book-kind.position { background: color-mix(in oklab, var(--brand) 12%, white); color: var(--brand); }
+.book-kind.cash { background: color-mix(in oklab, var(--success) 12%, white); color: color-mix(in oklab, var(--success) 65%, black); }
+.book-kind.deposit { background: color-mix(in oklab, var(--brand-2) 13%, white); color: color-mix(in oklab, var(--brand-2) 65%, black); }
+.book-journal { display: grid; gap: 0.6rem; }
+.book-entry { border: 1px solid var(--border); border-radius: 0.8rem; background: var(--card); box-shadow: var(--shadow-card); overflow: hidden; }
+.book-entry[open] { border-color: color-mix(in oklab, var(--brand) 36%, var(--border)); }
+.book-entry summary { display: grid; grid-template-columns: 7.8rem minmax(8rem, 13rem) minmax(0, 1fr) 8rem 1.5rem; gap: 0.65rem; align-items: center; padding: 0.85rem 1rem; cursor: pointer; list-style: none; }
+.book-entry summary::-webkit-details-marker { display: none; }
+.book-entry summary:hover { background: color-mix(in oklab, var(--brand) 4%, var(--card)); }
+.book-entry-date { color: var(--muted-foreground); font-family: var(--font-mono); font-size: 0.72rem; }
+.book-entry-type { color: var(--brand); font-size: 0.75rem; font-weight: 600; }
+.book-entry-memo { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--ink); font-size: 0.8rem; }
+.book-entry-source { color: var(--muted-foreground); font-family: var(--font-mono); font-size: 0.68rem; text-align: right; }
+.book-entry-chevron { color: var(--muted-foreground); text-align: center; font-size: 1.1rem; transition: transform 0.15s; }
+.book-entry[open] .book-entry-chevron { transform: rotate(45deg); }
+.book-entry-body { border-top: 1px solid var(--border); padding: 0.8rem 1rem 1rem; }
+.book-entry-meta { display: flex; flex-wrap: wrap; gap: 0.3rem 1.4rem; margin-bottom: 0.7rem; color: var(--muted-foreground); font-size: 0.7rem; }
+.book-entry-meta code { overflow-wrap: anywhere; color: var(--foreground); font: inherit; }
+.book-entry table.report { min-width: 700px; }
+.book-entry table.report th, .book-entry table.report td { padding: 0.55rem 0.7rem; }
+.book-entry table.report th { position: static; }
+.book-entry table.report td:nth-last-child(-n+4), .book-entry table.report th:nth-last-child(-n+4) { text-align: right; }
+.book-pager { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.8rem; margin-top: 1rem; color: var(--muted-foreground); font-size: 0.77rem; }
+.book-pager > div { display: flex; gap: 0.45rem; }
+.book-updates-table { min-width: 700px; }
+.book-updates-table td:nth-child(2), .book-updates-table td:nth-child(3) { text-align: right; }
+.book-updates-table th:nth-child(2), .book-updates-table th:nth-child(3) { text-align: right; }
+.book-request { max-width: 22rem; overflow: hidden; text-overflow: ellipsis; font-family: var(--font-mono); font-size: 0.68rem; }
+@media (max-width: 850px) {
+  .book-entry summary { grid-template-columns: 6.7rem minmax(0, 1fr) 1.2rem; }
+  .book-entry-memo { grid-column: 2; grid-row: 2; }
+  .book-entry-source { display: none; }
+  .book-entry-chevron { grid-column: 3; grid-row: 1 / 3; }
+}
+@media (max-width: 600px) {
+  .book-account-controls { width: 100%; }
+  .book-account-controls input { width: 100%; }
+  .book-filters label { min-width: calc(50% - 0.4rem); flex: 1 1 8rem; }
+  .book-filters select, .book-filters input { width: 100%; }
+  .book-entry summary { padding: 0.75rem; grid-template-columns: 6.4rem minmax(0, 1fr) 1rem; }
+  .book-entry-type { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .book-account-table, .book-entry table.report, .book-updates-table { min-width: 0; width: 100%; }
+  .book-account-table thead, .book-entry table.report thead, .book-updates-table thead { display: none; }
+  .book-account-table tbody, .book-entry table.report tbody, .book-updates-table tbody { display: block; }
+  .book-account-table tr, .book-entry table.report tr, .book-updates-table tr {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.55rem 0.75rem;
+    padding: 0.85rem 0.95rem; border-bottom: 1px solid var(--border);
+  }
+  .book-entry table.report tr { padding: 0.7rem 0; }
+  .book-account-table tr:last-child, .book-entry table.report tr:last-child, .book-updates-table tr:last-child { border-bottom: 0; }
+  .book-account-table td, .book-entry table.report td,
+  .book-entry table.report td:nth-last-child(-n+4), .book-updates-table td,
+  .book-updates-table td:nth-child(2), .book-updates-table td:nth-child(3) {
+    display: flex; flex-direction: column; align-items: flex-start; gap: 0.2rem;
+    padding: 0 !important; border: 0; min-width: 0; white-space: normal;
+    overflow-wrap: anywhere; text-align: left;
+  }
+  .book-account-table td:first-child, .book-entry table.report td:first-child, .book-updates-table td:first-child { grid-column: 1 / -1; }
+  .book-account-table td::before, .book-entry table.report td::before, .book-updates-table td::before {
+    content: attr(data-label); color: var(--muted-foreground); font-family: var(--font-mono);
+    font-size: 0.6rem; letter-spacing: 0.09em; text-transform: uppercase;
+  }
+  .book-updates-table td:last-child { grid-column: 1 / -1; }
+}
