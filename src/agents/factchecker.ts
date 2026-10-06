@@ -118,9 +118,10 @@ Always pass keys \`redo\` and \`caveats\` (use null / []). Omit → tool error.
 
 ## list_journal_entries / books DB
 
-Call **only** if claims or task mention journal/reconcile/double-entry/books DB or \`books_journal_expected: true\`.
+Call **only** if claims or task require verification of journal/reconcile/double-entry/books DB facts or \`books_journal_expected: true\`. A return or NAV-history question alone does not require this tool. A missing books database cannot establish whether archived broker equity marks exist.
 If tool reports books not configured → journal class **n/a** — do **not** FAIL the whole audit solely for missing books DB.
 If peer asserted journal facts without DB → PASS_WITH_CAVEATS or FAIL that finding as unverified — never invent journal lines.
+For IBKR performance claims, re-run \`inspect_ibkr_nav_history\` for the requested month to verify actual valuation dates. Check external-flow evidence separately. Do not treat an end-of-month mark alone or a change in NAV as a cash-flow-adjusted time-weighted return.
 
 ## Out of scope
 

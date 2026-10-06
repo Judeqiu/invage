@@ -27,14 +27,15 @@ const EXPECTED_TOOLS = [
   'property_intel',
   'ura_carpark',
   'options_insight',
+  'inspect_ibkr_nav_history',
   'submit_factcheck_verdict',
 ] as const;
 
 describe('Factchecker local agent', () => {
-  it('has exact read-only tool set of length 19', () => {
+  it('has exact read-only tool set of length 20', () => {
     const names = createFactcheckerTools().map((t) => t.name).sort();
     expect(names).toEqual([...EXPECTED_TOOLS].sort());
-    expect(names).toHaveLength(19);
+    expect(names).toHaveLength(20);
   });
 
   it('excludes mutations, optimize, snapshots, playbook updates, reports', () => {

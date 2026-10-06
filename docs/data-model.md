@@ -42,7 +42,7 @@ BrokerStatement { as_of, cash[], lots[], option_executions? }
 
 Vendor field names (`OpenPosition`, `endingCash`, `assetCategory`, `conid`, `levelOfDetail`) are **parser inputs**. They are not stored. After apply you should see `Holding`, `cash.amount`, `broker_ref.native_id`, and `OptionExecution` only. Pipeline detail for IBKR: [IBKR Flex raw data processing](./ibkr-flex-raw-processing.md).
 
-What v1 ingest **does not** store, even if the XML contains it: stock/ETF fills, dividends, deposits, daily NAV / EquitySummary history, TWR, FIFO tax lots, roll links, opening spot. Those stay in the raw file or `not_imported`. Dashboard period-change history is `save_snapshot`, not Flex.
+What v1 ingest **does not** store, even if the XML contains it: stock/ETF fills, dividends, deposits, daily NAV / EquitySummary history, TWR, FIFO tax lots, roll links, opening spot. Those stay in the raw file or `not_imported`. The read-only `inspect_ibkr_nav_history` tool can summarize dated `EquitySummaryInBase.total` marks from archived XML without importing them; it cannot verify external cash flows or calculate TWR. Dashboard period-change history is `save_snapshot`, not Flex.
 
 **Option lots vs fills (every catalog connector):** listed option **positions** map into the same `Holding.option` on `{key}@{channel}`. Incomplete rows (missing strike/expiry/multiplier/underlying/mark) and Webull multi-leg combos are `not_imported`. Option **fills** use the shared `option_executions` journal; only IBKR Flex Trades at Executions level populates it. Tiger/MooMoo/Webull omit the field so existing journal rows stay.
 

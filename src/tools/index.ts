@@ -44,6 +44,7 @@ import {
 } from './broker_ingest.js';
 import { createConfigureBrokerTool, createListBrokerAccountsTool, createSyncBrokerTool } from './broker_connect.js';
 import { createConfigureIbkrFlexTool, createSyncIbkrFlexTool } from './ibkr_flex.js';
+import { createInspectIbkrNavHistoryTool } from './ibkr_nav.js';
 import { createOptionsInsightTool } from './options_insight.js';
 import { createReconTools } from './recon.js';
 
@@ -74,6 +75,7 @@ export function createBookkeeperTools(): AgentTool[] {
     ...createSnapshotTool(),
     createConfigureIbkrFlexTool(),
     createSyncIbkrFlexTool(),
+    createInspectIbkrNavHistoryTool(),
     createConfigureBrokerTool(),
     createListBrokerAccountsTool(),
     createSyncBrokerTool(),
@@ -180,6 +182,7 @@ export function createFactcheckerTools(): AgentTool[] {
     createPropertyIntelTool(),
     createUraCarparkTool(),
     createOptionsInsightTool(),
+    createInspectIbkrNavHistoryTool(),
     createSubmitFactcheckVerdictTool(),
   ];
 }
