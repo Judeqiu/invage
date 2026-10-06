@@ -83,6 +83,65 @@ export async function withHouseholdTx<T>(
   }
 }
 
+/**
+ * Commit books before the separate investor-state database is updated, while
+ * holding a session advisory lock across both commits. A failed state update
+ * can repair books to the latest persisted state before releasing that lock.
+ */
+export async function withHouseholdPostCommit<T>(
+  householdId: string,
+  prepare: (client: BooksClient) => Promise<T>,
+  persist: () => Promise<void>,
+  recover: (client: BooksClient) => Promise<void>,
+): Promise<T> {
+  if (typeof householdId !== 'string' || !householdId.trim()) {
+    throw new Error('withHouseholdPostCommit: householdId is required.');
+  }
+  const client = await getPool().connect();
+  let locked = false;
+  let inTransaction = false;
+  const begin = async () => {
+    await client.query('BEGIN');
+    inTransaction = true;
+    await client.query(`SELECT set_config('app.household_id', $1, true)`, [householdId.trim()]);
+  };
+  try {
+    await client.query('SELECT pg_advisory_lock(hashtext($1))', [householdId.trim()]);
+    locked = true;
+    await begin();
+    const result = await prepare(client);
+    await client.query('COMMIT');
+    inTransaction = false;
+    try {
+      await persist();
+    } catch (saveError) {
+      try {
+        await begin();
+        await recover(client);
+        await client.query('COMMIT');
+        inTransaction = false;
+      } catch (repairError) {
+        throw new AggregateError([saveError, repairError],
+          'Investor save failed and books recovery also failed.');
+      }
+      throw saveError;
+    }
+    return result;
+  } catch (error) {
+    if (inTransaction) {
+      try { await client.query('ROLLBACK'); } catch { /* preserve original error */ }
+    }
+    throw error;
+  } finally {
+    if (locked) {
+      try { await client.query('SELECT pg_advisory_unlock(hashtext($1))', [householdId.trim()]); }
+      finally { client.release(); }
+    } else {
+      client.release();
+    }
+  }
+}
+
 /** Superuser / migrator connection without RLS tenant (schema setup, bootstrap household). */
 export async function withAdminClient<T>(
   fn: (client: BooksClient) => Promise<T>,
