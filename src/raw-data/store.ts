@@ -24,6 +24,7 @@ function describe(id:string,stat:Stats):RawFile {
   if(parts[0]==='ibkr-flex'){channel='ibkr';source_kind='broker-sync';}
   if(parts[0]==='tiger-raw'){channel='tiger';source_kind='broker-sync';}
   if(parts[0]==='moomoo-raw'){channel='moomoo';source_kind='broker-sync';}
+  if(parts[0]==='futubull-raw'){channel='futubull';source_kind='broker-sync';}
   if(parts[0]==='webull-raw'){channel='webull';source_kind='broker-sync';}
   if(parts[0]==='broker-sync'&&parts.length>=3){channel=parts[1]!;source_kind='broker-sync';}
   if(parts[0]==='broker-triage'&&parts.length>=3){channel=parts[1]!;source_kind='broker-triage';}

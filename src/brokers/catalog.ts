@@ -199,6 +199,32 @@ export const BROKER_CATALOG: readonly BrokerConnectorDef[] = [
     ipWhitelistHelp: false,
   },
   {
+    id: 'futubull',
+    displayName: 'Futubull',
+    channel: 'futubull',
+    capability: 'Read-only Futu OpenD snapshot of live securities positions and per-currency cash. Stocks and ETFs are imported; options and other unsupported products are reported as skipped. Cannot place orders. OpenD must be running and signed in on the Invage host.',
+    credentialFields: [
+      { id: 'opend_port', label: 'OpenD local port', type: 'text', required: true,
+        help: 'Port of a signed-in Futu OpenD gateway on this server (usually 11111). Invage connects only to 127.0.0.1.' },
+      { id: 'security_firm', label: 'Securities firm', type: 'text', required: true,
+        help: 'FUTUSECURITIES (HK), FUTUINC (US), or FUTUSG (Singapore). Must match the account in OpenD.' },
+      { id: 'acc_id', label: 'Trading account', type: 'text', required: false,
+        help: 'Choose a live securities account discovered through OpenD. Paper accounts are excluded.' },
+    ],
+    helpSteps: [
+      'Install Futu OpenD and the official Python SDK (pip install futu-api) on the Invage host.',
+      'Sign in to OpenD with your Futubull ID. Keep its API listener bound to 127.0.0.1; use a local SSH tunnel if OpenD runs elsewhere.',
+      'Enter the local API port and securities firm, save access, then discover and select your live trading account.',
+      'Preview the snapshot before the first Sync. Unsupported positions are shown in the preview and are not imported.',
+    ],
+    helpNotes: [
+      'OpenD login and any required API agreement are completed in OpenD, not in Invage.',
+      'Use a separate local OpenD port for each Futubull login. Invage does not unlock trading or submit orders.',
+    ],
+    helpHref: 'https://openapi.futunn.com/futu-api-doc/en/intro/intro.html',
+    helpHrefLabel: 'Futu OpenAPI docs',
+  },
+  {
     id: 'webull',
     displayName: 'Webull',
     channel: 'webull',

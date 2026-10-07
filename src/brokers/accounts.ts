@@ -36,12 +36,14 @@ const CONNECTION_FIELDS: Record<string, string[]> = {
   ibkr: ['activity_query_id', 'tradeconf_query_id'],
   tiger: ['account'],
   moomoo: ['acc_id'],
+  futubull: ['acc_id'],
   webull: ['account_id'],
 };
 const ACCOUNT_FIELD: Record<string, string | undefined> = {
   ibkr: undefined,
   tiger: 'account',
   moomoo: 'acc_id',
+  futubull: 'acc_id',
   webull: 'account_id',
 };
 const inflight = new Set<string>();
@@ -121,6 +123,7 @@ function accountNamespace(conn: BrokerAccountConnection, sources: Record<string,
   const access = sources[conn.source_id]?.credentials ?? {};
   if (conn.broker_id === 'tiger') return `${access.license?.toUpperCase() ?? ''}:${/^\d{17}$/.test(conn.account_id ?? '') ? 'paper' : 'live'}`;
   if (conn.broker_id === 'webull') return access.region?.toLowerCase() ?? '';
+  if (conn.broker_id === 'futubull') return access.security_firm?.toUpperCase() ?? '';
   return '';
 }
 function validateUniqueness(model: BrokerAccountModel): void {
@@ -439,6 +442,11 @@ export async function discoverBrokerAccounts(state: InvestorState, sourceId: str
     const { parseSignAlg } = await import('../moomoo/moomoo-sign.js');
     return fetchMooMooAuthorizedAccounts({ app_key: source.credentials.app_key, private_key: source.credentials.private_key,
       sign_alg: parseSignAlg(source.credentials.sign_alg) });
+  }
+  if (source.broker_id === 'futubull') {
+    const { discoverFutubullAccounts } = await import('../futubull/futubull-client.js');
+    return discoverFutubullAccounts({ opend_port: source.credentials.opend_port,
+      security_firm: source.credentials.security_firm });
   }
   const { listWebullAccounts } = await import('../webull/webull-client.js');
   return listWebullAccounts({ app_key: source.credentials.app_key, app_secret: source.credentials.app_secret,
