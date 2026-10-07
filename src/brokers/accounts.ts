@@ -241,6 +241,7 @@ export function publicBrokerAccounts(state: InvestorState) {
       fields: def.credentialFields.map(f => ({ id: f.id, label: f.label, type: f.type, required: f.required,
         role: configFields(def.id).has(f.id) ? 'connection' : 'source', help: f.help, widget: f.widget, format: f.format })),
       help_steps: def.helpSteps, help_notes: def.helpNotes, help_href: def.helpHref,
+      help_href_label: def.helpHrefLabel,
     })),
     sources: Object.entries(model.sources).map(([id, source]) => ({
       id, broker_id: source.broker_id,

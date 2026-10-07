@@ -416,13 +416,14 @@ describe('createInvageWebUi brokers section', () => {
       .toContain('accounts.js');
   });
 
-  it('GET catalog lists IBKR, Tiger Brokers, MooMoo, and Webull as live connectors', () => {
+  it('GET catalog lists IBKR, Tiger Brokers, MooMoo, Futubull, and Webull as live connectors', () => {
     const views = publicCatalog(investor());
-    expect(views.map((v) => v.id)).toEqual(['ibkr', 'tiger', 'moomoo', 'webull']);
+    expect(views.map((v) => v.id)).toEqual(['ibkr', 'tiger', 'moomoo', 'futubull', 'webull']);
     expect(views.map((v) => v.display_name)).toEqual([
       'Interactive Brokers',
       'Tiger Brokers',
       'MooMoo',
+      'Futubull',
       'Webull',
     ]);
     expect(views.every((v) => v.status === 'off')).toBe(true);

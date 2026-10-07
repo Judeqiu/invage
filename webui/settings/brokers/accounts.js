@@ -105,10 +105,13 @@ function values(role, b, configured) {
   return out;
 }
 function guide(b) {
-  return `<details><summary>Setup instructions for ${esc(b.display_name)}</summary>
+  const futubull = b.id === 'futubull';
+  return `<details class="${futubull ? 'setup-guide' : ''}" ${futubull ? 'open' : ''}>
+    <summary>${futubull ? 'Set up Futubull before connecting' : `Setup instructions for ${esc(b.display_name)}`}</summary>
+    ${futubull ? '<p class="setup-prerequisite"><strong>Server setup required.</strong> Invage needs a signed-in OpenD gateway reachable through a local server port before Find accounts or Preview can work.</p>' : ''}
     <ol>${(b.help_steps || []).map(s => `<li>${esc(s)}</li>`).join('')}</ol>
     ${(b.help_notes || []).map(s => `<p>${esc(s)}</p>`).join('')}
-    ${b.help_href ? `<p><a href="${esc(b.help_href)}" target="_blank" rel="noopener">Broker documentation</a></p>` : ''}
+    ${b.help_href ? `<p><a href="${esc(b.help_href)}" target="_blank" rel="noopener">${esc(b.help_href_label || 'Broker documentation')}</a></p>` : ''}
     ${b.id === 'ibkr' && data.egress_ipv4 ? `<p>Static egress IPv4 for Flex IP restriction: ${esc(data.egress_ipv4)}</p>` : ''}
   </details>`;
 }
@@ -136,6 +139,7 @@ function existingCard(c) {
     ${preview[c.id] ? `<p class="hint">Preview ${esc(preview[c.id].as_of)} · ${esc(preview[c.id].lots)} incoming lots · ${esc(preview[c.id].would_remove)} existing lots would be removed · ${esc(preview[c.id].currencies.join(', '))} cash${preview[c.id].not_imported.length ? ` · ${esc(preview[c.id].not_imported.length)} skipped` : ''}</p>
       ${preview[c.id].not_imported.length ? `<details><summary>Skipped rows</summary><ul>${preview[c.id].not_imported.map(item => `<li>${esc(item)}</li>`).join('')}</ul></details>` : ''}` : ''}
     ${open ? `<div class="manage">
+      ${b.id === 'futubull' ? guide(b) : ''}
       <label class="field" for="account-label">Account label<input id="account-label" type="text" value="${esc(c.label)}"></label>
       ${c.account_binding_editable ? `<div class="actions"><button data-action="find-binding" data-id="${esc(c.id)}" ${busy || b.id === 'tiger' || dirty.has(c.id) ? 'disabled' : ''}>Find accounts</button></div>
         <label class="field" for="account-binding">Confirm account ID
@@ -158,7 +162,7 @@ function existingCard(c) {
         </select></label>
       <p class="hint">${c.sync_schedule ? `Next automatic sync: ${esc(when(c.sync_schedule.next_run_at))}${!c.enabled ? ' · Paused while this account is disabled' : ''}` : 'Automatic sync is off.'}</p>
       <div class="actions"><button data-action="save-account" data-id="${esc(c.id)}" ${busy ? 'disabled' : ''}>Save account</button></div>
-      ${guide(b)}
+      ${b.id === 'futubull' ? '' : guide(b)}
       <h3>Sync history</h3>
       ${historyHtml(c)}
     </div>` : ''}
