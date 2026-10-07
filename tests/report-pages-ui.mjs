@@ -22,6 +22,16 @@ const payload = {
   productName: 'Victor Consultant',
   equityPrices: { AAPL: 150 },
   connectionMetrics: { ibkr: { currency: 'USD', buying_power: 20000 } },
+  brokerAsOf: { ibkr: '2026-09-16', moomoo: '2026-09-15' },
+  premiumSupportedChannels: ['ibkr'],
+  premiumJournal: { available: true, channels: ['ibkr'], daily: [
+    { channel: 'ibkr', account_id: 'U1', date: '2026-09-16', currency: 'USD', net_premium: '100' },
+    { channel: 'ibkr', account_id: 'U1', date: '2026-09-09', currency: 'USD', net_premium: '200' },
+  ] },
+  optionTradeDetails: {
+    'AAPL  260918P00140000': { openedFrom: '2026-09-09', openedTo: '2026-09-09', stoNetPremium: 499, currency: 'USD' },
+    'AAPL  261016P00160000': { openedFrom: '2026-09-16', openedTo: '2026-09-16', stoNetPremium: 1699, currency: 'USD' },
+  },
   warnings: [],
   model: {
     live: {
@@ -76,6 +86,7 @@ const payload = {
           weightPct: 1,
           instrument: 'option',
           channel: 'ibkr',
+          currency: 'USD',
           premiumAbsolute: 500,
           contingentCashObligation: 14000,
           contingentShareObligation: 0,
@@ -103,6 +114,7 @@ const payload = {
           pl: 200,
           instrument: 'option',
           channel: 'ibkr',
+          currency: 'USD',
           premiumAbsolute: 1700,
           contingentCashObligation: 16000,
           contingentShareObligation: 0,
@@ -211,6 +223,11 @@ const server = createServer(async (req, res) => {
       res.end(JSON.stringify(payload));
       return;
     }
+    if (url === '/api/domain/invage/option-open-close') {
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ underlying: 'AAPL', date: '2026-09-09', adjusted_close: 150.25 }));
+      return;
+    }
     if (url === '/api/domain/invage/option-history') {
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify({
@@ -294,12 +311,21 @@ try {
   await page.waitForFunction(() => document.getElementById('navValue')?.textContent?.includes('$'));
   const dashText = await page.evaluate(() => document.body.innerText);
   assert(/Portfolio snapshot/i.test(dashText), 'dashboard h1');
-  assert(/Premium\s*·\s*open/i.test(dashText), 'premium kpi');
+  assert(/Net premium\s*·\s*Daily/i.test(dashText), 'daily premium kpi');
+  assert(/Net premium\s*·\s*MTD/i.test(dashText), 'MTD premium kpi');
+  assert(/Cash after all puts assigned/i.test(dashText), 'cash-after-assignment kpi');
+  assert(/Net asset value/i.test(dashText), 'NAV hero card');
   assert(/Open options positions · broker view/i.test(dashText), 'open options section');
   assert(/Assignment exposure/i.test(dashText), 'assignment exposure column');
-  assert(/Cst bss \(premium received\)/i.test(dashText), 'premium column');
+  assert(/STO net credit/i.test(dashText), 'STO credit column');
+  assert(/Opened/i.test(dashText), 'opening date column');
   assert(/% of max/i.test(dashText), 'premium capture column');
   assert(/Prob\. ITM/i.test(dashText), 'risk probability column');
+  assert(/Complete trade history unavailable/.test(await page.$eval('#kpiRow', node => node.textContent)), 'merged premium does not silently omit moomoo');
+  await page.click('#channelPills [data-channel="ibkr"]');
+  assert(/\$100/.test(await page.$eval('#kpiRow', node => node.textContent)), 'IBKR daily premium uses recorded fills');
+  assert(/\$300/.test(await page.$eval('#kpiRow', node => node.textContent)), 'IBKR MTD premium uses recorded fills');
+  await page.click('#channelPills [data-channel="merged"]');
   assert(await page.$('#expiryTable .risk-row'), 'scored risk contract');
   assert(/\$16,000/.test(await page.$eval('#expiryRow', (node) => node.textContent)), 'radar exposure uses scored contracts');
   await page.click('#expiryTable [data-risk-scope="all"]');
@@ -328,17 +354,23 @@ try {
   await page.click('#optionOpenTab');
   const optionCells = await page.$$eval('#openOptions .option-ledger-row td', (cells) => cells.map((cell) => cell.textContent.trim()));
   assert.equal(optionCells[1], '-1', 'short position is signed');
-  assert.equal(optionCells[5], '$500.00', 'average premium is per contract');
-  assert.equal(optionCells[6], '$200.00', 'broker mark per contract wins over live option price');
-  assert.equal(optionCells[7], '-$200.00', 'market value uses broker mark');
-  assert.equal(optionCells[8], '$300.00', 'P&L uses broker mark');
+  assert(optionCells[2].includes('09-Sep-2026'), 'opening date uses requested format');
+  assert.equal(optionCells[5], '$499.00', 'STO credit comes from matched fills');
+  assert.equal(optionCells[6], '$500.00', 'open cost basis remains distinct');
+  assert.equal(optionCells[7], '$200.00', 'broker mark per contract wins over live option price');
+  assert.equal(optionCells[8], '-$200.00', 'market value uses broker mark');
+  assert.equal(optionCells[9], '$300.00', 'P&L uses broker mark');
+  assert.equal(await page.$eval('#openOptions .option-ledger td:first-child', node => getComputedStyle(node).position), 'sticky', 'contract stays visible on horizontal scroll');
+  await page.click('#openOptions [data-option-price]');
+  await page.waitForFunction(() => document.querySelector('#openOptions [data-option-price]')?.textContent?.includes('Adjusted close'));
+  assert(/150\.25/.test(await page.$eval('#openOptions [data-option-price]', node => node.textContent)), 'opening-day adjusted close is labelled');
   await page.click('#openOptions [data-option-right="call"]');
   assert(!(await page.$('#openOptions .option-ledger-row')), 'right filter removes put row');
   await page.click('#openOptions [data-option-right="all"]');
   await page.click('#openOptions [data-option-month="2026-09"]');
-  assert(!(await page.$eval('#openOptions', (node) => node.textContent.includes('AAPL SHORT PUT $140 2026-09-18'))), 'month row collapses');
+  assert(!(await page.$eval('#openOptions', (node) => node.textContent.includes('AAPL Short Put $140 · 18-Sep-2026'))), 'month row collapses');
   await page.click('#openOptions [data-option-month="2026-09"]');
-  assert(await page.$eval('#openOptions', (node) => node.textContent.includes('AAPL SHORT PUT $140 2026-09-18')), 'month row expands');
+  assert(await page.$eval('#openOptions', (node) => node.textContent.includes('AAPL Short Put $140 · 18-Sep-2026')), 'month row expands');
   for (const label of ['Allocation', 'Performance by position', 'Performance over time', 'Key insights', 'Channel details', 'Holdings detail', 'Fixed deposits', 'Methodology']) {
     assert(!(await page.$(`section[aria-label="${label}"]`)), `${label} section removed`);
   }
@@ -354,6 +386,13 @@ try {
   await page.waitForFunction(() => document.getElementById('expiryTable')?.textContent?.includes('No spot quote'));
   assert.equal(await page.$$eval('#expiryTable .risk-row', (rows) => rows.length), 2, 'unscored open contracts remain visible');
   assert(/0 of 2 above 30%/.test(await page.$eval('#expiryTable', (node) => node.textContent)), 'radar count stays honest');
+
+  payload.generatedAt = '2026-10-06T10:00:00.000Z';
+  payload.brokerAsOf.ibkr = '2026-09-22';
+  await page.goto(`http://127.0.0.1:${port}/dashboard/`);
+  await page.waitForFunction(() => document.querySelector('#openOptions .option-freshness-warning'));
+  assert(/last confirmed 22-Sep-2026/.test(await page.$eval('#openOptions .option-freshness-warning', node => node.textContent)), 'stale broker positions are visibly unverified');
+  assert(/Put positions need a fresh broker sync/.test(await page.$eval('#kpiRow', node => node.textContent)), 'stale put positions do not produce a cash scenario');
 
   const savedModel = payload.model;
   payload.empty = true;

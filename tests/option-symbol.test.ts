@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  canonicalOptionUnderlying,
   looksLikeOptionCode,
   optionUnderlyingFromBroker,
   parseBrokerOptionCode,
@@ -34,6 +35,17 @@ describe('parseBrokerOptionCode', () => {
     expect(looksLikeOptionCode('00700')).toBe(false);
     expect(looksLikeOptionCode('AAPL')).toBe(false);
     expect(looksLikeOptionCode('TCH260629C390000')).toBe(true);
+  });
+});
+
+describe('canonicalOptionUnderlying', () => {
+  const expected = { right: 'put' as const, expiry: '2026-10-16', strike: 230 };
+  it('removes a matching OCC code from the underlying name', () => {
+    expect(canonicalOptionUnderlying('AMD 261016P00230000', expected)).toBe('AMD');
+    expect(canonicalOptionUnderlying('AMD', expected)).toBe('AMD');
+  });
+  it('rejects an embedded contract code that contradicts the structured fields', () => {
+    expect(() => canonicalOptionUnderlying('AMD 261016C00230000', expected)).toThrow(/disagrees/);
   });
 });
 

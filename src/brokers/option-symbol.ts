@@ -51,6 +51,20 @@ export function parseBrokerOptionCode(symbol: string): ParsedOptionCode | { skip
   return { root, expiry, right, strike };
 }
 
+/** A broker may put the full OCC code into underlyingSymbol. Keep only its verified root. */
+export function canonicalOptionUnderlying(raw: string, expected: {
+  right: 'call' | 'put'; expiry: string; strike: number;
+}): string {
+  const value = raw.trim().toUpperCase();
+  const compact = value.replace(/\s+/g, '');
+  const parsed = parseBrokerOptionCode(compact);
+  if ('skip' in parsed) return value;
+  if (parsed.expiry !== expected.expiry || parsed.right !== expected.right || parsed.strike !== expected.strike) {
+    throw new Error(`Option code in underlyingSymbol disagrees with the contract fields: ${raw}`);
+  }
+  return parsed.root;
+}
+
 /**
  * Yahoo-facing underlying for an option lot.
  * Prefer the broker's owner/underlying code. HK letter roots (TCH) map only

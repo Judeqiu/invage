@@ -118,6 +118,23 @@ function writeConnectionMetrics(state: InvestorState, connectorId: string, state
   (conn as { metrics?: BrokerStatement['metrics'] }).metrics = statement.metrics;
 }
 
+export function assertStatementNotOlder(
+  state: Pick<InvestorState, 'broker_connections' | 'option_observations'>,
+  connectorId: string,
+  channel: string,
+  asOf: string,
+): void {
+  const previousAsOf = state.broker_connections?.[connectorId]?.last_sync?.ok
+    ? state.broker_connections[connectorId].last_sync.as_of : undefined;
+  const observedAsOf = (state.option_observations ?? [])
+    .filter(row => row.connection_id === connectorId && row.source === 'broker')
+    .reduce<string | undefined>((latest, row) => !latest || row.as_of > latest ? row.as_of : latest, undefined);
+  const latestAsOf = [previousAsOf, observedAsOf].filter((date): date is string => Boolean(date)).sort().at(-1);
+  if (latestAsOf && asOf < latestAsOf) {
+    throw new Error(`Broker statement as of ${asOf} is older than the current ${channel} position date ${latestAsOf}; open holdings were not replaced.`);
+  }
+}
+
 export async function applyBrokerStatement(
   snapshot: InvestorSnapshot,
   connectorId: string,
@@ -137,6 +154,7 @@ export async function applyBrokerStatement(
     }
   }
   const channel = connection?.channel ?? getBrokerConnector(connectorId).channel;
+  assertStatementNotOlder(state, connectorId, channel, doc.as_of);
   // Validate all incoming history before ledger writes or snapshot mutation.
   const executions = doc.option_executions === undefined ? undefined : mergeOptionExecutions(
     state.option_executions === undefined ? [] : state.option_executions,

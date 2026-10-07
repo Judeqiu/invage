@@ -12,6 +12,7 @@ import type {
 } from '../brokers/statement.js';
 import type { FlexOpenPosition, FlexSkip, FlexStatementDoc } from './flex-parse.js';
 import { yahooSymbolFromFlex } from '../brokers/yahoo-symbol.js';
+import { canonicalOptionUnderlying } from '../brokers/option-symbol.js';
 
 export { yahooSymbolFromFlex };
 
@@ -162,8 +163,8 @@ export function holdingsFromOpenPositions(
         }
         if (!pos.expiry) throw new Error('option missing expiry');
         if (!pos.underlyingSymbol?.trim()) throw new Error('option missing underlyingSymbol');
-        const underlying = pos.underlyingSymbol.trim().toUpperCase();
         const expiry = ymdOptionExpiry(pos.expiry);
+        const underlying = canonicalOptionUnderlying(pos.underlyingSymbol, { right, expiry, strike: pos.strike });
         const base = buildOptionKey({
           underlying,
           right,

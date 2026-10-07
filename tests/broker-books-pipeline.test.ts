@@ -74,5 +74,8 @@ describe('IBKR Flex → BrokerStatement → portfolio → books journal', () => 
       `SELECT DISTINCT external_ref FROM journal_entries WHERE household_id=$1::uuid AND tool_name='broker_sync'`, [userId]));
     expect(rows.rows).toHaveLength(2);
     expect(rows.rows.every(row => String(row.external_ref).startsWith('broker:ibkr:U123:'))).toBe(true);
+
+    await expect(apply(first)).rejects.toThrow(/older than the current ibkr position date 2026-10-03/);
+    expect(getCashes((await loadInvestor(slug)).state).find(row => row.channel === 'ibkr')?.amount).toBe(1100);
   });
 });

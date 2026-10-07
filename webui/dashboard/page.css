@@ -32,6 +32,7 @@
 .history-detail ul { margin: 0.4rem 0 0; padding-left: 1.2rem; font-size: 0.8rem; }
 #historyMore { margin-top: 0.8rem; }
 .option-ledger-filters { display: flex; flex-wrap: wrap; gap: 0.85rem 2rem; margin: 0 0 0.9rem; }
+.option-freshness-warning { margin: 0 0 0.9rem; padding: 0.75rem 1rem; border: 1px solid color-mix(in oklab, var(--warning) 45%, var(--border)); border-radius: 0.65rem; background: color-mix(in oklab, var(--warning) 12%, var(--card)); color: var(--foreground); font-size: 0.82rem; }
 .option-filter-group { display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem; }
 .option-filter-group .label-eyebrow { margin-right: 0.35rem; }
 .option-ledger { min-width: 1240px !important; }
@@ -40,6 +41,14 @@
 .option-ledger th .help-dot { margin-left: 0.35rem; vertical-align: middle; }
 .option-ledger td { padding-top: 0.62rem; padding-bottom: 0.62rem; }
 .option-ledger .option-instrument { font-weight: 600; }
+.option-ledger th:first-child, .option-ledger td:first-child { position: sticky; left: 0; min-width: 300px; z-index: 3; background: var(--card); box-shadow: 1px 0 var(--border); }
+.option-ledger th:first-child { z-index: 5; }
+@media (max-width: 700px) {
+  .option-ledger th:first-child, .option-ledger td:first-child { min-width: 210px; max-width: 210px; white-space: normal; }
+}
+.option-ledger .option-month-total td:first-child { background: var(--muted); }
+.option-opened { white-space: nowrap; }
+.option-close-lookup { display: block; margin-top: 0.2rem; padding: 0; border: 0; background: none; color: var(--brand); font: inherit; font-size: 0.7rem; cursor: pointer; }
 .option-ledger .option-month-total td { background: var(--muted); font-weight: 700; }
 .option-month-toggle { border: 0; background: none; color: var(--ink); font: inherit; font-weight: 700; cursor: pointer; white-space: nowrap; }
 .option-month-count { color: var(--muted-foreground); }

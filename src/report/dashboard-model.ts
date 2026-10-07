@@ -39,6 +39,8 @@ export function resolveDashboardChannel(raw: string | null | undefined): string 
 
 export interface LivePosition {
   ticker: string;
+  /** Holding currency; omitted for older or manually entered positions. */
+  currency?: string;
   /** Human label (option description or ticker). */
   label: string;
   units: number;

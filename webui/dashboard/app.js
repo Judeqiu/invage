@@ -153,6 +153,58 @@ function longDateLabel(ymd) {
   });
 }
 
+function optionDateLabel(ymd) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd || '')) return '—';
+  const [year, month, day] = ymd.split('-');
+  const mon = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][Number(month) - 1];
+  return mon ? `${day}-${mon}-${year}` : '—';
+}
+
+function optionUnderlyingLabel(option) {
+  const raw = String(option.underlying || '').trim().toUpperCase();
+  const embedded = raw.match(/^([A-Z][A-Z0-9.]*?)\s*(\d{6})([CP])(\d{8})$/);
+  if (!embedded) return raw;
+  const encodedDate = `20${embedded[2].slice(0, 2)}-${embedded[2].slice(2, 4)}-${embedded[2].slice(4, 6)}`;
+  const encodedStrike = Number(embedded[4]) / 1000;
+  return encodedDate === option.expiry && embedded[3] === (option.right === 'put' ? 'P' : 'C') &&
+    encodedStrike === Number(option.strike) ? embedded[1] : raw;
+}
+
+function recordedPremiumForView(view, date) {
+  const journal = payload?.premiumJournal;
+  const supported = new Set(payload?.premiumSupportedChannels || []);
+  const observed = new Set(journal?.channels || []);
+  const channels = view.channelView === MERGED_CHANNEL_VIEW
+    ? (view.channels?.length ? view.channels : [...new Set((view.positions || []).map(p => p.channel))])
+    : [view.channelView];
+  if (!journal?.available || !channels.length || channels.some(ch => !supported.has(ch) || !observed.has(ch))) {
+    return { daily: null, mtd: null, reason: 'Complete trade history unavailable for this view' };
+  }
+  const start = `${date.slice(0, 7)}-01`;
+  const rows = (journal.daily || []).filter(row => channels.includes(row.channel) && row.date >= start && row.date <= date);
+  const currency = reportingCcyCode(view);
+  const convert = (row) => {
+    if (!currency) return null;
+    if (row.currency === currency) return Number(row.net_premium);
+    const rate = view.fxApplied ? view.fxRates?.[row.currency] : null;
+    return Number.isFinite(rate) && rate > 0 ? Number(row.net_premium) * rate : null;
+  };
+  if (rows.some(row => convert(row) == null)) return { daily: null, mtd: null, reason: 'Trade currencies cannot be combined without FX' };
+  const sum = list => list.length ? list.reduce((total, row) => total + convert(row), 0) : null;
+  return { daily: sum(rows.filter(row => row.date === date)), mtd: sum(rows),
+    reason: `Recorded fills through ${optionDateLabel(date)} · broker report dates` };
+}
+
+function unverifiedOptionChannels(view) {
+  if (!view.isLive) return [];
+  const today = (payload.generatedAt || '').slice(0, 10);
+  return [...new Set((view.positions || []).filter(p => p.instrument === 'option')
+    .map(p => p.channel || DEFAULT_CHANNEL))].filter(channel => {
+      const asOf = payload.brokerAsOf?.[channel];
+      return !asOf || (daysToExpiry(today, asOf) ?? 999) > 4;
+    });
+}
+
 function daysToExpiry(expiry, asOf) {
   if (!expiry) return null;
   const e = Date.parse(`${expiry}T00:00:00Z`);
@@ -221,22 +273,6 @@ function metricCardHtml(label, value, sub, help, valueClass) {
     <div class="${vcls}">${value}</div>
     ${sub ? `<div class="metric-sub">${sub}</div>` : ''}
   </div>`;
-}
-
-function metricsForView(view) {
-  const all = payload?.connectionMetrics || {};
-  if (view.channelView !== MERGED_CHANNEL_VIEW) {
-    return all[view.channelView] ? [all[view.channelView]] : [];
-  }
-  return Object.values(all);
-}
-
-function sumMetric(rows, key) {
-  const nums = rows.map((r) => r[key]).filter((n) => typeof n === 'number' && Number.isFinite(n));
-  if (nums.length === 0) return null;
-  const ccys = [...new Set(rows.filter((r) => r[key] != null).map((r) => r.currency))];
-  if (ccys.length > 1) return null;
-  return { amount: nums.reduce((s, n) => s + n, 0), currency: ccys[0] };
 }
 
 function fmtSigned(n, digits = 2) {
@@ -1300,7 +1336,10 @@ function renderOverview(view) {
         ? ` Broker positions as of ${dates.map(([channel, date]) => `${channel} ${date}`).join(', ')}.`
         : ' Broker position dates unavailable for this older snapshot.';
     })();
-    el.heroLead.textContent = `${n} holdings — ${e} equity, ${o} option, ${f} fund. Pick a date to replay saved valuations.${archive}`;
+    const positionDates = view.isLive ? Object.entries(payload.brokerAsOf || {})
+      .filter(([channel]) => view.channelView === MERGED_CHANNEL_VIEW || channel === view.channelView)
+      .map(([channel, date]) => `${channel.toUpperCase()} ${optionDateLabel(date)}`) : [];
+    el.heroLead.textContent = `${n} holdings — ${e} equity, ${o} option, ${f} fund. Pick a date to replay saved valuations.${archive}${view.isLive && positionDates.length ? ` Broker positions as of ${positionDates.join(' · ')}.` : ''}`;
   }
   if (el.navValue) {
     el.navValue.textContent = fmtPrettyMoney(view.totalValue, repCcy, 2);
@@ -1324,55 +1363,48 @@ function renderOverview(view) {
       el.navDelta.className = 'metric-sub';
       el.navDelta.textContent = view.isLive ? 'Live marks' : `Archived ${view.label}`;
     }
-  }
-
-  const metrics = metricsForView(view);
-  const buying = sumMetric(metrics, 'buying_power');
-  const maint = sumMetric(metrics, 'maintenance_margin');
-  const excess = sumMetric(metrics, 'excess_liquidity');
-  let marginPct = null;
-  if (maint && excess && maint.amount + excess.amount > 0) {
-    marginPct = (maint.amount / (maint.amount + excess.amount)) * 100;
-  } else if (maint && buying && buying.amount > 0) {
-    marginPct = (maint.amount / buying.amount) * 100;
+    if (unverifiedOptionChannels(view).length) {
+      el.navDelta.textContent += ' · option positions unverified';
+    }
   }
 
   const cashCcy = view.cashCurrency || repCcy;
-  const premiumOpen = Number(view.optionsPremiumCollected || 0);
+  const premiumDate = view.isLive ? (payload.generatedAt || '').slice(0, 10) : view.label;
+  const premium = recordedPremiumForView(view, premiumDate);
+  const puts = (view.positions || []).filter(p => p.instrument === 'option' && p.option?.side === 'short' && p.option.right === 'put');
+  const putAmounts = puts.map(p => {
+    if (!p.currency || !cashCcy) return null;
+    const amount = Number(p.contingentCashObligation || 0);
+    if (p.currency === cashCcy) return amount;
+    const rate = view.fxApplied ? view.fxRates?.[p.currency] : null;
+    return Number.isFinite(rate) && rate > 0 ? amount * rate : null;
+  });
+  const putObligation = putAmounts.every(amount => amount != null)
+    ? putAmounts.reduce((total, amount) => total + amount, 0) : null;
+  const stalePuts = unverifiedOptionChannels(view).some(channel => puts.some(p => p.channel === channel));
+  const cashAfter = view.cashAmount == null || putObligation == null || stalePuts
+    ? null : view.cashAmount - putObligation;
 
   if (el.kpiRow) {
     el.kpiRow.innerHTML = [
-      metricCardHtml(
-        'Premium · open',
-        view.optionCount
-          ? fmtPrettyMoney(premiumOpen, repCcy, 0)
-          : '—',
-        view.optionCount
-          ? `${view.optionCount} option lot${view.optionCount === 1 ? '' : 's'} · open book, not daily blotter`
-          : 'No option lots',
-        'Sum of short-option premiumAbsolute on the open book. Daily premium lives on Trades.',
-        premiumOpen > 0 ? 'up' : '',
-      ),
-      metricCardHtml(
-        'Buying power',
-        buying ? fmtPrettyMoney(buying.amount, buying.currency, 0) : '—',
-        buying ? 'From broker margin snapshot' : 'Not recorded on this channel',
-        'broker_connections.<id>.metrics.buying_power. Never invented from cash.',
-      ),
+      metricCardHtml('Net premium · Daily', premium.daily == null ? '—' : fmtPrettyMoney(premium.daily, repCcy, 0),
+        premium.daily == null ? premium.reason : `Recorded net option fills · ${optionDateLabel(premiumDate)}`,
+        'Sell-to-open plus buy-to-close cash flow, including commissions, from imported executions only. Missing fills are not treated as zero.',
+        premium.daily > 0 ? 'up' : premium.daily < 0 ? 'down' : ''),
+      metricCardHtml('Net premium · MTD', premium.mtd == null ? '—' : fmtPrettyMoney(premium.mtd, repCcy, 0),
+        premium.mtd == null ? premium.reason : `Recorded net option fills · ${optionDateLabel(`${premiumDate.slice(0, 7)}-01`)} to ${optionDateLabel(premiumDate)}`,
+        'Month-to-date sell-to-open plus buy-to-close cash flow, including commissions, from imported executions only.',
+        premium.mtd > 0 ? 'up' : premium.mtd < 0 ? 'down' : ''),
       metricCardHtml(
         'Cash available',
         view.cashAmount != null ? fmtPrettyMoney(view.cashAmount, cashCcy, 0) : '—',
         view.cashAmount != null ? 'Free cash (not deposits)' : 'Cash not recorded',
-        'YAML cash.amount. Missing cash is unknown, not zero.',
+        'Recorded free cash, excluding fixed deposits. Missing cash is unknown, not zero.',
       ),
-      metricCardHtml(
-        'Margin used',
-        marginPct != null ? `${marginPct.toFixed(0)}%` : '—',
-        maint
-          ? `Maint. ${fmtPrettyMoney(maint.amount, maint.currency, 0)}`
-          : 'Need maintenance_margin on the connection',
-        'maintenance_margin / (maintenance_margin + excess_liquidity) when both are set.',
-      ),
+      metricCardHtml('Cash after all puts assigned', cashAfter == null ? '—' : fmtPrettyMoney(cashAfter, cashCcy, 0),
+        cashAfter == null ? (view.cashAmount == null ? 'Cash not recorded' : stalePuts ? 'Put positions need a fresh broker sync' : 'Put currency or FX unavailable') : `Free cash less ${fmtPrettyMoney(putObligation, cashCcy, 0)} put obligation`,
+        'Scenario: every open short put is assigned. Negative means a cash shortfall; margin capacity is excluded.',
+        cashAfter != null && cashAfter < 0 ? 'down' : ''),
     ].join('');
   }
 
@@ -1615,11 +1647,18 @@ function renderOpenOptions(view) {
     return;
   }
   el.openOptionsBlock.classList.remove('hidden');
+  const unverified = unverifiedOptionChannels(view);
+  const freshnessWarning = unverified.length
+    ? `<div class="option-freshness-warning" role="status">Current position status is unverified for ${unverified.map(channel => `${escapeHtml(channel.toUpperCase())} (last confirmed ${optionDateLabel(payload.brokerAsOf?.[channel])})`).join(' · ')}. Refresh that broker account before treating these contracts as open today.</div>`
+    : '';
   if (el.openOptionsHead) {
+    const dates = view.isLive ? Object.entries(payload.brokerAsOf || {})
+      .filter(([channel]) => view.channelView === MERGED_CHANNEL_VIEW || channel === view.channelView)
+      .map(([channel, date]) => `${channel.toUpperCase()} ${optionDateLabel(date)}`) : [];
     el.openOptionsHead.innerHTML = sectionHead(
       'Section 03',
       'Open options positions · broker view',
-      'The full open option book — position, mark vs average premium, market value, unrealized P&L, percentage of maximum premium captured and DTE — grouped by expiry month with one total row per month.',
+      `The full open option book, grouped by expiry month. Opening dates and STO net credits require matching recorded fills; missing values stay unknown. ${dates.length ? `Broker positions as of ${dates.join(' · ')}.` : 'Broker position date unavailable.'}`,
     );
   }
   const brokers = [...new Set(allOptions.map((p) => p.channel || DEFAULT_CHANNEL))].sort();
@@ -1647,8 +1686,7 @@ function renderOpenOptions(view) {
   }
   const months = [...groups.keys()].sort();
   const ccy = reportingCcyCode(view);
-  const columns = ['Financial instrument', 'Pos', 'Assignment exposure', 'DTE', 'Cst bss (premium received)', 'Avg premium / contract', 'Mark / contract', 'Market value', 'Unrealized P&L', '% of max', 'Broker'];
-  const money = (n, digits = 2) => fmtPrettyMoney(n, ccy, digits);
+  const columns = ['Financial instrument', 'Pos', 'Opened', 'Assignment exposure', 'DTE', 'STO net credit', 'Open cost / contract', 'Mark / contract', 'Market value', 'Unrealized P&L', '% of max', 'Broker'];
   const details = (p) => {
     const o = p.option;
     const units = Number(p.units);
@@ -1661,7 +1699,8 @@ function renderOpenOptions(view) {
       ? (o.right === 'put' ? 1 : -1) * o.strike * o.multiplier * units
       : 0;
     const asOf = view.isLive ? (payload?.generatedAt || '').slice(0, 10) : view.label;
-    return { position: direction * units, premium, mark, marketValue, pl, exposure,
+    const trade = view.isLive ? payload.optionTradeDetails?.[p.ticker] : null;
+    return { position: direction * units, premium, mark, marketValue, pl, exposure, trade,
       dte: daysToExpiry(o.expiry, asOf),
       captured: o.side === 'short' && premium > 0 ? (pl / premium) * 100 : null };
   };
@@ -1674,31 +1713,44 @@ function renderOpenOptions(view) {
     );
     const values = rows.map((p) => ({ p, ...details(p) }));
     const sum = (key) => values.reduce((s, x) => s + x[key], 0);
+    const currencies = [...new Set(values.map(x => x.p.currency || ccy))];
+    const totalMoney = (n, digits = 2) => currencies.length === 1 && currencies[0]
+      ? fmtPrettyMoney(n, currencies[0], digits) : '—';
     const monthLabel = new Date(`${m}-01T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' }).toUpperCase().replace(' ', " '");
     const earliest = Math.min(...values.map((x) => x.dte ?? Infinity));
+    const credits = values.filter(x => x.p.option.side === 'short');
+    const creditCurrencies = [...new Set(credits.map(x => x.trade?.currency))];
+    const totalCredit = credits.length && credits.every(x => x.trade?.stoNetPremium != null) && creditCurrencies.length === 1
+      ? fmtPrettyMoney(credits.reduce((sum, x) => sum + x.trade.stoNetPremium, 0), creditCurrencies[0], 2) : '—';
     body += `<tr class="option-month-total" data-month="${m}">
       <td><button type="button" class="option-month-toggle" data-option-month="${m}" aria-expanded="${!collapsedOptionMonths.has(m)}"><span aria-hidden="true">${collapsedOptionMonths.has(m) ? '▶' : '▼'}</span> TOTAL ${monthLabel} <span class="option-month-count">(${rows.length})</span></button></td>
       <td class="num">${sum('position')}</td>
-      <td class="num">${money(sum('exposure'), 0)}</td>
+      <td></td>
+      <td class="num">${totalMoney(sum('exposure'), 0)}</td>
       <td class="num">${Number.isFinite(earliest) ? `${earliest}d earliest` : '—'}</td>
-      <td class="num">${money(values.reduce((s, x) => s + (x.p.option.side === 'short' ? x.premium : 0), 0))}</td>
-      <td></td><td></td><td class="num">${money(sum('marketValue'))}</td>
-      <td class="num ${plClass(sum('pl'))}">${money(sum('pl'))}</td><td></td><td></td>
+      <td class="num">${totalCredit}</td>
+      <td></td><td></td><td class="num">${totalMoney(sum('marketValue'))}</td>
+      <td class="num ${plClass(sum('pl'))}">${totalMoney(sum('pl'))}</td><td></td><td></td>
     </tr>`;
     if (collapsedOptionMonths.has(m)) continue;
-    body += values.map(({ p, position, premium, mark, marketValue, pl, exposure, dte, captured }) => {
+    body += values.map(({ p, position, mark, marketValue, pl, exposure, dte, captured, trade }) => {
       const o = p.option;
-      const label = `${o.underlying} ${o.side.toUpperCase()} ${o.right.toUpperCase()} $${o.strike} ${o.expiry} ×${p.units}`;
+      const rowMoney = (n, digits = 2) => fmtPrettyMoney(n, p.currency || ccy, digits);
+      const label = `${optionUnderlyingLabel(o)} ${o.side === 'short' ? 'Short' : 'Long'} ${o.right === 'put' ? 'Put' : 'Call'} ${rowMoney(o.strike, Number.isInteger(o.strike) ? 0 : 2)} · ${optionDateLabel(o.expiry)} · ×${p.units}`;
+      const opened = trade ? `${optionDateLabel(trade.openedFrom)}${trade.openedTo !== trade.openedFrom ? ` to ${optionDateLabel(trade.openedTo)}` : ''}` : '—';
+      const closeButton = trade && trade.openedFrom === trade.openedTo
+        ? `<button type="button" class="option-close-lookup" data-option-price="${escapeHtml(p.ticker)}" title="Look up the underlying adjusted daily close on the opening date">Daily close</button>` : '';
       return `<tr class="option-ledger-row${highlightedUnderlying === o.underlying ? ' option-underlying-highlight' : ''}" data-option-underlying="${escapeHtml(o.underlying)}">
         <td class="option-instrument">${escapeHtml(label)}</td>
         <td class="num">${position}</td>
-        <td class="num">${exposure ? money(exposure, 0) : '—'}</td>
+        <td class="option-opened">${opened}${closeButton}</td>
+        <td class="num">${exposure ? rowMoney(exposure, 0) : '—'}</td>
         <td class="num">${dte == null ? '—' : `${dte}d`}</td>
-        <td class="num">${o.side === 'short' ? money(premium) : '—'}</td>
-        <td class="num">${money(Number(p.avgCost))}</td>
-        <td class="num">${money(mark)}</td>
-        <td class="num">${money(marketValue)}</td>
-        <td class="num ${plClass(pl)}">${money(pl)}</td>
+        <td class="num">${o.side === 'short' && trade?.stoNetPremium != null ? fmtPrettyMoney(trade.stoNetPremium, trade.currency, 2) : '—'}</td>
+        <td class="num">${rowMoney(Number(p.avgCost))}</td>
+        <td class="num">${rowMoney(mark)}</td>
+        <td class="num">${rowMoney(marketValue)}</td>
+        <td class="num ${plClass(pl)}">${rowMoney(pl)}</td>
         <td class="num ${plClass(captured)}">${captured == null ? '—' : `${captured.toFixed(1)}%`}</td>
         <td>${escapeHtml(p.channel === DEFAULT_CHANNEL ? 'Unassigned' : p.channel.toUpperCase())}</td>
       </tr>`;
@@ -1707,15 +1759,29 @@ function renderOpenOptions(view) {
   const markHelp = view.isLive
     ? 'Broker snapshot mark per contract when available; otherwise the displayed position mark per contract. A short option’s market value is negative.'
     : 'Captured position mark per contract. A short option’s market value is negative.';
-  el.openOptions.innerHTML = `${filters}<div class="metric-card table-card option-ledger-card"><div class="table-scroll"><table class="report option-ledger">
+  el.openOptions.innerHTML = `${freshnessWarning}${filters}<div class="metric-card table-card option-ledger-card"><div class="table-scroll"><table class="report option-ledger">
     <thead><tr>${columns.map((h) => `<th>${escapeHtml(h)}${h === 'Mark / contract' ? `<button type="button" class="help-dot" title="${escapeHtml(markHelp)}" aria-label="What Mark means">?</button>` : ''}</th>`).join('')}</tr></thead>
-    <tbody>${body || `<tr><td colspan="11" class="empty">No open option positions match these filters.</td></tr>`}</tbody>
+    <tbody>${body || `<tr><td colspan="12" class="empty">No open option positions match these filters.</td></tr>`}</tbody>
   </table></div></div>`;
 }
 
 el.openOptions?.addEventListener('click', (event) => {
   const button = event.target.closest('button');
   if (!button) return;
+  if (button.dataset.optionPrice != null) {
+    const position = button.dataset.optionPrice;
+    button.disabled = true;
+    button.textContent = 'Loading…';
+    fetch(`/api/domain/invage/option-open-close?position=${encodeURIComponent(position)}`, { credentials: 'include' })
+      .then(async response => {
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.message || `HTTP ${response.status}`);
+        button.textContent = `Adjusted close ${Number(body.adjusted_close).toLocaleString('en-US', { maximumFractionDigits: 4 })}`;
+        button.title = `${body.underlying} adjusted daily close on ${optionDateLabel(body.date)}; not the execution-time price`;
+      })
+      .catch(error => { button.textContent = 'Price unavailable'; button.title = error.message || String(error); });
+    return;
+  }
   if (button.dataset.optionBroker != null) optionBrokerFilter = button.dataset.optionBroker;
   else if (button.dataset.optionRight != null) optionRightFilter = button.dataset.optionRight;
   else if (button.dataset.optionMonth != null) {
@@ -2423,10 +2489,10 @@ function renderEmpty(body) {
   if (el.dateNext) el.dateNext.disabled = true;
   if (el.kpiRow) {
     el.kpiRow.innerHTML = [
-      metricCardHtml('Premium · open', '—', 'No option lots', ''),
-      metricCardHtml('Buying power', '—', 'Not recorded', ''),
+      metricCardHtml('Net premium · Daily', '—', 'No recorded fills', ''),
+      metricCardHtml('Net premium · MTD', '—', 'No recorded fills', ''),
       metricCardHtml('Cash available', '—', 'Cash not recorded', ''),
-      metricCardHtml('Margin used', '—', 'Not recorded', ''),
+      metricCardHtml('Cash after all puts assigned', '—', 'Cash not recorded', ''),
     ].join('');
   }
   if (el.expiryRow) {

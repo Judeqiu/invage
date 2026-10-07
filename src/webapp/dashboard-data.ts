@@ -40,6 +40,8 @@ import type { Holding } from '../market/types.js';
 import type { OptionLiveMark } from '../market/fetch-option-marks.js';
 import { readProductProfile, type ProductProfileId } from '../agents/roster.js';
 import { productDisplayName } from '../product-name.js';
+import { buildExecutionJournal } from '../brokers/option-executions.js';
+import { openOptionTradeDetails, type OpenOptionTradeDetail } from './option-dashboard-data.js';
 
 export const BENCHMARK_TICKER = 'SPY';
 
@@ -72,6 +74,16 @@ export interface DashboardPayload {
   connectionMetrics?: Record<string, BrokerConnectionMetrics>;
   /** Broker statement dates keyed by holding channel. */
   brokerAsOf?: Record<string, string>;
+  /** Opening fills matched to the current open lots; absent means unverified. */
+  optionTradeDetails?: Record<string, OpenOptionTradeDetail>;
+  /** Recorded short-option cash flow, never inferred from position cost basis. */
+  premiumJournal?: {
+    available: boolean;
+    daily: ReturnType<typeof buildExecutionJournal>['daily'];
+    channels: string[];
+  };
+  /** Channels whose broker connector supplies option executions. */
+  premiumSupportedChannels?: string[];
   /** Env product profile — copy/section gates. Not a books field. */
   productProfile: ProductProfileId;
   /** UTARUS_AGENT_NAME. */
@@ -328,6 +340,7 @@ export async function loadDashboardForSlug(
       if (position.instrument === 'option' && stored?.option) {
         position.brokerMark = stored.option.mark;
       }
+      if (stored?.currency) position.currency = stored.currency;
     }
   } catch (e) {
     // Last-resort: still return something usable
@@ -362,27 +375,37 @@ export async function loadDashboardForSlug(
 
   let connectionMetrics: Record<string, BrokerConnectionMetrics> | undefined;
   let brokerAsOf: Record<string, string> | undefined;
+  let premiumSupportedChannels: string[] = [];
+  const accountsByChannel: Record<string, string> = {};
   try {
     const conns = readBrokerAccountModel(state).connections;
     const mapped: Record<string, BrokerConnectionMetrics> = {};
     const dates: Record<string, string> = {};
+    const recordDate = (channel: string, date?: string | null) => {
+      if (date && (!dates[channel] || date > dates[channel])) dates[channel] = date;
+    };
     for (const [id, conn] of Object.entries(conns)) {
-      if (conn.last_sync?.ok && conn.last_sync.as_of) dates[conn.channel] = conn.last_sync.as_of;
+      if (conn.account_id) accountsByChannel[conn.channel] = conn.account_id;
+      if (conn.broker_id === 'ibkr') premiumSupportedChannels.push(conn.channel);
+      if (conn.last_sync?.ok) recordDate(conn.channel, conn.last_sync.as_of);
       const previous = latestSuccessfulBrokerSyncRun(slug, conn.channel);
-      if (previous?.as_of) dates[conn.channel] = previous.as_of;
+      recordDate(conn.channel, previous?.as_of);
       if (conn.metrics == null) continue;
       const ch = conn.channel;
       mapped[ch] = conn.metrics;
     }
-    const lastObserved: Record<string, { at: string; asOf: string }> = {};
     for (const observation of state.option_observations ?? []) {
       if (observation.source !== 'broker') continue;
-      const prior = lastObserved[observation.channel];
-      if (!prior || observation.observed_at > prior.at) {
-        lastObserved[observation.channel] = { at: observation.observed_at, asOf: observation.as_of };
-      }
+      recordDate(observation.channel, observation.as_of);
     }
-    for (const [channel, row] of Object.entries(lastObserved)) dates[channel] = row.asOf;
+    // Legacy account channels may have a broker sync log but no newer option observation.
+    // Keep their last confirmed statement date visible instead of implying today's positions.
+    for (const position of live.positions) {
+      if (position.instrument !== 'option' || dates[position.channel]) continue;
+      const logged = [...state.log].reverse().find(row =>
+        row.action === 'broker_sync' && row.connector_id === position.channel && row.ts);
+      if (logged?.ts) dates[position.channel] = logged.ts;
+    }
     if (Object.keys(mapped).length > 0) connectionMetrics = mapped;
     if (Object.keys(dates).length > 0) brokerAsOf = dates;
   } catch (e) {
@@ -395,6 +418,7 @@ export async function loadDashboardForSlug(
     });
   }
 
+  const journal = buildExecutionJournal(state.option_executions);
   const out: DashboardPayload = {
     slug,
     displayName,
@@ -403,6 +427,10 @@ export async function loadDashboardForSlug(
     model,
     benchmark,
     warnings: model.live.issues,
+    optionTradeDetails: openOptionTradeDetails(portfolio, state.option_executions, accountsByChannel),
+    premiumJournal: { available: journal.available, daily: journal.daily,
+      channels: [...new Set(journal.executions.map(row => row.channel))] },
+    premiumSupportedChannels,
     ...productMeta(),
   };
   if (Object.keys(market.prices).length > 0) out.equityPrices = market.prices;

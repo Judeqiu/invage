@@ -14,6 +14,10 @@ import { latestSuccessfulBrokerSyncRun } from '../brokers/sync-history.js';
 import { optionHistoryForState } from './option-history-data.js';
 import { isBooksEnabled } from '../books/db.js';
 import { loadBookPage } from './book-data.js';
+import { getPortfolio } from '../state/portfolio-state.js';
+import { fetchHistoricalCloses } from '../market/fetch-history.js';
+import { openOptionTradeDetails } from './option-dashboard-data.js';
+import { canonicalOptionUnderlying } from '../brokers/option-symbol.js';
 
 export function createDashboardApiRouter(): Router {
   const router = Router();
@@ -69,6 +73,34 @@ export function createDashboardApiRouter(): Router {
     } catch (e) {
       console.error('Execution journal failed:', e);
       res.status(500).json({ error: 'journal_failed', message: e instanceof Error ? e.message : String(e) });
+    }
+  });
+
+  router.get('/option-open-close', async (req: Request, res: Response) => {
+    try {
+      const user = (req as Request & { user?: AuthUser }).user;
+      if (!user?.slug) { res.status(401).json({ error: 'unauthorized', message: 'No session user.' }); return; }
+      const key = req.query.position;
+      if (typeof key !== 'string' || !key || key.length > 200) {
+        res.status(400).json({ error: 'invalid_position', message: 'Choose an open option position.' }); return;
+      }
+      const snapshot = await loadInvestor(await targetSlug(req, user));
+      const portfolio = getPortfolio(snapshot.state);
+      const holding = portfolio[key];
+      if (!holding?.option) { res.status(404).json({ error: 'not_found', message: 'Open option position not found.' }); return; }
+      const accounts = Object.fromEntries(Object.values(readBrokerAccountModel(snapshot.state).connections)
+        .filter(conn => conn.account_id).map(conn => [conn.channel, conn.account_id!]));
+      const detail = openOptionTradeDetails({ [key]: holding }, snapshot.state.option_executions, accounts)[key];
+      if (!detail || detail.openedFrom !== detail.openedTo) {
+        res.status(409).json({ error: 'opening_date_unavailable', message: 'A single opening date is not confirmed by the recorded fills.' }); return;
+      }
+      const underlying = canonicalOptionUnderlying(holding.option.underlying, holding.option);
+      const closes = await fetchHistoricalCloses(underlying, [detail.openedFrom]);
+      const close = closes[detail.openedFrom];
+      if (close == null) { res.status(404).json({ error: 'price_unavailable', message: 'No adjusted daily close is available for the opening date.' }); return; }
+      res.json({ underlying, date: detail.openedFrom, adjusted_close: close });
+    } catch (e) {
+      res.status(502).json({ error: 'price_lookup_failed', message: e instanceof Error ? e.message : String(e) });
     }
   });
 
