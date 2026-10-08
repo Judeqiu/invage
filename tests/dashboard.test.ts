@@ -567,6 +567,21 @@ describe('loadSnapshots', () => {
 });
 
 describe('buildDashboardReport', () => {
+  it('uses reporting currency for totals and native currency for unit prices', () => {
+    const live = buildLivePositions(
+      { AAPL: { avg_price: 100, units: 2, currency: 'USD' } },
+      { AAPL: 110 }, undefined, null, null, undefined,
+      { reportingCurrency: 'SGD', fxRates: { USD: 1.35 } },
+    );
+    const html = buildDashboardReport(buildDashboardModel(live, []), 'Victor', {
+      productName: 'Victor Consultant', surface: 'drive',
+    });
+    expect(html).toContain('297.00 SGD');
+    expect(html).toContain('$100.00');
+    expect(html).toContain('$110.00');
+    expect(html).not.toContain('$297.00');
+  });
+
   it('includes live total and empty-history messaging', () => {
     const live = buildLivePositions(
       { AAPL: { avg_price: 100, units: 10 } },

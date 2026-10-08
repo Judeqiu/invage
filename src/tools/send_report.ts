@@ -11,7 +11,8 @@ import {
 import { getPortfolio } from '../state/portfolio-state.js';
 import { loadSnapshots } from '../state/snapshot.js';
 import { buildAnalysisReport } from '../report/template.js';
-import { buildDashboardModel, buildLivePositions } from '../report/dashboard-model.js';
+import { buildDashboardModel } from '../report/dashboard-model.js';
+import { liveForDashboardReport } from '../report/live-for-report.js';
 import { buildDashboardReport } from '../report/dashboard-template.js';
 import { productDisplayName } from '../product-name.js';
 import { EMAIL_HTML_LIMIT } from '../report/html-kit.js';
@@ -115,7 +116,7 @@ export function createSendReportTool(): AgentTool {
             await resolvePortfolioMarket(portfolio);
 
           if (kind === 'dashboard') {
-            const live = buildLivePositions(valued, equityPrices, optionMarks);
+            const live = await liveForDashboardReport(state, valued, equityPrices, optionMarks);
             const snapshots = loadSnapshots(state.user.slug);
             const model = buildDashboardModel(live, snapshots);
             htmlBody = buildDashboardReport(model, userName, {
