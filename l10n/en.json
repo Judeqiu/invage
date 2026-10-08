@@ -6,6 +6,8 @@
   "nav.trades": "Trades",
   "nav.insights": "Insights",
   "nav.brokers": "Brokers",
+  "settings.portfolio.title": "Portfolio",
+  "settings.portfolio.description": "Choose the currency used for portfolio totals",
   "settings.brokers.title": "Brokers",
   "settings.brokers.description": "Connect read-only brokerage channels",
   "page.dashboard": "Portfolio Dashboard",
