@@ -42,6 +42,7 @@ export function toReportingLive(
   }
   const ccy = assertCurrency(currency, 'currency');
   const rep = assertCurrency(reportingCurrency, 'reporting currency');
+  if (amount === 0) return 0;
   if (ccy === rep) return amount;
   const rate = rates[ccy];
   if (rate == null) {

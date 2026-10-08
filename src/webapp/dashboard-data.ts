@@ -271,38 +271,36 @@ export async function loadDashboardForSlug(
   const moneyCurrencies = [
     ...new Set(
       [
-        ...cashes.map((c) => c.currency.trim().toUpperCase()),
-        ...deposits.map((d) => d.currency.trim().toUpperCase()),
-      ].filter(Boolean),
+        ...Object.values(portfolio).map((holding) => holding.currency?.trim().toUpperCase()),
+        ...cashes.filter((c) => c.amount !== 0).map((c) => c.currency.trim().toUpperCase()),
+        ...deposits.filter((d) => d.amount !== 0).map((d) => d.currency.trim().toUpperCase()),
+      ].filter((currency): currency is string => !!currency),
     ),
   ];
   let fx: DashboardFxOptions | undefined;
-  if (moneyCurrencies.length > 1) {
-    const hh = state as HouseholdInvestorState;
-    const treasury = getTreasury(hh);
-    if (treasury == null) {
+  const treasury = getTreasury(state as HouseholdInvestorState);
+  if (treasury == null) {
+    if (moneyCurrencies.length > 1) warnings.push({
+      code: 'mixed_currency_no_reporting',
+      message:
+        `Multiple currencies (${moneyCurrencies.join(', ')}) without treasury.reporting_currency. ` +
+        'Choose a reporting currency in Settings → Portfolio. NAV is unavailable until all values can be converted.',
+      severity: 'warning',
+    });
+  } else {
+    try {
+      const rep = treasury.reporting_currency;
+      const foreign = moneyCurrencies.filter((currency) => currency !== rep);
+      const rates = foreign.length > 0 ? await fetchFxRates(foreign, rep) : {};
+      fx = { reportingCurrency: rep, fxRates: rates };
+    } catch (e) {
       warnings.push({
-        code: 'mixed_currency_no_reporting',
+        code: 'fx_fetch_failed',
         message:
-          `Multiple currencies (${moneyCurrencies.join(', ')}) without treasury.reporting_currency. ` +
-          'Set set_treasury reporting_currency so cash/deposits convert with live FX. ' +
-          'Positions still shown; multi-ccy cash/deposits may be excluded from NAV.',
+          (e instanceof Error ? e.message : String(e)) +
+          ' NAV is unavailable until FX succeeds.',
         severity: 'warning',
       });
-    } else {
-      try {
-        const rep = treasury.reporting_currency;
-        const rates = await fetchFxRates(moneyCurrencies, rep);
-        fx = { reportingCurrency: rep, fxRates: rates };
-      } catch (e) {
-        warnings.push({
-          code: 'fx_fetch_failed',
-          message:
-            (e instanceof Error ? e.message : String(e)) +
-            ' Multi-currency cash/deposits excluded from NAV until FX succeeds.',
-          severity: 'warning',
-        });
-      }
     }
   }
 
@@ -333,7 +331,7 @@ export async function loadDashboardForSlug(
         : null,
       undefined,
       fx,
-      { resilient: true },
+      { resilient: true, reportingCurrency: treasury?.reporting_currency },
     );
     for (const position of live.positions) {
       const stored = portfolio[position.ticker];

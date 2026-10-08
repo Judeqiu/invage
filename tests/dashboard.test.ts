@@ -281,7 +281,7 @@ describe('buildLivePositions', () => {
   it('multi-currency cash converts with live FX rates into reporting currency', () => {
     const live = buildLivePositions(
       {
-        AAPL: { avg_price: 100, units: 10, channel: 'us' },
+        AAPL: { avg_price: 100, units: 10, currency: 'USD', channel: 'us' },
       },
       { AAPL: 110 },
       undefined,
@@ -302,6 +302,44 @@ describe('buildLivePositions', () => {
     const sg = live.byChannel.find((c) => c.channel === 'sg');
     expect(sg?.cashAmount).toBeCloseTo(740, 5);
     expect(sg?.cashCurrency).toBe('USD');
+  });
+
+  it('converts foreign holdings and cash together, leaving unit prices native', () => {
+    const live = buildLivePositions(
+      {
+        AAPL: { avg_price: 100, units: 2, currency: 'USD', channel: 'us' },
+        D05: { avg_price: 10, units: 10, currency: 'SGD', channel: 'sg' },
+      },
+      { AAPL: 110, D05: 12 }, undefined,
+      [{ amount: 500, currency: 'SGD', channel: 'sg' }],
+      null, undefined,
+      { reportingCurrency: 'USD', fxRates: { SGD: 0.75 } },
+    );
+    expect(live.reportingCurrency).toBe('USD');
+    expect(live.navComplete).toBe(true);
+    expect(live.positionsValue).toBe(310);
+    expect(live.cashAmount).toBe(375);
+    expect(live.totalValue).toBe(685);
+    expect(live.totalCost).toBe(275);
+    const sg = live.positions.find((p) => p.ticker === 'D05')!;
+    expect(sg.price).toBe(12);
+    expect(sg.avgCost).toBe(10);
+    expect(sg.value).toBe(90);
+    expect(sg.pl).toBe(15);
+  });
+
+  it('ignores zero foreign cash and marks NAV unavailable when FX fails', () => {
+    const holdings = { AAPL: { avg_price: 100, units: 2, currency: 'USD' } };
+    const cash = [{ amount: 0, currency: 'SGD' }, { amount: 100, currency: 'USD' }];
+    const complete = buildLivePositions(holdings, { AAPL: 110 }, undefined, cash,
+      null, undefined, { reportingCurrency: 'USD', fxRates: {} });
+    expect(complete.navComplete).toBe(true);
+    expect(complete.totalValue).toBe(320);
+    const unavailable = buildLivePositions(holdings, { AAPL: 110 }, undefined,
+      [{ amount: 100, currency: 'SGD' }], null, undefined, undefined,
+      { resilient: true, reportingCurrency: 'USD' });
+    expect(unavailable.navComplete).toBe(false);
+    expect(unavailable.reportingCurrency).toBe('USD');
   });
 
   it('multi-currency cash without FX fails fast', () => {
@@ -408,6 +446,17 @@ describe('buildDashboardModel', () => {
     expect(model.history[0].positions[0].ticker).toBe('AAPL');
     expect(model.periodChange).toBeNull();
     expect(model.lastSnapshot).toEqual({ date: '2026-07-01', totalValue: 1000 });
+  });
+
+  it('does not compare snapshots captured in different reporting currencies', () => {
+    const base = { totalValue: 1000, totalCost: 900, totalPL: 100, totalPLPct: 11.1, positions: [] };
+    const model = buildDashboardModel(live, [
+      { ...base, date: '2026-10-07', reportingCurrency: 'USD' },
+      { ...base, date: '2026-10-08', reportingCurrency: 'SGD', totalValue: 1300 },
+    ]);
+    expect(model.history[1].deltaValue).toBeNull();
+    expect(model.periodChange).toBeNull();
+    expect(model.history[1].reportingCurrency).toBe('SGD');
   });
 
   it('multi snapshot → deltas and period change from last two', () => {

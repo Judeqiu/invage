@@ -118,17 +118,6 @@ function fmtMoney0(n, ccy) {
   return '$' + abs;
 }
 
-function fmtUsd0(n) {
-  return fmtMoney0(n, null);
-}
-
-function fmtUsd2(n) {
-  return (
-    '$' +
-    Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-  );
-}
-
 function fmtPrettyMoney(n, ccy, digits = 2) {
   const v = Number(n);
   const abs = Math.abs(v).toLocaleString('en-US', {
@@ -279,10 +268,8 @@ function fmtSigned(n, digits = 2) {
   return (n > 0 ? '+' : '') + Number(n).toFixed(digits);
 }
 
-function fmtSignedUsd0(n) {
-  const v = Number(n);
-  const abs = Math.abs(v).toLocaleString('en-US', { maximumFractionDigits: 0 });
-  return (v < 0 ? '-$' : '+$') + abs;
+function fmtSignedMoney0(n, ccy) {
+  return (Number(n) >= 0 ? '+' : '') + fmtPrettyMoney(n, ccy, 0);
 }
 
 function fxFootnote(view) {
@@ -678,6 +665,7 @@ function applyChannelFilter(base, channelKey) {
     cashChannel: cashAmount != null ? channelKey : null,
     positionsValue,
     cashWeightPct,
+    navComplete: chRow?.navComplete ?? base.navComplete,
     deposits,
     depositsAmount,
     depositsCurrency,
@@ -725,6 +713,7 @@ function buildView(dateKey, channelKey = selectedChannel) {
       reportingCurrency: live.reportingCurrency ?? null,
       fxRates: live.fxRates ?? null,
       fxApplied: live.fxApplied === true,
+      navComplete: live.navComplete !== false,
     };
     const filtered = applyChannelFilter(viewBase, channelKey);
     const fIdx = portfolioFundIndex(filtered);
@@ -770,6 +759,12 @@ function buildView(dateKey, channelKey = selectedChannel) {
       row.cashAmount != null && row.totalValue
         ? (row.cashAmount / row.totalValue) * 100
         : null,
+    reportingCurrency: row.reportingCurrency || row.cashCurrency || null,
+    fxRates: row.fxRates || null,
+    fxApplied: !!row.fxRates && Object.keys(row.fxRates).length > 0,
+    deposits: row.deposits || [],
+    depositsAmount: row.depositsAmount || 0,
+    depositsCurrency: row.depositsCurrency || null,
     channels: null,
     byChannel: null,
   };
@@ -984,8 +979,8 @@ function renderChannelDetailTable(view) {
 
   if (el.channelDetailMeta) {
     el.channelDetailMeta.textContent =
-      `${scope} · Cost base ${baseDate} · Positions cost ${fmtMoney0(view.totalCost, repCcy)}` +
-      ` · NAV ${fmtMoney0(view.totalValue, repCcy)}` +
+      `${scope} · Cost base ${baseDate} · Positions cost ${view.navComplete === false ? 'unavailable' : fmtMoney0(view.totalCost, repCcy)}` +
+      ` · NAV ${view.navComplete === false ? 'unavailable' : fmtMoney0(view.totalValue, repCcy)}` +
       ` · Fund idx ${dashOrIndex(view.fundIndex)}` +
       (view.benchmarkIndex != null
         ? ` · Bench ${dashOrIndex(view.benchmarkIndex)} (${fmtSigned(view.diff)})`
@@ -994,6 +989,8 @@ function renderChannelDetailTable(view) {
   }
 
   const bodyRows = rows.map((c) => {
+    const money = (amount) => c.navComplete === false ? '—' : fmtMoney0(amount, repCcy);
+    const signedMoney = (amount) => c.navComplete === false ? '—' : fmtSignedMoney0(amount, repCcy);
     const chIdx = portfolioFundIndex({
       equityCost: c.equityCost,
       equityValue: c.equityValue,
@@ -1006,7 +1003,7 @@ function renderChannelDetailTable(view) {
       c.cashAmount != null ? fmtMoney0(c.cashAmount, c.cashCurrency) : '—';
     const fdCell =
       c.depositsAmount != null && c.depositsAmount > 0
-        ? `${fmtUsd0(c.depositsAmount)}${
+        ? `${money(c.depositsAmount)}${
             c.depositCount
               ? `<div class="muted">${c.depositCount} term${c.depositCount === 1 ? '' : 's'}</div>`
               : ''
@@ -1016,13 +1013,13 @@ function renderChannelDetailTable(view) {
       <td>${channelBadgeHtml(c.channel)}</td>
       <td class="num">${c.positionCount}</td>
       <td class="num">${mix}</td>
-      <td class="num">${fmtUsd0(c.positionsValue)}</td>
-      <td class="num">${fmtUsd0(c.totalCost)}</td>
-      <td class="num ${plClass(c.totalPL)}">${fmtSignedUsd0(c.totalPL)}</td>
+      <td class="num">${money(c.positionsValue)}</td>
+      <td class="num">${money(c.totalCost)}</td>
+      <td class="num ${plClass(c.totalPL)}">${signedMoney(c.totalPL)}</td>
       <td class="num ${plClass(c.totalPLPct)}">${dashOrPct(c.totalPLPct)}</td>
       <td class="num">${cashCell}</td>
       <td class="num">${fdCell}</td>
-      <td class="num">${fmtUsd0(c.totalValue)}</td>
+      <td class="num">${money(c.totalValue)}</td>
       <td class="num">${c.cashWeightPct != null ? c.cashWeightPct.toFixed(1) + '%' : '—'}</td>
       <td class="num">${dashOrIndex(chIdx)}</td>
       <td class="num ${chDiff == null ? 'pl-flat' : plClass(chDiff)}">${
@@ -1037,9 +1034,9 @@ function renderChannelDetailTable(view) {
       <td>All (merged)</td>
       <td class="num">${view.positions.length}</td>
       <td class="num">${view.equityCount || 0} / ${view.optionCount || 0} / ${view.fundCount || 0}</td>
-      <td class="num">${fmtUsd0(view.positionsValue ?? 0)}</td>
-      <td class="num">${fmtUsd0(view.totalCost)}</td>
-      <td class="num ${plClass(view.totalPL)}">${fmtSignedUsd0(view.totalPL)}</td>
+      <td class="num">${fmtMoney0(view.positionsValue ?? 0, repCcy)}</td>
+      <td class="num">${fmtMoney0(view.totalCost, repCcy)}</td>
+      <td class="num ${plClass(view.totalPL)}">${fmtSignedMoney0(view.totalPL, repCcy)}</td>
       <td class="num ${plClass(view.totalPLPct)}">${dashOrPct(view.totalPLPct)}</td>
       <td class="num">${
         view.cashAmount != null
@@ -1047,9 +1044,9 @@ function renderChannelDetailTable(view) {
           : '—'
       }</td>
       <td class="num">${
-        Number(view.depositsAmount || 0) > 0 ? fmtUsd0(view.depositsAmount) : '—'
+        Number(view.depositsAmount || 0) > 0 ? fmtMoney0(view.depositsAmount, repCcy) : '—'
       }</td>
-      <td class="num">${fmtUsd0(view.totalValue)}</td>
+      <td class="num">${view.navComplete === false ? '—' : fmtMoney0(view.totalValue, repCcy)}</td>
       <td class="num">${
         view.cashWeightPct != null ? view.cashWeightPct.toFixed(1) + '%' : '—'
       }</td>
@@ -1068,7 +1065,7 @@ function renderChannelDetailTable(view) {
   el.channelDetailBody.innerHTML = bodyRows.join('');
 }
 
-function positionNotes(p) {
+function positionNotes(p, reportingCurrency) {
   const notes = [];
   if (p.instrument === 'option') {
     if (p.option?.side) notes.push(p.option.side);
@@ -1076,12 +1073,12 @@ function positionNotes(p) {
     if (p.option?.expiry) notes.push(`exp ${p.option.expiry}`);
     if (p.option?.strike != null) notes.push(`K ${p.option.strike}`);
     if (p.contingentCashObligation > 0) {
-      notes.push(`if assigned cash ${fmtUsd0(p.contingentCashObligation)}`);
+      notes.push(`if assigned cash ${fmtPrettyMoney(p.contingentCashObligation, reportingCurrency, 0)}`);
     }
     if (p.contingentShareObligation > 0) {
       notes.push(`if assigned ${p.contingentShareObligation} sh`);
     }
-    if (p.premiumAbsolute) notes.push(`prem abs ${fmtUsd2(p.premiumAbsolute)}`);
+    if (p.premiumAbsolute) notes.push(`prem abs ${fmtPrettyMoney(p.premiumAbsolute, reportingCurrency)}`);
     if (p.contractSymbol) notes.push(p.contractSymbol);
   }
   if (p.instrument === 'fund' && p.fund?.quote_source) {
@@ -1116,7 +1113,9 @@ function renderHoldingsDetailTable(view) {
   if (el.holdingsDetailMeta) {
     const optNote =
       (view.optionCount || 0) > 0
-        ? ` · ${view.optionCount} option · prem coll. ${fmtUsd0(view.optionsPremiumCollected || 0)} · oblig. ${fmtUsd0(view.contingentCashObligation || 0)}`
+        ? view.navComplete === false
+          ? ` · ${view.optionCount} option · totals unavailable until FX is complete`
+          : ` · ${view.optionCount} option · prem coll. ${fmtMoney0(view.optionsPremiumCollected || 0, reportingCcyCode(view))} · oblig. ${fmtMoney0(view.contingentCashObligation || 0, reportingCcyCode(view))}`
         : '';
     el.holdingsDetailMeta.textContent =
       `${positions.length} holding${positions.length === 1 ? '' : 's'}` +
@@ -1152,7 +1151,11 @@ function renderHoldingsDetailTable(view) {
     const pIdx = isOpt ? 100 + (p.plPct || 0) : fundIndex(p.value, p.cost);
     const title = isOpt || isFund ? p.label || p.ticker : p.ticker;
     const unitsLabel = isOpt ? `${p.units} ct` : String(p.units);
-    const notes = positionNotes(p);
+    const reportingCurrency = reportingCcyCode(view);
+    const valueCurrency = p.currency && reportingCurrency &&
+      (p.currency === reportingCurrency || view.fxRates?.[p.currency])
+      ? reportingCurrency : p.currency;
+    const notes = positionNotes(p, valueCurrency);
     const pricing =
       (atCost ? '<span class="badge-cost">BOOK COST</span> ' : '') +
       escapeHtml(pricingLabel(p));
@@ -1170,12 +1173,12 @@ function renderHoldingsDetailTable(view) {
       <td>${typeBadgeHtml(p.instrument || 'equity')}</td>
       <td>${escapeHtml(p.category || '—')}</td>
       <td class="num">${escapeHtml(unitsLabel)}</td>
-      <td class="num">${fmtUsd2(p.avgCost)}</td>
-      <td class="num">${fmtUsd2(p.price)}</td>
-      <td class="num">${fmtUsd0(p.cost)}</td>
-      <td class="num">${fmtUsd0(p.value)}</td>
+      <td class="num">${fmtPrettyMoney(p.avgCost, p.currency || reportingCurrency)}</td>
+      <td class="num">${fmtPrettyMoney(p.price, p.currency || reportingCurrency)}</td>
+      <td class="num">${fmtPrettyMoney(p.cost, valueCurrency, 0)}</td>
+      <td class="num">${fmtPrettyMoney(p.value, valueCurrency, 0)}</td>
       <td class="num">${Number(p.weightPct || 0).toFixed(1)}%</td>
-      <td class="num ${plClass(p.pl)}">${fmtSignedUsd0(p.pl)}</td>
+      <td class="num ${plClass(p.pl)}">${fmtPrettyMoney(p.pl, valueCurrency, 0)}</td>
       <td class="num ${plClass(p.plPct)}">${dashOrPct(p.plPct)}</td>
       <td class="num">${dashOrIndex(pIdx)}</td>
       <td>${pricing}</td>
@@ -1252,13 +1255,13 @@ function renderHoldingsDetailTable(view) {
         <td class="num">—</td>
         <td class="num">—</td>
         <td class="num">—</td>
-        <td class="num">${fmtUsd2(d.amount)}</td>
+        <td class="num">${fmtPrettyMoney(d.amount, d.currency)}</td>
         <td class="num">—</td>
         <td class="num pl-flat">—</td>
         <td class="num pl-flat">—</td>
         <td class="num">—</td>
         <td>principal</td>
-        <td>${escapeHtml(d.start_date)} → ${escapeHtml(d.end_date)} · interest ${fmtUsd2(d.interest)} · ${status}</td>
+        <td>${escapeHtml(d.start_date)} → ${escapeHtml(d.end_date)} · interest ${fmtPrettyMoney(d.interest, d.currency)} · ${status}</td>
       </tr>`);
     }
   } else if (Number(view.depositsAmount || 0) > 0) {
@@ -1274,7 +1277,7 @@ function renderHoldingsDetailTable(view) {
       <td class="num">—</td>
       <td class="num">—</td>
       <td class="num">—</td>
-      <td class="num">${fmtUsd0(view.depositsAmount)}</td>
+      <td class="num">${fmtMoney0(view.depositsAmount, reportingCcyCode(view))}</td>
       <td class="num">—</td>
       <td class="num pl-flat">—</td>
       <td class="num pl-flat">—</td>
@@ -1341,30 +1344,34 @@ function renderOverview(view) {
       .map(([channel, date]) => `${channel.toUpperCase()} ${optionDateLabel(date)}`) : [];
     el.heroLead.textContent = `${n} ${n === 1 ? 'position' : 'positions'} — ${e} equity, ${o} option, ${f} fund. Pick a date to replay saved valuations.${archive}${view.isLive && positionDates.length ? ` Broker positions as of ${positionDates.join(' · ')}.` : ''}`;
   }
-  if (el.navValue) {
-    el.navValue.textContent = fmtPrettyMoney(view.totalValue, repCcy, 2);
-  }
+  if (el.navValue) el.navValue.textContent = view.navComplete === false
+    ? '—' : fmtPrettyMoney(view.totalValue, repCcy, 2);
   if (el.navDelta) {
+    if (view.navComplete === false) {
+      el.navDelta.className = 'metric-sub down';
+      el.navDelta.textContent = 'NAV unavailable · missing currency or FX data';
+    } else {
     const hist = payload.model?.history || [];
     const prior = [...hist].reverse().find((h) => h.date < asOf) || hist[hist.length - 1];
-    if (view.isLive && hist.length > 0) {
+    if (view.isLive && hist.length > 0 && hist[hist.length - 1].reportingCurrency === repCcy) {
       const last = hist[hist.length - 1];
       const delta = view.totalValue - last.totalValue;
       const pct = last.totalValue ? (delta / last.totalValue) * 100 : null;
       el.navDelta.className = 'metric-sub ' + (delta > 0 ? 'up' : delta < 0 ? 'down' : '');
       el.navDelta.textContent =
-        `${fmtSignedUsd0(delta)}` +
+        `${fmtSignedMoney0(delta, repCcy)}` +
         (pct != null ? ` · ${fmtSigned(pct, 2)}% on ${last.date}` : ` vs ${last.date}`);
-    } else if (prior && prior.date !== asOf) {
+    } else if (prior && prior.date !== asOf && prior.reportingCurrency === repCcy) {
       const delta = view.totalValue - prior.totalValue;
       el.navDelta.className = 'metric-sub ' + (delta > 0 ? 'up' : delta < 0 ? 'down' : '');
-      el.navDelta.textContent = `${fmtSignedUsd0(delta)} vs ${prior.date}`;
+      el.navDelta.textContent = `${fmtSignedMoney0(delta, repCcy)} vs ${prior.date}`;
     } else {
       el.navDelta.className = 'metric-sub';
-      el.navDelta.textContent = view.isLive ? 'Live marks' : `Archived ${view.label}`;
+      el.navDelta.textContent = view.isLive ? 'Live marks' : `Archived ${view.label} · original currency and FX`;
     }
     if (unverifiedOptionChannels(view).length) {
       el.navDelta.textContent += ' · option positions unverified';
+    }
     }
   }
 
@@ -1375,14 +1382,14 @@ function renderOverview(view) {
   const putAmounts = puts.map(p => {
     if (!p.currency || !cashCcy) return null;
     const amount = Number(p.contingentCashObligation || 0);
+    if (view.fxApplied) return amount;
     if (p.currency === cashCcy) return amount;
-    const rate = view.fxApplied ? view.fxRates?.[p.currency] : null;
-    return Number.isFinite(rate) && rate > 0 ? amount * rate : null;
+    return null;
   });
   const putObligation = putAmounts.every(amount => amount != null)
     ? putAmounts.reduce((total, amount) => total + amount, 0) : null;
   const stalePuts = unverifiedOptionChannels(view).some(channel => puts.some(p => p.channel === channel));
-  const cashAfter = view.cashAmount == null || putObligation == null || stalePuts
+  const cashAfter = view.navComplete === false || view.cashAmount == null || putObligation == null || stalePuts
     ? null : view.cashAmount - putObligation;
 
   if (el.kpiRow) {
@@ -1439,16 +1446,19 @@ function renderExpiryRisk(view, asOf) {
     const estimate = view.isLive && days < 0
       ? { probability: null, iv: null, reason: 'Past expiry; broker status unverified' }
       : optionFinishItmProbability(p, spot, days);
-    const exposure = o.right === 'put'
+    const callNative = Number(o.strike) * Number(p.contingentShareObligation || 0);
+    const callRate = view.isLive && view.fxApplied && p.currency
+      ? (p.currency === view.reportingCurrency ? 1 : view.fxRates?.[p.currency]) : 1;
+    const exposure = view.navComplete === false ? NaN : o.right === 'put'
       ? Number(p.contingentCashObligation || 0)
-      : Number(o.strike) * Number(p.contingentShareObligation || 0);
+      : Number.isFinite(callRate) ? callNative * callRate : NaN;
     return { p, spot, days, estimate, exposure };
   });
   const radar = rows.filter((r) => r.estimate.probability > 0.3 && Number.isFinite(r.exposure) && r.exposure > 0);
   const missing = rows.filter((r) => r.estimate.probability == null).length;
   const exposure = radar.reduce((sum, r) => sum + r.exposure, 0);
   const weighted = radar.reduce((sum, r) => sum + r.exposure * r.estimate.probability, 0);
-  const cash = view.cashAmount;
+  const cash = view.navComplete === false ? null : view.cashAmount;
   const cover = exposure > 0 && cash != null ? (cash / exposure) * 100 : null;
 
   if (el.expiryLead) {
@@ -1527,13 +1537,13 @@ function renderExpiryRisk(view, asOf) {
             return `<tr class="risk-row risk-row-${tone}" data-risk-underlying="${escapeHtml(o.underlying)}" tabindex="0" aria-label="Highlight ${escapeHtml(o.underlying)} in open options">
               <td><span class="risk-contract">${tone === 'danger' ? '<span class="pulse-dot" aria-hidden="true"></span>' : ''}<strong>${escapeHtml(o.underlying || p.ticker)}</strong><span class="risk-contract-meta">${escapeHtml(o.right.toUpperCase())} · ${o.right === 'put' ? 'CSP' : 'CC'} · ${p.units}x</span></span></td>
               <td class="num">${spot > 0 ? Number(spot).toFixed(2) : '—'}</td>
-              <td class="num">${fmtPrettyMoney(o.strike, reportingCcyCode(view), 0)}</td>
+              <td class="num">${fmtPrettyMoney(o.strike, p.currency || reportingCcyCode(view), 0)}</td>
               <td class="num ${itm ? 'down' : 'muted'}">${moneyness == null ? '—' : `${moneyness >= 0 ? '+' : ''}${moneyness.toFixed(1)}%`}</td>
               <td class="num">${escapeHtml(new Date(`${o.expiry}T00:00:00Z`).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' }).replaceAll(' ', '-').toUpperCase())}</td>
               <td class="num">${days == null ? '—' : `${days}d`}</td>
               <td class="num muted">${estimate.iv == null ? '—' : `${Math.round(estimate.iv * 100)}%`}</td>
-              <td class="num">${Number.isFinite(premium) ? fmtPrettyMoney(premium, reportingCcyCode(view), 2) : '—'}</td>
-              <td class="num muted">${Number.isFinite(assigned) && assigned > 0 ? fmtPrettyMoney(assigned, reportingCcyCode(view), 0) : '—'}</td>
+              <td class="num">${Number.isFinite(premium) ? fmtPrettyMoney(premium, view.navComplete === false ? p.currency : reportingCcyCode(view), 2) : '—'}</td>
+              <td class="num muted">${Number.isFinite(assigned) && assigned > 0 ? fmtPrettyMoney(assigned, view.navComplete === false ? p.currency : reportingCcyCode(view), 0) : '—'}</td>
               <td>${riskPill(tone, probability == null ? `— · ${status}` : `${probability}% · ${status}`)}</td>
               <td>${escapeHtml(p.channel === DEFAULT_CHANNEL ? 'Unassigned' : p.channel.toUpperCase())}</td>
             </tr>`;
@@ -1847,6 +1857,12 @@ function renderWarnings() {
 
 function renderAllocation(view) {
   el.allocationGrid.innerHTML = '';
+  if (view.navComplete === false) {
+    el.allocationGrid.innerHTML = '<div class="allocation-card">Allocation unavailable until every currency has a valid FX rate.</div>';
+    return;
+  }
+  const ccy = reportingCcyCode(view);
+  const navText = view.navComplete === false ? '—' : fmtMoney0(view.totalValue, ccy);
 
   // When merged with multiple channels, also show allocation by channel.
   if (
@@ -1866,7 +1882,7 @@ function renderAllocation(view) {
     chWrapper.innerHTML = `
       <h3>Allocation by Channel (merged)</h3>
       <div class="total-label">NAV across brokers</div>
-      <div class="total-value">${fmtUsd0(view.totalValue)}</div>
+      <div class="total-value">${navText}</div>
       <div class="donut-container"><canvas id="allocChannelChart"></canvas></div>
       <div class="legend-grid">
         ${chSectors
@@ -1877,7 +1893,7 @@ function renderAllocation(view) {
             <div class="legend-color" style="background:${s.color}"></div>
             <div>
               <div style="font-weight:600">${escapeHtml(s.label)}</div>
-              <div style="font-size:0.75rem;color:#6b7280">${pct}% (NAV ${fmtUsd0(s.signed)})</div>
+              <div style="font-size:0.75rem;color:#6b7280">${pct}% (NAV ${fmtMoney0(s.signed, ccy)})</div>
             </div>
           </div>`;
           })
@@ -1909,7 +1925,7 @@ function renderAllocation(view) {
               callbacks: {
                 label: (ctx) => {
                   const pct = chTotal > 0 ? ((ctx.raw / chTotal) * 100).toFixed(1) : '0.0';
-                  return `${ctx.label}: ${pct}% (NAV ${fmtUsd0(ctx.raw)})`;
+                  return `${ctx.label}: ${pct}% (NAV ${fmtMoney0(ctx.raw, ccy)})`;
                 },
               },
             },
@@ -1959,14 +1975,14 @@ function renderAllocation(view) {
   const navBreakdown =
     view.cashAmount != null || Number(view.depositsAmount || 0) > 0
       ? `<div style="font-size:0.8rem;color:#6b7280;margin:4px 0 4px">
-            Positions MTM: ${fmtUsd0(posMtm)}` +
+            Positions MTM: ${fmtMoney0(posMtm, ccy)}` +
         (view.cashAmount != null
-          ? ` · Cash: ${fmtUsd0(view.cashAmount)}${view.cashCurrency ? ' ' + escapeHtml(view.cashCurrency) : ''}` +
+          ? ` · Cash: ${fmtMoney0(view.cashAmount, ccy)}` +
             (view.cashWeightPct != null ? ` (${view.cashWeightPct.toFixed(1)}%)` : '') +
             (view.cashChannel ? ` · ch ${escapeHtml(view.cashChannel)}` : '')
           : '') +
         (Number(view.depositsAmount || 0) > 0
-          ? ` · FD principal: ${fmtUsd0(view.depositsAmount)}${view.depositsCurrency ? ' ' + escapeHtml(view.depositsCurrency) : ''}`
+          ? ` · FD principal: ${fmtMoney0(view.depositsAmount, ccy)}`
           : '') +
         `</div>`
       : '';
@@ -1976,13 +1992,13 @@ function renderAllocation(view) {
   wrapper.innerHTML = `
     <h3>Allocation ${escapeHtml(scope)}</h3>
     <div class="total-label">${view.isLive ? 'Current NAV (positions + cash + deposits)' : 'NAV · ' + escapeHtml(view.label)}</div>
-    <div class="total-value">${fmtUsd0(view.totalValue)}</div>
+    <div class="total-value">${navText}</div>
     ${navBreakdown}
     ${
       (view.optionCount || 0) > 0
         ? `<div style="font-size:0.8rem;color:#6b7280;margin:4px 0 8px">
-            Premium collected: ${fmtUsd0(view.optionsPremiumCollected || 0)} ·
-            Contingent obligation: ${fmtUsd0(view.contingentCashObligation || 0)}
+            Premium collected: ${fmtMoney0(view.optionsPremiumCollected || 0, ccy)} ·
+            Contingent obligation: ${fmtMoney0(view.contingentCashObligation || 0, ccy)}
           </div>`
         : ''
     }
@@ -1996,7 +2012,7 @@ function renderAllocation(view) {
           <div class="legend-color" style="background:${s.color}"></div>
           <div>
             <div style="font-weight:600">${escapeHtml(s.label)}</div>
-            <div style="font-size:0.75rem;color:#6b7280">${pct}% (MTM ${fmtUsd0(s.signed)})</div>
+          <div style="font-size:0.75rem;color:#6b7280">${pct}% (MTM ${fmtMoney0(s.signed, ccy)})</div>
           </div>
         </div>`;
         })
@@ -2029,7 +2045,7 @@ function renderAllocation(view) {
           callbacks: {
             label: (ctx) => {
               const pct = absTotal > 0 ? ((ctx.raw / absTotal) * 100).toFixed(1) : '0.0';
-              return `${ctx.label}: ${pct}% (|MTM| ${fmtUsd0(ctx.raw)})`;
+              return `${ctx.label}: ${pct}% (|MTM| ${fmtMoney0(ctx.raw, ccy)})`;
             },
           },
         },
@@ -2039,6 +2055,11 @@ function renderAllocation(view) {
 }
 
 function renderBar(view) {
+  if (view.navComplete === false) {
+    el.barGrid.innerHTML = '<div class="bar-card">Value comparison unavailable until every currency has a valid FX rate.</div>';
+    return;
+  }
+  const ccy = reportingCcyCode(view);
   const labels = view.positions.map((p) => p.label || p.ticker);
   const invested = view.positions.map((p) => p.cost);
   const current = view.positions.map((p) => p.value);
@@ -2053,16 +2074,16 @@ function renderBar(view) {
     <div class="bar-summary">
       <div class="bar-summary-item">
         <div class="bar-summary-label">Invested</div>
-        <div class="bar-summary-value">${fmtUsd0(view.totalCost)}</div>
+        <div class="bar-summary-value">${fmtMoney0(view.totalCost, ccy)}</div>
       </div>
       <div class="bar-summary-item">
         <div class="bar-summary-label">Current</div>
-        <div class="bar-summary-value">${fmtUsd0(view.totalValue)}</div>
+        <div class="bar-summary-value">${view.navComplete === false ? '—' : fmtMoney0(view.totalValue, ccy)}</div>
       </div>
       <div class="bar-summary-item">
         <div class="bar-summary-label">P&amp;L</div>
         <div class="bar-summary-value" style="color:${plColor}">
-          ${fmtSignedUsd0(view.totalPL)} (${fmtSigned(view.totalPLPct, 1)}%)
+          ${fmtSignedMoney0(view.totalPL, ccy)} (${fmtSigned(view.totalPLPct, 1)}%)
         </div>
       </div>
       <div class="bar-summary-item">
@@ -2095,7 +2116,7 @@ function renderBar(view) {
         legend: { position: 'top', labels: { usePointStyle: true, boxWidth: 8, font: { size: 12 } } },
         tooltip: {
           callbacks: {
-            label: (ctx) => `${ctx.dataset.label}: ${fmtUsd0(ctx.raw)}`,
+            label: (ctx) => `${ctx.dataset.label}: ${fmtMoney0(ctx.raw, ccy)}`,
           },
         },
       },
@@ -2103,8 +2124,8 @@ function renderBar(view) {
         y: {
           beginAtZero: true,
           grid: { color: '#f0f0f0' },
-          ticks: { font: { size: 10 }, callback: (val) => '$' + (val / 1000).toFixed(0) + 'K' },
-          title: { display: true, text: 'Value (USD)', font: { size: 11, weight: 'bold' } },
+          ticks: { font: { size: 10 }, callback: (val) => fmtMoney0(val / 1000, ccy) + 'K' },
+          title: { display: true, text: `Value (${ccy || 'currency unknown'})`, font: { size: 11, weight: 'bold' } },
         },
         x: { grid: { display: false }, ticks: { font: { size: 11 } } },
       },
@@ -2247,8 +2268,8 @@ function renderDepositsTable(view) {
       return `<tr>
         <td>${label}<div class="muted">${escapeHtml(d.id)}</div></td>
         <td>${channelBadgeHtml(d.channel)}</td>
-        <td class="num">${fmtUsd2(d.amount)}</td>
-        <td class="num">${fmtUsd2(d.interest)}</td>
+        <td class="num">${fmtPrettyMoney(d.amount, d.currency)}</td>
+        <td class="num">${fmtPrettyMoney(d.interest, d.currency)}</td>
         <td>${escapeHtml(d.start_date)} → ${escapeHtml(d.end_date)}</td>
         <td>${days}</td>
       </tr>`;
@@ -2267,7 +2288,7 @@ function renderInsights(view) {
       title: 'Fixed deposits',
       text:
         `${view.deposits.length} term deposit${view.deposits.length === 1 ? '' : 's'} ` +
-        `with ${fmtUsd0(amt)} principal in NAV (not free cash).` +
+        `with ${fmtMoney0(amt, reportingCcyCode(view))} principal in NAV (not free cash).` +
         (matured > 0
           ? ` ${matured} matured — consider remove_deposit / roll to cash.`
           : ' Principal is locked until end date.'),

@@ -10,6 +10,7 @@ const { yf } = await import('../src/market/yf-client.js');
 const { fetchFxRates, toReportingLive, fxPairSymbol } = await import(
   '../src/market/fetch-fx.js'
 );
+const { totalCashLive } = await import('../src/market/sum-to-reporting.js');
 
 describe('fxPairSymbol', () => {
   it('builds Yahoo pair', () => {
@@ -33,6 +34,10 @@ describe('toReportingLive', () => {
 
   it('fails without rate', () => {
     expect(() => toReportingLive(100, 'SGD', 'USD', {}, 'cash')).toThrow(/Missing FX rate/);
+  });
+
+  it('does not require an FX quote for a zero balance', () => {
+    expect(toReportingLive(0, 'SGD', 'USD', {}, 'empty sleeve')).toBe(0);
   });
 
   it('fails on invalid rate', () => {
@@ -77,5 +82,16 @@ describe('fetchFxRates', () => {
   it('fails when price invalid', async () => {
     vi.mocked(yf.quote).mockResolvedValue({ regularMarketPrice: 0 });
     await expect(fetchFxRates(['SGD'], 'USD')).rejects.toThrow(/Invalid live FX/);
+  });
+});
+
+describe('reporting-currency cash total', () => {
+  it('converts a single foreign cash sleeve into the selected currency', async () => {
+    vi.mocked(yf.quote).mockReset();
+    vi.mocked(yf.quote).mockResolvedValue({ regularMarketPrice: 0.75 } as never);
+    const result = await totalCashLive(
+      [{ amount: 100, currency: 'SGD', updated_at: '2026-10-08' }], 'USD');
+    expect(result.total).toMatchObject({ amount: 75, currency: 'USD' });
+    expect(yf.quote).toHaveBeenCalledWith('SGDUSD=X');
   });
 });

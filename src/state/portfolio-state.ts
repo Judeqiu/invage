@@ -494,7 +494,8 @@ export function getCashes(state: InvestorState): CashBalance[] {
 
 /** Distinct uppercase currency codes present in cash balances. */
 export function cashCurrencies(cashes: CashBalance[]): string[] {
-  return [...new Set(cashes.map((c) => c.currency.trim().toUpperCase()))].sort();
+  const nonzero = cashes.filter((c) => c.amount !== 0);
+  return [...new Set((nonzero.length ? nonzero : cashes.slice(0, 1)).map((c) => c.currency.trim().toUpperCase()))].sort();
 }
 
 export interface MultiCurrencySumOptions {
@@ -516,6 +517,7 @@ function convertAmount(
 ): number {
   const ccy = currency.trim().toUpperCase();
   const rep = reportingCurrency.trim().toUpperCase();
+  if (amount === 0) return 0;
   if (ccy === rep) return amount;
   const rate = fxRates[ccy];
   if (rate == null) {
@@ -820,7 +822,8 @@ export function clearDeposits(state: InvestorState, channel?: string | null): vo
 
 /** Distinct uppercase currency codes present in deposits. */
 export function depositCurrencies(deposits: FixedDeposit[]): string[] {
-  return [...new Set(deposits.map((d) => d.currency.trim().toUpperCase()))].sort();
+  const nonzero = deposits.filter((d) => d.amount !== 0);
+  return [...new Set((nonzero.length ? nonzero : deposits.slice(0, 1)).map((d) => d.currency.trim().toUpperCase()))].sort();
 }
 
 /**

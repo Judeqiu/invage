@@ -4,7 +4,7 @@
  */
 
 import { Router, type Request, type Response } from 'express';
-import { targetSlug, type AuthUser } from 'utarus';
+import { loadSessionState, targetSlug, type AuthUser } from 'utarus';
 import { loadDashboardForSlug } from './dashboard-data.js';
 import { loadWatchlistForSlug } from './watchlist-data.js';
 import { loadInvestor } from '../state/investor-store.js';
@@ -18,9 +18,48 @@ import { getPortfolio } from '../state/portfolio-state.js';
 import { fetchHistoricalCloses } from '../market/fetch-history.js';
 import { openOptionTradeDetails } from './option-dashboard-data.js';
 import { canonicalOptionUnderlying } from '../brokers/option-symbol.js';
+import { getTreasury, setTreasury, type HouseholdInvestorState } from '../state/household-state.js';
+import { saveInvestor } from '../state/investor-store.js';
 
 export function createDashboardApiRouter(): Router {
   const router = Router();
+
+  router.get('/portfolio-settings', async (req: Request, res: Response) => {
+    try {
+      const user = (req as Request & { user?: AuthUser }).user;
+      if (!user?.slug) { res.status(401).json({ error: 'unauthorized' }); return; }
+      const snapshot = await loadSessionState(req);
+      res.setHeader('Cache-Control', 'private, no-store');
+      res.json({ reporting_currency: getTreasury(snapshot.state as HouseholdInvestorState)?.reporting_currency ?? null });
+    } catch (e) {
+      res.status(500).json({ error: 'settings_failed', message: e instanceof Error ? e.message : String(e) });
+    }
+  });
+
+  router.put('/portfolio-settings', async (req: Request, res: Response) => {
+    try {
+      const user = (req as Request & { user?: AuthUser }).user;
+      if (!user?.slug) { res.status(401).json({ error: 'unauthorized' }); return; }
+      const currency = req.body?.reporting_currency;
+      if (typeof currency !== 'string' || !/^[A-Z]{3,4}$/.test(currency)) {
+        res.status(400).json({ error: 'invalid_currency', message: 'Choose a 3–4 letter uppercase reporting currency.' });
+        return;
+      }
+      const snapshot = await loadSessionState(req);
+      const state = snapshot.state as HouseholdInvestorState;
+      const current = getTreasury(state)?.reporting_currency ?? null;
+      if (current !== currency) {
+        const today = new Date().toISOString().slice(0, 10);
+        setTreasury(state, { reporting_currency: currency, updated_at: today });
+        state.log.push({ ts: today, action: 'treasury_set', reporting_currency: currency });
+        await saveInvestor({ state, revision: snapshot.revision });
+      }
+      res.setHeader('Cache-Control', 'private, no-store');
+      res.json({ reporting_currency: currency });
+    } catch (e) {
+      res.status(500).json({ error: 'settings_failed', message: e instanceof Error ? e.message : String(e) });
+    }
+  });
 
   router.get('/book', async (req: Request, res: Response) => {
     try {

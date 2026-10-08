@@ -366,6 +366,14 @@ describe('createInvageWebUi brokers section', () => {
     const ui = createInvageWebUi();
     expect(ui.settingsSections).toEqual([
       {
+        id: 'portfolio',
+        title: 'Portfolio',
+        description: 'Choose the currency used for portfolio totals',
+        icon: 'wallet',
+        iframeSrc: '/domain-assets/invage/settings/portfolio/index.html',
+        iframeHeightPx: 300,
+      },
+      {
         id: 'brokers',
         title: 'Brokers',
         description: 'Connect read-only brokerage channels',

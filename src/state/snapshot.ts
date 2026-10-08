@@ -9,9 +9,12 @@
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { resolveDataRoot } from 'utarus';
+import type { DepositRow } from '../report/dashboard-model.js';
 
 export interface SnapshotPosition {
   ticker: string;
+  /** Original holding currency. Prices and option contract fields remain native. */
+  currency?: string;
   avgCost: number;
   units: number;
   price: number;
@@ -49,6 +52,10 @@ export interface SnapshotPosition {
 
 export interface Snapshot {
   date: string;
+  /** Currency and FX rates fixed at capture; older snapshots omit these. */
+  reportingCurrency?: string;
+  fxRates?: Record<string, number>;
+  fxCapturedAt?: string;
   /** Broker position date used at capture time, by channel. Older files omit this. */
   brokerAsOf?: Record<string, string>;
   totalValue: number;
@@ -72,6 +79,10 @@ export interface Snapshot {
   cashChannel?: string;
   /** Sum of position MTM only (excludes cash). Present when cash was recorded. */
   positionsValue?: number;
+  /** Fixed-deposit principal in reporting currency; rows retain their native currency. */
+  depositsAmount?: number;
+  depositsCurrency?: string;
+  deposits?: DepositRow[];
 }
 
 function driveDir(slug: string): string {

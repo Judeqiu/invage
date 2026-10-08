@@ -5,9 +5,10 @@ import { join } from 'path';
 import { resolveDataRoot } from 'utarus';
 import { readBrokerAccountModel } from '../brokers/accounts.js';
 import { latestSuccessfulBrokerSyncRun } from '../brokers/sync-history.js';
-import { resolvePortfolioMarket, valuePortfolio } from '../market/index.js';
-import { totalCashLive } from '../market/sum-to-reporting.js';
-import { getCashes, getPortfolio } from '../state/portfolio-state.js';
+import { resolvePortfolioMarket } from '../market/index.js';
+import { fetchFxRates } from '../market/fetch-fx.js';
+import { buildLivePositions, type DashboardFxOptions } from '../report/dashboard-model.js';
+import { getCashes, getDeposits, getPortfolio } from '../state/portfolio-state.js';
 import {
   getTreasury,
   type HouseholdInvestorState,
@@ -63,10 +64,26 @@ export function createSnapshotTool(): AgentTool[] {
 
         const { portfolio: valued, equityPrices, optionMarks } =
           await resolvePortfolioMarket(portfolio);
-        const economics = valuePortfolio(valued, equityPrices);
-
-        const positions: SnapshotPosition[] = economics.map((e) => ({
-          ticker: e.key,
+        const cashes = getCashes(state);
+        const deposits = getDeposits(state);
+        const rep = getTreasury(state as HouseholdInvestorState)?.reporting_currency ?? null;
+        const currencies = [...new Set([
+          ...Object.values(valued).map((holding) => holding.currency).filter((c): c is string => !!c),
+          ...cashes.filter((c) => c.amount !== 0).map((c) => c.currency),
+          ...deposits.filter((d) => d.amount !== 0).map((d) => d.currency),
+        ])];
+        let fx: DashboardFxOptions | undefined;
+        if (rep) {
+          const foreign = currencies.filter((currency) => currency !== rep);
+          fx = { reportingCurrency: rep, fxRates: foreign.length ? await fetchFxRates(foreign, rep) : {} };
+        }
+        const live = buildLivePositions(valued, equityPrices, optionMarks,
+          cashes.map((c) => ({ amount: c.amount, currency: c.currency, channel: c.channel })),
+          deposits, undefined, fx, { reportingCurrency: rep ?? undefined });
+        if (live.navComplete === false) throw new Error('Snapshot NAV incomplete: set a reporting currency and provide all holding currencies.');
+        const positions: SnapshotPosition[] = live.positions.map((e) => ({
+          ticker: e.ticker,
+          ...(e.currency ? { currency: e.currency } : {}),
           avgCost: e.avgCost,
           units: e.units,
           price: e.price,
@@ -91,22 +108,18 @@ export function createSnapshotTool(): AgentTool[] {
                 markSource: e.fund.quote_source,
               }
             : {}),
-          ...(optionMarks[e.key]
+          ...(optionMarks[e.ticker]
             ? {
-                markSource: optionMarks[e.key].source,
-                contractSymbol: optionMarks[e.key].contractSymbol,
+                markSource: optionMarks[e.ticker].source,
+                contractSymbol: optionMarks[e.ticker].contractSymbol,
               }
             : {}),
         }));
 
-        const positionsValue = positions.reduce((s, pos) => s + pos.value, 0);
-        const totalCost = positions.reduce((s, pos) => s + pos.cost, 0);
-        const cashes = getCashes(state);
-        const hh = state as HouseholdInvestorState;
-        const rep = getTreasury(hh)?.reporting_currency ?? null;
-        const cashLive = await totalCashLive(cashes, rep);
-        const cash = cashLive.total;
-        const totalValue = cash != null ? positionsValue + cash.amount : positionsValue;
+        const positionsValue = live.positionsValue;
+        const totalCost = live.totalCost;
+        const cash = live.cashAmount == null ? null : { amount: live.cashAmount, currency: live.cashCurrency! };
+        const totalValue = live.totalValue;
         // P/L is on invested positions only; cash is dry powder, not a P/L line.
         const totalPL = positionsValue - totalCost;
 
@@ -115,7 +128,7 @@ export function createSnapshotTool(): AgentTool[] {
         let contingentCashObligation = 0;
         let optionsPremiumCollected = 0;
         let optionsPremiumPaid = 0;
-        for (const e of economics) {
+        for (const e of live.positions) {
           if (e.instrument === 'option') {
             contingentCashObligation += e.contingentCashObligation;
             if (e.option?.side === 'short') optionsPremiumCollected += e.premiumAbsolute;
@@ -142,11 +155,18 @@ export function createSnapshotTool(): AgentTool[] {
         }
         const snapshot: Snapshot = {
           date: new Date().toISOString().slice(0, 10),
+          ...(live.reportingCurrency ? { reportingCurrency: live.reportingCurrency } : {}),
+          ...(live.fxRates && Object.keys(live.fxRates).length > 0
+            ? { fxRates: live.fxRates, fxCapturedAt: new Date().toISOString() } : {}),
           totalValue,
           totalCost,
           totalPL,
           totalPLPct: totalCost !== 0 ? (totalPL / Math.abs(totalCost)) * 100 : 0,
           positions,
+          deposits: live.deposits,
+          depositsAmount: live.depositsAmount,
+          depositsCurrency: live.depositsCurrency ?? undefined,
+          positionsValue,
           contingentCashObligation,
           optionsPremiumCollected,
           optionsPremiumPaid,
@@ -162,7 +182,6 @@ export function createSnapshotTool(): AgentTool[] {
                 ...(cashes.length === 1 && cashes[0].channel != null
                   ? { cashChannel: cashes[0].channel }
                   : {}),
-                positionsValue,
               }
             : {}),
         };
@@ -185,19 +204,21 @@ export function createSnapshotTool(): AgentTool[] {
         }
 
         const sign = totalPL >= 0 ? '+' : '';
+        const ccy = live.reportingCurrency ?? cash?.currency ?? '';
+        const formatMoney = (amount: number) => `${amount.toLocaleString('en-US', { minimumFractionDigits: 2 })} ${ccy}`.trim();
         const obligationNote =
           contingentCashObligation > 0
-            ? `\nContingent cash obligation (short puts): $${contingentCashObligation.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
+            ? `\nContingent cash obligation (short puts): ${formatMoney(contingentCashObligation)}`
             : '';
         const cashNote =
           cash != null
             ? `\nCash: ${cash.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })} ${cash.currency}` +
-              `\nPositions MTM: $${positionsValue.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
-            : '\nCash: not recorded (NAV = positions only). Use set_cash to include dry powder.';
+              `\nPositions MTM: ${formatMoney(positionsValue)}`
+            : `\nCash: not recorded (NAV includes positions${live.depositsAmount ? ' and fixed deposits' : ''}). Use set_cash to include dry powder.`;
         return ok(
           `Snapshot saved as "${fileName}".\n` +
-            `Total Value (NAV): $${totalValue.toLocaleString('en-US', { minimumFractionDigits: 2 })}\n` +
-            `Positions P/L: ${sign}$${totalPL.toFixed(2)} (${sign}${snapshot.totalPLPct.toFixed(1)}%)\n` +
+          `Total Value (NAV): ${formatMoney(totalValue)}\n` +
+            `Positions P/L: ${sign}${formatMoney(totalPL)} (${sign}${snapshot.totalPLPct.toFixed(1)}%)\n` +
             `${positions.length} positions recorded.` +
             cashNote +
             obligationNote,

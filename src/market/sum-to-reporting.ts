@@ -37,7 +37,8 @@ export async function totalCashLive(
     };
   }
   const currencies = cashCurrencies(cashes);
-  if (currencies.length === 1) {
+  const rep = reportingCurrency?.trim().toUpperCase();
+  if (currencies.length === 1 && (!rep || currencies[0] === rep)) {
     const total = totalCash(cashes);
     return {
       total,
@@ -46,7 +47,6 @@ export async function totalCashLive(
       reportingCurrency: currencies[0],
     };
   }
-  const rep = reportingCurrency?.trim().toUpperCase();
   if (rep == null || rep.length === 0) {
     throw new Error(
       `Cannot sum cash across currencies (${cashes.map((c) => c.currency).join(', ')}). ` +
@@ -80,7 +80,8 @@ export async function totalDepositsLive(
     };
   }
   const currencies = depositCurrencies(deposits);
-  if (currencies.length === 1) {
+  const rep = reportingCurrency?.trim().toUpperCase();
+  if (currencies.length === 1 && (!rep || currencies[0] === rep)) {
     return {
       total: totalDepositsPrincipal(deposits),
       fxRates: {},
@@ -88,7 +89,6 @@ export async function totalDepositsLive(
       reportingCurrency: currencies[0],
     };
   }
-  const rep = reportingCurrency?.trim().toUpperCase();
   if (rep == null || rep.length === 0) {
     throw new Error(
       `Cannot sum deposits across currencies (${deposits.map((d) => d.currency).join(', ')}). ` +
