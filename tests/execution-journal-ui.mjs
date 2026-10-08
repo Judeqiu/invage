@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import puppeteer from 'puppeteer-core';
 import { buildExecutionJournal } from '../src/brokers/option-executions.ts';
 
@@ -15,13 +17,14 @@ const files = new Map([
   ['/trades/', 'webui/trades/index.html'], ['/trades/app.js', 'webui/trades/app.js'],
   ['/report.js', 'webui/report.js'], ['/report.css', 'webui/report.css'],
 ]);
+let dashboardPayload = { empty: true, model: null, message: 'No open positions.', productProfile: 'full', productName: 'Victor Consultant' };
 const server = createServer(async (req, res) => {
   try {
     if (req.url === '/api/domain/invage/trades') {
       res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(journal)); return;
     }
     if (req.url === '/api/domain/invage/dashboard') {
-      res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ empty: true, model: null, message: 'No open positions.', productProfile: 'full', productName: 'Victor Consultant' })); return;
+      res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(dashboardPayload)); return;
     }
     const file = files.get(req.url);
     if (!file) { res.statusCode = 404; res.end(); return; }
@@ -49,13 +52,30 @@ try {
   const text = await page.$eval('#table', el => el.textContent);
   for (const value of ['2026-09-09 10:30:15', '19-MAR-2027', '-1.23456789', 'sell to open', '5140.00']) assert(text.includes(value), value);
   assert.equal(await page.$eval('details', el => el.open), false);
-  await page.screenshot({ path: 'tests/e2e-artifacts/execution-journal.png', fullPage: true });
+  const screenshotPath = join(tmpdir(), 'invage-execution-journal.png');
+  await page.screenshot({ path: screenshotPath, fullPage: true });
   await page.click('#positions-view');
   await page.waitForFunction(() => document.getElementById('table').textContent.includes('No open positions.'));
   await page.click('#journal-view');
   await page.waitForFunction(() => document.getElementById('table').textContent.includes('5138.76543211'));
+  dashboardPayload = {
+    empty: false, productProfile: 'consultant', model: { live: {
+      optionCount: 1, reportingCurrency: 'USD', positions: [{
+        ticker: 'PATH', label: 'PATH SHORT CALL $20 2027-03-19 ×2', instrument: 'option', channel: 'ibkr',
+        units: 2, avgCost: 2570, price: 1000, pl: 3140, premiumAbsolute: 5140,
+        contingentCashObligation: 0, contingentShareObligation: 200,
+        option: { underlying: 'PATH', right: 'call', side: 'short', strike: 20, expiry: '2027-03-19' },
+      }],
+    } },
+  };
+  await page.reload();
+  await page.waitForFunction(() => document.getElementById('table').textContent.includes('PATH SHORT CALL'));
+  assert.equal(await page.$eval('#positions-view', el => el.classList.contains('on')), true, 'consultant defaults to open positions');
+  await page.click('#journal-view');
+  await page.waitForFunction(() => document.getElementById('table').textContent.includes('5138.76543211'));
+  assert.equal(await page.$eval('#journal-view', el => el.classList.contains('on')), true, 'journal stays selected after reload');
   assert.deepEqual(errors, []);
-  console.log('Journal browser regression passed; screenshot: /private/tmp/invage-execution-journal.png');
+  console.log(`Journal browser regression passed; screenshot: ${screenshotPath}`);
 } finally {
   if (browser) await browser.close();
   await new Promise(resolve => server.close(resolve));

@@ -311,6 +311,8 @@ try {
   await page.waitForFunction(() => document.getElementById('navValue')?.textContent?.includes('$'));
   const dashText = await page.evaluate(() => document.body.innerText);
   assert(/Portfolio snapshot/i.test(dashText), 'dashboard h1');
+  const heroLead = await page.$eval('#heroLead', node => node.textContent);
+  assert(/2 positions — 1 equity, 1 option, 0 fund/.test(heroLead), `hero position count includes open options: ${heroLead}`);
   assert(/Net premium\s*·\s*Daily/i.test(dashText), 'daily premium kpi');
   assert(/Net premium\s*·\s*MTD/i.test(dashText), 'MTD premium kpi');
   assert(/Cash after all puts assigned/i.test(dashText), 'cash-after-assignment kpi');

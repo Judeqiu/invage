@@ -1325,10 +1325,10 @@ function renderOverview(view) {
     el.heroDate.textContent = longDateLabel(asOf);
   }
   if (el.heroLead) {
-    const n = view.positionCount || 0;
     const e = view.equityCount || 0;
     const o = view.optionCount || 0;
     const f = view.fundCount || 0;
+    const n = e + o + f;
     const archive = view.isLive ? '' : (() => {
       const row = payload.model?.history?.find(item => item.date === view.label);
       const dates = Object.entries(row?.brokerAsOf || {});
@@ -1339,7 +1339,7 @@ function renderOverview(view) {
     const positionDates = view.isLive ? Object.entries(payload.brokerAsOf || {})
       .filter(([channel]) => view.channelView === MERGED_CHANNEL_VIEW || channel === view.channelView)
       .map(([channel, date]) => `${channel.toUpperCase()} ${optionDateLabel(date)}`) : [];
-    el.heroLead.textContent = `${n} holdings — ${e} equity, ${o} option, ${f} fund. Pick a date to replay saved valuations.${archive}${view.isLive && positionDates.length ? ` Broker positions as of ${positionDates.join(' · ')}.` : ''}`;
+    el.heroLead.textContent = `${n} ${n === 1 ? 'position' : 'positions'} — ${e} equity, ${o} option, ${f} fund. Pick a date to replay saved valuations.${archive}${view.isLive && positionDates.length ? ` Broker positions as of ${positionDates.join(' · ')}.` : ''}`;
   }
   if (el.navValue) {
     el.navValue.textContent = fmtPrettyMoney(view.totalValue, repCcy, 2);

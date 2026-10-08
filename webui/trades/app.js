@@ -174,7 +174,7 @@ async function load() {
     dash = d;
     const q = channelFromQuery();
     channel = q === 'merged' ? 'all' : q;
-    view = pickDefaultView();
+    if (!view) view = pickDefaultView();
     render();
   } catch (e) {
     showError(el.error, e instanceof Error ? e.message : String(e));
