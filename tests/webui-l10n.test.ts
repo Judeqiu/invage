@@ -1,5 +1,6 @@
 import { readFileSync } from 'fs';
 import { describe, expect, it } from 'vitest';
+import { buildWebUiManifest } from 'utarus';
 
 process.env.UTARUS_LOADED_BY_HOST = '1';
 
@@ -12,5 +13,10 @@ describe('WebUI chrome localization', () => {
       expect(catalog[`settings.${section.id}.title`]).toBe(section.title);
       expect(catalog[`settings.${section.id}.description`]).toBe(section.description);
     }
+  });
+
+  it('passes the framework WebUI manifest validation', () => {
+    const webUi = createInvageWebUi();
+    expect(() => buildWebUiManifest({ webUi } as never)).not.toThrow();
   });
 });

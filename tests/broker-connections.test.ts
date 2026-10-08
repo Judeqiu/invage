@@ -369,7 +369,7 @@ describe('createInvageWebUi brokers section', () => {
         id: 'portfolio',
         title: 'Portfolio',
         description: 'Choose the currency used for portfolio totals',
-        icon: 'wallet',
+        icon: 'layout-dashboard',
         iframeSrc: '/domain-assets/invage/settings/portfolio/index.html',
         iframeHeightPx: 300,
       },
