@@ -315,6 +315,15 @@ function setOptionTab(tab) {
   if (el.openOptionsBlock) el.openOptionsBlock.classList.toggle('hidden', showHistory || !hasOpen);
 }
 
+function followHistoryBroker(channel) {
+  const broker = channel === 'all' || channel === MERGED_CHANNEL_VIEW ? '' : channel;
+  if (el.historyBroker.value === broker) return;
+  el.historyBroker.value = broker;
+  el.optionHistoryDetail.innerHTML = '';
+  renderOptionHistory();
+  void loadOptionHistory();
+}
+
 function renderOptionFreshness() {
   if (!el.optionFreshness) return;
   const rows = optionHistory.connections || [];
@@ -442,7 +451,11 @@ async function loadOptionHistory(more = false) {
 }
 
 el.optionOpenTab?.addEventListener('click', () => setOptionTab('open'));
-el.optionHistoryTab?.addEventListener('click', () => setOptionTab('history'));
+el.optionHistoryTab?.addEventListener('click', () => {
+  const broker = selectedChannel === MERGED_CHANNEL_VIEW ? optionBrokerFilter : selectedChannel;
+  followHistoryBroker(broker);
+  setOptionTab('history');
+});
 for (const control of [el.historyBroker, el.historyRight, el.historyStatus, el.historyFrom, el.historyTo, el.historySearch]) {
   control?.addEventListener(control === el.historySearch ? 'input' : 'change', () => {
     renderOptionHistory();
@@ -2554,6 +2567,7 @@ async function load() {
       initDashboard();
     }
     await loadOptionHistory();
+    if (selectedChannel !== MERGED_CHANNEL_VIEW) followHistoryBroker(selectedChannel);
     el.status.textContent = `Last refresh ${new Date().toLocaleTimeString()}`;
   } catch (e) {
     el.status.className = 'status-line error';
@@ -2586,6 +2600,7 @@ el.dateSelect.addEventListener('change', (e) => {
 el.channelSelect.addEventListener('change', (e) => {
   selectedChannel = e.target.value;
   renderDate(selectedDate, selectedChannel);
+  if (optionTab === 'history') followHistoryBroker(selectedChannel);
 });
 if (el.dateInput) {
   el.dateInput.addEventListener('change', (e) => {
@@ -2640,6 +2655,7 @@ if (el.channelPills) {
     if (el.channelSelect) el.channelSelect.value = selectedChannel;
     writeChannelQuery(selectedChannel === MERGED_CHANNEL_VIEW ? 'all' : selectedChannel);
     renderDate(selectedDate, selectedChannel);
+    if (optionTab === 'history') followHistoryBroker(selectedChannel);
   });
 }
 el.refreshBtn.addEventListener('click', () => void load());

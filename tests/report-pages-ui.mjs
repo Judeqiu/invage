@@ -257,11 +257,19 @@ const server = createServer(async (req, res) => {
             observations: [{ as_of: '2026-10-08', observed_at: '2026-10-08T12:00:00Z',
               source: 'broker', units: 1, avg_price: 300, mark: 0 }], executions: [],
             events: [{ id: 'e1', date: '2026-10-09', kind: 'expiration', settlement: 'unknown',
-              contracts: '1', currency: 'USD', broker_realized_pl: '298.50' }] }],
-        total: 3, next_offset: null, history_started: true,
+              contracts: '1', currency: 'USD', broker_realized_pl: '298.50' }] },
+          { id: 'webull-option', broker_id: 'webull', connection_id: 'webull', channel: 'webull',
+            account_id: 'W1', contract: { underlying: 'WEBULL', side: 'short', right: 'put',
+              strike: 10, expiry: '2026-10-09', units: 1, mark: 2, currency: 'USD' },
+            first_seen: '2026-09-30', last_seen_open: '2026-09-30', first_seen_absent: '2026-10-01',
+            status: 'no_longer_observed', observations: [], executions: [] }],
+        total: 4, next_offset: null, history_started: true,
         connections: [{ id: 'ibkr', broker_id: 'ibkr', channel: 'ibkr', label: 'IBKR', account_id: 'U1',
           schedule: 'daily', position_as_of: '2026-09-15', last_success_at: '2026-09-16T01:00:00Z',
-          last_attempt: { ok: true, at: '2026-09-16T01:00:00Z' } }],
+          last_attempt: { ok: true, at: '2026-09-16T01:00:00Z' } },
+          { id: 'webull', broker_id: 'webull', channel: 'webull', label: 'Webull', account_id: 'W1',
+            schedule: 'daily', position_as_of: '2026-09-30', last_success_at: '2026-10-01T01:00:00Z',
+            last_attempt: { ok: true, at: '2026-10-01T01:00:00Z' } }],
       }));
       return;
     }
@@ -343,6 +351,13 @@ try {
   assert(await page.$('#openOptions .option-ledger-row'), 'option contract row');
   await page.click('#optionHistoryTab');
   await page.waitForFunction(() => document.getElementById('optionHistoryTable')?.textContent?.includes('MSFT'));
+  assert(/WEBULL/.test(await page.$eval('#optionHistoryTable', node => node.textContent)), 'merged history includes Webull');
+  await page.click('#channelPills [data-channel="ibkr"]');
+  await page.waitForFunction(() => document.getElementById('historyBroker')?.value === 'ibkr');
+  assert(!/WEBULL/.test(await page.$eval('#optionHistoryTable', node => node.textContent)), 'IBKR dashboard selection excludes Webull history');
+  await page.click('#channelPills [data-channel="merged"]');
+  await page.waitForFunction(() => document.getElementById('historyBroker')?.value === '');
+  assert(/WEBULL/.test(await page.$eval('#optionHistoryTable', node => node.textContent)), 'merged dashboard selection restores Webull history');
   assert(/No longer observed/.test(await page.$eval('#optionHistoryTable', node => node.textContent)), 'historical option status');
   await page.click('#optionHistoryTable [data-history-id]');
   assert(/first observed absent 2026-08-24/.test(await page.$eval('#optionHistoryDetail', node => node.textContent)), 'history detail preserves absence date');
@@ -353,6 +368,11 @@ try {
   assert(/Expired/.test(await page.$eval('#optionHistoryTable', node => node.textContent)), 'broker expiry status appears');
   await page.click('#optionHistoryTable [data-history-id="expired-option"]');
   assert(/298\.50 USD/.test(await page.$eval('#optionHistoryDetail', node => node.textContent)), 'broker event P&L appears in detail');
+  await page.click('#optionOpenTab');
+  await page.click('#openOptions [data-option-broker="ibkr"]');
+  await page.click('#optionHistoryTab');
+  await page.waitForFunction(() => document.getElementById('historyBroker')?.value === 'ibkr');
+  assert(!/WEBULL/.test(await page.$eval('#optionHistoryTable', node => node.textContent)), 'IBKR open option filter carries into history');
   await page.click('#optionOpenTab');
   const optionCells = await page.$$eval('#openOptions .option-ledger-row td', (cells) => cells.map((cell) => cell.textContent.trim()));
   assert.equal(optionCells[1], '-1', 'short position is signed');
