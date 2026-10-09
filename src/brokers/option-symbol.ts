@@ -46,7 +46,7 @@ export function parseBrokerOptionCode(symbol: string): ParsedOptionCode | { skip
   const digits = m[4]!;
   const raw = Number(digits);
   if (!Number.isFinite(raw) || raw <= 0) return { skip: 'option strike is not positive' };
-  const strike = digits.length === 6 || digits.length === 8 ? raw / 1000 : raw;
+  const strike = raw / 1000;
   if (!(strike > 0)) return { skip: 'option strike is not positive' };
   return { root, expiry, right, strike };
 }

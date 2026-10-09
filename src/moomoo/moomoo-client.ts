@@ -1,5 +1,6 @@
 import { BrokerHttpError, BrokerParseError } from '../brokers/errors.js';
 import { moomooNonce, moomooSignContent, parseSignAlg, signMooMooRequest, type MooMooSignAlg } from './moomoo-sign.js';
+import { looksLikeOptionCode } from '../brokers/option-symbol.js';
 import { envelopeOk, type MooMooEnvelope, type MooMooRawBundle } from './moomoo-types.js';
 
 export const MOOMOO_HOST = 'webapi.moomoo.com';
@@ -34,28 +35,33 @@ function logRateHeaders(res: Response): void {
   if (bits.length) console.info('broker_sync moomoo', bits.join(' '));
 }
 
-export async function moomooGet(args: {
+async function moomooRequest(args: {
   path: string;
   query?: string;
   credentials: MooMooCredentials;
   fetchImpl: typeof fetch;
   timestampMs?: string;
-}): Promise<MooMooEnvelope> {
+  method?: 'GET' | 'POST';
+  body?: string;
+}): Promise<unknown> {
+  const method = args.method ?? 'GET';
   const query = args.query ?? '';
   const url = `${MOOMOO_ORIGIN}${args.path}${query ? `?${query}` : ''}`;
   const timestampMs = args.timestampMs ?? String(Date.now());
   const nonce = moomooNonce();
   const content = moomooSignContent({
     timestampMs,
-    method: 'GET',
+    method,
     path: args.path,
     query,
-    body: undefined,
+    body: args.body,
   });
   const signature = signMooMooRequest(content, args.credentials.private_key, args.credentials.sign_alg);
   const res = await args.fetchImpl(url, {
-    method: 'GET',
+    method,
+    ...(args.body !== undefined ? { body: args.body } : {}),
     headers: {
+      ...(args.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
       'X-Api-Key': args.credentials.app_key,
       Authorization: signature,
       'X-Timestamp': timestampMs,
@@ -74,7 +80,48 @@ export async function moomooGet(args: {
     if (Number.isSafeInteger(value)) return String(value);
     throw new BrokerParseError('MooMoo account_id cannot be read without precision loss. Use a Node.js runtime supporting JSON.parse source context.');
   });
-  return asEnvelope(json);
+  return json;
+}
+
+export async function moomooGet(args: {
+  path: string;
+  query?: string;
+  credentials: MooMooCredentials;
+  fetchImpl: typeof fetch;
+  timestampMs?: string;
+}): Promise<MooMooEnvelope> {
+  return asEnvelope(await moomooRequest(args));
+}
+
+/** Trade positions omit contract size; obtain it from exact-code static metadata. */
+async function fetchOptionBasicInfo(
+  positions: MooMooEnvelope, credentials: MooMooCredentials, fetchImpl: typeof fetch,
+): Promise<Record<string, unknown>[]> {
+  const codes = [...new Set((Array.isArray(positions.d) ? positions.d : []).flatMap(row => {
+    if (!row || typeof row !== 'object') return [];
+    const code = String(row.code ?? '').trim();
+    const symbol = code.slice(code.indexOf('.') + 1);
+    const hasMultiplier = row.contract_size != null || row.lot_size != null ||
+      row.option_contract_multiplier != null || row.multiplier != null;
+    return code.includes('.') && looksLikeOptionCode(symbol) && !hasMultiplier ? [code] : [];
+  }))];
+  const rows: Record<string, unknown>[] = [];
+  for (let start = 0; start < codes.length; start += 400) {
+    const args = { path: '/api/v1.0/quote/stock-basicinfo', method: 'POST' as const,
+      body: JSON.stringify({ code_list: codes.slice(start, start + 400) }), credentials, fetchImpl };
+    let raw = await moomooRequest(args) as Record<string, unknown>;
+    if (raw?.errcode === CLOCK_SKEW) {
+      const timestampMs = await serverTimeMs(fetchImpl);
+      if (timestampMs) raw = await moomooRequest({ ...args, timestampMs }) as Record<string, unknown>;
+    }
+    const data = raw?.data as { basic_list?: unknown } | undefined;
+    if (raw?.ret_code !== 0 || !Array.isArray(data?.basic_list)) {
+      throw new BrokerParseError('MooMoo option contract metadata unavailable; snapshot was not applied.');
+    }
+    rows.push(...data.basic_list.filter((row): row is Record<string, unknown> =>
+      row !== null && typeof row === 'object' && !Array.isArray(row)));
+  }
+  return rows;
 }
 
 async function serverTimeMs(fetchImpl: typeof fetch): Promise<string | undefined> {
@@ -219,6 +266,7 @@ export async function fetchMooMooRawBundle(
     fetchImpl,
   });
   failIfError(positions, 'positions');
+  const option_basicinfo = await fetchOptionBasicInfo(positions, credentials, fetchImpl);
   return {
     schema: 'invage.moomoo.raw.v1',
     fetched_at: new Date().toISOString(),
@@ -226,5 +274,6 @@ export async function fetchMooMooRawBundle(
     authorized,
     funds,
     positions,
+    ...(option_basicinfo.length ? { option_basicinfo } : {}),
   };
 }

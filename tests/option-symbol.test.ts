@@ -22,6 +22,11 @@ describe('parseBrokerOptionCode', () => {
     });
   });
 
+  it.each([['PATH270319P15000', 15], ['INTC261030P80000', 80],
+    ['BRKA270319C1234567', 1234.567]])('parses variable-width scaled strikes (%s)', (code, strike) => {
+    expect(parseBrokerOptionCode(code)).toMatchObject({ strike });
+  });
+
   it('parses OCC-style 8-digit strikes', () => {
     expect(parseBrokerOptionCode('AAPL250117C00150000')).toEqual({
       root: 'AAPL',

@@ -121,6 +121,47 @@ describe('MooMoo mapping', () => {
     expect(stmt.skipped.some((s) => s.reason === 'option missing multiplier')).toBe(true);
   });
 
+  it('maps real Cloud option rows using exact-code metadata and scaled strikes', () => {
+    const stmt = mapMooMooBundleToStatement(bundle({
+      positions: { s: 'ok', d: [{ code: 'US.PATH270319P15000', position_side: 'SHORT',
+        qty: '-2', currency: 'USD', nominal_price: '0.1442', cost_price: '4.410',
+        cost_price_valid: true, market_val: '-28.84' }] },
+      option_basicinfo: [{ code: 'US.PATH270319P15000', stock_type: 'DRVT',
+        contract_size: 100, lot_size: 100, stock_owner: 'US.PATH' }],
+    }), 'moomoo');
+    expect(stmt.skipped.filter(s => s.kind === 'position')).toEqual([]);
+    expect(stmt.lots[0]?.ticker).toBe('PATH-P-15-20270319-S');
+    expect(stmt.lots[0]?.holding).toMatchObject({ units: 2, avg_price: 441,
+      option: { strike: 15, multiplier: 100, mark: 14.42, underlying: 'PATH', side: 'short' } });
+  });
+
+  it.each([
+    [{ code: 'US.OTHER270319P15000', stock_type: 'DRVT', contract_size: 100 }],
+    [{ code: 'US.PATH270319P15000', stock_type: 'STOCK', contract_size: 100 }],
+    [{ code: 'US.PATH270319P15000', stock_type: 'DRVT', contract_size: 0 }],
+    [{ code: 'US.PATH270319P15000', stock_type: 'DRVT', contract_size: 100 },
+      { code: 'US.PATH270319P15000', stock_type: 'DRVT', contract_size: 10 }],
+  ])('never guesses a multiplier from missing, wrong, or ambiguous metadata (%j)', (...profiles) => {
+    const stmt = mapMooMooBundleToStatement(bundle({
+      positions: { s: 'ok', d: [{ code: 'US.PATH270319P15000', qty: '1', currency: 'USD',
+        nominal_price: '1', cost_price: '2', cost_price_valid: true }] },
+      option_basicinfo: profiles,
+    }), 'moomoo');
+    expect(stmt.lots).toEqual([]);
+    expect(stmt.skipped.some(s => s.reason === 'option missing multiplier')).toBe(true);
+  });
+
+  it('preserves an explicit adjusted contract size over lot size and metadata', () => {
+    const stmt = mapMooMooBundleToStatement(bundle({
+      positions: { s: 'ok', d: [{ code: 'US.PATH1270319P15000', qty: '1', currency: 'USD',
+        nominal_price: '1', cost_price: '2', cost_price_valid: true,
+        contract_size: 10, lot_size: 100, stock_owner: 'US.PATH' }] },
+      option_basicinfo: [{ code: 'US.PATH1270319P15000', stock_type: 'DRVT', contract_size: 100 }],
+    }), 'moomoo');
+    expect(stmt.lots[0]?.holding.option?.multiplier).toBe(10);
+    expect(stmt.lots[0]?.holding.avg_price).toBe(20);
+  });
+
   it('imports short option lots', () => {
     const stmt = mapMooMooBundleToStatement(
       bundle({
@@ -185,6 +226,86 @@ describe('MooMoo fetchRaw', () => {
     );
     expect(raw.acc_id).toBe('281756420273981734');
     expect(raw.schema).toBe('invage.moomoo.raw.v1');
+  });
+
+  it('fetches and signs read-only metadata for options missing size, preserving raw positions', async () => {
+    const positions = { s: 'ok', d: [
+      { code: 'US.PATH270319P15000', qty: '-1', currency: 'USD', cost_price: '2',
+        cost_price_valid: true, nominal_price: '1' },
+      { code: 'US.PATH270319P15000', qty: '-2' },
+      { code: 'US.AAPL', qty: '1' },
+    ] };
+    const metadata = [{ code: 'US.PATH270319P15000', stock_type: 'DRVT',
+      contract_size: 100, stock_owner: 'US.PATH' }];
+    let requests = 0;
+    const raw = await fetchMooMooRawBundle({ app_key: 'ak', private_key: ED, sign_alg: 'Ed25519' },
+      { fetchImpl: async (url, init) => {
+        if (String(url).endsWith('/quote/stock-basicinfo')) {
+          requests++;
+          expect(init?.method).toBe('POST');
+          expect(init?.body).toBe(JSON.stringify({ code_list: ['US.PATH270319P15000'] }));
+          const headers = new Headers(init?.headers);
+          expect(headers.get('Content-Type')).toBe('application/json');
+          expect(headers.get('Authorization')).toBe(signMooMooRequest(moomooSignContent({
+            timestampMs: headers.get('X-Timestamp')!, method: 'POST',
+            path: '/api/v1.0/quote/stock-basicinfo', query: '', body: String(init?.body),
+          }), ED, 'Ed25519'));
+          return Response.json({ ret_code: 0, data: { basic_list: metadata } });
+        }
+        return mockFetch({ authorized: AUTHORIZED, funds: FUNDS, positions })(url, init);
+      } });
+    expect(requests).toBe(1);
+    expect(raw.positions).toEqual(positions);
+    expect(raw.option_basicinfo).toEqual(metadata);
+  });
+
+  it('splits metadata requests at the documented 400-code limit', async () => {
+    const positions = { s: 'ok', d: Array.from({ length: 401 }, (_, i) =>
+      ({ code: `US.TEST${i}270319P15000` })) };
+    const sizes: number[] = [];
+    await fetchMooMooRawBundle({ app_key: 'ak', private_key: ED, sign_alg: 'Ed25519' },
+      { fetchImpl: async (url, init) => {
+        if (String(url).endsWith('/quote/stock-basicinfo')) {
+          const codes = JSON.parse(String(init?.body)).code_list as string[];
+          sizes.push(codes.length);
+          return Response.json({ ret_code: 0, data: { basic_list: codes.map(code =>
+            ({ code, stock_type: 'DRVT', contract_size: 100 })) } });
+        }
+        return mockFetch({ authorized: AUTHORIZED, funds: FUNDS, positions })(url, init);
+      } });
+    expect(sizes).toEqual([400, 1]);
+  });
+
+  it('re-signs the metadata POST body once on clock skew', async () => {
+    let attempts = 0;
+    const raw = await fetchMooMooRawBundle({ app_key: 'ak', private_key: ED, sign_alg: 'Ed25519' },
+      { fetchImpl: async (url, init) => {
+        if (String(url).endsWith('/quote/stock-basicinfo')) {
+          if (++attempts === 1) return Response.json({ s: 'error', errcode: -12006 });
+          expect(new Headers(init?.headers).get('X-Timestamp')).toBe('1782971427455');
+          expect(JSON.parse(String(init?.body))).toEqual({ code_list: ['US.PATH270319P15000'] });
+          return Response.json({ ret_code: 0, data: { basic_list: [
+            { code: 'US.PATH270319P15000', stock_type: 'DRVT', contract_size: 100 },
+          ] } });
+        }
+        return mockFetch({ authorized: AUTHORIZED, funds: FUNDS,
+          positions: { s: 'ok', d: [{ code: 'US.PATH270319P15000' }] } })(url, init);
+      } });
+    expect(attempts).toBe(2);
+    expect(raw.option_basicinfo).toHaveLength(1);
+  });
+
+  it.each([
+    { ret_code: -7, ret_msg: 'invalid_symbol' },
+    { s: 'error', errcode: -1200 },
+    { ret_code: 0, data: {} },
+  ])('fails before applying a snapshot when metadata cannot be fetched (%j)', async response => {
+    await expect(fetchMooMooRawBundle({ app_key: 'ak', private_key: ED, sign_alg: 'Ed25519' },
+      { fetchImpl: async (url, init) => String(url).endsWith('/quote/stock-basicinfo')
+        ? Response.json(response)
+        : mockFetch({ authorized: AUTHORIZED, funds: FUNDS,
+          positions: { s: 'ok', d: [{ code: 'US.PATH270319P15000' }] } })(url, init) },
+    )).rejects.toThrow(/contract metadata unavailable/);
   });
 
   it('preserves numeric uint64 account IDs from the wire through account selection and request URLs', async () => {

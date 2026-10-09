@@ -12,6 +12,8 @@ export interface MooMooRawBundle {
   authorized: MooMooEnvelope;
   funds: MooMooEnvelope;
   positions: MooMooEnvelope;
+  /** Exact-code static contract metadata, retained for reproducible mapping. */
+  option_basicinfo?: Record<string, unknown>[];
 }
 
 export function envelopeOk(env: MooMooEnvelope): boolean {

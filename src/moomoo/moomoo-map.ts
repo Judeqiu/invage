@@ -96,7 +96,7 @@ function mapOptionPosition(
   if (!/^\d{4}-\d{2}-\d{2}$/.test(expiry) && parsedOk) expiry = parsed.expiry;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(expiry)) return { skip: skipPos(code, 'option missing expiry') };
   const multiplier = parseNum(
-    item.lot_size ?? item.contract_size ?? item.option_contract_multiplier ?? item.multiplier,
+    item.contract_size ?? item.lot_size ?? item.option_contract_multiplier ?? item.multiplier,
   );
   if (multiplier == null || !(multiplier > 0)) {
     return { skip: skipPos(code, 'option missing multiplier') };
@@ -246,7 +246,18 @@ export function mapMooMooBundleToStatement(bundle: MooMooRawBundle, channel: str
   const seen = new Set<string>();
   for (const row of rows) {
     if (row == null || typeof row !== 'object' || Array.isArray(row)) continue;
-    const got = mapPosition(row as Record<string, unknown>, channel, seen);
+    const item = row as Record<string, unknown>;
+    const metadata = bundle.option_basicinfo?.filter(info =>
+      info.code === item.code && info.stock_type === 'DRVT');
+    // Ignore ambiguous/missing profiles. Never borrow another contract's size.
+    const info = metadata?.length === 1 ? metadata[0] : undefined;
+    const enriched = info ? {
+      ...item,
+      contract_size: item.contract_size ?? info.contract_size,
+      lot_size: item.lot_size ?? info.lot_size,
+      stock_owner: ownerOf(item) ?? info.stock_owner,
+    } : item;
+    const got = mapPosition(enriched, channel, seen);
     if (got.skip) skipped.push(got.skip);
     else if (got.lot) lots.push(got.lot);
   }
