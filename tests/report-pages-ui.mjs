@@ -369,10 +369,10 @@ try {
   await page.click('#optionHistoryTable [data-history-id="expired-option"]');
   assert(/298\.50 USD/.test(await page.$eval('#optionHistoryDetail', node => node.textContent)), 'broker event P&L appears in detail');
   await page.click('#optionOpenTab');
-  await page.click('#openOptions [data-option-broker="ibkr"]');
+  await page.click('#channelPills [data-channel="ibkr"]');
   await page.click('#optionHistoryTab');
   await page.waitForFunction(() => document.getElementById('historyBroker')?.value === 'ibkr');
-  assert(!/WEBULL/.test(await page.$eval('#optionHistoryTable', node => node.textContent)), 'IBKR open option filter carries into history');
+  assert(!/WEBULL/.test(await page.$eval('#optionHistoryTable', node => node.textContent)), 'IBKR dashboard selection carries into history');
   await page.click('#optionOpenTab');
   const optionCells = await page.$$eval('#openOptions .option-ledger-row td', (cells) => cells.map((cell) => cell.textContent.trim()));
   assert.equal(optionCells[1], '-1', 'short position is signed');

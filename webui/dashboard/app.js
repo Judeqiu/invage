@@ -82,9 +82,7 @@ const el = {
 let payload = null;
 let selectedDate = 'live';
 let selectedChannel = MERGED_CHANNEL_VIEW;
-let optionBrokerFilter = 'all';
 let optionRightFilter = 'all';
-let riskBrokerFilter = 'all';
 let riskRightFilter = 'all';
 let riskShowAll = false;
 let highlightedUnderlying = null;
@@ -452,8 +450,7 @@ async function loadOptionHistory(more = false) {
 
 el.optionOpenTab?.addEventListener('click', () => setOptionTab('open'));
 el.optionHistoryTab?.addEventListener('click', () => {
-  const broker = selectedChannel === MERGED_CHANNEL_VIEW ? optionBrokerFilter : selectedChannel;
-  followHistoryBroker(broker);
+  followHistoryBroker(selectedChannel);
   setOptionTab('history');
 });
 for (const control of [el.historyBroker, el.historyRight, el.historyStatus, el.historyFrom, el.historyTo, el.historySearch]) {
@@ -1514,22 +1511,15 @@ function renderExpiryRisk(view, asOf) {
     if (shorts.length === 0) {
       el.expiryTable.innerHTML = emptyCard('No short option lots in this view.');
     } else {
-      const brokers = [...new Set(shorts.map((p) => p.channel))].sort();
-      if (riskBrokerFilter !== 'all' && !brokers.includes(riskBrokerFilter)) riskBrokerFilter = 'all';
       const chip = (kind, value, label, selected) =>
         `<button type="button" class="chip-btn${selected ? ' on' : ''}" data-risk-${kind}="${escapeHtml(value)}" aria-pressed="${selected}">${escapeHtml(label)}</button>`;
       const showAll = riskShowAll || radar.length === 0;
       const filtered = (showAll ? rows : radar).filter((r) =>
-        (riskBrokerFilter === 'all' || r.p.channel === riskBrokerFilter) &&
         (riskRightFilter === 'all' || r.p.option.right === riskRightFilter),
       ).sort((a, b) => (a.days ?? Infinity) - (b.days ?? Infinity) || (b.estimate.probability ?? -1) - (a.estimate.probability ?? -1));
       const head = ['Contract', 'Spot', 'Strike', 'Moneyness %', 'Expiry', 'DTE', 'IV', 'Premium', 'If assigned', 'Prob. ITM', 'Broker'];
       el.expiryTable.innerHTML = `<div class="metric-card table-card risk-card">
         <div class="risk-toolbar">
-          <div class="option-filter-group"><span class="label-eyebrow">Broker</span>
-            ${chip('broker', 'all', 'All', riskBrokerFilter === 'all')}
-            ${brokers.map((b) => chip('broker', b, b === DEFAULT_CHANNEL ? 'Unassigned' : b.toUpperCase(), riskBrokerFilter === b)).join('')}
-          </div>
           <div class="option-filter-group"><span class="label-eyebrow">Right</span>
             ${['all', 'put', 'call'].map((r) => chip('right', r, r === 'all' ? 'All' : r.toUpperCase(), riskRightFilter === r)).join('')}
           </div>
@@ -1571,14 +1561,12 @@ function renderExpiryRisk(view, asOf) {
 
 el.expiryTable?.addEventListener('click', (event) => {
   const chip = event.target.closest('button');
-  if (chip?.dataset.riskBroker != null) riskBrokerFilter = chip.dataset.riskBroker;
-  else if (chip?.dataset.riskRight != null) riskRightFilter = chip.dataset.riskRight;
+  if (chip?.dataset.riskRight != null) riskRightFilter = chip.dataset.riskRight;
   else if (chip?.dataset.riskScope != null) riskShowAll = chip.dataset.riskScope === 'all';
   else {
     const row = event.target.closest('[data-risk-underlying]');
     if (!row) return;
     highlightedUnderlying = row.dataset.riskUnderlying;
-    optionBrokerFilter = 'all';
     optionRightFilter = 'all';
     const view = buildView(selectedDate, selectedChannel);
     if (view) renderOpenOptions(view);
@@ -1684,19 +1672,12 @@ function renderOpenOptions(view) {
       `The full open option book, grouped by expiry month. Opening dates and STO net credits require matching recorded fills; missing values stay unknown. ${dates.length ? `Broker positions as of ${dates.join(' · ')}.` : 'Broker position date unavailable.'}`,
     );
   }
-  const brokers = [...new Set(allOptions.map((p) => p.channel || DEFAULT_CHANNEL))].sort();
-  if (optionBrokerFilter !== 'all' && !brokers.includes(optionBrokerFilter)) optionBrokerFilter = 'all';
   const opts = allOptions.filter((p) =>
-    (optionBrokerFilter === 'all' || p.channel === optionBrokerFilter) &&
     (optionRightFilter === 'all' || p.option.right === optionRightFilter),
   );
   const chip = (kind, value, label, selected) =>
     `<button type="button" class="chip-btn${selected ? ' on' : ''}" data-option-${kind}="${escapeHtml(value)}" aria-pressed="${selected}">${escapeHtml(label)}</button>`;
   const filters = `<div class="option-ledger-filters">
-    <div class="option-filter-group"><span class="label-eyebrow">Broker</span>
-      ${chip('broker', 'all', 'All', optionBrokerFilter === 'all')}
-      ${brokers.map((b) => chip('broker', b, b === DEFAULT_CHANNEL ? 'Unassigned' : b.toUpperCase(), optionBrokerFilter === b)).join('')}
-    </div>
     <div class="option-filter-group"><span class="label-eyebrow">Right</span>
       ${['all', 'put', 'call'].map((r) => chip('right', r, r.toUpperCase() === 'ALL' ? 'All' : r.toUpperCase(), optionRightFilter === r)).join('')}
     </div>
@@ -1805,8 +1786,7 @@ el.openOptions?.addEventListener('click', (event) => {
       .catch(error => { button.textContent = 'Price unavailable'; button.title = error.message || String(error); });
     return;
   }
-  if (button.dataset.optionBroker != null) optionBrokerFilter = button.dataset.optionBroker;
-  else if (button.dataset.optionRight != null) optionRightFilter = button.dataset.optionRight;
+  if (button.dataset.optionRight != null) optionRightFilter = button.dataset.optionRight;
   else if (button.dataset.optionMonth != null) {
     const month = button.dataset.optionMonth;
     if (collapsedOptionMonths.has(month)) collapsedOptionMonths.delete(month);
