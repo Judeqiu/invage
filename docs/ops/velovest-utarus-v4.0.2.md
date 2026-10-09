@@ -9,7 +9,7 @@ boundaries. Other instances remain in local account mode unless explicitly confi
 
 Velovest has a dedicated loopback authority on port 3330, authority and agent ID
 velovest, its own PostgreSQL database velovest_authority, and a protected environment
-file /etc/velovest/authority.env. Existing account UUIDs, password hashes, profiles,
+file /etc/velovest-authority/authority.env. Existing account UUIDs, password hashes, profiles,
 usage totals and report/chat ownership must be preserved. Billing is unconfigured;
 retain unlimited access and migrate historical usage into its original period.
 Do not enroll users into Binary's separate authority or change its services.
