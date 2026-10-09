@@ -16,7 +16,8 @@ export interface OpenOptionTradeDetail {
 function sameContract(row: Pick<OptionExecution, 'channel' | 'account_id' | 'underlying' | 'right' | 'expiry' | 'strike' | 'multiplier'> & { contract_id?: string }, holding: Holding, accountId?: string): boolean {
   const option = holding.option;
   if (!option || row.channel !== holding.channel || accountId && row.account_id !== accountId) return false;
-  if (holding.broker_ref?.native_id && row.contract_id !== holding.broker_ref.native_id) return false;
+  // Webull position IDs identify a holding cycle, not an option contract.
+  if (holding.broker_ref?.native_id && !row.contract_id?.startsWith('webull:') && row.contract_id !== holding.broker_ref.native_id) return false;
   let underlying: string;
   try { underlying = canonicalOptionUnderlying(option.underlying, option); }
   catch { return false; }

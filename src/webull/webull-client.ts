@@ -245,6 +245,23 @@ export async function fetchWebullRawBundle(
     credentials,
     fetchImpl,
   });
+  const option_history: unknown[] = [];
+  const seen = new Set<string>();
+  let pagination_key = '';
+  const end_time = new Date().toISOString();
+  for (let page = 0; ; page++) {
+    if (page >= 1000) throw new BrokerParseError('Webull history exceeded the page limit.');
+    if (page) await new Promise(resolve => setTimeout(resolve, 1000));
+    const response = asRecord(await webullGet({ host, path: '/trading/orders/historical-orders/list',
+      query: { account_id, start_time: '2018-05-21T00:00:00.000Z', end_time,
+        ...(pagination_key ? { pagination_key } : {}) }, credentials, fetchImpl }));
+    if (!Array.isArray(response?.data)) throw new BrokerParseError('Webull order history is incomplete.');
+    option_history.push(...response.data);
+    const next = response.pagination_key;
+    if (next == null || next === '') break;
+    if (typeof next !== 'string' || seen.has(next)) throw new BrokerParseError('Webull history pagination did not advance.');
+    seen.add(next); pagination_key = next;
+  }
   return {
     schema: 'invage.webull.raw.v1',
     fetched_at: new Date().toISOString(),
@@ -254,6 +271,7 @@ export async function fetchWebullRawBundle(
     accounts,
     balances,
     positions,
+    option_history,
   };
 }
 

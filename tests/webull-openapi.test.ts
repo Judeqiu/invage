@@ -161,6 +161,7 @@ describe('Webull fetchRaw', () => {
         return Response.json(BALANCES);
       }
       if (href.includes('/trading/assets/positions/list')) return Response.json(POSITIONS);
+      if (href.includes('/trading/orders/historical-orders/list')) return Response.json({ data: [] });
       throw new Error(`unexpected ${href}`);
     };
   }

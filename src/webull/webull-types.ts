@@ -24,4 +24,5 @@ export interface WebullRawBundle {
   accounts: unknown;
   balances: unknown;
   positions: unknown;
+  option_history?: unknown[];
 }
