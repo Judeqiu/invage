@@ -1430,6 +1430,53 @@ function renderOverview(view) {
   renderChannelPills(view);
 }
 
+let optionChatPending = false;
+
+function optionDiscussionPrompt(p, view, asOf) {
+  const o = p.option;
+  const brokerDate = view.isLive ? payload.brokerAsOf?.[p.channel]
+    : payload.model?.history?.find(row => row.date === view.label)?.brokerAsOf?.[p.channel];
+  return [
+    `Let's discuss this specific option position: ${optionUnderlyingLabel(o)} ${o.side} ${o.right}, strike ${o.strike}${p.currency ? ` ${p.currency}` : ''}, expiry ${o.expiry}.`,
+    `Position identifier: ${p.ticker}. Broker/channel: ${p.channel}. Quantity: ${p.units} contracts. Multiplier: ${o.multiplier}.`,
+    `Selected dashboard: ${view.isLive ? 'latest view' : 'historical snapshot'} as of ${asOf}. Broker positions as of ${brokerDate || 'unknown'}. These are snapshot details; verify the current holding and quotes before assessing it.`,
+    'Start with a brief plain-language assessment of this contract and its expiry and assignment risks. Compare holding, closing, and rolling where relevant, explain the tradeoffs, and ask one useful follow-up question. Focus on this exact contract and broker position.',
+  ].join('\n\n');
+}
+
+async function startOptionDiscussion(button) {
+  if (optionChatPending) return;
+  optionChatPending = true;
+  const status = document.getElementById('optionChatStatus');
+  status.textContent = 'Starting your option discussion…';
+  status.classList.remove('error');
+  el.expiryTable.querySelectorAll('[data-option-discuss]').forEach(item => { item.disabled = true; });
+  button.textContent = 'Opening…';
+  try {
+    // Omitting conversationId starts a focused conversation without a generic opener.
+    const response = await fetch('/api/chat/messages', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: button.dataset.optionDiscuss, composeSource: { kind: 'host_seed' } }),
+    });
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.message || body.error || 'Chat is unavailable.');
+    if (typeof body.conversationId !== 'string' || !body.conversationId.trim()) {
+      throw new Error('The chat did not return a conversation.');
+    }
+    const destination = `/?c=${encodeURIComponent(body.conversationId)}`;
+    // The dashboard is embedded in the app shell; navigate the shell, not its iframe.
+    window.top.location.assign(destination);
+  } catch (error) {
+    status.textContent = `Couldn't open the discussion. ${error instanceof Error ? error.message : 'Please try again.'}`;
+    status.classList.add('error');
+  } finally {
+    optionChatPending = false;
+    el.expiryTable.querySelectorAll('[data-option-discuss]').forEach(item => { item.disabled = false; item.textContent = 'Discuss'; });
+  }
+}
+
 function renderExpiryRisk(view, asOf) {
   if (!el.expiryRow) return;
   const hasOptions = (view.optionCount || 0) > 0;
@@ -1476,7 +1523,7 @@ function renderExpiryRisk(view, asOf) {
     el.expiryLead.textContent =
       shorts.length === 0
         ? 'No short option lots in this view. Section 03 (holdings table) lists every open position.'
-        : `The risk radar prioritizes open contracts with probability of finishing in the money above 30%, sorted by nearest expiry first and then by risk. Use All open to inspect the other contracts; when none qualify, they appear automatically. Section 03 contains the complete open-positions ledger. Click a ticker to highlight the same underlying in Section 03.${missing ? ` ${missing} contract${missing === 1 ? '' : 's'} could not be scored from the available quote and mark.` : ''}`;
+        : `The risk radar prioritizes open contracts with probability of finishing in the money above 30%, sorted by nearest expiry first and then by risk. Use All open to inspect the other contracts; when none qualify, they appear automatically. Choose Discuss to start a chat about that contract, with its details included. Click a ticker to highlight the same underlying in Section 03.${missing ? ` ${missing} contract${missing === 1 ? '' : 's'} could not be scored from the available quote and mark.` : ''}`;
   }
 
   el.expiryRow.innerHTML = [
@@ -1539,7 +1586,9 @@ function renderExpiryRisk(view, asOf) {
             const itm = moneyness != null && (o.right === 'put' ? moneyness < 0 : moneyness > 0);
             const premium = Number(p.premiumAbsolute || Number(p.avgCost) * Number(p.units));
             return `<tr class="risk-row risk-row-${tone}" data-risk-underlying="${escapeHtml(o.underlying)}" tabindex="0" aria-label="Highlight ${escapeHtml(o.underlying)} in open options">
-              <td><span class="risk-contract">${tone === 'danger' ? '<span class="pulse-dot" aria-hidden="true"></span>' : ''}<strong>${escapeHtml(o.underlying || p.ticker)}</strong><span class="risk-contract-meta">${escapeHtml(o.right.toUpperCase())} · ${o.right === 'put' ? 'CSP' : 'CC'} · ${p.units}x</span></span></td>
+              <td><span class="risk-contract">${tone === 'danger' ? '<span class="pulse-dot" aria-hidden="true"></span>' : ''}<strong>${escapeHtml(o.underlying || p.ticker)}</strong><span class="risk-contract-meta">${escapeHtml(o.right.toUpperCase())} · ${o.right === 'put' ? 'CSP' : 'CC'} · ${p.units}x</span></span>
+                <button type="button" class="option-discuss" data-option-discuss="${escapeHtml(optionDiscussionPrompt(p, view, asOf))}" aria-label="Discuss ${escapeHtml(`${optionUnderlyingLabel(o)} ${o.side} ${o.right}, strike ${o.strike}, expiry ${o.expiry}, ${p.channel}`)}" title="Start a new chat with this contract’s details"${optionChatPending ? ' disabled' : ''}>Discuss</button>
+              </td>
               <td class="num">${spot > 0 ? Number(spot).toFixed(2) : '—'}</td>
               <td class="num">${fmtPrettyMoney(o.strike, p.currency || reportingCcyCode(view), 0)}</td>
               <td class="num ${itm ? 'down' : 'muted'}">${moneyness == null ? '—' : `${moneyness >= 0 ? '+' : ''}${moneyness.toFixed(1)}%`}</td>
@@ -1562,6 +1611,10 @@ function renderExpiryRisk(view, asOf) {
 
 el.expiryTable?.addEventListener('click', (event) => {
   const chip = event.target.closest('button');
+  if (chip?.dataset.optionDiscuss != null) {
+    void startOptionDiscussion(chip);
+    return;
+  }
   if (chip?.dataset.riskRight != null) riskRightFilter = chip.dataset.riskRight;
   else if (chip?.dataset.riskScope != null) riskShowAll = chip.dataset.riskScope === 'all';
   else {

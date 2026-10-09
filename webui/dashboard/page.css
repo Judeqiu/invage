@@ -79,6 +79,13 @@
 .risk-table .risk-row:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
 .risk-contract { display: flex; align-items: center; gap: 0.4rem; }
 .risk-contract-meta { font-size: 0.72rem; color: var(--muted-foreground); }
+.option-discuss { display: inline-flex; align-items: center; min-height: 32px; margin-top: 0.45rem; padding: 0.3rem 0.75rem; border: 1px solid color-mix(in oklab, var(--brand) 35%, var(--border)); border-radius: 0.45rem; background: var(--card); color: var(--brand); font: inherit; font-size: 0.75rem; font-weight: 600; cursor: pointer; }
+.option-discuss:hover { background: color-mix(in oklab, var(--brand) 10%, var(--card)); }
+.option-discuss:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.option-discuss:disabled { opacity: 0.6; cursor: wait; }
+.option-chat-status { margin: 0.65rem 0 0; font-size: 0.8125rem; color: var(--muted-foreground); }
+.option-chat-status:empty { display: none; }
+.option-chat-status.error { color: var(--danger); }
 .risk-method { padding: 0.8rem 1.15rem; border-top: 1px solid var(--border); font-size: 0.75rem; color: var(--muted-foreground); }
 .option-ledger-row.option-underlying-highlight td { background: color-mix(in oklab, var(--brand) 15%, var(--card)); }
 .auto-label { display: flex; align-items: center; gap: 0.35rem; font-size: 0.8rem; color: var(--muted-foreground); }

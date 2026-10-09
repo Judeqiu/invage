@@ -215,9 +215,33 @@ const files = new Map([
   ['/report.css', 'webui/report.css'],
 ]);
 
+const discussionRequests = [];
+let discussionFailure = false;
 const server = createServer(async (req, res) => {
   try {
     const url = req.url.split('?')[0];
+    if (url === '/discussion-shell') {
+      res.setHeader('Content-Type', 'text/html');
+      res.end('<iframe title="Dashboard" src="/dashboard/" style="width:100%;height:900px;border:0"></iframe>');
+      return;
+    }
+    if (url === '/') {
+      res.setHeader('Content-Type', 'text/html');
+      res.end('<h1>Focused option chat</h1>');
+      return;
+    }
+    if (url === '/api/chat/messages' && req.method === 'POST') {
+      let raw = '';
+      for await (const chunk of req) raw += chunk;
+      discussionRequests.push(JSON.parse(raw));
+      await new Promise(resolve => setTimeout(resolve, 150));
+      res.setHeader('Content-Type', 'application/json');
+      res.statusCode = discussionFailure ? 503 : 200;
+      res.end(JSON.stringify(discussionFailure
+        ? { message: 'Chat is temporarily unavailable.' }
+        : { kind: 'run', conversationId: 'option-chat-123', messageId: 'run-123' }));
+      return;
+    }
     if (url === '/api/domain/invage/dashboard') {
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify(payload));
@@ -347,6 +371,51 @@ try {
   await page.click('#expiryTable [data-risk-right="all"]');
   await page.click('#expiryTable .risk-row');
   assert(await page.$('#openOptions .option-underlying-highlight'), 'risk row highlights same underlying in Section 03');
+  const discussionPage = await browser.newPage();
+  discussionPage.on('pageerror', error => errors.push(String(error)));
+  await discussionPage.setViewport({ width: 390, height: 844 });
+  await discussionPage.goto(`http://127.0.0.1:${port}/discussion-shell`);
+  const dashboardFrame = discussionPage.frames().find(frame => frame.url().endsWith('/dashboard/'));
+  await dashboardFrame.waitForSelector('[data-option-discuss]');
+  await dashboardFrame.click('[data-risk-scope="all"]');
+  assert.equal(await dashboardFrame.$$eval('[data-option-discuss]', buttons => buttons.length), 2, 'each visible option has a discussion action');
+  const discussionButtons = await dashboardFrame.$$eval('[data-option-discuss]', buttons => buttons.map(button => ({
+    label: button.getAttribute('aria-label'), prompt: button.dataset.optionDiscuss,
+  })));
+  assert.notEqual(discussionButtons[0].prompt, discussionButtons[1].prompt, 'same underlying with different expiry gets distinct context');
+  assert(discussionButtons[0].label.includes('2026-09-18'), 'accessible action identifies exact contract');
+  discussionFailure = true;
+  await dashboardFrame.focus('[data-option-discuss]');
+  await discussionPage.keyboard.press('Enter');
+  await dashboardFrame.waitForFunction(() => document.querySelector('[data-option-discuss]')?.textContent === 'Opening…');
+  assert(await dashboardFrame.$$eval('[data-option-discuss]', buttons => buttons.every(button => button.disabled)), 'duplicate clicks are disabled during chat launch');
+  await dashboardFrame.waitForFunction(() => document.getElementById('optionChatStatus')?.textContent.includes('temporarily unavailable'));
+  assert(discussionPage.url().endsWith('/discussion-shell'), 'failed chat leaves dashboard in place');
+  assert.equal(await dashboardFrame.$$eval('.option-underlying-highlight', rows => rows.length), 0, 'Discuss does not trigger row highlight');
+  assert(await dashboardFrame.$eval('[data-option-discuss]', button => !button.disabled), 'failed chat can be retried');
+  await dashboardFrame.$eval('[data-option-discuss]', button => button.scrollIntoView());
+  await discussionPage.screenshot({ path: '/tmp/invage-option-discuss-mobile.png' });
+  discussionFailure = false;
+  await dashboardFrame.click('[data-option-discuss]');
+  await discussionPage.waitForFunction(() => location.search === '?c=option-chat-123');
+  assert.equal(discussionPage.frames().length, 1, 'discussion navigates app shell out of iframe');
+  const discussion = discussionRequests.at(-1);
+  assert.equal(discussion.conversationId, undefined, 'discussion starts a new focused chat');
+  assert(discussion.text.includes('AAPL  260918P00140000'), 'chat gets full contract identifier');
+  assert(discussion.text.includes('strike 140 USD') && discussion.text.includes('expiry 2026-09-18'), 'chat gets strike, currency and expiry');
+  assert(discussion.text.includes('Broker/channel: ibkr') && discussion.text.includes('Quantity: 1 contracts. Multiplier: 100'), 'chat gets broker and position size');
+  assert(discussion.text.includes('as of 2026-09-16') && discussion.text.includes('verify the current holding'), 'snapshot date and freshness preserved');
+  assert.equal(discussionRequests.length, 2, 'one request per deliberate attempt');
+  await discussionPage.close();
+  const archivedDiscussion = await page.evaluate(() => {
+    const position = payload.model.live.positions.find(p => p.instrument === 'option');
+    payload.model.history.push({ date: '2026-09-01', brokerAsOf: { ibkr: '2026-08-31' } });
+    const prompt = optionDiscussionPrompt(position, { isLive: false, label: '2026-09-01' }, '2026-09-01');
+    payload.model.history.pop();
+    return prompt;
+  });
+  assert(archivedDiscussion.includes('historical snapshot as of 2026-09-01'), 'historical discussion preserves selected date');
+  assert(archivedDiscussion.includes('Broker positions as of 2026-08-31'), 'historical discussion uses archived broker date');
   assert(await page.$('#openOptions .option-month-total'), 'expiry month total row');
   assert(await page.$('#openOptions .option-ledger-row'), 'option contract row');
   await page.click('#optionHistoryTab');
