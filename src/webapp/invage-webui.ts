@@ -8,6 +8,7 @@
  * (utarus SPA manifest → ChatPage).
  */
 
+import { readFileSync } from 'node:fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import type { ChatEmptyState, DomainWebUiExtension } from 'utarus';
@@ -19,6 +20,10 @@ import { createDashboardApiRouter } from './dashboard-api.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+// Both src/webapp and dist/webapp resolve to the deployed app package.
+const { version: appVersion } = JSON.parse(
+  readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
+) as { version: string };
 
 /** Absolute path to invage/webui (static domain assets). */
 export function invageWebUiStaticDir(): string {
@@ -141,6 +146,7 @@ export function createInvageWebUi(): DomainWebUiExtension {
   return {
     agentKey: 'invage',
     productName: productDisplayName(),
+    version: appVersion,
     defaultPath: '/dashboard',
     chatEmptyState: empty,
     nav: [
