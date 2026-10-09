@@ -1,6 +1,7 @@
 import type { OptionExecution } from '../brokers/option-executions.js';
 import type { Holding } from '../market/types.js';
 import { canonicalOptionUnderlying } from '../brokers/option-symbol.js';
+import type { OptionLifecycleEvent } from '../brokers/option-events.js';
 
 export interface OpenOptionTradeDetail {
   openedFrom: string;
@@ -12,7 +13,7 @@ export interface OpenOptionTradeDetail {
   currency: string | null;
 }
 
-function sameContract(row: OptionExecution, holding: Holding, accountId?: string): boolean {
+function sameContract(row: Pick<OptionExecution, 'channel' | 'account_id' | 'underlying' | 'right' | 'expiry' | 'strike' | 'multiplier'> & { contract_id?: string }, holding: Holding, accountId?: string): boolean {
   const option = holding.option;
   if (!option || row.channel !== holding.channel || accountId && row.account_id !== accountId) return false;
   if (holding.broker_ref?.native_id && row.contract_id !== holding.broker_ref.native_id) return false;
@@ -29,6 +30,7 @@ export function openOptionTradeDetails(
   portfolio: Record<string, Holding>,
   executions: OptionExecution[] | undefined,
   accountsByChannel: Record<string, string> = {},
+  events: OptionLifecycleEvent[] = [],
 ): Record<string, OpenOptionTradeDetail> {
   if (!executions?.length) return {};
   const out: Record<string, OpenOptionTradeDetail> = {};
@@ -39,9 +41,17 @@ export function openOptionTradeDetails(
     const rows = executions.filter(row => sameContract(row, holding, accountsByChannel[channel]))
       .sort((a, b) => a.executed_at.localeCompare(b.executed_at) || a.execution_id.localeCompare(b.execution_id));
     if (new Set(rows.map(row => row.account_id)).size > 1) continue;
+    const terminal = events.filter(event => sameContract(event, holding, accountsByChannel[channel]) &&
+      (event.kind !== 'assignment' || short) && (event.kind !== 'exercise' || !short));
+    if (new Set([...rows, ...terminal].map(row => row.account_id)).size > 1) continue;
+    const timeline = [...rows.map(row => ({ at: row.executed_at, id: row.execution_id, row })),
+      ...terminal.map(event => ({ at: `${event.date}T23:59:59`, id: event.id, row: {
+        ...event, executed_at: `${event.date}T23:59:59`, effect: 'close' as const, side: short ? 'buy' as const : 'sell' as const,
+        gross_premium: '0', commission: null,
+      } }))].sort((a, b) => a.at.localeCompare(b.at) || a.id.localeCompare(b.id));
     const lots: Array<{ date: string; remaining: number; netPerContract: number | null; grossPerContract: number; currency: string }> = [];
     let invalid = false;
-    for (const row of rows) {
+    for (const { row } of timeline) {
       const opening = row.effect === 'open' && row.side === (short ? 'sell' : 'buy');
       const closing = row.effect === 'close' && row.side === (short ? 'buy' : 'sell');
       if (!opening && !closing) continue;

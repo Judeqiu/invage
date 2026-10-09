@@ -154,7 +154,18 @@ export async function tigerExecute(args: {
   if (!res.ok) {
     throw new BrokerHttpError(`Tiger ${args.method} HTTP ${res.status}`, String(res.status));
   }
-  const json = (await res.json()) as TigerGatewayEnvelope;
+  const history = args.method === 'orders' || args.method === 'order_transactions';
+  const exactFields = new Set(['id', 'orderId', 'accountId', 'filledQuantity', 'filledPrice',
+    'filledAmount', 'commission', 'gst', 'avgFillPrice', 'strike', 'multiplier']);
+  const parse = (text: string) => JSON.parse(text, (key, value, context?: { source?: string }) => {
+    if (!history || !exactFields.has(key) || typeof value !== 'number') return value;
+    if (context?.source && /^-?\d+(?:\.\d+)?$/.test(context.source)) return context.source;
+    if (['id', 'orderId', 'accountId'].includes(key) && !Number.isSafeInteger(value)) {
+      throw new BrokerParseError('Tiger history ID cannot be read without precision loss.');
+    }
+    return String(value);
+  });
+  const json = parse(await res.text()) as TigerGatewayEnvelope;
   if (typeof json.sign === 'string' && json.sign) {
     const sign = json.sign;
     // Tiger signs the original request timestamp, not the response JSON.
@@ -167,12 +178,49 @@ export async function tigerExecute(args: {
   // Tiger may encode data as a JSON string (as handled by TigerResponse in its SDK).
   if (typeof json.data === 'string') {
     try {
-      json.data = JSON.parse(json.data);
+      json.data = parse(json.data);
     } catch {
       throw new BrokerHttpError(`Tiger ${args.method} response data is not valid JSON.`);
     }
   }
   return json;
+}
+
+async function fetchOptionHistory(args: {
+  gateway: string; credentials: TigerCredentials; fetchImpl: typeof fetch; timestamp?: string;
+}): Promise<NonNullable<TigerRawBundle['option_history']>> {
+  const start = 946684800000;
+  const end = Date.now();
+  async function pages(method: 'orders' | 'order_transactions', limit: number) {
+    const rows: Record<string, unknown>[] = [];
+    const seen = new Set<string>();
+    let token = '';
+    for (let page = 0; ; page++) {
+      if (page >= 1000) throw new BrokerParseError('Tiger option history exceeded the page limit.');
+      // order_transactions is limited to 60 requests/minute. Orders allow 120.
+      if (page) await new Promise(resolve => setTimeout(resolve, method === 'orders' ? 500 : 1000));
+      const env = await tigerExecute({ ...args, method, biz: {
+        account: args.credentials.account, sec_type: method === 'orders' ? 'ALL' : 'OPT',
+        start_date: start, end_date: end, limit, page_token: token,
+      } });
+      if (!envelopeOk(env)) throw new BrokerHttpError(`Tiger ${method} history failed: ${env.message ?? env.code}`, String(env.code));
+      const data = env.data as { items?: unknown; nextPageToken?: unknown } | undefined;
+      if (!Array.isArray(data?.items) || data.items.some(row => !row || typeof row !== 'object' || Array.isArray(row))) {
+        throw new BrokerParseError(`Tiger ${method} history response is incomplete.`);
+      }
+      rows.push(...data.items as Record<string, unknown>[]);
+      if (data.nextPageToken == null || data.nextPageToken === '') break;
+      if (typeof data.nextPageToken !== 'string' || seen.has(data.nextPageToken)) {
+        throw new BrokerParseError(`Tiger ${method} history pagination did not advance.`);
+      }
+      seen.add(data.nextPageToken);
+      token = data.nextPageToken;
+    }
+    return rows;
+  }
+  const orders = await pages('orders', 300);
+  const transactions = await pages('order_transactions', 100);
+  return { start, end, orders, transactions };
 }
 
 function skippedSleeve(env: TigerGatewayEnvelope): TigerGatewayEnvelope {
@@ -282,6 +330,11 @@ export async function fetchTigerRawBundle(
   const STK = await positions('STK');
   const OPT = await positions('OPT');
   const FUND = await positions('FUND');
+  const optionRows = Array.isArray(OPT.data) ? OPT.data :
+    OPT.data && typeof OPT.data === 'object' ? (OPT.data as { items?: unknown }).items : undefined;
+  const hasOptions = envelopeOk(OPT) && Array.isArray(optionRows) && optionRows.length > 0;
+  const option_history = hasOptions && account_kind !== 'global'
+    ? await fetchOptionHistory({ gateway, credentials, fetchImpl, timestamp: opts?.timestamp }) : undefined;
   return {
     schema: 'invage.tiger.raw.v1',
     fetched_at,
@@ -292,5 +345,6 @@ export async function fetchTigerRawBundle(
     managed_accounts: managed,
     assets: { method: assetMethod, envelope: assetsEnv },
     positions: { STK, OPT, FUND },
+    ...(option_history ? { option_history } : {}),
   };
 }

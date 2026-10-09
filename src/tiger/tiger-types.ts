@@ -1,4 +1,4 @@
-export type TigerHttpMethod = 'accounts' | 'positions' | 'assets' | 'prime_assets';
+export type TigerHttpMethod = 'accounts' | 'positions' | 'assets' | 'prime_assets' | 'orders' | 'order_transactions';
 
 export interface TigerGatewayEnvelope {
   code: number | string;
@@ -21,6 +21,13 @@ export interface TigerRawBundle {
     STK: TigerGatewayEnvelope;
     OPT: TigerGatewayEnvelope;
     FUND: TigerGatewayEnvelope;
+  };
+  /** Complete history pages, retained independently of the positions snapshot. */
+  option_history?: {
+    start: number;
+    end: number;
+    orders: Record<string, unknown>[];
+    transactions: Record<string, unknown>[];
   };
 }
 

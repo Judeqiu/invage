@@ -19,6 +19,13 @@ describe('option execution journal', () => {
     expect(() => mergeOptionExecutions(rows, [{ ...rows[0], commission: '-2' }])).toThrow(/conflict/i);
     expect(mergeOptionExecutions(rows, [{ ...rows[0], account_id: 'U2' }])).toHaveLength(2);
   });
+  it('enriches unreported fees after settlement without downgrading known fees or revising other money', () => {
+    const known = parseFlexOptionExecutions(statement(trade()))!;
+    const unknown = [{ ...known[0], commission: null }];
+    expect(mergeOptionExecutions(unknown, known)).toEqual(known);
+    expect(mergeOptionExecutions(known, unknown)).toEqual(known);
+    expect(() => mergeOptionExecutions(unknown, [{ ...known[0], gross_premium: '1' }])).toThrow(/conflict/i);
+  });
   it('subtracts buybacks and their commissions without using cumulative position cost', () => {
     const close = trade().replace('tradeID="1"', 'tradeID="2"').replace('buySell="SELL"', 'buySell="BUY"').replace('openCloseIndicator="O"', 'openCloseIndicator="C"').replace('quantity="-2"', 'quantity="2"').replace('proceeds="5140.00"', 'proceeds="-1200.00"');
     const j = buildExecutionJournal(parseFlexOptionExecutions(statement(trade() + close))!);

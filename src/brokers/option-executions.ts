@@ -74,7 +74,16 @@ export function mergeOptionExecutions(existing: unknown, incoming: unknown): Opt
     const row = assertOptionExecution(raw);
     const key = JSON.stringify([row.channel, row.account_id, row.execution_id]);
     const prior = byId.get(key);
-    if (prior && JSON.stringify(prior) !== JSON.stringify(row)) throw new Error(`Execution conflict: ${key}`);
+    if (prior && JSON.stringify(prior) !== JSON.stringify(row)) {
+      // An unreported fee may become available after settlement. Keep known
+      // fees when an overlapping source still omits them; never revise money.
+      if ((prior.commission === null || row.commission === null) &&
+          JSON.stringify({ ...prior, commission: null }) === JSON.stringify({ ...row, commission: null })) {
+        byId.set(key, prior.commission === null ? row : prior);
+        continue;
+      }
+      throw new Error(`Execution conflict: ${key}`);
+    }
     byId.set(key, row);
   }
   return [...byId.values()].sort((a, b) => b.executed_at.localeCompare(a.executed_at) || a.execution_id.localeCompare(b.execution_id));

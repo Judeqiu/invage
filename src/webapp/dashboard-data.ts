@@ -374,7 +374,7 @@ export async function loadDashboardForSlug(
     };
     for (const [id, conn] of Object.entries(conns)) {
       if (conn.account_id) accountsByChannel[conn.channel] = conn.account_id;
-      if (['ibkr', 'moomoo'].includes(conn.broker_id)) premiumSupportedChannels.push(conn.channel);
+      if (['ibkr', 'moomoo', 'tiger'].includes(conn.broker_id)) premiumSupportedChannels.push(conn.channel);
       if (conn.last_sync?.ok) recordDate(conn.channel, conn.last_sync.as_of);
       const previous = latestSuccessfulBrokerSyncRun(slug, conn.channel);
       recordDate(conn.channel, previous?.as_of);
@@ -415,7 +415,7 @@ export async function loadDashboardForSlug(
     model,
     benchmark,
     warnings: model.live.issues,
-    optionTradeDetails: openOptionTradeDetails(portfolio, state.option_executions, accountsByChannel),
+    optionTradeDetails: openOptionTradeDetails(portfolio, state.option_executions, accountsByChannel, state.option_events),
     premiumJournal: { available: journal.available, daily: journal.daily,
       channels: [...new Set(journal.executions.map(row => row.channel))] },
     premiumSupportedChannels,

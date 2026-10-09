@@ -129,7 +129,7 @@ export function createDashboardApiRouter(): Router {
       if (!holding?.option) { res.status(404).json({ error: 'not_found', message: 'Open option position not found.' }); return; }
       const accounts = Object.fromEntries(Object.values(readBrokerAccountModel(snapshot.state).connections)
         .filter(conn => conn.account_id).map(conn => [conn.channel, conn.account_id!]));
-      const detail = openOptionTradeDetails({ [key]: holding }, snapshot.state.option_executions, accounts)[key];
+      const detail = openOptionTradeDetails({ [key]: holding }, snapshot.state.option_executions, accounts, snapshot.state.option_events)[key];
       if (!detail || detail.openedFrom !== detail.openedTo) {
         res.status(409).json({ error: 'opening_date_unavailable', message: 'A single opening date is not confirmed by the recorded fills.' }); return;
       }

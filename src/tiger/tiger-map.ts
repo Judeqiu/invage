@@ -10,6 +10,7 @@ import {
 import type { BrokerConnectionMetrics } from '../state/portfolio-state.js';
 import { envelopeOk, type TigerGatewayEnvelope, type TigerRawBundle } from './tiger-types.js';
 import { BrokerParseError } from '../brokers/errors.js';
+import { mapTigerOptionHistory } from './tiger-executions.js';
 
 export function parseNum(value: unknown): number | undefined {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
@@ -346,5 +347,10 @@ export function mapTigerBundleToStatement(bundle: TigerRawBundle, channel: strin
     skipped,
   };
   if (mapped.metrics) statement.metrics = mapped.metrics;
+  const history = mapTigerOptionHistory(bundle, lots, channel);
+  if (history) {
+    statement.option_executions = history.executions;
+    statement.option_events = history.events;
+  }
   return statement;
 }
