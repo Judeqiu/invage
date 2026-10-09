@@ -42,3 +42,5 @@ existing username and email login, wrong-password rejection, previous chats/file
 dashboard and broker history, and cross-user denial. Check centralized opening usage
 and a reserve/settle/release transaction. Preserve matching backups for rollback;
 a package downgrade alone cannot reverse UUID or shared-ledger migration.
+
+Use INVAGE_DISABLE_SCHEDULERS=true in isolated rehearsals and omit external channel credentials. The secondary Drive framework never starts a task scheduler.

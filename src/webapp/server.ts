@@ -78,7 +78,7 @@ if (isMain) {
       const { createFramework } = await import('utarus');
       const { buildFrameworkAgentList } = await import('../agents/framework-agents.js');
       const { HOST_AGENT_ID, readProductProfile } = await import('../agents/roster.js');
-      framework = await createFramework({ database, accounts, defaultAgentId: HOST_AGENT_ID,
+      framework = await createFramework({ database, accounts, startTaskScheduler: false, defaultAgentId: HOST_AGENT_ID,
         agents: buildFrameworkAgentList(readProductProfile()) });
     }
     const port = Number(process.env.WEBAPP_PORT);

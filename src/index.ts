@@ -41,7 +41,7 @@ async function main(): Promise<void> {
     const profile = readProductProfile();
     const agents = buildFrameworkAgentList(profile);
     const { readAccountConfiguration } = await import('./accounts.js');
-    framework = await createFramework({ database, accounts: readAccountConfiguration(process.env), defaultAgentId: HOST_AGENT_ID, agents });
+    framework = await createFramework({ database, startTaskScheduler: false, accounts: readAccountConfiguration(process.env), defaultAgentId: HOST_AGENT_ID, agents });
     if (stopping) return;
     console.log(`[Invage] profile=${profile} agents=${agents.map(agent => agent.id).join(',')}`);
     if (process.env.WEBAPP_PORT) {
@@ -55,9 +55,11 @@ async function main(): Promise<void> {
       ] }));
     }
     if (stopping) return;
-    framework.startTaskScheduler();
-    const { startBrokerSyncScheduler } = await import('./brokers/scheduler.js');
-    brokerScheduler = startBrokerSyncScheduler();
+    if (process.env.INVAGE_DISABLE_SCHEDULERS !== 'true') {
+      framework.startTaskScheduler();
+      const { startBrokerSyncScheduler } = await import('./brokers/scheduler.js');
+      brokerScheduler = startBrokerSyncScheduler();
+    }
     if (process.env.WEB_ONLY === 'true') {
       if (!process.env.WEBAPP_PORT) throw new Error('WEB_ONLY requires WEBAPP_PORT');
       return;
