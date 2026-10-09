@@ -44,3 +44,13 @@ and a reserve/settle/release transaction. Preserve matching backups for rollback
 a package downgrade alone cannot reverse UUID or shared-ledger migration.
 
 Use INVAGE_DISABLE_SCHEDULERS=true in isolated rehearsals and omit external channel credentials. The secondary Drive framework never starts a task scheduler.
+
+## Current rollout decision
+
+The operator selected local account mode for the v4.0.2 rollout. The stable framework
+requires a checkout-enabled paid catalog whenever shared accounts are attached.
+Velovest has no paid plans; do not create a dummy Stripe price to satisfy validation.
+The dedicated authority is provisioned and registered, but production account
+enrollment and shared activation are deferred. Rehearsal-only enrollment does not
+change production identity, profiles or balances. Preserve /etc/velovest/shared.env
+with UTARUS_ACCOUNTS_MODE=local until a separately reviewed shared cutover.

@@ -10,24 +10,28 @@ if (!process.argv.includes('--mapping')) throw new Error('Supply --mapping FILE'
 const mapping = JSON.parse(readFileSync(mapPath, 'utf8'));
 const base = process.env.VELOVEST_SMOKE_ORIGIN;
 if (!base) throw new Error('VELOVEST_SMOKE_ORIGIN is required');
-const client = new SharedAccountClient({ endpoint: process.env.UTARUS_SHARED_ENDPOINT,
+const local = process.argv.includes('--local');
+if (local && process.argv.includes('--exercise-ledger')) throw new Error('Local smoke cannot exercise the shared ledger');
+const client = local ? undefined : new SharedAccountClient({ endpoint: process.env.UTARUS_SHARED_ENDPOINT,
   authorityId: process.env.UTARUS_SHARED_AUTHORITY_ID, agentId: process.env.UTARUS_SHARED_AGENT_ID,
   credential: process.env.UTARUS_SHARED_AGENT_CREDENTIAL });
-await client.ready();
+await client?.ready();
 const db = await openDatabaseRuntime({ env: process.env, mode: 'personal', onError: error => { throw error; } });
 let routes = 0, chats = 0, files = 0;
 try {
   for (const [alias, userId] of Object.entries(mapping)) {
     const { state } = await db.users.readById(userId);
+    const usage = (await db.usage.read(userId)).state;
+    if (client) {
     const { accountId } = await client.resolveByUserId(userId);
     await client.checkAccess(accountId);
     const common = await client.readCommonProfile(accountId);
     assert.equal(common.email.toLowerCase(), state.profile.contact_email.toLowerCase());
     assert.equal(common.displayName, state.profile.display_name);
     assert.equal(await client.login(alias, `wrong-${randomUUID()}`), null);
-    const usage = (await db.usage.read(userId)).state;
     const allowance = await client.readAllowance(accountId, usage.period);
     assert.equal(allowance.cap, null); assert.equal(allowance.spent, usage.period_credits);
+    }
     const headers = { Authorization: `Bearer ${state.user.auth_token}` };
     for (const path of ['/api/files', '/api/chat/conversations', '/api/domain/invage/broker-accounts',
       '/api/domain/invage/portfolio-settings', '/api/domain/invage/trades', '/api/domain/invage/option-history', '/api/domain/invage/book']) {
@@ -49,7 +53,8 @@ try {
     const other = Object.values(mapping).find(id => id !== userId);
     const denied = await fetch(base + `/api/domain/invage/trades?slug=${other}`, { headers, signal: AbortSignal.timeout(10000) });
     assert.notEqual(denied.status, 200, 'Cross-user data selection must fail');
-    if (process.argv.includes('--exercise-ledger')) {
+    if (client && process.argv.includes('--exercise-ledger')) {
+      const { accountId } = await client.resolveByUserId(userId);
       const before = await client.readAllowance(accountId, usage.period);
       const reserved = await client.reserve(accountId, usage.period, `smoke:${randomUUID()}`, 1, 60);
       await client.settle(reserved.reservationId, 0); await client.settle(reserved.reservationId, 0);
@@ -61,5 +66,5 @@ try {
   }
   assert.equal((await fetch(base + '/login')).status, 200);
   console.log(JSON.stringify({ status: 'passed', users: Object.keys(mapping).length, routes, chats, files,
-    preservedOpeningUsage: true, crossUserDenied: true }));
+    accountsMode: local ? 'local' : 'shared-client', preservedOpeningUsage: !local, crossUserDenied: true }));
 } finally { await db.close(); }
