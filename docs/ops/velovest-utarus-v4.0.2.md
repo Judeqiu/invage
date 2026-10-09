@@ -8,7 +8,7 @@ raw broker files and sync history. Legacy aliases resolve only at compatibility
 boundaries. Other instances remain in local account mode unless explicitly configured.
 
 Velovest has a dedicated loopback authority on port 3330, authority and agent ID
-velovest, its own PostgreSQL database velovest_authority, and a protected environment
+velovest, a committed source mirror at /opt/velovest-authority, its own PostgreSQL database velovest_authority, and a protected environment
 file /etc/velovest-authority/authority.env. Existing account UUIDs, password hashes, profiles,
 usage totals and report/chat ownership must be preserved. Billing is unconfigured;
 retain unlimited access and migrate historical usage into its original period.
