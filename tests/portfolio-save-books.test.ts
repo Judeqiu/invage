@@ -4,14 +4,14 @@ import { useTestDatabase, createInvestorFixture } from './helpers/database.js';
 
 await useTestDatabase({ books: true });
 const householdId = randomUUID();
-const slug = `portfolio-save-${householdId.slice(0, 8)}`;
+const slug = householdId;
 
 describe('portfolio save keeps books current', () => {
   beforeAll(async () => {
     const { migrateBooks } = await import('../src/books/index.js');
     await migrateBooks();
     await createInvestorFixture({
-      user: { id: householdId, slug, created_at: '2026-10-01', auth_token: randomUUID() },
+      user: { id: householdId, created_at: '2026-10-01', auth_token: randomUUID() },
       profile: { display_name: 'Portfolio Save', contact_email: 'portfolio-save@test.local' },
       log: [{ ts: '2026-10-01', action: 'created' }],
     });

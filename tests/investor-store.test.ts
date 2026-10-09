@@ -8,7 +8,7 @@ await useTestDatabase();
 
 const fixture: InvestorState & { treasury: { reporting_currency: string; updated_at: string }; custom_domain_extension: { nested: [string, { exact: number }]; enabled: boolean } } = {
   user: {
-    id: '14ab8d35-f59e-4698-bd80-cf6a38d217b4', slug: 'domain-preservation',
+    id: '14ab8d35-f59e-4698-bd80-cf6a38d217b4',
     created_at: '2026-09-15', telegram_user_ids: [1909001], slack_user_ids: ['U_DOMAIN'],
     auth_token: 'existing-domain-auth-token', password_hash: 'existing-password-hash',
   },
@@ -34,20 +34,20 @@ const fixture: InvestorState & { treasury: { reporting_currency: string; updated
 describe('database investor snapshots', () => {
   it('preserves identity, credentials and all domain fields through reads and optimistic writes', async () => {
     await createState(fixture);
-    const original = await loadInvestor(fixture.user.slug);
+    const original = await loadInvestor(fixture.user.id);
     expect(original.state).toEqual(fixture);
-    const stale = await loadInvestor(fixture.user.slug);
+    const stale = await loadInvestor(fixture.user.id);
     const startingRevision = original.revision;
     original.state.profile.display_name = 'Updated display name';
     await saveInvestor(original);
     expect(original.revision).toBe(startingRevision + 1);
-    const persisted = await loadInvestor(fixture.user.slug);
+    const persisted = await loadInvestor(fixture.user.id);
     expect(persisted).toEqual(original);
     expect(persisted.state).toEqual({ ...fixture, profile: { ...fixture.profile, display_name: 'Updated display name' } });
 
     stale.state.cash = [];
     await expect(saveInvestor(stale)).rejects.toThrow('User revision conflict or user not found');
     expect(stale.revision).toBe(startingRevision);
-    expect(await loadInvestor(fixture.user.slug)).toEqual(persisted);
+    expect(await loadInvestor(fixture.user.id)).toEqual(persisted);
   });
 });
