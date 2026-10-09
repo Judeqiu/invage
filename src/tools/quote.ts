@@ -64,7 +64,7 @@ export function createQuoteTool(): AgentTool {
 
         let portfolio: ReturnType<typeof getPortfolio> | null = null;
         try {
-          if (p.telegram_user_id != null || p.slack_user_id || p.user_slug) {
+          if (p.telegram_user_id != null || p.slack_user_id || p.user_id) {
             const snapshot = await resolveInvestorFromChannel(p);
         const { state } = snapshot;
             portfolio = getPortfolio(state);

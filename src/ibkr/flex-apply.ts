@@ -37,7 +37,7 @@ export async function applyFlexStatement(
   const { state } = snapshot;
   const statement = mapFlexDocToStatement(doc, IBKR_CHANNEL);
   const applied = await applyBrokerStatement(snapshot, IBKR_CHANNEL, statement, rawXml);
-  const slug = state.user.slug;
+  const slug = state.user.id;
   if (rawXml && slug) {
     applied.archivePath = archiveXml(slug, rawXml, applied.asOf);
   }

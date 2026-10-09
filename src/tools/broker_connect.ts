@@ -69,14 +69,14 @@ export function createConfigureBrokerTool(): AgentTool {
           if (Object.keys(sourcePatch).length) patchBrokerSource(state, conn.source_id, sourcePatch);
           if (Object.keys(configPatch).length || !conn.enabled) patchBrokerAccount(state, connectionId, { enabled: true, config: configPatch });
           await saveInvestor(snapshot);
-          return ok(`${def.displayName} access updated for ${state.user.slug}. Connection ${connectionId}.`,
-            { slug: state.user.slug, connector_id: id, connection_id: connectionId, channel: conn.channel });
+          return ok(`${def.displayName} access updated for ${state.user.id}. Connection ${connectionId}.`,
+            { slug: state.user.id, connector_id: id, connection_id: connectionId, channel: conn.channel });
         }
         const result = patchBrokerConnection(state, id, { enabled: true, credentials: p.credentials });
         await saveInvestor(snapshot);
         return ok(
-          `${def.displayName} configured for ${state.user.slug}. Channel tag: ${def.channel}. Secrets stored (not shown). Run sync_broker.`,
-          { slug: state.user.slug, connector_id: id, channel: def.channel, token_set: result.tokenSet },
+          `${def.displayName} configured for ${state.user.id}. Channel tag: ${def.channel}. Secrets stored (not shown). Run sync_broker.`,
+          { slug: state.user.id, connector_id: id, channel: def.channel, token_set: result.tokenSet },
         );
       } catch (e) {
         return fail(e instanceof Error ? e.message : String(e));
@@ -119,7 +119,7 @@ export function createSyncBrokerTool(): AgentTool {
             : [];
         return ok(
           [
-            `${def.displayName} synced for ${state.user.slug} (account ${applied.accountId}).`,
+            `${def.displayName} synced for ${state.user.id} (account ${applied.accountId}).`,
             `As of ${applied.asOf}. Channel ${applied.channel}.`,
             `Lots upserted: ${applied.lotsUpserted}. Lots removed: ${applied.lotsRemoved}.`,
             cashLine,
@@ -130,7 +130,7 @@ export function createSyncBrokerTool(): AgentTool {
             .filter(Boolean)
             .join('\n'),
           {
-            slug: state.user.slug,
+            slug: state.user.id,
             connector_id: id,
             accountId: applied.accountId,
             asOf: applied.asOf,

@@ -4,7 +4,7 @@
  */
 
 import { Router, type Request, type Response } from 'express';
-import { loadSessionState, targetSlug, type AuthUser } from 'utarus';
+import { loadSessionState, targetUserId, type AuthUser } from 'utarus';
 import { loadDashboardForSlug } from './dashboard-data.js';
 import { loadWatchlistForSlug } from './watchlist-data.js';
 import { loadInvestor } from '../state/investor-store.js';
@@ -27,7 +27,7 @@ export function createDashboardApiRouter(): Router {
   router.get('/portfolio-settings', async (req: Request, res: Response) => {
     try {
       const user = (req as Request & { user?: AuthUser }).user;
-      if (!user?.slug) { res.status(401).json({ error: 'unauthorized' }); return; }
+      if (!user?.userId) { res.status(401).json({ error: 'unauthorized' }); return; }
       const snapshot = await loadSessionState(req);
       res.setHeader('Cache-Control', 'private, no-store');
       res.json({ reporting_currency: getTreasury(snapshot.state as HouseholdInvestorState)?.reporting_currency ?? null });
@@ -39,7 +39,7 @@ export function createDashboardApiRouter(): Router {
   router.put('/portfolio-settings', async (req: Request, res: Response) => {
     try {
       const user = (req as Request & { user?: AuthUser }).user;
-      if (!user?.slug) { res.status(401).json({ error: 'unauthorized' }); return; }
+      if (!user?.userId) { res.status(401).json({ error: 'unauthorized' }); return; }
       const currency = req.body?.reporting_currency;
       if (typeof currency !== 'string' || !/^[A-Z]{3,4}$/.test(currency)) {
         res.status(400).json({ error: 'invalid_currency', message: 'Choose a 3–4 letter uppercase reporting currency.' });
@@ -64,7 +64,7 @@ export function createDashboardApiRouter(): Router {
   router.get('/book', async (req: Request, res: Response) => {
     try {
       const user = (req as Request & { user?: AuthUser }).user;
-      if (!user?.slug) { res.status(401).json({ error: 'unauthorized', message: 'No session user.' }); return; }
+      if (!user?.userId) { res.status(401).json({ error: 'unauthorized', message: 'No session user.' }); return; }
       if (!isBooksEnabled()) {
         res.status(503).json({ error: 'books_unavailable', message: 'Books of record are not configured.' });
         return;
@@ -87,7 +87,7 @@ export function createDashboardApiRouter(): Router {
         res.status(400).json({ error: 'invalid_filter', message: 'Invalid Book filter or page.' });
         return;
       }
-      const snapshot = await loadInvestor(await targetSlug(req, user));
+      const snapshot = await loadInvestor(await targetUserId(req, user));
       const payload = await loadBookPage(snapshot.state.user.id, {
         offset, limit,
         ...(channel !== undefined ? { channel: channel as string } : {}),
@@ -106,8 +106,8 @@ export function createDashboardApiRouter(): Router {
   router.get('/trades', async (req: Request, res: Response) => {
     try {
       const user = (req as Request & { user?: AuthUser }).user;
-      if (!user?.slug) { res.status(401).json({ error: 'unauthorized', message: 'No session user.' }); return; }
-      const snapshot = await loadInvestor(await targetSlug(req, user));
+      if (!user?.userId) { res.status(401).json({ error: 'unauthorized', message: 'No session user.' }); return; }
+      const snapshot = await loadInvestor(await targetUserId(req, user));
       res.json(buildExecutionJournal(snapshot.state.option_executions));
     } catch (e) {
       console.error('Execution journal failed:', e);
@@ -118,12 +118,12 @@ export function createDashboardApiRouter(): Router {
   router.get('/option-open-close', async (req: Request, res: Response) => {
     try {
       const user = (req as Request & { user?: AuthUser }).user;
-      if (!user?.slug) { res.status(401).json({ error: 'unauthorized', message: 'No session user.' }); return; }
+      if (!user?.userId) { res.status(401).json({ error: 'unauthorized', message: 'No session user.' }); return; }
       const key = req.query.position;
       if (typeof key !== 'string' || !key || key.length > 200) {
         res.status(400).json({ error: 'invalid_position', message: 'Choose an open option position.' }); return;
       }
-      const snapshot = await loadInvestor(await targetSlug(req, user));
+      const snapshot = await loadInvestor(await targetUserId(req, user));
       const portfolio = getPortfolio(snapshot.state);
       const holding = portfolio[key];
       if (!holding?.option) { res.status(404).json({ error: 'not_found', message: 'Open option position not found.' }); return; }
@@ -146,13 +146,13 @@ export function createDashboardApiRouter(): Router {
   router.get('/option-history', async (req: Request, res: Response) => {
     try {
       const user = (req as Request & { user?: AuthUser }).user;
-      if (!user?.slug) { res.status(401).json({ error: 'unauthorized', message: 'No session user.' }); return; }
+      if (!user?.userId) { res.status(401).json({ error: 'unauthorized', message: 'No session user.' }); return; }
       const offset = Number(req.query.offset ?? 0);
       const limit = Number(req.query.limit ?? 50);
       if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
         res.status(400).json({ error: 'invalid_page', message: 'Invalid history pagination.' }); return;
       }
-      const snapshot = await loadInvestor(await targetSlug(req, user));
+      const snapshot = await loadInvestor(await targetUserId(req, user));
       const state = snapshot.state;
       const { episodes, observations, gaps } = optionHistoryForState(state);
       const channel = typeof req.query.channel === 'string' ? req.query.channel : '';
@@ -179,7 +179,7 @@ export function createDashboardApiRouter(): Router {
         const successful = observations
           .filter(row => row.connection_id === id && row.source === 'broker')
           .sort((a, b) => b.observed_at.localeCompare(a.observed_at))[0];
-        const prior = latestSuccessfulBrokerSyncRun(state.user.slug, conn.channel);
+        const prior = latestSuccessfulBrokerSyncRun(state.user.id, conn.channel);
         return {
           id, broker_id: conn.broker_id, channel: conn.channel, label: conn.label,
           account_id: conn.account_id ?? null, enabled: conn.enabled,
@@ -201,11 +201,11 @@ export function createDashboardApiRouter(): Router {
   router.get('/dashboard', async (req: Request, res: Response) => {
     try {
       const user = (req as Request & { user: AuthUser }).user;
-      if (!user?.slug) {
+      if (!user?.userId) {
         res.status(401).json({ error: 'unauthorized', message: 'No session user.' });
         return;
       }
-      const slug = await targetSlug(req, user);
+      const slug = await targetUserId(req, user);
       const payload = await loadDashboardForSlug(slug);
       res.json(payload);
     } catch (e) {
@@ -218,11 +218,11 @@ export function createDashboardApiRouter(): Router {
   router.get('/watchlist', async (req: Request, res: Response) => {
     try {
       const user = (req as Request & { user: AuthUser }).user;
-      if (!user?.slug) {
+      if (!user?.userId) {
         res.status(401).json({ error: 'unauthorized', message: 'No session user.' });
         return;
       }
-      const slug = await targetSlug(req, user);
+      const slug = await targetUserId(req, user);
       const payload = await loadWatchlistForSlug(slug);
       res.json(payload);
     } catch (e) {

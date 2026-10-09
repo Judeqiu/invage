@@ -1,0 +1,22 @@
+[Unit]
+Description=Velovest shared account authority
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=velovest-authority
+Group=velovest-authority
+WorkingDirectory=/var/lib/velovest-authority
+EnvironmentFile=/etc/velovest/authority.env
+ExecStart=/usr/bin/node /opt/victorconsultant/node_modules/utarus/dist/accounts/shared-service.js
+Restart=on-failure
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=90
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

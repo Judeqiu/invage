@@ -117,7 +117,7 @@ export function createSendReportTool(): AgentTool {
 
           if (kind === 'dashboard') {
             const live = await liveForDashboardReport(state, valued, equityPrices, optionMarks);
-            const snapshots = loadSnapshots(state.user.slug);
+            const snapshots = loadSnapshots(state.user.id);
             const model = buildDashboardModel(live, snapshots);
             htmlBody = buildDashboardReport(model, userName, {
               productName: productDisplayName(),

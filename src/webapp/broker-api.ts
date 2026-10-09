@@ -47,7 +47,7 @@ function connectorIdParam(req: Request): string {
 
 async function sessionInvestor(req: Request): Promise<InvestorSnapshot> {
   const user = (req as Request & { user?: AuthUser }).user;
-  if (!user?.slug) {
+  if (!user?.userId) {
     throw Object.assign(new Error('No session user.'), { httpStatus: 401 });
   }
   const snapshot = await loadSessionState(req);
@@ -173,7 +173,7 @@ export function createBrokerConnectionsRouter(): Router {
       const data = publicBrokerAccounts(snapshot.state);
       res.setHeader('Cache-Control', 'private, no-store');
       res.json({ ...data, egress_ipv4: readFlexEgressIpv4(),
-        connections: data.connections.map(c => ({ ...c, latest_raw_data: latestBrokerRawData(snapshot.state.user.slug, c.channel) })) });
+        connections: data.connections.map(c => ({ ...c, latest_raw_data: latestBrokerRawData(snapshot.state.user.id, c.channel) })) });
     } catch (e) { accountError(res, e); }
   });
   router.post('/broker-access', async (req: Request, res: Response) => {
@@ -268,7 +268,7 @@ export function createBrokerConnectionsRouter(): Router {
       if (!conn) throw new Error('Unknown broker connection.');
       const offset = req.query.offset === undefined ? 0 : Number(req.query.offset);
       res.setHeader('Cache-Control', 'private, no-store');
-      res.json(listBrokerSyncRuns(snapshot.state.user.slug, conn.channel, offset));
+      res.json(listBrokerSyncRuns(snapshot.state.user.id, conn.channel, offset));
     } catch (e) { accountError(res, e); }
   });
   router.get('/broker-accounts/:id/raw-data', async (req: Request, res: Response) => {
@@ -277,12 +277,12 @@ export function createBrokerConnectionsRouter(): Router {
       const conn = readBrokerAccountModel(snapshot.state).connections[String(req.params.id)];
       if (!conn) throw new Error('Unknown broker connection.');
       const runId = typeof req.query.run === 'string' ? req.query.run : undefined;
-      const run = runId ? getBrokerSyncRun(snapshot.state.user.slug, conn.channel, runId) : null;
+      const run = runId ? getBrokerSyncRun(snapshot.state.user.id, conn.channel, runId) : null;
       const file = runId
-        ? run?.raw_data_id ? brokerRawDataFile(snapshot.state.user.slug, conn.channel, run.raw_data_id) : null
-        : latestBrokerRawData(snapshot.state.user.slug, conn.channel);
+        ? run?.raw_data_id ? brokerRawDataFile(snapshot.state.user.id, conn.channel, run.raw_data_id) : null
+        : latestBrokerRawData(snapshot.state.user.id, conn.channel);
       if (!file) { jsonError(res, 404, 'raw_data_not_found', 'No raw data for this connection.'); return; }
-      let page = fetchRawData(snapshot.state.user.slug, file.id, file.version, 0, 65536, 'base64');
+      let page = fetchRawData(snapshot.state.user.id, file.id, file.version, 0, 65536, 'base64');
       res.setHeader('Content-Type', file.id.endsWith('.xml') ? 'application/xml' : 'application/json');
       res.setHeader('Content-Disposition', `attachment; filename="broker-raw-${runId || 'latest'}${file.id.endsWith('.xml') ? '.xml' : '.json'}"`);
       res.setHeader('Content-Length', String(file.bytes));
@@ -297,7 +297,7 @@ export function createBrokerConnectionsRouter(): Router {
           });
         }
         if (page.next_offset === null) break;
-        page = fetchRawData(snapshot.state.user.slug, file.id, file.version, page.next_offset, 65536, 'base64');
+        page = fetchRawData(snapshot.state.user.id, file.id, file.version, page.next_offset, 65536, 'base64');
       }
       res.end();
     } catch (e) {
@@ -332,7 +332,7 @@ export function createBrokerConnectionsRouter(): Router {
       }
       const connectors = publicCatalog(state).map((conn) => ({
         ...conn,
-        latest_raw_data: latestBrokerRawData(state.user.slug, conn.channel),
+        latest_raw_data: latestBrokerRawData(state.user.id, conn.channel),
       }));
       res.json({
         egress_ipv4: readFlexEgressIpv4(),
@@ -357,12 +357,12 @@ export function createBrokerConnectionsRouter(): Router {
         return;
       }
       const connector = getBrokerConnector(connectorIdParam(req));
-      const file = latestBrokerRawData(snapshot.state.user.slug, connector.channel);
+      const file = latestBrokerRawData(snapshot.state.user.id, connector.channel);
       if (!file) {
         jsonError(res, 404, 'raw_data_not_found', `No saved raw data for ${connector.displayName}.`);
         return;
       }
-      let page = fetchRawData(snapshot.state.user.slug, file.id, file.version, 0, 65536, 'base64');
+      let page = fetchRawData(snapshot.state.user.id, file.id, file.version, 0, 65536, 'base64');
       const name = `${connector.id}-${file.id.split('/').at(-1)}`.replace(/[^a-zA-Z0-9._-]/g, '_');
       res.setHeader('Content-Type', file.id.endsWith('.xml') ? 'application/xml' : file.id.endsWith('.json') ? 'application/json' : 'application/octet-stream');
       res.setHeader('Content-Disposition', `attachment; filename="${name}"`);
@@ -379,7 +379,7 @@ export function createBrokerConnectionsRouter(): Router {
           });
         }
         if (page.next_offset === null) break;
-        page = fetchRawData(snapshot.state.user.slug, file.id, file.version, page.next_offset, 65536, 'base64');
+        page = fetchRawData(snapshot.state.user.id, file.id, file.version, page.next_offset, 65536, 'base64');
       }
       res.end();
     } catch (e) {
@@ -492,7 +492,7 @@ export function createBrokerConnectionsRouter(): Router {
       }
       res.json({
         ...result.view,
-        latest_raw_data: latestBrokerRawData(state.user.slug, id),
+        latest_raw_data: latestBrokerRawData(state.user.id, id),
       });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
@@ -521,7 +521,7 @@ export function createBrokerConnectionsRouter(): Router {
       const { view, applied } = await syncBrokerConnection(snapshot, id);
       res.json({
         ...view,
-        latest_raw_data: latestBrokerRawData(state.user.slug, id),
+        latest_raw_data: latestBrokerRawData(state.user.id, id),
         apply: {
           lots_upserted: applied.lotsUpserted,
           lots_removed: applied.lotsRemoved,

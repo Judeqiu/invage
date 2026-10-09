@@ -9,7 +9,7 @@ import type { DomainExtension, EnrichMessageContext, Skill } from 'utarus';
 import {
   resolveUserBySlackUser,
   resolveUserByTelegramUser,
-  resolveUserBySlug,
+  resolveUserById,
   registerDomainSkill,
 } from 'utarus';
 import { readFileSync, existsSync } from 'fs';
@@ -119,12 +119,12 @@ function aidealContextPrefix(investor: InvestorState, ctx: EnrichMessageContext)
       ? `Use telegram_user_id=${ctx.telegramUserId} on tools.`
       : ctx.slackUserId
         ? `Use slack_user_id="${ctx.slackUserId}" on tools.`
-        : ctx.userSlug
-          ? `Use user_slug="${ctx.userSlug}" on tools.`
+        : ctx.userId
+          ? `Use user_id="${ctx.userId}" on tools.`
           : '';
   const sleeveIds = AIDEAL_SLEEVES.map((s) => s.id).join(', ');
   return (
-    `[AIDeal context: user "${investor.user.slug}" (${investor.profile.display_name}). ` +
+    `[AIDeal context: user "${investor.user.id}" (${investor.profile.display_name}). ` +
     `Holdings lots: ${n} (${tagged} with category). ${cashHint} ${channelHint} ` +
     `Sleeves: ${sleeveIds}. Index lots = category match. ` +
     `Read-only — mutations → @Bookkeeper; thesis → @InvestmentAdvisor. ` +
@@ -153,8 +153,8 @@ export const aidealExtension: DomainExtension = {
       investor = await resolveUserByTelegramUser(ctx.telegramUserId) as InvestorState | null;
     } else if (ctx.slackUserId) {
       investor = await resolveUserBySlackUser(ctx.slackUserId) as InvestorState | null;
-    } else if (ctx.userSlug) {
-      investor = await resolveUserBySlug(ctx.userSlug) as InvestorState | null;
+    } else if (ctx.userId) {
+      investor = await resolveUserById(ctx.userId) as InvestorState | null;
     }
 
     if (investor) {

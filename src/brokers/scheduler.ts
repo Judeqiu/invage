@@ -1,13 +1,13 @@
-import { listUserSlugs } from 'utarus';
+import { listUserIds } from 'utarus';
 import { loadInvestor, saveInvestor } from '../state/investor-store.js';
 import { brokerSyncInProgress, nextBrokerSyncAt, persistBrokerAccountModel, readBrokerAccountModel, syncBrokerAccount } from './accounts.js';
 
 const TICK_MS = 60_000;
-const runtime = { listUserSlugs, loadInvestor, saveInvestor, syncBrokerAccount };
+const runtime = { listUserIds, loadInvestor, saveInvestor, syncBrokerAccount };
 
 /** Claim a due run in the optimistic state store before contacting a broker. */
 export async function runDueBrokerSyncs(now = new Date(), deps: typeof runtime = runtime): Promise<void> {
-  for (const slug of await deps.listUserSlugs()) {
+  for (const slug of await deps.listUserIds()) {
     let ids: string[];
     try {
       const snapshot = await deps.loadInvestor(slug);

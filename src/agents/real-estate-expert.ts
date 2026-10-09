@@ -10,7 +10,7 @@ import type { DomainExtension, EnrichMessageContext, Skill } from 'utarus';
 import {
   resolveUserBySlackUser,
   resolveUserByTelegramUser,
-  resolveUserBySlug,
+  resolveUserById,
   registerDomainSkill,
 } from 'utarus';
 import { readFileSync, existsSync } from 'fs';
@@ -156,11 +156,11 @@ function realEstateExpertContextPrefix(
       ? `Use telegram_user_id=${ctx.telegramUserId} on tools.`
       : ctx.slackUserId
         ? `Use slack_user_id="${ctx.slackUserId}" on tools.`
-        : ctx.userSlug
-          ? `Use user_slug="${ctx.userSlug}" on tools.`
+        : ctx.userId
+          ? `Use user_id="${ctx.userId}" on tools.`
           : '';
   return (
-    `[Real Estate Expert context: user "${investor.user.slug}" (${investor.profile.display_name}). ` +
+    `[Real Estate Expert context: user "${investor.user.id}" (${investor.profile.display_name}). ` +
     `${propHint} Cash: ${cashHint}. Household: ${householdHint}. ${channelHint} ` +
     `Tool-before-claim for comps/duties. Load sg-real-estate-portfolio; search_kb for recipes. ` +
     `Help-first: partial now + create_task for re-comps/policy follow-up (instruction re-consults real-estate-expert). Prefer telegram when linked. ` +
@@ -186,8 +186,8 @@ export const realEstateExpertExtension: DomainExtension = {
       investor = await resolveUserByTelegramUser(ctx.telegramUserId) as InvestorState | null;
     } else if (ctx.slackUserId) {
       investor = await resolveUserBySlackUser(ctx.slackUserId) as InvestorState | null;
-    } else if (ctx.userSlug) {
-      investor = await resolveUserBySlug(ctx.userSlug) as InvestorState | null;
+    } else if (ctx.userId) {
+      investor = await resolveUserById(ctx.userId) as InvestorState | null;
     }
 
     if (investor) {

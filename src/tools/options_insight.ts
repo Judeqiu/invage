@@ -205,8 +205,8 @@ async function booksOverlay(
   insight: ContractInsight,
 ): Promise<string | null> {
   try {
-    if (!p.telegram_user_id && !p.slack_user_id && !p.user_slug) {
-      throw new Error('include_books requires telegram_user_id, slack_user_id, or user_slug.');
+    if (!p.telegram_user_id && !p.slack_user_id && !p.user_id) {
+      throw new Error('include_books requires telegram_user_id, slack_user_id, or user_id.');
     }
     const snapshot = await resolveInvestorFromChannel(p);
         const { state } = snapshot;
@@ -242,8 +242,8 @@ async function booksOverlay(
 }
 
 async function booksLotsSummary(p: ChannelIds, underlying: string): Promise<string | null> {
-  if (!p.telegram_user_id && !p.slack_user_id && !p.user_slug) {
-    throw new Error('include_books requires telegram_user_id, slack_user_id, or user_slug.');
+  if (!p.telegram_user_id && !p.slack_user_id && !p.user_id) {
+    throw new Error('include_books requires telegram_user_id, slack_user_id, or user_id.');
   }
   const snapshot = await resolveInvestorFromChannel(p);
         const { state } = snapshot;

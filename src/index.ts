@@ -40,7 +40,8 @@ async function main(): Promise<void> {
     await ensureAdminUsersExist();
     const profile = readProductProfile();
     const agents = buildFrameworkAgentList(profile);
-    framework = await createFramework({ database, defaultAgentId: HOST_AGENT_ID, agents });
+    const { readAccountConfiguration } = await import('./accounts.js');
+    framework = await createFramework({ database, accounts: readAccountConfiguration(process.env), defaultAgentId: HOST_AGENT_ID, agents });
     if (stopping) return;
     console.log(`[Invage] profile=${profile} agents=${agents.map(agent => agent.id).join(',')}`);
     if (process.env.WEBAPP_PORT) {
@@ -74,9 +75,9 @@ async function main(): Promise<void> {
     if (background) {
       if (channels === 0) throw new Error('Background mode requires a configured chat channel');
     } else {
-      const userSlug = process.env.UTARUS_CLI_USER_SLUG;
-      if (!userSlug?.trim()) throw new Error('UTARUS_CLI_USER_SLUG is required for CLI');
-      observe(await framework.startCli({ userSlug }));
+      const userId = process.env.UTARUS_CLI_USER_ID;
+      if (!userId?.trim()) throw new Error('UTARUS_CLI_USER_ID is required for CLI');
+      observe(await framework.startCli({ userId }));
     }
   })();
   try { await startup; } catch (error) { await stop(error); }

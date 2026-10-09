@@ -145,7 +145,7 @@ export function createSnapshotTool(): AgentTool[] {
           .filter(conn => conn.last_sync?.ok && conn.last_sync.as_of)
           .map(conn => [conn.channel, conn.last_sync!.as_of!]));
         for (const conn of connections) {
-          const prior = latestSuccessfulBrokerSyncRun(state.user.slug, conn.channel);
+          const prior = latestSuccessfulBrokerSyncRun(state.user.id, conn.channel);
           if (prior?.as_of) brokerAsOf[conn.channel] = prior.as_of;
         }
         for (const row of [...(state.option_observations ?? [])]
@@ -186,7 +186,7 @@ export function createSnapshotTool(): AgentTool[] {
             : {}),
         };
 
-        const slug = state.user.slug;
+        const slug = state.user.id;
         const driveDir = join(resolveDataRoot(), 'drive', slug);
         mkdirSync(driveDir, { recursive: true });
 
@@ -249,12 +249,12 @@ export function createSnapshotTool(): AgentTool[] {
       const p = raw as ChannelIds;
       try {
         const { state } = await resolveInvestorFromChannel(p);
-        const files = loadSnapshotIndex(state.user.slug);
+        const files = loadSnapshotIndex(state.user.id);
         if (files.length === 0) {
           return fail('No snapshots saved yet. Use save_snapshot first.');
         }
 
-        const snaps = loadSnapshots(state.user.slug);
+        const snaps = loadSnapshots(state.user.id);
         const lines = snaps.map((snap, i) => {
           const sign = snap.totalPL >= 0 ? '+' : '';
           return `  ${i + 1}. ${snap.date} — Value: $${snap.totalValue.toFixed(2)}, P/L: ${sign}${snap.totalPLPct.toFixed(1)}% (${snap.positions.length} positions)`;

@@ -10,7 +10,7 @@ import type { DomainExtension, EnrichMessageContext, Skill } from 'utarus';
 import {
   resolveUserBySlackUser,
   resolveUserByTelegramUser,
-  resolveUserBySlug,
+  resolveUserById,
   registerDomainSkill,
 } from 'utarus';
 import { readFileSync, existsSync } from 'fs';
@@ -119,7 +119,7 @@ You may be **consulted** by WalletStreet via \`invoke_local_agent\` — complete
 1. **Tool-before-claim.** \`get_household\` + \`get_portfolio\` before planning. **\`optimize_payment_plan\` for any "best plan / save interest / pay down efficiently" ask** (combination search). \`build_payment_plan\` for one pinned config. \`estimate_opportunity_cost\` for SOFT forgone-yield math. Live marks when accuracy of investments matters.
 2. **No prose before required tool calls.**
 3. **Fail-fast** on mixed currency without reporting currency / matching plan currency. No silent FX.
-4. **Channel IDs from context only** (\`telegram_user_id\` / \`slack_user_id\` / \`user_slug\`).
+4. **Channel IDs from context only** (\`telegram_user_id\` / \`slack_user_id\` / \`user_id\`).
 5. **No hand-arithmetic for yields or multi-plan comparison.** Let optimize rank HARD interest; call \`estimate_opportunity_cost\` for SOFT.
 6. **Do not reveal** internal tool names, YAML, or tokens.
 7. **Voice:** precise, numbers-first, practical CFO/planner tone.
@@ -188,11 +188,11 @@ function financialPlannerContextPrefix(investor: InvestorState, ctx: EnrichMessa
       ? `Use telegram_user_id=${ctx.telegramUserId} on tools.`
       : ctx.slackUserId
         ? `Use slack_user_id="${ctx.slackUserId}" on tools.`
-        : ctx.userSlug
-          ? `Use user_slug="${ctx.userSlug}" on tools.`
+        : ctx.userId
+          ? `Use user_id="${ctx.userId}" on tools.`
           : '';
   return (
-    `[FinancialPlanner context: user "${investor.user.slug}" (${investor.profile.display_name}). ` +
+    `[FinancialPlanner context: user "${investor.user.id}" (${investor.profile.display_name}). ` +
     `Holdings lots: ${n}. Cash: ${cashHint}. ${depHint} Debt: ${debtHint}. ${propHint}. Household: ${householdHint}. ${channelHint} ` +
     `Property paid_to_date from payments ledger only (not scenarios). Default paydown: avalanche. ` +
     `HARD vs SOFT costs: never invent yields; use estimate_opportunity_cost with books/user yield + years. ` +
@@ -223,8 +223,8 @@ export const financialPlannerExtension: DomainExtension = {
       investor = await resolveUserByTelegramUser(ctx.telegramUserId) as InvestorState | null;
     } else if (ctx.slackUserId) {
       investor = await resolveUserBySlackUser(ctx.slackUserId) as InvestorState | null;
-    } else if (ctx.userSlug) {
-      investor = await resolveUserBySlug(ctx.userSlug) as InvestorState | null;
+    } else if (ctx.userId) {
+      investor = await resolveUserById(ctx.userId) as InvestorState | null;
     }
 
     if (investor) {

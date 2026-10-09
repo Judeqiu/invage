@@ -17,7 +17,7 @@ export interface SlackOnboardContext {
 
 export interface WebOnboardContext {
   args: string;
-  userSlug: string;
+  userId: string;
   isAdmin: boolean;
   conversationId?: string | null;
 }
@@ -82,6 +82,6 @@ export function handleOnboardCommand(ctx: SlackOnboardContext): string {
 }
 
 export function handleOnboardWebCommand(ctx: WebOnboardContext): string {
-  const actorId = ctx.userSlug ? `web:${ctx.userSlug}` : 'web:admin';
+  const actorId = ctx.userId ? `web:${ctx.userId}` : 'web:admin';
   return handleOnboard(ctx.args, actorId);
 }

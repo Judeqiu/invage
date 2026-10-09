@@ -12,7 +12,7 @@ import type { DomainExtension, EnrichMessageContext, Skill } from 'utarus';
 import {
   resolveUserBySlackUser,
   resolveUserByTelegramUser,
-  resolveUserBySlug,
+  resolveUserById,
 } from 'utarus';
 import { createInvageTools } from './tools/index.js';
 import { registerInvageSkills } from './skills.js';
@@ -82,7 +82,7 @@ function handoffOrchestration(profile: ProductProfileId): string {
 1. Optional brief orient (1–2 sentences) — never a full analysis you cannot ground from tools/peers.
 2. Optional residual host **read** tools only if needed to write a focused handoff \`task\`.
 3. Optional \`upsert_plan\` for same-speaker batched work: pack independent tool calls (reads, scrapes, quotes) into one shared \`wave\` and emit wave-0 tools in the same batch. Plan waves are **same speaker only** — never put specialists in a wave; multi-specialist sequencing stays one \`handoff_to_agent\` per turn.
-4. **Call \`handoff_to_agent\`** with \`target\` = craft peer **id** or registry label, and a focused \`task\` (ids, constraints, user_slug, deliverable). At most **one** handoff per your turn. Prefer handoff for **craft** peers on Web.
+4. **Call \`handoff_to_agent\`** with \`target\` = craft peer **id** or registry label, and a focused \`task\` (ids, constraints, user_id, deliverable). At most **one** handoff per your turn. Prefer handoff for **craft** peers on Web.
 5. When control returns: follow the **peer-return ladder** (continue craft → residual claims → Factcheck via invoke → synthesize). Never final-synthesize material numbers before Factcheck PASS*.
 
 **Use \`invoke_local_agent\` for:** (a) **short one-shot** lookups that must stay inside your same bubble, (b) **Telegram/Slack** (no handoff harness), (c) **scheduled task re-runs** (task runner is always you — consult peers via invoke), (d) **always-last Factchecker full audit consult** on Web (Factcheck uses invoke, **not** handoff — avoids hop burn and is required before final synthesis of material claims). Do **not** DIY peer craft with Firecrawl or freehand analysis when a specialist exists. Craft peers stay handoff-preferred on Web; Factchecker is invoke-preferred on all channels.
@@ -210,10 +210,10 @@ function investorContextPrefix(investor: InvestorState, ctx: EnrichMessageContex
       ? `telegram_user_id=${ctx.telegramUserId}`
       : ctx.slackUserId
         ? `slack_user_id="${ctx.slackUserId}"`
-        : ctx.userSlug
-          ? `user_slug="${ctx.userSlug}"`
+        : ctx.userId
+          ? `user_id="${ctx.userId}"`
           : '';
-    return `[Options host context: user "${investor.user.slug}" (${investor.profile.display_name}); option lots recorded: ${optionLots}. ${channelHint}. Route options analysis to OptionsExpert; option records and broker sync to Bookkeeper; audit material numbers with Factchecker. Stay on options.]\n`;
+    return `[Options host context: user "${investor.user.id}" (${investor.profile.display_name}); option lots recorded: ${optionLots}. ${channelHint}. Route options analysis to OptionsExpert; option records and broker sync to Bookkeeper; audit material numbers with Factchecker. Stay on options.]\n`;
   }
   const portfolio = getPortfolio(investor);
   const n = Object.keys(portfolio).length;
@@ -249,11 +249,11 @@ function investorContextPrefix(investor: InvestorState, ctx: EnrichMessageContex
       ? `Pass telegram_user_id=${ctx.telegramUserId} when framing peer tasks or residual host tools.`
       : ctx.slackUserId
         ? `Pass slack_user_id="${ctx.slackUserId}" when framing peer tasks or residual host tools.`
-        : ctx.userSlug
-          ? `Pass user_slug="${ctx.userSlug}" when framing peer tasks or residual host tools.`
+        : ctx.userId
+          ? `Pass user_id="${ctx.userId}" when framing peer tasks or residual host tools.`
           : '';
   return (
-    `[Orchestrator context: user "${investor.user.slug}" ` +
+    `[Orchestrator context: user "${investor.user.id}" ` +
     `(${investor.profile.display_name}). ` +
     `Holdings lots (routing hint): ${n}. ${cashHint} ${householdHint} ${channelHint} ` +
     (HANDOFF_MODE
@@ -376,11 +376,11 @@ export const invageExtension: DomainExtension = {
       investor = await resolveUserByTelegramUser(ctx.telegramUserId) as InvestorState | null;
     } else if (ctx.slackUserId) {
       investor = await resolveUserBySlackUser(ctx.slackUserId) as InvestorState | null;
-    } else if (ctx.userSlug) {
+    } else if (ctx.userId) {
       // Web channel: no chat-platform id, but the gate resolves the slug
       // from the session and passes it through. Without this branch the
       // agent gets a bare prompt with no user context and re-onboards.
-      investor = await resolveUserBySlug(ctx.userSlug) as InvestorState | null;
+      investor = await resolveUserById(ctx.userId) as InvestorState | null;
     }
 
     if (investor) {

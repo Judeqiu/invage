@@ -1,7 +1,7 @@
 import {constants, closeSync, fstatSync, lstatSync, openSync, readSync, readdirSync, realpathSync, type Stats} from 'node:fs';
 import {join, relative, resolve, sep} from 'node:path';
 import {createHash} from 'node:crypto';
-import {assertValidSlug, resolveDataRoot} from 'utarus';
+import {assertUserId, resolveDataRoot} from 'utarus';
 
 function directory(path: string): boolean {
   const stat=lstatSync(path,{throwIfNoEntry:false});
@@ -10,7 +10,7 @@ function directory(path: string): boolean {
   return true;
 }
 function rootFor(slug: string): string {
-  assertValidSlug(slug);
+  assertUserId(slug);
   const drive=join(realpathSync(resolveDataRoot()),'drive');
   if(directory(drive))directory(join(drive,slug));
   return join(drive,slug);

@@ -537,7 +537,7 @@ export function createPortfolioTools(): AgentTool[] {
       'Fails if cash would go negative. Pass adjust_cash=false only for historical import/correction (no ledger). ' +
       'Optional channel tags the broker/custody source (e.g. moomoo, ibkr, webull, jude_futu, ocbc); omit or empty when unassigned. ' +
       'Same ticker under different channels is allowed — keys become TICKER@channel (e.g. TSLA@cmbyonglong and TSLA@jude_futu). ' +
-      'Pass telegram_user_id or slack_user_id or user_slug from the message context — never ask the user for it.',
+      'Pass telegram_user_id or slack_user_id or user_id from the message context — never ask the user for it.',
     parameters: Type.Object({
       ...channelIdParams,
       ticker: Type.Optional(

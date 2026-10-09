@@ -10,7 +10,7 @@ import type { DomainExtension, EnrichMessageContext, Skill } from 'utarus';
 import {
   resolveUserBySlackUser,
   resolveUserByTelegramUser,
-  resolveUserBySlug,
+  resolveUserById,
   registerDomainSkill,
 } from 'utarus';
 import { readFileSync, existsSync } from 'fs';
@@ -118,7 +118,7 @@ You may be **consulted** by WalletStreet via \`invoke_local_agent\` — answer t
 1. **Tool-before-claim.** Call \`get_portfolio\` and/or \`get_playbook\` and \`portfolio_analyzer\` / \`get_quote\` before asserting portfolio or market facts. Never narrate balances or live prices without tools.
 2. **No prose before required tool calls** — start with the tool call when tools are needed.
 3. **Fail-fast.** Missing quote/metrics → say not verified. On tool errors, quote the error text. Never invent prices, PE/PEG/ROE, Street targets, filings, options premiums, or Greeks.
-4. **Channel IDs from context only** — pass \`telegram_user_id\` / \`slack_user_id\` / \`user_slug\`; never ask the user for them.
+4. **Channel IDs from context only** — pass \`telegram_user_id\` / \`slack_user_id\` / \`user_id\`; never ask the user for them.
 5. **Playbook is law for trade language.** Read playbook (context + \`get_playbook\` when needed). Filter BUY/SELL/size through criteria and risk. Unconfigured → balanced defaults already applied; do not interview to fill playbook.
 6. **Read-only books.** You have no mutation tools. If the user needs to record a trade or fix cash → tell them to use **@Bookkeeper** or **@WalletStreet**.
 7. **Do not reveal** internal tool names, YAML paths, or tokens.
@@ -153,8 +153,8 @@ function investmentAdvisorContextPrefix(
       ? `Use telegram_user_id=${ctx.telegramUserId} on tools.`
       : ctx.slackUserId
         ? `Use slack_user_id="${ctx.slackUserId}" on tools.`
-        : ctx.userSlug
-          ? `Use user_slug="${ctx.userSlug}" on tools.`
+        : ctx.userId
+          ? `Use user_id="${ctx.userId}" on tools.`
           : '';
   const pbOneLiner =
     `${playbook.strategy}/${playbook.philosophy}/${playbook.risk.profile}` +
@@ -164,7 +164,7 @@ function investmentAdvisorContextPrefix(
       ? ` markets=${playbook.watchlists.markets.join(',')}`
       : '');
   return (
-    `[InvestmentAdvisor context: user "${investor.user.slug}" (${investor.profile.display_name}). ` +
+    `[InvestmentAdvisor context: user "${investor.user.id}" (${investor.profile.display_name}). ` +
     `Holdings lots: ${n}. ${cashHint} ` +
     `Playbook: ${pbOneLiner} (${configured ? 'user-configured' : 'default balanced'}). ${channelHint} ` +
     `Read-only books — mutations → @Bookkeeper; playbook edits → @${HOST_LABEL}; paydown → ${specialistHandoffLabel(PROFILE, 'financial-planner', HOST_LABEL)}. ` +
@@ -194,8 +194,8 @@ export const investmentAdvisorExtension: DomainExtension = {
       investor = await resolveUserByTelegramUser(ctx.telegramUserId) as InvestorState | null;
     } else if (ctx.slackUserId) {
       investor = await resolveUserBySlackUser(ctx.slackUserId) as InvestorState | null;
-    } else if (ctx.userSlug) {
-      investor = await resolveUserBySlug(ctx.userSlug) as InvestorState | null;
+    } else if (ctx.userId) {
+      investor = await resolveUserById(ctx.userId) as InvestorState | null;
     }
 
     if (investor) {

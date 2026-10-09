@@ -85,7 +85,7 @@ export function createSaveReportTool(): AgentTool {
 
         if (kind === 'dashboard') {
           const live = await liveForDashboardReport(state, valued, equityPrices, optionMarks);
-          const snapshots = loadSnapshots(state.user.slug);
+          const snapshots = loadSnapshots(state.user.id);
           const model = buildDashboardModel(live, snapshots);
           html = buildDashboardReport(model, userName, {
             productName: productDisplayName(),
@@ -112,11 +112,11 @@ export function createSaveReportTool(): AgentTool {
         }
 
         const fileName = p.name ?? defaultName;
-        const driveDir = join(resolveDataRoot(), 'drive', state.user.slug);
+        const driveDir = join(resolveDataRoot(), 'drive', state.user.id);
         mkdirSync(driveDir, { recursive: true });
         writeFileSync(join(driveDir, fileName), html, 'utf-8');
 
-        const signed = await signedBinDriveViewUrl(state.user.slug, fileName, {
+        const signed = await signedBinDriveViewUrl(state.user.id, fileName, {
           displayName: userName,
         });
         const ttlMin = Math.round(signed.expiresInMs / 60000);
@@ -132,7 +132,7 @@ export function createSaveReportTool(): AgentTool {
         ].filter((line) => line !== '');
 
         return ok(lines.join('\n'), {
-          slug: state.user.slug,
+          slug: state.user.id,
           fileName,
           kind,
           positions,

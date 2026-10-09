@@ -150,7 +150,7 @@ export async function publishBrokerSyncSuccess(slug: string, isAdmin: boolean, f
   try { summary = await deps.summarize(slug, isAdmin, facts); }
   catch (error) { console.warn('[broker/sync-notification] LLM fallback:', error instanceof Error ? error.message : String(error)); }
   try {
-    await deps.notify({ slug, title: `${facts.broker} sync complete`, body: summary,
+    await deps.notify({ userId: slug, title: `${facts.broker} sync complete`, body: summary,
       source: 'system', severity: 'info', status_hint: 'success', href: '/settings/brokers' });
   } catch (error) { console.error('[broker/sync-notification] publish failed:', error); }
 }
@@ -158,7 +158,7 @@ export async function publishBrokerSyncSuccess(slug: string, isAdmin: boolean, f
 export async function publishBrokerSyncFailure(slug: string, broker: string, account: string, message: string,
   notify: typeof notifyUser = notifyUser): Promise<void> {
   try {
-    await notify({ slug, title: `${broker} sync failed`, body: `${account}: ${message.slice(0, 500)}. Check Settings → Brokers → Sync history.`,
+    await notify({ userId: slug, title: `${broker} sync failed`, body: `${account}: ${message.slice(0, 500)}. Check Settings → Brokers → Sync history.`,
       source: 'system', severity: 'medium', status_hint: 'failure', href: '/settings/brokers' });
   } catch (error) { console.error('[broker/sync-notification] publish failed:', error); }
 }

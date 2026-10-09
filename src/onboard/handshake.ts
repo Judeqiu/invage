@@ -1,3 +1,4 @@
+import { getSharedAccountClient } from '../../node_modules/utarus/dist/accounts/shared-runtime.js';
 import { getDatabaseRuntime } from 'utarus/database';
 /**
  * Handshake logic for the /bind <token> command (Slack + WebUI).
@@ -15,7 +16,7 @@ import {
   hashPassword,
   generateMemorablePassword,
   resolveUserBySlackUser,
-  resolveUserBySlug,
+  resolveUserById,
 } from 'utarus';
 import type { InvestorState } from '../state/portfolio-state.js';
 import { productHostLabel } from '../product-name.js';
@@ -40,7 +41,7 @@ export interface BindArgs {
    * WebUI session slug when the caller is already authenticated.
    * Used for the already-registered path and audit trail.
    */
-  userSlug?: string;
+  userId?: string;
   /** When true, create via ensureChannelUser({ web: true }) if no session user. */
   web?: boolean;
 }
@@ -51,7 +52,7 @@ export interface BindResult {
 }
 
 export async function handleBind(args: BindArgs): Promise<BindResult> {
-  const { payload, slackUserId, userSlug, web } = args;
+  const { payload, slackUserId, userId, web } = args;
   if (!slackUserId && !web) {
     throw new Error('handleBind requires slackUserId or web: true');
   }
@@ -92,32 +93,32 @@ export async function handleBind(args: BindArgs): Promise<BindResult> {
   if (slackUserId) {
     const existing = await resolveUserBySlackUser(slackUserId);
     if (existing) {
-      markUsed(token, slackUserId, existing.user.slug);
+      markUsed(token, slackUserId, existing.user.id);
       return {
-        reply: `You're already registered as *${existing.profile.display_name}* (slug: \`${existing.user.slug}\`).`,
-        slug: existing.user.slug,
+        reply: `You're already registered as *${existing.profile.display_name}* (slug: \`${existing.user.id}\`).`,
+        slug: existing.user.id,
       };
     }
   }
 
   // Already-authenticated WebUI user → mark token used for this session, stop.
-  if (web && userSlug) {
-    const existing = await resolveUserBySlug(userSlug);
+  if (web && userId) {
+    const existing = await resolveUserById(userId);
     if (existing) {
-      markUsed(token, `web:${userSlug}`, existing.user.slug);
+      markUsed(token, `web:${userId}`, existing.user.id);
       return {
-        reply: `You're already registered as *${existing.profile.display_name}* (slug: \`${existing.user.slug}\`).`,
-        slug: existing.user.slug,
+        reply: `You're already registered as *${existing.profile.display_name}* (slug: \`${existing.user.id}\`).`,
+        slug: existing.user.id,
       };
     }
   }
 
   // A validated BIND token is this domain's registration authority. It is not
   // a framework INV invitation and must not be mislabeled as demo registration.
-  const slug = `onboard-${token.slice(5).toLowerCase()}`;
   const presetPassword = generateMemorablePassword();
-  const state = blankState({ slug, displayName: entry.display_name, contactEmail: entry.email_submitted, language: 'en' }) as InvestorState;
-  state.user.password_hash = await hashPassword(presetPassword);
+  const state = blankState({ displayName: entry.display_name, contactEmail: entry.email_submitted, language: 'en' }) as InvestorState;
+  const shared = getSharedAccountClient();
+  if (!shared) state.user.password_hash = await hashPassword(presetPassword);
   if (slackUserId !== undefined) state.user.slack_user_ids = [slackUserId];
   state.portfolio = {};
   state.log.push({
@@ -125,8 +126,10 @@ export async function handleBind(args: BindArgs): Promise<BindResult> {
     ...(slackUserId === undefined ? {} : { slack_user_id: slackUserId }),
     ...(web === true ? { web: true } : {}),
   });
+  if (shared) await shared.register({ localUserId: state.user.id, email: entry.email_submitted,
+    password: presetPassword, displayName: entry.display_name, language: 'en', location: null, profile: {} });
   await getDatabaseRuntime().registration.register({ state, mail: null, invitation: null });
-  const userResult = { slug, presetPassword };
+  const userResult = { slug: state.user.id, presetPassword };
 
   const drivePath = join(DRIVE_DIR, userResult.slug);
   mkdirSync(drivePath, { recursive: true });

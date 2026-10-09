@@ -45,12 +45,12 @@ export async function importInvestorStateToBooks(
   opts?: { force?: boolean; positionSources?: Record<string, string> },
 ): Promise<ImportResult> {
   const householdId = state.user?.id;
-  const slug = state.user?.slug;
+  const slug = state.user?.id;
   if (typeof householdId !== 'string' || householdId.trim().length === 0) {
     throw new Error('import: state.user.id (uuid) is required.');
   }
   if (typeof slug !== 'string' || slug.trim().length === 0) {
-    throw new Error('import: state.user.slug is required.');
+    throw new Error('import: state.user.id is required.');
   }
 
   await ensureHousehold(client, householdId, slug);

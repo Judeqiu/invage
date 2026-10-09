@@ -49,7 +49,7 @@ export { isBooksEnabled } from './db.js';
 
 export function householdContextFromState(state: InvestorState): HouseholdContext {
   const id = state.user?.id;
-  const slug = state.user?.slug;
+  const slug = state.user?.id;
   if (typeof id !== 'string' || !id.trim()) {
     throw new Error('householdContextFromState: user.id required.');
   }

@@ -14,7 +14,7 @@ export function bindDomainToolsToUser(tools: AgentTool[], userSlug: string): Age
         ...args,
         telegram_user_id: undefined,
         slack_user_id: undefined,
-        user_slug: userSlug,
+        user_id: userSlug,
       }, signal, onUpdate);
     },
   }));

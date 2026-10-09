@@ -23,7 +23,7 @@ function fail(text: string): AgentToolResult<null> {
 }
 
 function readAccountRaw(state: import('../state/portfolio-state.js').InvestorState, channel: string, requested?: string) {
-  const slug = state.user.slug;
+  const slug = state.user.id;
   let file = latestBrokerRawData(slug, channel);
   if (requested) {
     const files = [];
@@ -63,7 +63,7 @@ export function createListBrokerTriageTool(): AgentTool {
       try {
         const snapshot = await resolveInvestorFromChannel(p);
         const { state } = snapshot;
-        const slug = state.user.slug;
+        const slug = state.user.id;
         if (!slug) throw new Error('Investor state has no user.slug.');
         if (state.broker_sources) {
           const model = readBrokerAccountModel(state);
@@ -113,7 +113,7 @@ export function createReadBrokerRawTool(): AgentTool {
       try {
         const snapshot = await resolveInvestorFromChannel(p);
         const { state } = snapshot;
-        const slug = state.user.slug;
+        const slug = state.user.id;
         if (!slug) throw new Error('Investor state has no user.slug.');
         const id = p.connector_id.trim();
         const connectionId = state.broker_sources ? resolveBrokerAccountId(state, id, p.connection_id) : undefined;
@@ -158,7 +158,7 @@ export function createSaveBrokerParserTool(): AgentTool {
       try {
         const snapshot = await resolveInvestorFromChannel(p);
         const { state } = snapshot;
-        const slug = state.user.slug;
+        const slug = state.user.id;
         if (!slug) throw new Error('Investor state has no user.slug.');
         const id = p.connector_id.trim();
         if (!getBrokerAdapter(id).usesCsvTables) {
@@ -199,7 +199,7 @@ export function createParseBrokerRawTool(): AgentTool {
       try {
         const snapshot = await resolveInvestorFromChannel(p);
         const { state } = snapshot;
-        const slug = state.user.slug;
+        const slug = state.user.id;
         if (!slug) throw new Error('Investor state has no user.slug.');
         const id = p.connector_id.trim();
         getBrokerConnector(id);

@@ -59,8 +59,8 @@ export function createConfigureIbkrFlexTool(): AgentTool {
         }
         await saveInvestor(snapshot);
         return ok(
-          `IBKR Flex configured for ${state.user.slug}. Channel tag: ${channel}. Token stored (not shown). Run sync_ibkr_flex to pull Open Positions + Cash Report.`,
-          { slug: state.user.slug, channel, activity_query_id: p.activity_query_id.trim() },
+          `IBKR Flex configured for ${state.user.id}. Channel tag: ${channel}. Token stored (not shown). Run sync_ibkr_flex to pull Open Positions + Cash Report.`,
+          { slug: state.user.id, channel, activity_query_id: p.activity_query_id.trim() },
         );
       } catch (e) {
         return fail(e instanceof Error ? e.message : String(e));
@@ -100,7 +100,7 @@ export function createSyncIbkrFlexTool(): AgentTool {
             : [];
         return ok(
           [
-            `IBKR Flex synced for ${state.user.slug} (account ${applied.accountId}).`,
+            `IBKR Flex synced for ${state.user.id} (account ${applied.accountId}).`,
             `As of ${applied.asOf}. Channel ${applied.channel}.`,
             `Lots upserted: ${applied.lotsUpserted}. Lots removed from ${applied.channel}: ${applied.lotsRemoved}.`,
             cashLine,
@@ -111,7 +111,7 @@ export function createSyncIbkrFlexTool(): AgentTool {
             .filter(Boolean)
             .join('\n'),
           {
-            slug: state.user.slug,
+            slug: state.user.id,
             accountId: applied.accountId,
             asOf: applied.asOf,
             channel: applied.channel,

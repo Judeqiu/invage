@@ -147,7 +147,7 @@ export function createComputeSleeveIndexTool(): AgentTool {
     description:
       'Rebase an Aideal sleeve (or all) and its benchmark to 100 on the sleeve base date. ' +
       'Requires report_date (YYYY-MM-DD). Lots: pass lots=[{ticker,units}] OR resolve books via ' +
-      'user_slug/telegram/slack where holding.category equals the sleeve id. Fail-fast if no lots or Yahoo close missing.',
+      'user_id/telegram/slack where holding.category equals the sleeve id. Fail-fast if no lots or Yahoo close missing.',
     parameters: Type.Object({
       ...channelIdParams,
       sleeve_id: Type.String({
@@ -320,10 +320,10 @@ export function createSaveAidealNewsletterTool(): AgentTool {
           buyOpportunities: parseSection(p.buy_opportunities, 'buy_opportunities'),
         });
         const fileName = p.filename ?? `aideal-${p.report_date}.html`;
-        const driveDir = join(resolveDataRoot(), 'drive', state.user.slug);
+        const driveDir = join(resolveDataRoot(), 'drive', state.user.id);
         mkdirSync(driveDir, { recursive: true });
         writeFileSync(join(driveDir, fileName), html, 'utf-8');
-        const signed = await signedBinDriveViewUrl(state.user.slug, fileName, {
+        const signed = await signedBinDriveViewUrl(state.user.id, fileName, {
           displayName: state.profile.display_name,
         });
         const ttlMin = Math.round(signed.expiresInMs / 60000);
@@ -337,7 +337,7 @@ export function createSaveAidealNewsletterTool(): AgentTool {
             'YOU MUST include the URL above verbatim in your reply to the user.',
           ].join('\n'),
           {
-            slug: state.user.slug,
+            slug: state.user.id,
             fileName,
             viewUrl: signed.url,
             sleeves: p.sleeves.length,

@@ -165,7 +165,7 @@ export function createPortfolioAnalyzerTool(): AgentTool {
           | undefined;
         let cashFxNote = '';
 
-        if (params.telegram_user_id != null || params.slack_user_id || params.user_slug) {
+        if (params.telegram_user_id != null || params.slack_user_id || params.user_id) {
           const snapshot = await resolveInvestorFromChannel(params);
         const { state } = snapshot;
           holdings = getPortfolio(state);

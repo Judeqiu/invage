@@ -10,7 +10,7 @@ import type { DomainExtension, EnrichMessageContext, Skill } from 'utarus';
 import {
   resolveUserBySlackUser,
   resolveUserByTelegramUser,
-  resolveUserBySlug,
+  resolveUserById,
   registerDomainSkill,
 } from 'utarus';
 import { readFileSync, existsSync } from 'fs';
@@ -152,7 +152,7 @@ One household ledger per user:
 1. **Tool-before-claim.** Call \`get_household\` and/or \`get_portfolio\` before summarizing or reconciling. Never narrate balances without tools.
 2. **No prose before tool calls** when a tool is needed — start with the tool call.
 3. **Fail-fast.** Missing data → say exactly what is missing. No silent zeros or FX. On tool errors, quote the tool error text — do not invent “parse error” without that text.
-4. **Channel IDs from context only** — pass \`telegram_user_id\` / \`slack_user_id\` / \`user_slug\`; never ask the user for them.
+4. **Channel IDs from context only** — pass \`telegram_user_id\` / \`slack_user_id\` / \`user_id\`; never ask the user for them.
 5. **Cash ledger (HARD — qualified bookkeeper):** **Never set absolute cash.** Every free-cash change is a **balanced journal**:
    - First recognition of a zero sleeve → \`post_opening_balance\` (Dr Cash / Cr Opening equity) with **memo** (source document).
    - Later changes → \`post_adjustment\` with **signed delta** + **memo** + contra (\`adjustment\`|\`income\`|\`expense\`|\`clearing\`). Reconcile: statement − books = delta; post that delta.
@@ -186,8 +186,8 @@ ${HELP_FIRST_AND_ASYNC_TASKS}`;
 function bookkeeperContextPrefix(investor: InvestorState, ctx: EnrichMessageContext): string {
   if (PROFILE === 'consultant') {
     const optionLots = Object.values(getPortfolio(investor)).filter((holding) => holding.option != null).length;
-    const channelHint = ctx.telegramUserId != null ? `telegram_user_id=${ctx.telegramUserId}` : ctx.slackUserId ? `slack_user_id="${ctx.slackUserId}"` : ctx.userSlug ? `user_slug="${ctx.userSlug}"` : '';
-    return `[Options books context: user "${investor.user.slug}"; option lots recorded: ${optionLots}. ${channelHint}. Sync and reconcile broker option positions/fills; journal assignment cash only when requested. Verify writes.]\n`;
+    const channelHint = ctx.telegramUserId != null ? `telegram_user_id=${ctx.telegramUserId}` : ctx.slackUserId ? `slack_user_id="${ctx.slackUserId}"` : ctx.userId ? `user_id="${ctx.userId}"` : '';
+    return `[Options books context: user "${investor.user.id}"; option lots recorded: ${optionLots}. ${channelHint}. Sync and reconcile broker option positions/fills; journal assignment cash only when requested. Verify writes.]\n`;
   }
   const portfolio = getPortfolio(investor);
   const n = Object.keys(portfolio).length;
@@ -217,11 +217,11 @@ function bookkeeperContextPrefix(investor: InvestorState, ctx: EnrichMessageCont
       ? `Use telegram_user_id=${ctx.telegramUserId} on portfolio/household tools.`
       : ctx.slackUserId
         ? `Use slack_user_id="${ctx.slackUserId}" on portfolio/household tools.`
-        : ctx.userSlug
-          ? `Use user_slug="${ctx.userSlug}" on portfolio/household tools for this web session.`
+        : ctx.userId
+          ? `Use user_id="${ctx.userId}" on portfolio/household tools for this web session.`
           : '';
   return (
-    `[Bookkeeper context: user "${investor.user.slug}" (${investor.profile.display_name}). ` +
+    `[Bookkeeper context: user "${investor.user.id}" (${investor.profile.display_name}). ` +
     `Holdings lots: ${n}. ${cashHint} ${householdHint} ${channelHint} ` +
     `Playbook exists for host (${playbook.strategy}/${playbook.philosophy}) but is not your job to configure. ` +
     `Help-first: journal now + create_task for deferred reconcile (instruction re-consults bookkeeper). Prefer telegram when linked. ` +
@@ -245,8 +245,8 @@ export const bookkeeperExtension: DomainExtension = {
       investor = await resolveUserByTelegramUser(ctx.telegramUserId) as InvestorState | null;
     } else if (ctx.slackUserId) {
       investor = await resolveUserBySlackUser(ctx.slackUserId) as InvestorState | null;
-    } else if (ctx.userSlug) {
-      investor = await resolveUserBySlug(ctx.userSlug) as InvestorState | null;
+    } else if (ctx.userId) {
+      investor = await resolveUserById(ctx.userId) as InvestorState | null;
     }
 
     if (investor) {

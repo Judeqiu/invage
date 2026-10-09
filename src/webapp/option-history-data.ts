@@ -51,10 +51,10 @@ export function optionHistoryForState(state: InvestorState, now = new Date()) {
     if (!conn.account_id) continue;
     let offset = 0;
     for (;;) {
-      const page = listBrokerSyncRuns(state.user.slug, conn.channel, offset, 100);
+      const page = listBrokerSyncRuns(state.user.id, conn.channel, offset, 100);
       for (const run of page.runs) {
         if (!run.ok) continue;
-        const cacheKey = `${state.user.slug}:${conn.channel}:${run.id}`;
+        const cacheKey = `${state.user.id}:${conn.channel}:${run.id}`;
         const cached = parsedArchiveCache.get(cacheKey);
         if (cached) {
           if (!known.has(run.id)) { observations.push(cached.observation); known.add(run.id); }
@@ -67,8 +67,8 @@ export function optionHistoryForState(state: InvestorState, now = new Date()) {
           continue;
         }
         try {
-          const bytes = archivedBytes(state.user.slug, conn.channel, run.raw_data_id);
-          const statement = statementFromArchive(state.user.slug, id, conn.broker_id,
+          const bytes = archivedBytes(state.user.id, conn.channel, run.raw_data_id);
+          const statement = statementFromArchive(state.user.id, id, conn.broker_id,
             conn.channel, conn.account_id, bytes);
           if (statement.as_of !== run.as_of) throw new Error('Archive date differs from sync record');
           const observation = optionObservationFromStatement({

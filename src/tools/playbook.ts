@@ -233,7 +233,7 @@ export function createPlaybookTools(): AgentTool[] {
     description:
       "Add a named financial product to the user's playbook watch list (interest only — not a holding). " +
       'Yahoo-quotable equity or fund symbols only. Duplicate symbol fails. ' +
-      'Pass telegram_user_id or slack_user_id or user_slug from message context.',
+      'Pass telegram_user_id or slack_user_id or user_id from message context.',
     parameters: Type.Object({
       ...channelIdParams,
       symbol: Type.String({ description: 'Quote symbol (e.g. AAPL, 2800.HK).' }),
@@ -281,7 +281,7 @@ export function createPlaybookTools(): AgentTool[] {
     label: 'Remove Watch Product',
     description:
       "Remove a named product from the user's playbook watch list. Missing symbol fails. " +
-      'Pass telegram_user_id or slack_user_id or user_slug from message context.',
+      'Pass telegram_user_id or slack_user_id or user_id from message context.',
     parameters: Type.Object({
       ...channelIdParams,
       symbol: Type.String({ description: 'Quote symbol to remove.' }),

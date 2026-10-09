@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { assertValidSlug, resolveDataRoot } from 'utarus';
+import { assertUserId, resolveDataRoot } from 'utarus';
 
 export interface BrokerSyncRun {
   id: string;
@@ -17,7 +17,7 @@ export interface BrokerSyncRun {
 }
 
 function historyDir(slug: string, channel: string): string {
-  assertValidSlug(slug);
+  assertUserId(slug);
   if (!/^[a-z][a-z0-9_-]*$/.test(channel)) throw new Error('Invalid broker channel.');
   return join(resolveDataRoot(), 'broker-sync-history', slug, channel);
 }

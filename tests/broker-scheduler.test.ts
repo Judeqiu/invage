@@ -20,7 +20,7 @@ describe('broker sync scheduler', () => {
     let revision = 0;
     const sync = vi.fn(async () => ({ applied: {} as never }));
     const deps = {
-      listUserSlugs: async () => ['alice'],
+      listUserIds: async () => ['alice'],
       loadInvestor: async () => ({ state: structuredClone(stored), revision }),
       saveInvestor: async (snapshot: { state: InvestorState; revision: number }) => {
         if (snapshot.revision !== revision) throw new Error('revision conflict');

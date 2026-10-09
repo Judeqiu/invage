@@ -21,7 +21,7 @@ export interface SlackBindContext {
 
 export interface WebBindContext {
   args: string;
-  userSlug: string;
+  userId: string;
   isAdmin: boolean;
   conversationId?: string | null;
 }
@@ -37,7 +37,7 @@ export async function handleBindCommand(ctx: SlackBindContext): Promise<string> 
 export async function handleBindWebCommand(ctx: WebBindContext): Promise<string> {
   const result = await handleBind({
     payload: ctx.args,
-    userSlug: ctx.userSlug || undefined,
+    userId: ctx.userId || undefined,
     web: true,
   });
   return result.reply;

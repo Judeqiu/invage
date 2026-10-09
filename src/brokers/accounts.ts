@@ -463,7 +463,7 @@ export async function previewBrokerAccount(state: InvestorState, id: string, tra
   if (!conn || !conn.account_id) throw new Error('Broker account binding is required.');
   let statements: BrokerStatement[];
   try {
-    ({ statements } = await fetchStatements(model, conn, id, state.user.slug, transport));
+    ({ statements } = await fetchStatements(model, conn, id, state.user.id, transport));
   } catch (error) {
     const def = getBrokerConnector(conn.broker_id);
     const credentials = combinedCredentials(model, conn);
@@ -500,7 +500,7 @@ export async function syncBrokerAccount(snapshot: InvestorSnapshot, id: string, 
   const def = getBrokerConnector(conn.broker_id);
   const credentials = combinedCredentials(model, conn);
   const before = captureBrokerSyncSnapshot(state, conn.channel);
-  const key = `${state.user.slug}:${id}`;
+  const key = `${state.user.id}:${id}`;
   if (inflight.has(key)) throw new Error('Sync already in progress.');
   inflight.add(key);
   const at = new Date().toISOString();
@@ -508,18 +508,18 @@ export async function syncBrokerAccount(snapshot: InvestorSnapshot, id: string, 
   let raw: Buffer | undefined;
   let archivePath: string | undefined;
   const rawId = () => archivePath
-    ? relative(join(resolveDataRoot(), 'drive', state.user.slug), archivePath).replaceAll('\\', '/') : undefined;
+    ? relative(join(resolveDataRoot(), 'drive', state.user.id), archivePath).replaceAll('\\', '/') : undefined;
   try {
     let applied: BrokerApplyResult;
     try {
       if (!conn.enabled) throw new Error('Broker connection is paused.');
       if (!conn.account_id) throw new Error('Broker account binding is required.');
       if (!requiredComplete(def, credentials)) throw new Error('Required broker fields are incomplete.');
-      const fetched = await fetchStatements(model, conn, id, state.user.slug, transport, body => { raw = body; });
+      const fetched = await fetchStatements(model, conn, id, state.user.id, transport, body => { raw = body; });
       raw = fetched.raw;
       const statement = fetched.statements.find(s => s.account_id === conn.account_id);
       if (!statement) throw new Error(`Broker statement account mismatch: expected ${conn.account_id}.`);
-      archivePath = archive(state.user.slug, conn, fetched.raw, statement.as_of, true);
+      archivePath = archive(state.user.id, conn, fetched.raw, statement.as_of, true);
       // A legacy connector-keyed connection is normalized in memory by
       // readBrokerAccountModel(). Persist that canonical shape before the apply
       // layer verifies the selected account and channel against stored state.
@@ -535,11 +535,11 @@ export async function syncBrokerAccount(snapshot: InvestorSnapshot, id: string, 
     } catch (error) {
       const secrets = def.credentialFields.filter(f => f.type === 'secret').map(f => credentials[f.id]).filter((v): v is string => !!v);
       const message = redactSecrets(error instanceof Error ? error.message : String(error), secrets);
-      if (raw && !archivePath) archivePath = archive(state.user.slug, conn, raw, at.slice(0, 10), false, message);
-      recordBrokerSyncRun(state.user.slug, conn.channel, { id: syncId, at, trigger, ok: false, error: message,
+      if (raw && !archivePath) archivePath = archive(state.user.id, conn, raw, at.slice(0, 10), false, message);
+      recordBrokerSyncRun(state.user.id, conn.channel, { id: syncId, at, trigger, ok: false, error: message,
         ...(rawId() ? { raw_data_id: rawId() } : {}) });
       try {
-        const fresh = await loadInvestor(state.user.slug);
+        const fresh = await loadInvestor(state.user.id);
         const current = readBrokerAccountModel(fresh.state);
         if (current.connections[id]) {
           current.connections[id].last_sync = { at, ok: false, error: message };
@@ -547,16 +547,16 @@ export async function syncBrokerAccount(snapshot: InvestorSnapshot, id: string, 
           await saveInvestor(fresh);
         }
       } finally {
-        await publishBrokerSyncFailure(state.user.slug, def.displayName, conn.label, message);
+        await publishBrokerSyncFailure(state.user.id, def.displayName, conn.label, message);
       }
       throw new Error(message);
     }
-    recordBrokerSyncRun(state.user.slug, conn.channel, { id: syncId, at, trigger, ok: true, as_of: applied.asOf,
+    recordBrokerSyncRun(state.user.id, conn.channel, { id: syncId, at, trigger, ok: true, as_of: applied.asOf,
       account_id: applied.accountId, lots_upserted: applied.lotsUpserted, lots_removed: applied.lotsRemoved,
       ...(rawId() ? { raw_data_id: rawId() } : {}) });
     applied.archivePath = archivePath;
     try {
-      await publishBrokerSyncSuccess(state.user.slug, state.user.admin === true,
+      await publishBrokerSyncSuccess(state.user.id, state.user.admin === true,
         brokerSyncFacts(def.displayName, conn.label, before, captureBrokerSyncSnapshot(state, conn.channel), applied,
           conn.last_sync?.ok === true));
     } catch (error) {

@@ -491,7 +491,7 @@ export async function syncBrokerConnection(
   opts?: { transport?: AdapterTransport },
 ): Promise<{ view: PublicConnectorView; applied: BrokerApplyResult }> {
   const { state } = snapshot;
-  const slug = state.user.slug;
+  const slug = state.user.id;
   if (!slug) throw new Error('Investor state has no user.slug.');
   const broker = getBrokerConnector(id);
   const before = captureBrokerSyncSnapshot(state, broker.channel);

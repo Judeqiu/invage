@@ -70,7 +70,17 @@ if (isMain) {
   const { openDatabaseRuntime, bindDatabaseRuntime } = await import('utarus/database');
   const database = await openDatabaseRuntime({ env: process.env, mode: 'personal', onError: error => { throw error; } });
   const release = bindDatabaseRuntime(database);
+  let framework: Framework | undefined;
   try {
+    const { readAccountConfiguration } = await import('../accounts.js');
+    const accounts = readAccountConfiguration(process.env);
+    if (accounts.mode === 'shared') {
+      const { createFramework } = await import('utarus');
+      const { buildFrameworkAgentList } = await import('../agents/framework-agents.js');
+      const { HOST_AGENT_ID, readProductProfile } = await import('../agents/roster.js');
+      framework = await createFramework({ database, accounts, defaultAgentId: HOST_AGENT_ID,
+        agents: buildFrameworkAgentList(readProductProfile()) });
+    }
     const port = Number(process.env.WEBAPP_PORT);
     if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('WEBAPP_PORT must be an explicit valid port');
     const app = buildAppWithOnboard();
@@ -86,6 +96,7 @@ if (isMain) {
           const closed = new Promise<void>((resolve, reject) => { server.close(error => error ? reject(error) : resolve()); server.closeAllConnections(); });
           const results = await Promise.allSettled([closed, drained]);
           const errors = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected').map(r => r.reason);
+          await framework?.stop();
           if (errors.length) throw new AggregateError(errors, 'Drive shutdown failed');
         } finally { release(); await database.close(); }
       })();
@@ -94,6 +105,7 @@ if (isMain) {
     process.once('SIGTERM', stop);
     process.once('SIGINT', stop);
   } catch (error) {
+    await framework?.stop();
     release();
     await database.close();
     throw error;

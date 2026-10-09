@@ -70,7 +70,7 @@ export function createInspectIbkrNavHistoryTool(): AgentTool {
           return result('month must be YYYY-MM.', null);
         }
         const { state } = await resolveInvestorFromChannel(p);
-        const page = listRawData(state.user.slug, 0, MAX_FILES, 'ibkr');
+        const page = listRawData(state.user.id, 0, MAX_FILES, 'ibkr');
         const xmlFiles = page.files.filter((file) => file.id.endsWith('.xml') &&
           (file.source_kind === 'broker-sync' || file.source_kind === 'broker-triage'));
         const marks = new Map<string, NavMark>();
@@ -80,7 +80,7 @@ export function createInspectIbkrNavHistoryTool(): AgentTool {
         let filesWithFlowSections = 0;
         for (const file of xmlFiles) {
           if (file.bytes > MAX_XML_BYTES) { tooLarge.push(file.id); continue; }
-          const xml = xmlText(state.user.slug, file);
+          const xml = xmlText(state.user.id, file);
           if (/<(?:DepositsAndWithdrawals|DepositWithdrawal|Transfers|Transfer)\b/i.test(xml)) {
             filesWithFlowSections++;
           }

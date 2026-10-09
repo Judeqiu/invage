@@ -9,7 +9,7 @@ import type { DomainExtension, EnrichMessageContext, Skill } from 'utarus';
 import {
   resolveUserBySlackUser,
   resolveUserByTelegramUser,
-  resolveUserBySlug,
+  resolveUserById,
   registerDomainSkill,
 } from 'utarus';
 import { readFileSync, existsSync } from 'fs';
@@ -152,8 +152,8 @@ ${AUDITOR_HELP_FIRST}`;
 function factcheckerContextPrefix(investor: InvestorState, ctx: EnrichMessageContext): string {
   if (PROFILE === 'consultant') {
     const optionLots = Object.values(getPortfolio(investor)).filter((holding) => holding.option != null).length;
-    const channelHint = ctx.telegramUserId != null ? `telegram_user_id=${ctx.telegramUserId}` : ctx.slackUserId ? `slack_user_id="${ctx.slackUserId}"` : ctx.userSlug ? `user_slug="${ctx.userSlug}"` : '';
-    return `[Options audit context: user "${investor.user.slug}"; option lots recorded: ${optionLots}. ${channelHint}. Re-run relevant tools and submit_factcheck_verdict. No strategy craft or book writes.]\n`;
+    const channelHint = ctx.telegramUserId != null ? `telegram_user_id=${ctx.telegramUserId}` : ctx.slackUserId ? `slack_user_id="${ctx.slackUserId}"` : ctx.userId ? `user_id="${ctx.userId}"` : '';
+    return `[Options audit context: user "${investor.user.id}"; option lots recorded: ${optionLots}. ${channelHint}. Re-run relevant tools and submit_factcheck_verdict. No strategy craft or book writes.]\n`;
   }
   const portfolio = getPortfolio(investor);
   const n = Object.keys(portfolio).length;
@@ -171,11 +171,11 @@ function factcheckerContextPrefix(investor: InvestorState, ctx: EnrichMessageCon
       ? `Use telegram_user_id=${ctx.telegramUserId} on tools.`
       : ctx.slackUserId
         ? `Use slack_user_id="${ctx.slackUserId}" on tools.`
-        : ctx.userSlug
-          ? `Use user_slug="${ctx.userSlug}" on tools.`
+        : ctx.userId
+          ? `Use user_id="${ctx.userId}" on tools.`
           : '';
   return (
-    `[Factchecker context: user "${investor.user.slug}" (${investor.profile.display_name}). ` +
+    `[Factchecker context: user "${investor.user.id}" (${investor.profile.display_name}). ` +
     `Holdings lots: ${n}. Open liabilities: ${openDebt}. ${cashHint} ${channelHint} ` +
     `Read-only re-check only. Must call submit_factcheck_verdict. No nested specialist craft. ` +
     `No product synthesis essay. Conditional list_journal_entries (n/a if books DB unset without journal claims). ` +
@@ -211,8 +211,8 @@ export const factcheckerExtension: DomainExtension = {
       investor = await resolveUserByTelegramUser(ctx.telegramUserId) as InvestorState | null;
     } else if (ctx.slackUserId) {
       investor = await resolveUserBySlackUser(ctx.slackUserId) as InvestorState | null;
-    } else if (ctx.userSlug) {
-      investor = await resolveUserBySlug(ctx.userSlug) as InvestorState | null;
+    } else if (ctx.userId) {
+      investor = await resolveUserById(ctx.userId) as InvestorState | null;
     }
 
     if (investor) {

@@ -1,22 +1,22 @@
 import { Type } from 'typebox';
 import type { AgentTool, AgentToolResult } from '@earendil-works/pi-agent-core';
-import { assertValidSlug, config, loadState } from 'utarus';
+import { assertUserId, config, loadStateById } from 'utarus';
 
 function result(text: string, details: unknown): AgentToolResult<unknown> {
   return { content: [{ type: 'text', text }], details };
 }
 
-/** Credentials stay in the host. The framework supplies this slug after authentication. */
-export function createBoundBinDriveTools(userSlug: string, incognito?: true): AgentTool[] {
-  if (typeof userSlug !== 'string' || !userSlug.trim()) throw new Error('Authenticated user identity required for BinDrive');
-  assertValidSlug(userSlug);
+/** Credentials stay in the host. The framework supplies this UUID after authentication. */
+export function createBoundBinDriveTools(userId: string, incognito?: true): AgentTool[] {
+  if (typeof userId !== 'string' || !userId.trim()) throw new Error('Authenticated user identity required for BinDrive');
+  assertUserId(userId);
 
   async function request(method: string, path: string, body?: unknown): Promise<string> {
     try {
       if (incognito === true) throw new Error('BinDrive is unavailable in incognito sessions');
       // Re-read on every operation so rotation/deletion takes effect without a new chat.
-      const { state } = await loadState(userSlug);
-      if (state.user.slug !== userSlug || state.user.deleted_at !== undefined) {
+      const { state } = await loadStateById(userId);
+      if (state.user.id !== userId || state.user.deleted_at !== undefined) {
         throw new Error('BinDrive account unavailable');
       }
       const token = state.user.auth_token;
