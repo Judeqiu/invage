@@ -29,7 +29,7 @@ try {
     const allowance = await client.readAllowance(accountId, usage.period);
     assert.equal(allowance.cap, null); assert.equal(allowance.spent, usage.period_credits);
     const headers = { Authorization: `Bearer ${state.user.auth_token}` };
-    for (const path of ['/api/files', '/api/chat/conversations', '/api/domain/invage/broker-connections',
+    for (const path of ['/api/files', '/api/chat/conversations', '/api/domain/invage/broker-accounts',
       '/api/domain/invage/portfolio-settings', '/api/domain/invage/trades', '/api/domain/invage/option-history', '/api/domain/invage/book']) {
       const response = await fetch(base + path, { headers, signal: AbortSignal.timeout(20000) });
       assert.equal(response.status, 200, `${alias}: ${path} returned ${response.status}`);

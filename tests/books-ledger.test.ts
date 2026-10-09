@@ -51,7 +51,7 @@ const { getCashes, getDeposits, setCash, setCashes, setPortfolio } = await impor
 );
 
 const HOUSEHOLD_ID = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
-const SLUG = 'books-test';
+const SLUG = HOUSEHOLD_ID;
 
 /** Rebuild only this file's disposable books schema between fixtures. */
 async function wipeHousehold(_id: string): Promise<void> {
@@ -74,7 +74,6 @@ async function createUserFixture(): Promise<void> {
   await createInvestorFixture({
       user: {
         id: HOUSEHOLD_ID,
-        slug: SLUG,
         created_at: '2026-08-01',
         telegram_user_ids: [424242],
         auth_token: randomUUID(),
