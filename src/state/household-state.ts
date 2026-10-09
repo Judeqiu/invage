@@ -239,6 +239,11 @@ export function getTreasury(state: HouseholdInvestorState): TreasurySettings | n
   return assertTreasurySettings(state.treasury);
 }
 
+/** Portfolio totals use USD until the user saves another reporting currency. */
+export function getReportingCurrency(state: HouseholdInvestorState): string {
+  return getTreasury(state)?.reporting_currency ?? 'USD';
+}
+
 export function setTreasury(state: HouseholdInvestorState, treasury: TreasurySettings): void {
   state.treasury = assertTreasurySettings(treasury);
 }

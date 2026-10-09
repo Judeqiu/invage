@@ -24,7 +24,7 @@
       <label for="currency">Reporting currency
         <select id="currency" required disabled>
           <option value="">Choose currency</option>
-          <option value="USD">USD — US dollar</option>
+          <option value="USD" selected>USD — US dollar</option>
           <option value="SGD">SGD — Singapore dollar</option>
           <option value="HKD">HKD — Hong Kong dollar</option>
           <option value="CNH">CNH — offshore yuan</option>
@@ -38,7 +38,7 @@
       </label>
       <button id="save" type="submit" disabled>Save</button>
     </div>
-    <p>Portfolio totals use this currency. Broker balances and positions stay in their original currencies. Live FX rates are shown on the dashboard.</p>
+    <p>Portfolio totals use this currency, with USD as the default. Broker balances and positions stay in their original currencies. Live FX rates are shown on the dashboard.</p>
     <p id="message" role="status"></p>
   </form>
   <script src="./app.js"></script>

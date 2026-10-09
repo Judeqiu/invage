@@ -25,7 +25,7 @@ import {
   type InvestorState,
 } from '../state/portfolio-state.js';
 import {
-  getTreasury,
+  getReportingCurrency,
   type HouseholdInvestorState,
 } from '../state/household-state.js';
 import { loadSnapshots, type Snapshot } from '../state/snapshot.js';
@@ -278,30 +278,20 @@ export async function loadDashboardForSlug(
     ),
   ];
   let fx: DashboardFxOptions | undefined;
-  const treasury = getTreasury(state as HouseholdInvestorState);
-  if (treasury == null) {
-    if (moneyCurrencies.length > 1) warnings.push({
-      code: 'mixed_currency_no_reporting',
+  const reportingCurrency = getReportingCurrency(state as HouseholdInvestorState);
+  try {
+    const rep = reportingCurrency;
+    const foreign = moneyCurrencies.filter((currency) => currency !== rep);
+    const rates = foreign.length > 0 ? await fetchFxRates(foreign, rep) : {};
+    fx = { reportingCurrency: rep, fxRates: rates };
+  } catch (e) {
+    warnings.push({
+      code: 'fx_fetch_failed',
       message:
-        `Multiple currencies (${moneyCurrencies.join(', ')}) without treasury.reporting_currency. ` +
-        'Choose a reporting currency in Settings → Portfolio. NAV is unavailable until all values can be converted.',
+        (e instanceof Error ? e.message : String(e)) +
+        ' NAV is unavailable until FX succeeds.',
       severity: 'warning',
     });
-  } else {
-    try {
-      const rep = treasury.reporting_currency;
-      const foreign = moneyCurrencies.filter((currency) => currency !== rep);
-      const rates = foreign.length > 0 ? await fetchFxRates(foreign, rep) : {};
-      fx = { reportingCurrency: rep, fxRates: rates };
-    } catch (e) {
-      warnings.push({
-        code: 'fx_fetch_failed',
-        message:
-          (e instanceof Error ? e.message : String(e)) +
-          ' NAV is unavailable until FX succeeds.',
-        severity: 'warning',
-      });
-    }
   }
 
   let live;
@@ -331,7 +321,7 @@ export async function loadDashboardForSlug(
         : null,
       undefined,
       fx,
-      { resilient: true, reportingCurrency: treasury?.reporting_currency },
+      { resilient: true, reportingCurrency },
     );
     for (const position of live.positions) {
       const stored = portfolio[position.ticker];

@@ -10,7 +10,7 @@ import { fetchFxRates } from '../market/fetch-fx.js';
 import { buildLivePositions, type DashboardFxOptions } from '../report/dashboard-model.js';
 import { getCashes, getDeposits, getPortfolio } from '../state/portfolio-state.js';
 import {
-  getTreasury,
+  getReportingCurrency,
   type HouseholdInvestorState,
 } from '../state/household-state.js';
 import {
@@ -66,21 +66,20 @@ export function createSnapshotTool(): AgentTool[] {
           await resolvePortfolioMarket(portfolio);
         const cashes = getCashes(state);
         const deposits = getDeposits(state);
-        const rep = getTreasury(state as HouseholdInvestorState)?.reporting_currency ?? null;
+        const rep = getReportingCurrency(state as HouseholdInvestorState);
         const currencies = [...new Set([
           ...Object.values(valued).map((holding) => holding.currency).filter((c): c is string => !!c),
           ...cashes.filter((c) => c.amount !== 0).map((c) => c.currency),
           ...deposits.filter((d) => d.amount !== 0).map((d) => d.currency),
         ])];
-        let fx: DashboardFxOptions | undefined;
-        if (rep) {
-          const foreign = currencies.filter((currency) => currency !== rep);
-          fx = { reportingCurrency: rep, fxRates: foreign.length ? await fetchFxRates(foreign, rep) : {} };
-        }
+        const foreign = currencies.filter((currency) => currency !== rep);
+        const fx: DashboardFxOptions = {
+          reportingCurrency: rep, fxRates: foreign.length ? await fetchFxRates(foreign, rep) : {},
+        };
         const live = buildLivePositions(valued, equityPrices, optionMarks,
           cashes.map((c) => ({ amount: c.amount, currency: c.currency, channel: c.channel })),
-          deposits, undefined, fx, { reportingCurrency: rep ?? undefined });
-        if (live.navComplete === false) throw new Error('Snapshot NAV incomplete: set a reporting currency and provide all holding currencies.');
+          deposits, undefined, fx, { reportingCurrency: rep });
+        if (live.navComplete === false) throw new Error('Snapshot NAV incomplete: provide all holding currencies.');
         const positions: SnapshotPosition[] = live.positions.map((e) => ({
           ticker: e.ticker,
           ...(e.currency ? { currency: e.currency } : {}),

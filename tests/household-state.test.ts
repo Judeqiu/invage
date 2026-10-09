@@ -7,6 +7,7 @@ import {
   assertProjectionAssumptions,
   assertSavedScenario,
   assertTreasurySettings,
+  getReportingCurrency,
   normalizeProperties,
   propertyPaidToDate,
   upsertLiability,
@@ -31,6 +32,18 @@ function blankState(): HouseholdInvestorState {
 }
 
 describe('household-state validation', () => {
+  it('defaults portfolio reporting to USD without changing user state', () => {
+    const state = blankState();
+    expect(getReportingCurrency(state)).toBe('USD');
+    expect(state.treasury).toBeUndefined();
+  });
+
+  it('uses the user-selected reporting currency instead of the USD default', () => {
+    const state = blankState();
+    state.treasury = { reporting_currency: 'SGD', updated_at: '2026-10-09' };
+    expect(getReportingCurrency(state)).toBe('SGD');
+  });
+
   it('validates treasury', () => {
     const t = assertTreasurySettings({
       reporting_currency: 'sgd',

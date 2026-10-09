@@ -18,7 +18,7 @@ import { getPortfolio } from '../state/portfolio-state.js';
 import { fetchHistoricalCloses } from '../market/fetch-history.js';
 import { openOptionTradeDetails } from './option-dashboard-data.js';
 import { canonicalOptionUnderlying } from '../brokers/option-symbol.js';
-import { getTreasury, setTreasury, type HouseholdInvestorState } from '../state/household-state.js';
+import { getTreasury, getReportingCurrency, setTreasury, type HouseholdInvestorState } from '../state/household-state.js';
 import { saveInvestor } from '../state/investor-store.js';
 
 export function createDashboardApiRouter(): Router {
@@ -30,7 +30,7 @@ export function createDashboardApiRouter(): Router {
       if (!user?.userId) { res.status(401).json({ error: 'unauthorized' }); return; }
       const snapshot = await loadSessionState(req);
       res.setHeader('Cache-Control', 'private, no-store');
-      res.json({ reporting_currency: getTreasury(snapshot.state as HouseholdInvestorState)?.reporting_currency ?? null });
+      res.json({ reporting_currency: getReportingCurrency(snapshot.state as HouseholdInvestorState) });
     } catch (e) {
       res.status(500).json({ error: 'settings_failed', message: e instanceof Error ? e.message : String(e) });
     }
