@@ -263,8 +263,9 @@ function matchedTradePl(episode: OptionEpisode): OptionEpisode['matched_trade_pl
     }
     if (Number(atDate) / 10 ** scale !== observation.units) return undefined;
   }
-  const amount = addDecimals(...rows.flatMap(row => [row.gross_premium, row.commission]));
-  const fees = addDecimals(...rows.map(row => row.commission));
+  if (rows.some(row => row.commission === null)) return undefined;
+  const amount = addDecimals(...rows.flatMap(row => [row.gross_premium, row.commission!]));
+  const fees = addDecimals(...rows.map(row => row.commission!));
   const quantityText = (value: bigint) => scale
     ? `${(value / 10n ** BigInt(scale)).toString()}.${(value % 10n ** BigInt(scale)).toString().padStart(scale, '0')}`
     : value.toString();

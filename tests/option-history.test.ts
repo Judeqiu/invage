@@ -43,6 +43,8 @@ describe('option observation episodes', () => {
     expect(episode.status).toBe('closed_by_fills');
     expect(episode.matched_trade_pl).toEqual({ amount: '297.919641', currency: 'USD',
       opened: '1', closed: '1', fees: '-2.080359' });
+    s.option_executions = [{ ...base, commission: null }, close];
+    expect(buildOptionEpisodes(s)[0].matched_trade_pl).toBeUndefined();
     s.option_executions = [close];
     expect(buildOptionEpisodes(s)[0].matched_trade_pl).toBeUndefined();
     s.option_executions = [base, { ...close, contracts: '0.5' }];

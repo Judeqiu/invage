@@ -14,6 +14,8 @@ export interface MooMooRawBundle {
   positions: MooMooEnvelope;
   /** Exact-code static contract metadata, retained for reproducible mapping. */
   option_basicinfo?: Record<string, unknown>[];
+  /** Complete paginated fill history, with the requested range retained. */
+  fills_history?: { start: string; end: string; rows: Record<string, unknown>[] };
 }
 
 export function envelopeOk(env: MooMooEnvelope): boolean {

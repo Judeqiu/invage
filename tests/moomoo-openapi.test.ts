@@ -215,6 +215,7 @@ describe('MooMoo fetchRaw', () => {
         return Response.json(envelopes.funds);
       }
       if (href.includes('/positions')) return Response.json(envelopes.positions);
+      if (href.includes('/fills_history')) return Response.json(envelopes.history ?? { s: 'ok', d: { order_fills: [], completed: true, page_flag: '' } });
       throw new Error(`unexpected ${href}`);
     };
   }
@@ -320,12 +321,13 @@ describe('MooMoo fetchRaw', () => {
           return new Response('{"s":"ok","d":{"accounts":[{"account_id":283726802396297711},{"account_id":283726798101330415}]}}');
         }
         if (href.includes('/funds')) return Response.json(FUNDS);
+        if (href.includes('/fills_history')) return Response.json({ s: 'ok', d: { order_fills: [], completed: true } });
         return Response.json(POSITIONS);
       } },
     );
     expect(raw.acc_id).toBe(id);
     expect(raw.authorized.d).toEqual({ accounts: [{ account_id: id }, { account_id: '283726798101330415' }] });
-    expect(urls.slice(1)).toEqual([
+    expect(urls.slice(1).filter(url => !url.includes('/fills_history'))).toEqual([
       `https://webapi.moomoo.com/api/v1.0/accounts/${id}/funds?currency=USD`,
       `https://webapi.moomoo.com/api/v1.0/accounts/${id}/positions`,
     ]);

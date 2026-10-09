@@ -7,6 +7,8 @@ export interface OpenOptionTradeDetail {
   openedTo: string;
   /** Net proceeds from the still-open STO fills, including their allocated commissions. */
   stoNetPremium: number | null;
+  /** Opening proceeds before fees, when the broker omits commissions. */
+  stoGrossPremium?: number;
   currency: string | null;
 }
 
@@ -37,7 +39,7 @@ export function openOptionTradeDetails(
     const rows = executions.filter(row => sameContract(row, holding, accountsByChannel[channel]))
       .sort((a, b) => a.executed_at.localeCompare(b.executed_at) || a.execution_id.localeCompare(b.execution_id));
     if (new Set(rows.map(row => row.account_id)).size > 1) continue;
-    const lots: Array<{ date: string; remaining: number; netPerContract: number; currency: string }> = [];
+    const lots: Array<{ date: string; remaining: number; netPerContract: number | null; grossPerContract: number; currency: string }> = [];
     let invalid = false;
     for (const row of rows) {
       const opening = row.effect === 'open' && row.side === (short ? 'sell' : 'buy');
@@ -47,7 +49,8 @@ export function openOptionTradeDetails(
       if (!Number.isFinite(contracts) || contracts <= 0) { invalid = true; break; }
       if (opening) {
         lots.push({ date: row.executed_at.slice(0, 10), remaining: contracts,
-          netPerContract: (Number(row.gross_premium) + Number(row.commission)) / contracts,
+          netPerContract: row.commission === null ? null : (Number(row.gross_premium) + Number(row.commission)) / contracts,
+          grossPerContract: Number(row.gross_premium) / contracts,
           currency: row.currency });
       } else {
         let toClose = contracts;
@@ -67,7 +70,10 @@ export function openOptionTradeDetails(
     out[key] = {
       openedFrom: open[0].date,
       openedTo: open[open.length - 1].date,
-      stoNetPremium: short ? open.reduce((sum, lot) => sum + lot.remaining * lot.netPerContract, 0) : null,
+      stoNetPremium: short && open.every(lot => lot.netPerContract !== null)
+        ? open.reduce((sum, lot) => sum + lot.remaining * lot.netPerContract!, 0) : null,
+      ...(short && open.some(lot => lot.netPerContract === null)
+        ? { stoGrossPremium: open.reduce((sum, lot) => sum + lot.remaining * lot.grossPerContract, 0) } : {}),
       currency: short ? open[0].currency : null,
     };
   }

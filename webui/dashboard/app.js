@@ -171,11 +171,12 @@ function recordedPremiumForView(view, date) {
   const rows = (journal.daily || []).filter(row => channels.includes(row.channel) && row.date >= start && row.date <= date);
   const currency = reportingCcyCode(view);
   const convert = (row) => {
-    if (!currency) return null;
+    if (!currency || row.net_premium == null) return null;
     if (row.currency === currency) return Number(row.net_premium);
     const rate = view.fxApplied ? view.fxRates?.[row.currency] : null;
     return Number.isFinite(rate) && rate > 0 ? Number(row.net_premium) * rate : null;
   };
+  if (rows.some(row => row.net_premium == null)) return { daily: null, mtd: null, reason: 'Broker fill fees are unavailable; net premium is unknown' };
   if (rows.some(row => convert(row) == null)) return { daily: null, mtd: null, reason: 'Trade currencies cannot be combined without FX' };
   const sum = list => list.length ? list.reduce((total, row) => total + convert(row), 0) : null;
   return { daily: sum(rows.filter(row => row.date === date)), mtd: sum(rows),
@@ -410,7 +411,7 @@ function showOptionHistoryDetail(id) {
     ${row.event_coverage_gap ? `<p><strong>Event coverage gap:</strong> ${escapeHtml(row.event_coverage_gap)}</p>` : ''}
     <p><strong>Broker observations:</strong></p><ul>${row.observations.map(o => `<li>${escapeHtml(o.as_of)} · ${o.units} contract${o.units === 1 ? '' : 's'} · broker mark ${fmtPrettyMoney(o.mark, row.contract.currency)}${o.source === 'prior_books' ? ' · prior books' : ''}</li>`).join('')}</ul>
     <p><strong>Imported fills for this contract:</strong> ${row.executions.length ? `${row.executions.length} execution${row.executions.length === 1 ? '' : 's'}. Dates can precede the first position observation; a same-day reopen may share fills across episodes.` : 'None available.'}</p>
-    ${row.executions.length ? `<ul>${row.executions.map(fill => `<li>${escapeHtml(fill.executed_at.replace('T', ' '))} · ${escapeHtml(fill.side.toUpperCase())} to ${escapeHtml(fill.effect)} · ${escapeHtml(fill.contracts)} contracts · gross ${escapeHtml(fill.gross_premium)} ${escapeHtml(fill.currency)} · commission ${escapeHtml(fill.commission)} ${escapeHtml(fill.currency)}</li>`).join('')}</ul>` : ''}
+    ${row.executions.length ? `<ul>${row.executions.map(fill => `<li>${escapeHtml(fill.executed_at.replace('T', ' '))} · ${escapeHtml(fill.side.toUpperCase())} to ${escapeHtml(fill.effect)} · ${escapeHtml(fill.contracts)} contracts · gross ${escapeHtml(fill.gross_premium)} ${escapeHtml(fill.currency)} · commission ${fill.commission == null ? 'not reported' : `${escapeHtml(fill.commission)} ${escapeHtml(fill.currency)}`}</li>`).join('')}</ul>` : ''}
     <p><strong>Broker lifecycle events:</strong> ${row.events?.length ? `${row.events.length} record${row.events.length === 1 ? '' : 's'}.` : row.broker_id === 'ibkr' ? 'None imported. Include Option Exercises, Assignments &amp; Expirations in the Activity Flex query to capture them.' : 'None imported. This broker connection currently supplies position snapshots only.'}</p>
     ${row.events?.length ? `<ul>${row.events.map(event => `<li>${escapeHtml(event.date)} · ${escapeHtml(event.kind.replaceAll('_', ' '))} · ${escapeHtml(event.contracts)} contracts · ${escapeHtml(event.settlement)} settlement${event.proceeds !== undefined ? ` · proceeds ${escapeHtml(event.proceeds)} ${escapeHtml(event.currency)}` : ''}${event.broker_realized_pl !== undefined ? ` · broker option P&amp;L ${escapeHtml(event.broker_realized_pl)} ${escapeHtml(event.currency)}` : ''}</li>`).join('')}</ul>` : ''}
     ${row.matched_trade_pl ? `<p><strong>Matched trade P&amp;L:</strong> ${escapeHtml(row.matched_trade_pl.amount)} ${escapeHtml(row.matched_trade_pl.currency)} from ${escapeHtml(row.matched_trade_pl.opened)} opened and ${escapeHtml(row.matched_trade_pl.closed)} closed contracts, including ${escapeHtml(row.matched_trade_pl.fees)} ${escapeHtml(row.matched_trade_pl.currency)} in reported commissions. Other taxes or charges outside these fills are not included.</p>` : ''}
@@ -1669,7 +1670,7 @@ function renderOpenOptions(view) {
     el.openOptionsHead.innerHTML = sectionHead(
       'Section 03',
       'Open options positions · broker view',
-      `The full open option book, grouped by expiry month. Opening dates and STO net credits require matching recorded fills; missing values stay unknown. ${dates.length ? `Broker positions as of ${dates.join(' · ')}.` : 'Broker position date unavailable.'}`,
+      `The full open option book, grouped by expiry month. Opening dates and STO credits require matching recorded fills. Credits marked “before fees” are gross proceeds; net credits are unknown when the broker omits fees. ${dates.length ? `Broker positions as of ${dates.join(' · ')}.` : 'Broker position date unavailable.'}`,
     );
   }
   const opts = allOptions.filter((p) =>
@@ -1750,7 +1751,9 @@ function renderOpenOptions(view) {
         <td class="option-opened">${opened}${closeButton}</td>
         <td class="num">${exposure ? rowMoney(exposure, 0) : '—'}</td>
         <td class="num">${dte == null ? '—' : `${dte}d`}</td>
-        <td class="num">${o.side === 'short' && trade?.stoNetPremium != null ? fmtPrettyMoney(trade.stoNetPremium, trade.currency, 2) : '—'}</td>
+        <td class="num">${o.side === 'short' && trade?.stoNetPremium != null ? fmtPrettyMoney(trade.stoNetPremium, trade.currency, 2)
+          : o.side === 'short' && trade?.stoGrossPremium != null
+            ? `${fmtPrettyMoney(trade.stoGrossPremium, trade.currency, 2)} <small title="Broker fill fees are not reported; net credit is unknown">before fees</small>` : '—'}</td>
         <td class="num">${rowMoney(Number(p.avgCost))}</td>
         <td class="num">${rowMoney(mark)}</td>
         <td class="num">${rowMoney(marketValue)}</td>

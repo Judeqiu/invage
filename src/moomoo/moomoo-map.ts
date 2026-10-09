@@ -15,6 +15,7 @@ import {
 } from '../market/position-value.js';
 import type { BrokerConnectionMetrics } from '../state/portfolio-state.js';
 import { envelopeOk, type MooMooRawBundle } from './moomoo-types.js';
+import { mapMooMooExecutions } from './moomoo-executions.js';
 
 export { looksLikeOptionCode } from '../brokers/option-symbol.js';
 
@@ -269,5 +270,7 @@ export function mapMooMooBundleToStatement(bundle: MooMooRawBundle, channel: str
     skipped,
   };
   if (metrics) statement.metrics = metrics;
+  const executions = mapMooMooExecutions(bundle, lots, channel);
+  if (executions !== undefined) statement.option_executions = executions;
   return statement;
 }

@@ -152,6 +152,52 @@ async function getWithSkewRetry(args: {
   return moomooGet({ ...args, timestampMs: server });
 }
 
+/** Read all pages, rather than silently truncating at the default 50 fills / 90 days. */
+async function fetchFillHistory(positions: MooMooEnvelope, accId: string,
+  credentials: MooMooCredentials, fetchImpl: typeof fetch): Promise<MooMooRawBundle['fills_history']> {
+  const markets = [...new Set((Array.isArray(positions.d) ? positions.d : []).flatMap(row => {
+    const code = String(row?.code ?? '');
+    const [market, symbol] = code.split('.');
+    return ['US', 'HK'].includes(market) && looksLikeOptionCode(symbol ?? '') ? [market] : [];
+  }))];
+  if (!markets.length) return undefined;
+  const start = '946684800000000'; // 2000-01-01, not the implicit 90-day window.
+  const end = String(BigInt(Date.now()) * 1000n);
+  const rows: Record<string, unknown>[] = [];
+  for (const market of markets) {
+    let pageFlag = '';
+    const seen = new Set<string>();
+    for (let page = 0; ; page++) {
+      if (page >= 1000) throw new BrokerParseError('MooMoo fill history exceeded the page limit; snapshot was not applied.');
+      const args = { path: `/api/v1.0/accounts/${encodeURIComponent(accId)}/fills_history`,
+        query: new URLSearchParams({ trd_market: market, start, end, page_flag: pageFlag, page_size: '50' }).toString(),
+        credentials, fetchImpl };
+      let env: MooMooEnvelope;
+      for (let attempt = 0; ; attempt++) {
+        try { env = await getWithSkewRetry(args); break; }
+        catch (error) {
+          if (!(error instanceof BrokerHttpError) || error.vendorCode !== '429' || attempt >= 3) throw error;
+          await new Promise(resolve => setTimeout(resolve, 1000 * 2 ** attempt));
+        }
+      }
+      failIfError(env, 'fills_history');
+      const data = env.d as { order_fills?: unknown; completed?: unknown; page_flag?: unknown } | undefined;
+      if (!Array.isArray(data?.order_fills) || typeof data.completed !== 'boolean' ||
+          data.order_fills.some(row => !row || typeof row !== 'object' || Array.isArray(row))) {
+        throw new BrokerParseError('MooMoo fill history response is incomplete; snapshot was not applied.');
+      }
+      rows.push(...data.order_fills as Record<string, unknown>[]);
+      if (data.completed) break;
+      if (typeof data.page_flag !== 'string' || !data.page_flag || seen.has(data.page_flag)) {
+        throw new BrokerParseError('MooMoo fill history pagination did not advance; snapshot was not applied.');
+      }
+      seen.add(data.page_flag);
+      pageFlag = data.page_flag;
+    }
+  }
+  return { start, end, rows };
+}
+
 function failIfError(env: MooMooEnvelope, what: string): void {
   if (envelopeOk(env)) return;
   throw new BrokerHttpError(
@@ -267,6 +313,7 @@ export async function fetchMooMooRawBundle(
   });
   failIfError(positions, 'positions');
   const option_basicinfo = await fetchOptionBasicInfo(positions, credentials, fetchImpl);
+  const fills_history = await fetchFillHistory(positions, acc_id, credentials, fetchImpl);
   return {
     schema: 'invage.moomoo.raw.v1',
     fetched_at: new Date().toISOString(),
@@ -275,5 +322,6 @@ export async function fetchMooMooRawBundle(
     funds,
     positions,
     ...(option_basicinfo.length ? { option_basicinfo } : {}),
+    ...(fills_history ? { fills_history } : {}),
   };
 }

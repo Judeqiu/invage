@@ -403,6 +403,20 @@ try {
   const css = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
   assert(css !== 'rgb(13, 17, 23)', `body not github dark, got ${css}`);
 
+  const savedTrade = payload.optionTradeDetails['AAPL  260918P00140000'];
+  const savedDaily = payload.premiumJournal.daily;
+  payload.optionTradeDetails['AAPL  260918P00140000'] = { ...savedTrade, stoNetPremium: null, stoGrossPremium: 500 };
+  payload.premiumJournal.daily = savedDaily.map(row => ({ ...row, net_premium: null }));
+  await page.goto(`http://127.0.0.1:${port}/dashboard/`);
+  await page.waitForSelector('#channelPills [data-channel="ibkr"]');
+  await page.click('#channelPills [data-channel="ibkr"]');
+  const grossCells = await page.$$eval('#openOptions .option-ledger-row td', cells => cells.map(cell => cell.textContent.trim()));
+  assert.equal(grossCells[5], '$500.00 before fees', 'gross proceeds cannot masquerade as net credit');
+  assert(grossCells[2].includes('09-Sep-2026'), 'opening date survives unavailable fees');
+  assert(/Broker fill fees are unavailable/.test(await page.$eval('#kpiRow', node => node.textContent)), 'net premium remains unknown rather than zero');
+  payload.optionTradeDetails['AAPL  260918P00140000'] = savedTrade;
+  payload.premiumJournal.daily = savedDaily;
+
   payload.equityPrices = {};
   await page.goto(`http://127.0.0.1:${port}/dashboard/`);
   await page.waitForFunction(() => document.getElementById('expiryTable')?.textContent?.includes('No spot quote'));

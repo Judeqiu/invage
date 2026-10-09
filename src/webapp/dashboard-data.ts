@@ -374,7 +374,7 @@ export async function loadDashboardForSlug(
     };
     for (const [id, conn] of Object.entries(conns)) {
       if (conn.account_id) accountsByChannel[conn.channel] = conn.account_id;
-      if (conn.broker_id === 'ibkr') premiumSupportedChannels.push(conn.channel);
+      if (['ibkr', 'moomoo'].includes(conn.broker_id)) premiumSupportedChannels.push(conn.channel);
       if (conn.last_sync?.ok) recordDate(conn.channel, conn.last_sync.as_of);
       const previous = latestSuccessfulBrokerSyncRun(slug, conn.channel);
       recordDate(conn.channel, previous?.as_of);

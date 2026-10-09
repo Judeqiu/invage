@@ -16,8 +16,8 @@ export interface OptionExecution {
   effect: 'open' | 'close';
   currency: string;
   gross_premium: string;
-  /** Signed cash effect: negative fee, positive rebate. Same currency as proceeds. */
-  commission: string;
+  /** Signed cash effect: negative fee, positive rebate; null if not reported. Same currency as proceeds. */
+  commission: string | null;
 }
 
 export function decimal(value: unknown): string {
@@ -50,7 +50,7 @@ export function assertOptionExecution(raw: unknown): OptionExecution {
   const r = raw as Record<string, unknown>;
   const fields = ['channel', 'account_id', 'execution_id', 'contract_id', 'executed_at', 'underlying', 'right', 'expiry', 'strike', 'multiplier', 'contracts', 'side', 'effect', 'currency', 'gross_premium', 'commission'];
   for (const key of Object.keys(r)) if (!fields.includes(key)) throw new Error(`Unknown execution field: ${key}`);
-  for (const key of fields) if (typeof r[key] !== 'string' || !r[key].trim()) throw new Error(`Execution ${key} is required`);
+  for (const key of fields) if (!(key === 'commission' && r[key] === null) && (typeof r[key] !== 'string' || !r[key].trim())) throw new Error(`Execution ${key} is required`);
   const e = r as unknown as OptionExecution;
   if (!['call', 'put'].includes(e.right) || !['buy', 'sell'].includes(e.side) || !['open', 'close'].includes(e.effect)) throw new Error('Invalid execution action or right');
   if (!/^[A-Z]{3,4}$/.test(e.currency)) throw new Error('Invalid execution currency');
@@ -60,7 +60,7 @@ export function assertOptionExecution(raw: unknown): OptionExecution {
     if (value.startsWith('-') || !/[1-9]/.test(value)) throw new Error('Execution strike, multiplier and contracts must be positive');
   }
   decimal(e.gross_premium);
-  decimal(e.commission);
+  if (e.commission !== null) decimal(e.commission);
   const nonzero = /[1-9]/.test(e.gross_premium);
   if (nonzero && (e.gross_premium.startsWith('-') !== (e.side === 'buy'))) throw new Error('Execution proceeds sign disagrees with buy/sell');
   // Canonical property order makes duplicate comparison independent of object key order.
@@ -82,20 +82,21 @@ export function mergeOptionExecutions(existing: unknown, incoming: unknown): Opt
 
 export function buildExecutionJournal(records: unknown) {
   if (records === undefined) return { available: false, executions: [], daily: [], cumulative: [] };
-  const executions = mergeOptionExecutions([], records).map(row => ({ ...row, net_premium: addDecimals(row.gross_premium, row.commission) }));
-  const groups = new Map<string, { channel: string; account_id: string; date: string; currency: string; net_premium: string }>();
+  const sumNet = (a: string | null, b: string | null): string | null => a === null || b === null ? null : addDecimals(a, b);
+  const executions = mergeOptionExecutions([], records).map(row => ({ ...row, net_premium: row.commission === null ? null : addDecimals(row.gross_premium, row.commission) }));
+  const groups = new Map<string, { channel: string; account_id: string; date: string; currency: string; net_premium: string | null }>();
   for (const row of executions) {
     if (!((row.side === 'sell' && row.effect === 'open') || (row.side === 'buy' && row.effect === 'close'))) continue;
     const date = row.executed_at.slice(0, 10);
     const key = JSON.stringify([row.channel, row.account_id, date, row.currency]);
     const prior = groups.get(key);
-    groups.set(key, { channel: row.channel, account_id: row.account_id, date, currency: row.currency, net_premium: prior ? addDecimals(prior.net_premium, row.net_premium) : row.net_premium });
+    groups.set(key, { channel: row.channel, account_id: row.account_id, date, currency: row.currency, net_premium: prior ? sumNet(prior.net_premium, row.net_premium) : row.net_premium });
   }
-  const cumulative = new Map<string, { channel: string; account_id: string; currency: string; net_premium: string }>();
+  const cumulative = new Map<string, { channel: string; account_id: string; currency: string; net_premium: string | null }>();
   for (const row of groups.values()) {
     const key = JSON.stringify([row.channel, row.account_id, row.currency]);
     const prior = cumulative.get(key);
-    cumulative.set(key, { channel: row.channel, account_id: row.account_id, currency: row.currency, net_premium: prior ? addDecimals(prior.net_premium, row.net_premium) : row.net_premium });
+    cumulative.set(key, { channel: row.channel, account_id: row.account_id, currency: row.currency, net_premium: prior ? sumNet(prior.net_premium, row.net_premium) : row.net_premium });
   }
   return { available: true, executions, daily: [...groups.values()], cumulative: [...cumulative.values()] };
 }
