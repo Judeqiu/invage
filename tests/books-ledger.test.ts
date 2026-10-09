@@ -355,9 +355,8 @@ describe('books ledger', () => {
         channel: 'ibkr',
       },
     });
-    await saveInvestor(stateSnapshot);
-
-    const result = await booksImportState(state, { force: true });
+    // Import into empty books; saveInvestor would already journal these balances.
+    const result = await booksImportState(state);
     expect(result.cashSlots).toBe(3);
     expect(result.deposits).toBe(1);
     expect(result.positions).toBe(1);
