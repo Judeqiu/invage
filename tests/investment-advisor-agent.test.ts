@@ -12,6 +12,8 @@ describe('InvestmentAdvisor local agent', () => {
     const names = createInvestmentAdvisorTools().map((t) => t.name);
     expect(names).toEqual(
       expect.arrayContaining([
+        'get_data_dictionary',
+        'query_data',
         'get_portfolio',
         'list_option_trades',
         'get_playbook',
@@ -20,7 +22,7 @@ describe('InvestmentAdvisor local agent', () => {
         'save_report',
       ]),
     );
-    expect(names).toHaveLength(6);
+    expect(names).toHaveLength(8);
   });
 
   it('excludes mutations, household, payment plans, and playbook updates', () => {
@@ -118,7 +120,7 @@ describe('InvestmentAdvisor local agent', () => {
     expect(expert.has('portfolio_analyzer')).toBe(true);
     expect(expert.has('get_quote')).toBe(true);
     expect(invage.has('portfolio_analyzer')).toBe(false);
-    expect(invage.has('get_quote')).toBe(false);
+    expect(invage.has('get_quote')).toBe(true);
     expect(book.has('portfolio_analyzer')).toBe(false);
     expect(acc.has('save_report')).toBe(false);
     expect(expert.has('build_payment_plan')).toBe(false);

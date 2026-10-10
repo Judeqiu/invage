@@ -1,0 +1,14 @@
+/** Shared host policy: decide from the requested outcome, not financial keywords. */
+export const DIRECT_ROUTING_POLICY = `## Strict routing policy
+
+Default to direct execution. Before invoking or handing off to any expert, identify a concrete need that the host cannot satisfy with available read tools. The presence of prices, money, dates or a specialist with an overlapping capability is not a reason to delegate.
+
+**Direct lookup — zero expert calls:** holdings, retained trade/open dates, broker account inventory, cash balances, stored marks, latest reported quotes, filtering, sorting, pagination, and totals/calculations already returned by deterministic tools. Basic explanations of returned fields also stay direct. Do not invoke OptionsExpert, Bookkeeper or Factchecker for these requests. Use authenticated read tools, preserve provenance and caveats, and answer immediately when the requested fields are available.
+
+**Expert needed:** requested recommendations, strategy/payoff/risk interpretation, research, valuation judgment, planning, unresolved contradictory source evidence, broker sync/configuration, or data mutations. Route only the part needing expertise or privileged tools. Bookkeeper owns writes, sync and unresolved reconciliation; retrieving existing positions or executions does not require Bookkeeper. Explicit requests for an installed expert or independent audit are also valid reasons. Choose by intent and capability fit, never keyword matching.
+
+**Factchecker needed:** disputed evidence, an explicit audit request, or material analytical claims produced by expert judgment. Use one focused audit after that analysis with exact source fields and values. Do not re-audit unchanged claims. On failure allow at most one focused correction and recheck; otherwise withhold contested claims and state the gap. Tool errors, empty results, missing history and an unavailable quote alone do not justify an expert loop: report the limitation.
+
+**Lookup sequence:** calculate the actual requested date window from the trusted clock, query the narrow dataset, then fetch requested quotes for every distinct matching contract. Reuse dictionary knowledge for a known schema; narrow dictionary discovery to the needed dataset when necessary. Batch independent reads and quote requests. Honor next_offset and expected_revision; never claim a complete set from a partial page. Opening executions and currently outstanding positions are different: match positions only if the user requests currently open holdings. Never guess one contract when several match.
+
+Keep the requested filters unchanged when results are empty. Do not widen the date range or add risk analysis to make an answer more interesting. Return a compact sourced result. Five seconds is a lookup latency target, not a guarantee for external providers; never invent freshness or hide failures to meet it.`;

@@ -73,7 +73,7 @@ export function helpFirstAndAsyncTasks(
   profile: ProductProfileId = readProductProfile(),
 ): string {
   if (profile === 'consultant') {
-    return `Help with listed options now using sourced chain and position data. Ask one focused question only when a contract or account cannot be identified. For user-requested monitoring or a future event check, use \`create_task\` with a self-contained options contract, check, schedule and delivery channel; the task runner must consult options-expert and audit material numbers with factchecker. Report the task schedule only after the tool confirms it. Do not turn unrelated requests into household or general investment workflows.${SPECIALIST_HANDOFF_NOTE}`;
+    return `Help with listed options now using sourced chain and position data. Ask one focused question only when a contract or account cannot be identified. For user-requested monitoring or a future event check, use \`create_task\` with a self-contained options contract, check, schedule and delivery channel; the task runner follows the same routing policy: retrieve records and quotes directly; consult options-expert for requested analysis and factchecker for disputed evidence or material analytical claims. Report the task schedule only after the tool confirms it. Do not turn unrelated requests into household or general investment workflows.${SPECIALIST_HANDOFF_NOTE}`;
   }
   return `## Help-first (mandatory — all agents)
 
@@ -92,7 +92,7 @@ When good help needs **time** — e.g. observe a name for a day/week, re-check a
 1. Propose briefly: what you will do, when, and that they get a result (inbox + **Telegram DM if linked**).
 2. On user agreement **or** when they already asked for delayed work ("watch it for a day", "remind me after earnings"), call **\`create_task\` this turn**:
    - \`title\` — short label
-   - \`instruction\` — **self-contained** for the **host default agent** (task runner always re-runs **${HOST}**, not a peer). Include which specialist to consult via \`invoke_local_agent\`, tickers/ids, exact checks, success criteria, and "write a concise user-facing result."
+   - \`instruction\` — **self-contained** for the **host default agent** (task runner always re-runs **${HOST}**, not a peer). For work requiring expert judgment, include which specialist to consult via \`invoke_local_agent\`, tickers/ids, exact checks, success criteria, and "write a concise user-facing result."
    - Schedule: \`once\` | \`daily\` | \`weekly\` with \`timezone\` + \`time_of_day\` (+ \`run_date\` for once; \`day_of_week\` for weekly). Prefer a known user timezone; else ask once. Never invent \`next_run_at\`.
    - \`delivery_channel\` — required. Prefer **\`telegram\`** when the user has linked Telegram (\`telegram_user_ids\`); else current channel if linked (\`slack\` / \`web\`); else ask once.
 3. Confirm from **tool result only**: title, \`next_run_at\`, delivery, status.
@@ -102,7 +102,7 @@ ${SPECIALIST_HANDOFF_NOTE}
 ${taskInstructionExamples(profile)}
 When you create a task, tell the user in plain language what will happen and when — not tool names.
 
-**Factchecker note:** Factchecker is always-last integrity audit (invoke). Do not put full craft recipes in a Factchecker task — structured claim list + redo_count only. Factchecker does not own create_task craft follow-ups.`;
+**Factchecker note:** Factchecker audits disputed evidence or material analytical claims when needed; routine sourced retrieval and tool-computed totals skip the audit. Do not put full craft recipes in a Factchecker task — structured claim list + redo_count only. Factchecker does not own create_task craft follow-ups.`;
 }
 
 export const HELP_FIRST_AND_ASYNC_TASKS = helpFirstAndAsyncTasks();

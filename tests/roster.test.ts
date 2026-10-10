@@ -76,7 +76,7 @@ describe('INVAGE_PRODUCT_PROFILE roster', () => {
     expect(purpose).not.toMatch(/InvestmentAdvisor/);
     expect(purpose).toMatch(/OptionsExpert/);
     expect(purpose).toMatch(/Factchecker/);
-    expect(purpose).toMatch(/always-last Factcheck/i);
+    expect(purpose).toMatch(/Direct lookup — zero expert calls/);
     expect(purpose).not.toMatch(/\*\*FinancialPlanner\*\*/);
     expect(purpose).not.toMatch(/\*\*AIDeal\*\*/);
     expect(purpose).not.toMatch(/\*\*RealEstateExpert\*\*/);

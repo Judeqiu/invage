@@ -1,3 +1,4 @@
+import { createOptionQuotesTool } from './option_quotes.js';
 import { createDataQueryTools } from './data_query.js';
 import type { AgentTool } from '@earendil-works/pi-agent-core';
 import {
@@ -51,13 +52,17 @@ import { createReconTools } from './recon.js';
 import { createListOptionTradesTool } from './option_trades.js';
 
 /**
- * Default host (WalletStreet) — orchestration + residual host domains only.
+ * Default host — direct read-only lookups and selective expert routing.
  *
  * **No books writes.** Portfolio / cash / FD / household ledger mutations are
  * Bookkeeper-only. Host may configure playbook and run read-side projections.
  */
 export function createInvageTools(): AgentTool[] {
   return [
+    createGetPortfolioTool(),
+    createListOptionTradesTool(),
+    createQuoteTool(),
+    createOptionQuotesTool(),
     ...createDataQueryTools(),
     createListBrokerAccountsTool(),
     ...createPlaybookTools(),

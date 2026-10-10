@@ -159,12 +159,12 @@ export function hostNeverDoYourself(profile: ProductProfileId): string {
   }
   if (peerEnabled(profile, 'investment-advisor')) {
     lines.push(
-      '- Quotes, valuation, securities discovery/thesis, news path → **InvestmentAdvisor**',
+      '- Valuation analysis, securities discovery/thesis, news interpretation → **InvestmentAdvisor**',
     );
   }
   if (peerEnabled(profile, 'options-expert')) {
     lines.push(
-      '- Listed calls/puts, chain, IV/premium structure, covered call / protective put / short-premium risk → **OptionsExpert**',
+      '- Option strategy comparisons, IV/premium interpretation, covered call / protective put / short-premium risk analysis → **OptionsExpert**',
     );
   }
   if (peerEnabled(profile, 'aideal')) {
@@ -179,11 +179,11 @@ export function hostNeverDoYourself(profile: ProductProfileId): string {
   }
   if (peerEnabled(profile, 'factchecker')) {
     lines.push(
-      '- Integrity audit of material claims → **Factchecker** (always-last; you do not freehand re-audit)',
+      '- Disputed evidence or material analytical claims → **Factchecker** (focused audit; routine sourced retrieval does not require it)',
     );
   }
   lines.push(
-    '- Do not claim “I can handle that myself” when a peer owns the capability',
+    '- Do not provide specialist judgment yourself when the requested outcome requires it; routine sourced lookups remain direct',
   );
   if (profile === 'consultant') {
     lines.push('- Keep the conversation on listed options. For unrelated requests, give a brief scope redirect.');
