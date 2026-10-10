@@ -110,8 +110,9 @@ run `node node_modules/utarus/dist/database/cli.js migrate`, then
 `node node_modules/utarus/dist/database/cli.js check personal` (or `check org`
 for organization mode). See the framework's `docs/releases/v4.2.0.md` upgrade
 checklist for intervening migrations and deployment verification.
-The `v4.2.1` pin fixes the Questions menu in personal chats with invited specialists
-and requires no additional database migration from `v4.2.0`.
+The `v4.2.2` pin includes the personal-chat Questions menu fix, displays registered
+chat names, and clarifies preset management. No additional database migration is
+required from `v4.2.0`; refresh the browser after deployment.
 
 ## Run
 
