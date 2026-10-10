@@ -47,6 +47,7 @@ import { createConfigureIbkrFlexTool, createSyncIbkrFlexTool } from './ibkr_flex
 import { createInspectIbkrNavHistoryTool } from './ibkr_nav.js';
 import { createOptionsInsightTool } from './options_insight.js';
 import { createReconTools } from './recon.js';
+import { createListOptionTradesTool } from './option_trades.js';
 
 /**
  * Default host (WalletStreet) — orchestration + residual host domains only.
@@ -112,6 +113,7 @@ export function createFinancialPlannerTools(): AgentTool[] {
 export function createInvestmentAdvisorTools(): AgentTool[] {
   return [
     createGetPortfolioTool(),
+    createListOptionTradesTool(),
     createGetPlaybookTool(),
     createQuoteTool(),
     createPortfolioAnalyzerTool(),
@@ -125,6 +127,7 @@ export function createInvestmentAdvisorTools(): AgentTool[] {
 export function createOptionsExpertTools(): AgentTool[] {
   return [
     createGetPortfolioTool(),
+    createListOptionTradesTool(),
     createGetPlaybookTool(),
     createQuoteTool(),
     createPortfolioAnalyzerTool(),
@@ -171,6 +174,7 @@ export function createAidealTools(): AgentTool[] {
 export function createFactcheckerTools(): AgentTool[] {
   return [
     createGetPortfolioTool(),
+    createListOptionTradesTool(),
     createListJournalEntriesTool(),
     ...createHouseholdReadTools(),
     createGetPlaybookTool(),

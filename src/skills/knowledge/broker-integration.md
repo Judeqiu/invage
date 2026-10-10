@@ -4,9 +4,15 @@ Read-only ingest from a **catalog connector** (`catalog.get(id)`) onto that conn
 
 Never invent numbers. Never echo Flex tokens, RSA PEMs, Tiger tokens, Webull app secrets, or access tokens. Select by catalog id + capability, not synonyms.
 
-**Options (all connectors, one model):** open lots are `Holding` + `option` on `{key}@{channel}`. Sync replaces that channel’s lots (including options). Incomplete option rows → `not_imported`, never a vendor-specific schema. **Fill history** is the shared `option_executions` journal; only IBKR Flex Trades at Executions level populates it today. Other connectors omit the field (do not wipe IBKR fills). OptionsExpert overlays every channel. The agent does not place or roll orders.
+**Options (all connectors, one model):** open lots are `Holding` + `option` on `{key}@{channel}`. Sync replaces that channel’s lots (including options). Incomplete option rows → `not_imported`, never a vendor-specific schema. **Fill history** is the shared `option_executions` journal; IBKR Flex execution-level Trades, Tiger Prime/Paper transactions, MooMoo Cloud fills, and Webull terminal single-leg cumulative order fills populate it when available. Records are merged across syncs and brokers; Webull records are not individual executions. Non-IBKR backfill requires current contract metadata, so historical closed-contract coverage may be incomplete. OptionsExpert overlays every channel. The agent does not place or roll orders.
+
+## Trade dates
+
+Use `get_portfolio` for matched opening date ranges and coverage, then `list_option_trades` for dated activity filtered by underlying, channel, right, effect, and inclusive start/end dates. Follow `next_offset` until all matching records are read. Calculate the requested date window from the current date; do not include older trades. Current position snapshots and books reconcile journals do not establish execution dates. An opening record proves neither that a position remains open nor that it was not part of a roll. Use reconciled outstanding opening records and explicitly label unknown dates, FIFO matching, timestamp precision, and failed/stale syncs. First/last retained activity dates do not prove complete coverage. Do not assert that dated records are absent without reading this tool; the journal can exist even when a lot has no open-date field.
 
 ## Tools
+
+- `list_option_trades` — read retained option activity and date evidence from every broker channel; no writes.
 
 - `configure_broker` / `sync_broker` — catalog-id credentials + sync (same store as Settings).
 - `configure_ibkr_flex` / `sync_ibkr_flex` — IBKR Flex aliases. Call sync anytime the channel is on.

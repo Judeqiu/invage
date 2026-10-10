@@ -79,6 +79,7 @@ import {
   HOLDING_NUMERIC_FIELDS,
   prepareNumericToolArgs,
 } from './coerce-tool-numbers.js';
+import { createListOptionTradesTool, optionTradeEvidence } from './option_trades.js';
 
 function reportingCurrencyOf(state: unknown): string | null {
   const hh = state as HouseholdInvestorState;
@@ -2667,19 +2668,20 @@ export function createPortfolioTools(): AgentTool[] {
     removeDepositTool,
     clearDepositsTool,
     createListJournalEntriesTool(),
+    createListOptionTradesTool(),
   ];
 }
 
-/** Mutation tools only (no get_portfolio / list_journal_entries). Bookkeeper-only. */
+/** Mutation tools only, excluding portfolio, journal, and trade reads. Bookkeeper-only. */
 export function createPortfolioWriteTools(): AgentTool[] {
   return createPortfolioTools().filter(
-    (t) => t.name !== 'get_portfolio' && t.name !== 'list_journal_entries',
+    (t) => !['get_portfolio', 'list_journal_entries', 'list_option_trades'].includes(t.name),
   );
 }
 
 /** Read tools only — safe for analysis peers. */
 export function createPortfolioReadTools(): AgentTool[] {
-  return [createGetPortfolioTool(), createListJournalEntriesTool()];
+  return [createGetPortfolioTool(), createListJournalEntriesTool(), createListOptionTradesTool()];
 }
 
 /** Journal list (read). Safe for non-bookkeeper agents. */
@@ -2752,6 +2754,7 @@ export function createGetPortfolioTool(): AgentTool {
     label: 'Get Portfolio',
     description:
       "Retrieve the user's saved portfolio (equities + options + cash by channel + fixed deposits). " +
+      'Includes matched option opening date ranges and broker history coverage. For filtered dated activity use list_option_trades; snapshot dates are not fill dates. ' +
       'Cash may list multiple broker channels. Fixed deposits are locked principal (in NAV, not free cash). ' +
       'Pass telegram_user_id or slack_user_id from the message context.',
     parameters: Type.Object({ ...channelIdParams }),
@@ -2766,10 +2769,19 @@ export function createGetPortfolioTool(): AgentTool {
         const rep = reportingCurrencyOf(state);
         const cashLive = await totalCashLive(cashes, rep);
         const cashTargetPct = getPlaybook(state).allocation.cash_target_pct;
+        const tradeEvidence = optionTradeEvidence(state, portfolio);
         return ok(
-          await formatPortfolio(portfolio, cashes, cashTargetPct, deposits, rep),
+          [await formatPortfolio(portfolio, cashes, cashTargetPct, deposits, rep),
+            'Option opening dates (FIFO outstanding records reconciled to held quantity):',
+            ...Object.entries(tradeEvidence.positions).map(([key, evidence]) => evidence.status === 'matched'
+              ? `${key}: ${evidence.openedFrom} → ${evidence.openedTo}`
+              : `${key}: opening date unverified — ${evidence.reason}`),
+            `Broker trade coverage: ${JSON.stringify(tradeEvidence.coverage)}`,
+            ...tradeEvidence.limitations,
+          ].join('\n'),
           {
             portfolio,
+            option_trade_evidence: tradeEvidence,
             cash: cashLive.total,
             cashes,
             deposits,

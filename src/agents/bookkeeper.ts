@@ -74,19 +74,19 @@ function registerBookkeeperSkills(): Skill[] {
       id: 'tiger-openapi',
       name: 'Tiger OpenAPI sync',
       description:
-        'Tiger Brokers is catalog connector tiger. Load broker-integration. Tools: configure_broker / sync_broker with connector_id tiger. Read-only stock/option/fund lots + cash. No csv_tables. Option fill journal is IBKR Flex only.',
+        'Tiger Brokers is catalog connector tiger. Load broker-integration. Tools: configure_broker / sync_broker with connector_id tiger. Read-only stock/option/fund lots + cash. No csv_tables. Dated option activity is available through list_option_trades; read this broker skill for coverage and timestamp limits.',
     },
     {
       id: 'moomoo-openapi',
       name: 'MooMoo Cloud Open API sync',
       description:
-        'MooMoo is catalog connector moomoo (Cloud REST, not OpenD). Load broker-integration. Tools: configure_broker / sync_broker with connector_id moomoo. Channel moomoo is not jude_futu. Read-only stock and listed option lots + cash. Incomplete OptionSpec rows go to not_imported. No csv_tables. Option fill journal is IBKR Flex only.',
+        'MooMoo is catalog connector moomoo (Cloud REST, not OpenD). Load broker-integration. Tools: configure_broker / sync_broker with connector_id moomoo. Channel moomoo is not jude_futu. Read-only stock and listed option lots + cash. Incomplete OptionSpec rows go to not_imported. No csv_tables. Dated option activity is available through list_option_trades; read this broker skill for coverage and timestamp limits.',
     },
     {
       id: 'webull-openapi',
       name: 'Webull OpenAPI sync',
       description:
-        'Webull is catalog connector webull. Load broker-integration. Tools: configure_broker / sync_broker with connector_id webull. Read-only equity and single-leg listed option lots + cash. Combo options skipped. No csv_tables. Optional access_token if the API requires in-app 2FA. Option fill journal is IBKR Flex only.',
+        'Webull is catalog connector webull. Load broker-integration. Tools: configure_broker / sync_broker with connector_id webull. Read-only equity and single-leg listed option lots + cash. Combo options skipped. No csv_tables. Optional access_token if the API requires in-app 2FA. Dated option activity is available through list_option_trades; read this broker skill for coverage and timestamp limits.',
     },
     {
       id: 'family-treasury',
@@ -111,7 +111,7 @@ const OPTIONS_BOOKKEEPER_PURPOSE = `You are **Bookkeeper**, the option position 
 
 Own broker connection and sync, option lot and fill records, cash needed for assignment, and reconciliation of option positions across IBKR, Tiger, MooMoo, and Webull. Use the broker-integration and bookkeeping skills for these tasks. Stay within option records and their cash effects.
 
-Use tools before stating positions or balances. Option lots are keyed by contract and broker channel; keep premium units clear (chain per share, book cost or mark per contract). Quote skipped or incomplete imported rows as \`not_imported\`. Do not infer fills from current holdings. For a cash change, use balanced journal entries; never overwrite an absolute cash balance. Verify each write with a read and report only confirmed changes. Never echo broker credentials.
+Use tools before stating positions or balances. Option lots are keyed by contract and broker channel; keep premium units clear (chain per share, book cost or mark per contract). Quote skipped or incomplete imported rows as \`not_imported\`. Do not infer fills from current holdings. Use list_option_trades for dated broker activity and get_portfolio opening-date evidence before answering trade-date questions. Read all result pages, filter the actual requested date window, and report unknown dates and sync failures. For a cash change, use balanced journal entries; never overwrite an absolute cash balance. Verify each write with a read and report only confirmed changes. Never echo broker credentials.
 
 After a broker sync, read \`list_journal_entries\` to verify the broker-sourced opening or reconcile entries and report any skipped rows. On an unchanged repeat sync, no new money journal should appear. Journal entries record changes from broker statements; do not describe a snapshot reconcile as an execution or an external deposit.
 

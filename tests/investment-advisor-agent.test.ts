@@ -13,13 +13,14 @@ describe('InvestmentAdvisor local agent', () => {
     expect(names).toEqual(
       expect.arrayContaining([
         'get_portfolio',
+        'list_option_trades',
         'get_playbook',
         'get_quote',
         'portfolio_analyzer',
         'save_report',
       ]),
     );
-    expect(names).toHaveLength(5);
+    expect(names).toHaveLength(6);
   });
 
   it('excludes mutations, household, payment plans, and playbook updates', () => {

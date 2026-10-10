@@ -2,7 +2,7 @@
 
 **OptionsExpert skill.** Evaluate **listed calls and puts** as contingent claims: structure, time value, implied vol *when sourced*, liquidity, and defined vs undefined risk. Not a substitute for equity thesis (that is **InvestmentAdvisor**) and not a bookkeeper.
 
-Load by capability fit when the user needs: call/put insight, chain scan, covered call, cash-secured / naked put, protective put, collar, vertical spread framing, IV richness vs ATM, assignment risk, or overlay on existing option lots **from any catalog channel** (`ibkr`, `tiger`, `moomoo`, `webull`, or manual). Lots are `{option-key}@{channel}` — same contract at two brokers is two lots. Yahoo chain facts are US-listed; HK/SG lots still overlay from stored `mark` when the chain has no match. Do not invent IV. Broker fills on the Trades tab are IBKR journal rows unless another connector supplied `option_executions`.
+Load by capability fit when the user needs: call/put insight, chain scan, covered call, cash-secured / naked put, protective put, collar, vertical spread framing, IV richness vs ATM, assignment risk, or overlay on existing option lots **from any catalog channel** (`ibkr`, `tiger`, `moomoo`, `webull`, or manual). Lots are `{option-key}@{channel}` — same contract at two brokers is two lots. Yahoo chain facts are US-listed; HK/SG lots still overlay from stored `mark` when the chain has no match. Do not invent IV. Read `list_option_trades` for dated activity across brokers, including coverage and timestamp limitations; Webull rows are cumulative orders. `get_portfolio.option_trade_evidence` provides opening date ranges matched to current holdings under FIFO. For opened-in-period questions, filter exact inclusive trade dates and follow pagination. Never substitute observation or accounting reconcile dates. Never claim no dated records solely because lot objects lack a date. Opening rows do not exclude rolls or prove a position remains open; check matched current-position evidence and failed/stale syncs.
 
 **Hard fact rule:** Never invent **premium, bid/ask, IV, delta, gamma, theta, vega, open interest, volume**. If `options_insight` does not return the field → **unavailable**. Yahoo chain in this product does **not** include Greeks — say so; do not Black-Scholes from memory.
 
@@ -15,6 +15,7 @@ Load by capability fit when the user needs: call/put insight, chain scan, covere
 | Contract or chain facts | **`options_insight`** (required this turn for any premium/IV/OI/moneyness claim) |
 | Underlying spot / metrics | `get_quote` / `portfolio_analyzer` |
 | User option lots | `get_portfolio` + `options_insight include_books=true` |
+| Dated option trades / opened in a period | `list_option_trades` + `get_portfolio` matched opening evidence |
 | Playbook risk | `get_playbook` |
 | HTML note | `save_report` |
 | Earnings/event narrative | `firecrawl` primary source — still no invented crush magnitude |
