@@ -174,3 +174,57 @@ footer { text-align: center; font-size: 0.72rem; color: var(--muted-foreground);
 }
 
 .option-discuss-active { background: color-mix(in oklab, var(--brand) 15%, var(--card)); border-color: var(--brand); box-shadow: 0 0 0 1px var(--brand); }
+
+/* Section 03: account-scoped, foldable option relationship tree. */
+.roll-filters { align-items: end; gap: 0.8rem; }
+.roll-filters label { display: grid; gap: 0.35rem; font-size: 0.75rem; color: var(--muted-foreground); }
+.roll-filters input, .roll-filters select { font: inherit; padding: 0.55rem; border: 1px solid var(--border); border-radius: 0.45rem; color: var(--foreground); background: var(--card); }
+.roll-folder { border: 1px solid var(--border); border-radius: 0.65rem; background: var(--card); margin: 0.75rem 0; }
+.roll-folder summary { cursor: pointer; list-style: none; }
+.roll-folder summary::-webkit-details-marker { display: none; }
+.roll-folder > summary { display: grid; grid-template-columns: 1rem 9rem 1fr 8rem; gap: 1rem; align-items: center; padding: 1.1rem; }
+.roll-folder[open] > summary { background: color-mix(in srgb, var(--brand) 4%, var(--card)); border-radius: 0.65rem 0.65rem 0 0; border-bottom: 1px solid var(--border); }
+.roll-chevron { display: inline-block; color: var(--muted-foreground); }
+.roll-folder[open] > summary > .roll-chevron, .roll-node[open] > summary > .roll-chevron, .roll-evidence[open] > summary > .roll-chevron { transform: rotate(90deg); }
+.roll-ticker { font-size: 1.05rem; }
+.roll-latest strong { font-size: 0.9rem; font-weight: 500; }
+.roll-count { text-align: right; font-size: 0.85rem; }
+.roll-history { padding: 1.2rem 1.5rem 1.3rem 3.4rem; }
+.roll-branch { margin: 0.85rem 0; padding-left: 1.2rem; border-left: 1px solid var(--border); }
+.roll-node { position: relative; border-bottom: 1px solid var(--border); }
+.roll-node:last-child { border-bottom: 0; }
+.roll-node::before { content: ''; position: absolute; width: 1rem; left: -1.2rem; top: 1.45rem; border-top: 1px solid var(--border); }
+.roll-node > summary { display: grid; grid-template-columns: 0.7rem 6rem 1fr auto; gap: 0.7rem; align-items: center; padding: 1rem 0; font-size: 0.78rem; }
+.roll-transition { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; }
+.roll-arrow { color: var(--brand); }
+.roll-tag { background: var(--muted); color: var(--foreground); border-radius: 0.3rem; padding: 0.2rem 0.45rem; font-size: 0.68rem; }
+.roll-node-body { padding: 0 0 1.1rem 1.4rem; font-size: 0.8rem; }
+.roll-node-body p { margin: 0.7rem 0; }
+.roll-legs { display: grid; grid-template-columns: 1fr 1.2rem 1fr; gap: 0.8rem; background: var(--muted); border-radius: 0.45rem; padding: 1rem; }
+.roll-legs strong { display: block; font-size: 0.88rem; }
+.roll-leg-label { font-size: 0.7rem; color: var(--muted-foreground); }
+.roll-cash { font-variant-numeric: tabular-nums; }
+.roll-evidence { padding-top: 0.7rem; border-top: 1px solid var(--border); }
+.roll-evidence > summary { display: flex; gap: 0.6rem; font-size: 0.75rem; color: var(--muted-foreground); }
+.roll-sources { padding-top: 0.6rem; overflow-wrap: anywhere; }
+.roll-sources ul, .roll-coverage ul { padding-left: 1.1rem; font-size: 0.75rem; }
+.roll-coverage { font-size: 0.8rem; margin: 0.7rem 0; }
+.roll-coverage summary { cursor: pointer; }
+.roll-uncertain .roll-branch, .roll-uncertain .roll-node::before { border-style: dashed; }
+.roll-folder summary:focus-visible { outline: 3px solid var(--brand); outline-offset: 2px; }
+@media (max-width: 760px) {
+  .options-workspace-head { flex-wrap: wrap; }
+  .roll-folder > summary { grid-template-columns: 0.7rem 1fr auto; gap: 0.6rem; padding: 1rem; }
+  .roll-latest { grid-column: 2 / 4; grid-row: 2; }
+  .roll-count { grid-column: 3; grid-row: 1; }
+  .roll-history { padding: 1rem 1rem 1rem 1.5rem; }
+  .roll-node > summary { grid-template-columns: 0.7rem 1fr; gap: 0.45rem; }
+  .roll-node time, .roll-transition, .roll-node > summary > .roll-tag { grid-column: 2; }
+  .roll-node > summary > .roll-tag { justify-self: start; }
+  .roll-node-body { padding-left: 0; }
+  .roll-legs { grid-template-columns: 1fr; }
+  .roll-legs > .roll-arrow { transform: rotate(90deg); width: 1rem; }
+  .roll-filters label { min-width: 0; max-width: 100%; }
+  .roll-filters input, .roll-filters select { min-width: 0; max-width: 100%; }
+}
+.roll-legs .chip-btn { margin-top: 0.5rem; font-size: 0.7rem; }

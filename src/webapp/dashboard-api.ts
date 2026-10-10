@@ -12,6 +12,7 @@ import { buildExecutionJournal, validDate } from '../brokers/option-executions.j
 import { readBrokerAccountModel } from '../brokers/accounts.js';
 import { latestSuccessfulBrokerSyncRun } from '../brokers/sync-history.js';
 import { optionHistoryForState } from './option-history-data.js';
+import { optionRelationshipsForState } from './option-relationships-data.js';
 import { isBooksEnabled } from '../books/db.js';
 import { loadBookPage } from './book-data.js';
 import { getPortfolio } from '../state/portfolio-state.js';
@@ -140,6 +141,34 @@ export function createDashboardApiRouter(): Router {
       res.json({ underlying, date: detail.openedFrom, adjusted_close: close });
     } catch (e) {
       res.status(502).json({ error: 'price_lookup_failed', message: e instanceof Error ? e.message : String(e) });
+    }
+  });
+
+  router.get('/option-relationships', async (req: Request, res: Response) => {
+    const user = (req as Request & { user?: AuthUser }).user;
+    if (!user?.userId) { res.status(401).json({ error: 'unauthorized' }); return; }
+    const offset = Number(req.query.offset ?? 0), limit = Number(req.query.limit ?? 50);
+    const keys = ['channel', 'q', 'evidence', 'from', 'to', 'as_of'] as const;
+    if (Object.keys(req.query).some(k => ![...keys, 'offset', 'limit', 'slug'].includes(k)) ||
+      req.query.slug !== undefined && typeof req.query.slug !== 'string' ||
+      keys.some(k => req.query[k] !== undefined && (typeof req.query[k] !== 'string' || String(req.query[k]).length > 120)) ||
+      !Number.isSafeInteger(offset) || offset < 0 || offset > 100000 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
+      res.status(400).json({ error: 'invalid_filter', message: 'Invalid relationship filter or pagination.' }); return;
+    }
+    const value = (k: typeof keys[number]) => String(req.query[k] ?? '').trim();
+    const channel = value('channel'), q = value('q'), evidence = value('evidence'), from = value('from'), to = value('to'), asOf = value('as_of');
+    if (evidence && !['order', 'execution', 'possible', 'review'].includes(evidence) ||
+      [from, to, asOf].some(d => d && !validDate(d)) || from && to && from > to) {
+      res.status(400).json({ error: 'invalid_filter', message: 'Invalid relationship date or evidence filter.' }); return;
+    }
+    try {
+      const snapshot = await loadInvestor(await targetUserId(req, user));
+      const result = optionRelationshipsForState(snapshot.state, { channel, q, evidence, from, to, asOf });
+      res.setHeader('Cache-Control', 'private, no-store');
+      res.json({ ...result, groups: result.groups.slice(offset, offset + limit), total: result.groups.length,
+        next_offset: offset + limit < result.groups.length ? offset + limit : null });
+    } catch (error) {
+      res.status(500).json({ error: 'relationships_failed', message: error instanceof Error ? error.message : 'Could not load option relationships.' });
     }
   });
 

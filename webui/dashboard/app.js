@@ -46,6 +46,8 @@ const el = {
   openOptions: document.getElementById('openOptions'),
   optionOpenTab: document.getElementById('optionOpenTab'),
   optionHistoryTab: document.getElementById('optionHistoryTab'),
+  optionRollsTab: document.getElementById('optionRollsTab'),
+  optionRollsPanel: document.getElementById('optionRollsPanel'),
   optionHistoryPanel: document.getElementById('optionHistoryPanel'),
   optionHistoryTable: document.getElementById('optionHistoryTable'),
   optionHistoryDetail: document.getElementById('optionHistoryDetail'),
@@ -303,15 +305,20 @@ function channelBadgeHtml(channel) {
 function setOptionTab(tab) {
   optionTab = tab;
   const showHistory = tab === 'history';
-  el.optionOpenTab.classList.toggle('on', !showHistory);
+  const showRolls = tab === 'rolls';
+  el.optionOpenTab.classList.toggle('on', tab === 'open');
   el.optionHistoryTab.classList.toggle('on', showHistory);
-  el.optionOpenTab.setAttribute('aria-pressed', String(!showHistory));
+  el.optionOpenTab.setAttribute('aria-pressed', String(tab === 'open'));
   el.optionHistoryTab.setAttribute('aria-pressed', String(showHistory));
+  el.optionRollsTab.classList.toggle('on', showRolls);
+  el.optionRollsTab.setAttribute('aria-pressed', String(showRolls));
+  el.optionRollsPanel.classList.toggle('hidden', !showRolls);
   el.optionHistoryPanel.classList.toggle('hidden', !showHistory);
   const view = payload?.model ? buildView(selectedDate, selectedChannel) : null;
   const hasOpen = Boolean(view?.positions?.some(p => p.instrument === 'option' && p.option));
-  el.optionOpenEmpty.classList.toggle('hidden', showHistory || hasOpen);
-  if (el.openOptionsBlock) el.openOptionsBlock.classList.toggle('hidden', showHistory || !hasOpen);
+  el.optionOpenEmpty.classList.toggle('hidden', tab !== 'open' || hasOpen);
+  if (el.openOptionsBlock) el.openOptionsBlock.classList.toggle('hidden', tab !== 'open' || !hasOpen);
+  if (showRolls) followRollContext();
 }
 
 function followHistoryBroker(channel) {
@@ -418,6 +425,7 @@ function showOptionHistoryDetail(id) {
     ${row.broker_event_pl ? `<p><strong>Broker-reported option event P&amp;L:</strong> ${escapeHtml(row.broker_event_pl.amount)} ${escapeHtml(row.broker_event_pl.currency)}. This is the broker's event amount, not a calculation from position disappearance.</p>` : ''}
     ${(row.status === 'assigned' || row.status === 'exercised') && row.events?.every(event => event.settlement === 'physical') ? '<p>Physical delivery changes the underlying transaction basis or proceeds. The option row alone does not establish combined trade P&amp;L.</p>' : ''}
     <p><strong>Saved valuation checkpoints:</strong> ${checkpoints.length ? escapeHtml(checkpoints.join(', ')) : 'None. A checkpoint is a valuation, not broker confirmation.'}</p>
+    <button type="button" class="chip-btn" data-roll-contract="${escapeHtml(row.contract.underlying)}" data-roll-channel="${escapeHtml(row.channel)}" data-roll-strike="${escapeHtml(row.contract.strike)}" data-roll-expiry="${escapeHtml(row.contract.expiry)}">Check roll relationships</button>
   </div>`;
 }
 
@@ -468,6 +476,153 @@ el.optionHistoryTable?.addEventListener('click', event => {
   if (id) showOptionHistoryDetail(id);
 });
 el.historyMore?.addEventListener('click', () => loadOptionHistory(true));
+
+/* Foldable option relationships. Server links raw evidence; the client never guesses rolls. */
+const rollEl = Object.fromEntries(['Broker', 'Search', 'Evidence', 'From', 'To', 'Expand', 'Collapse', 'Status', 'Retry', 'Groups', 'More']
+  .map(name => [name.toLowerCase(), document.getElementById(`roll${name}`)]));
+let rollData = { groups: [], connections: [], gaps: [], coverage: [], total: 0, next_offset: null };
+let rollRequest = 0, rollContext = '', rollError = '', rollLoading = false, rollSearchTimer;
+let rollTarget = null;
+const rollDisclosure = new Map();
+const rollEvidenceLabel = { order: 'Order-linked', execution: 'Execution-linked', possible: 'Possible', review: 'Needs review' };
+function rollContract(c) { return `${c.underlying} ${c.strike} ${c.right} · ${c.expiry}`; }
+function followRollContext() {
+  const channel = selectedChannel === MERGED_CHANNEL_VIEW || selectedChannel === 'all' ? '' : selectedChannel;
+  const key = `${channel}:${selectedDate}`;
+  if (key === rollContext) return;
+  rollContext = key;
+  // A broker option may not have been populated until the first request returns.
+  if (channel && !Array.from(rollEl.broker.options).some(o => o.value === channel)) {
+    const option = document.createElement('option'); option.value = channel; option.textContent = channel; rollEl.broker.append(option);
+  }
+  rollEl.broker.value = channel;
+  void loadRollRelationships();
+}
+function rollNode(r) {
+  const id = `roll-${r.id}`;
+  const closing = r.side === 'short' ? 'Buy to close' : 'Sell to close';
+  const replacementSide = r.side === 'short' ? 'Sell' : 'Buy';
+  const opening = r.replacement_effect === 'open' ? `${replacementSide} to open` : `${replacementSide} · ${r.replacement_effect === 'close' ? 'closing effect; needs review' : 'position effect unverified'}`;
+  const sourceId = `sources-${r.id}`;
+  const historyButton = c => `<button type="button" class="chip-btn" data-history-from-roll="${escapeHtml(c.underlying)}" data-history-channel="${escapeHtml(r.channel)}" data-history-right="${escapeHtml(c.right)}" data-history-strike="${escapeHtml(c.strike)}" data-history-expiry="${escapeHtml(c.expiry)}">Position history</button>`;
+  const cash = r.cash == null ? 'Cash flow unavailable' : `${fmtPrettyMoney(r.cash, r.old.currency)} · ${r.old.currency} · ${r.cash_basis === 'net' ? 'reported net cash' : 'before fees'}`;
+  return `<details class="roll-node" data-roll-disclosure="${id}" ${rollDisclosure.get(id) ? 'open' : ''}>
+    <summary><span class="roll-chevron" aria-hidden="true">›</span><time datetime="${escapeHtml(r.at)}">${escapeHtml(r.at.slice(0, 10))}</time>
+      <span class="roll-transition">${escapeHtml(rollContract(r.old))}<span class="roll-arrow" aria-label="replaced by">→</span>${escapeHtml(rollContract(r.replacement))}</span>
+      <span class="roll-tag">${rollEvidenceLabel[r.evidence]}</span></summary>
+    <div class="roll-node-body"><div class="roll-legs"><div><span class="roll-leg-label">${closing} · ${escapeHtml(r.closed_quantity)} contracts</span><strong>${escapeHtml(rollContract(r.old))}</strong>${historyButton(r.old)}</div>
+      <span class="roll-arrow" aria-label="replaced by">→</span><div><span class="roll-leg-label">${opening} · ${escapeHtml(r.opened_quantity)} contracts</span><strong>${escapeHtml(rollContract(r.replacement))}</strong>${historyButton(r.replacement)}</div></div>
+      <p class="roll-cash">${escapeHtml(cash)}</p><p>${escapeHtml(r.reason)}</p>
+      <p class="option-freshness">${escapeHtml(r.at.replace('T', ' '))}${r.through !== r.at ? ` – ${escapeHtml(r.through.replace('T', ' '))}` : ''} · ${escapeHtml(r.clock)}</p>
+      <details class="roll-evidence" data-roll-disclosure="${sourceId}" ${rollDisclosure.get(sourceId) ? 'open' : ''}><summary><span class="roll-chevron" aria-hidden="true">›</span>Source evidence</summary>
+        <div class="roll-sources"><p>Orders: ${escapeHtml(r.orders.join(' / '))}${r.parent ? `<br>Parent: ${escapeHtml(r.parent)}` : ''}</p>
+          <p>Closing records: ${escapeHtml(r.closing_fills.join(', '))}<br>Opening records: ${escapeHtml(r.opening_fills.join(', '))}</p>
+          <ul>${r.sources.map(s => `<li>${escapeHtml(s.id)}<br><span class="option-freshness">Source version: ${escapeHtml(s.version)}</span></li>`).join('')}</ul></div></details>
+    </div></details>`;
+}
+function renderRollRelationships() {
+  rollEl.retry.classList.toggle('hidden', !rollError);
+  rollEl.more.classList.toggle('hidden', rollData.next_offset == null || !!rollError || rollLoading);
+  const replay = selectedDate === 'live' ? '' : ` · trades through ${selectedDate}`;
+  rollEl.status.textContent = rollLoading ? 'Reading archived execution evidence…' : rollError ? `Could not load relationships: ${rollError}` :
+    `${rollData.total} contract groups${replay} · retained history only${rollData.gaps.length ? ` · ${rollData.gaps.length} coverage gaps` : ''}`;
+  if (rollError && !rollData.groups.length) { rollEl.groups.innerHTML = ''; return; }
+  const gapHtml = rollData.gaps.length ? `<details class="roll-coverage"><summary>History coverage gaps (${rollData.gaps.length})</summary><ul>${rollData.gaps.map(g => `<li>${escapeHtml(g.channel)}: ${escapeHtml(g.reason)}${g.source ? ` · ${escapeHtml(g.source)}` : ''}</li>`).join('')}</ul></details>` : '';
+  const coverageHtml = rollData.coverage.filter(c => c.history_available).map(c => `${c.label} (${c.account_id}): ${c.first_trade.slice(0, 10)}–${c.last_trade.slice(0, 10)}`).join(' · ');
+  rollEl.groups.innerHTML = `${coverageHtml ? `<p class="option-freshness">Execution records: ${escapeHtml(coverageHtml)}</p>` : ''}${gapHtml}` +
+    (rollData.groups.length ? rollData.groups.map(g => {
+      const id = `group-${g.id}`;
+      const possible = g.relationships.some(r => r.evidence === 'possible');
+      const review = g.relationships.some(r => r.evidence === 'review');
+      const count = review ? 'Needs review' : possible ? 'Possible roll' : `${g.relationships.length} roll${g.relationships.length === 1 ? '' : 's'}`;
+      return `<details class="roll-folder${possible || review ? ' roll-uncertain' : ''}" data-roll-disclosure="${id}" ${rollDisclosure.get(id) ? 'open' : ''}>
+        <summary><span class="roll-chevron" aria-hidden="true">›</span><span><strong class="roll-ticker">${escapeHtml(g.underlying)}</strong><br><span class="option-freshness">${escapeHtml(g.broker_id.toUpperCase())} · ${escapeHtml(g.account_id)}</span></span>
+          <span class="roll-latest"><strong>${escapeHtml(g.latest.strike)} ${escapeHtml(g.latest.right)} · ${escapeHtml(g.latest.expiry)}</strong><br><span class="option-freshness">Latest replacement in these records · ${escapeHtml(g.latest_quantity)} contracts</span></span>
+          <span class="roll-count">${count}<br><span class="option-freshness">${escapeHtml(g.last_at.slice(0, 10))}</span></span></summary>
+        <div class="roll-history"><div class="label-eyebrow">${possible ? 'Possible relationship' : review ? 'Relationship needs review' : 'Roll history · newest first'}</div><div class="roll-branch">${g.relationships.map(rollNode).join('')}</div>
+          ${g.relationships.length > 1 ? '<p class="option-freshness">Linked transitions form an apparent path. Continuous ownership and current position status remain unverified.</p>' : ''}</div></details>`;
+    }).join('') : rollLoading ? '' : '<div class="empty">No linked rolls in these records. Missing execution history does not mean no rolls were traded.</div>');
+}
+async function loadRollRelationships(more = false) {
+  const offset = more ? rollData.next_offset : 0;
+  if (more && (offset == null || rollLoading)) return;
+  const request = ++rollRequest;
+  const params = new URLSearchParams({ offset: String(offset), limit: '50' });
+  for (const [key, control] of [['channel', 'broker'], ['q', 'search'], ['evidence', 'evidence'], ['from', 'from'], ['to', 'to']]) {
+    if (rollEl[control].value.trim()) params.set(key, rollEl[control].value.trim());
+  }
+  if (selectedDate !== 'live') params.set('as_of', selectedDate);
+  if (!more) rollData = { ...rollData, groups: [], gaps: [], coverage: [], total: 0, next_offset: null };
+  rollLoading = true; rollError = ''; renderRollRelationships();
+  try {
+    const response = await fetch(`/api/domain/invage/option-relationships?${params}`, { credentials: 'include' });
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.message || `HTTP ${response.status}`);
+    if (request !== rollRequest) return;
+    rollData = { ...body, groups: more ? [...rollData.groups, ...body.groups] : body.groups };
+    if (rollTarget) {
+      for (const group of body.groups) for (const r of group.relationships) {
+        if ([r.old, r.replacement].some(c => c.underlying === rollTarget.underlying && c.expiry === rollTarget.expiry && Number(c.strike) === Number(rollTarget.strike))) {
+          rollDisclosure.set(`group-${group.id}`, true); rollDisclosure.set(`roll-${r.id}`, true);
+        }
+      }
+      rollTarget = null;
+    }
+    const selected = rollEl.broker.value;
+    rollEl.broker.innerHTML = '<option value="">All accounts</option>' + body.connections.map(c => `<option value="${escapeHtml(c.channel)}">${escapeHtml(c.label)} · ${escapeHtml(c.account_id)}</option>`).join('');
+    rollEl.broker.value = selected;
+  } catch (error) { if (request !== rollRequest) return; rollError = error instanceof Error ? error.message : String(error); }
+  if (request !== rollRequest) return;
+  rollLoading = false; renderRollRelationships();
+}
+el.optionRollsTab.addEventListener('click', () => setOptionTab('rolls'));
+for (const control of ['broker', 'search', 'evidence', 'from', 'to']) rollEl[control].addEventListener(control === 'search' ? 'input' : 'change', () => {
+  clearTimeout(rollSearchTimer);
+  // Invalidate older responses as soon as the user changes the filter, before debouncing.
+  ++rollRequest;
+  if (control === 'search') rollSearchTimer = setTimeout(() => loadRollRelationships(), 250);
+  else void loadRollRelationships();
+});
+rollEl.groups.addEventListener('toggle', event => {
+  if (event.target.dataset.rollDisclosure) rollDisclosure.set(event.target.dataset.rollDisclosure, event.target.open);
+}, true);
+rollEl.expand.addEventListener('click', () => rollEl.groups.querySelectorAll('.roll-folder').forEach(d => { d.open = true; rollDisclosure.set(d.dataset.rollDisclosure, true); }));
+rollEl.collapse.addEventListener('click', () => { rollEl.groups.querySelectorAll('details').forEach(d => d.open = false); rollDisclosure.clear(); });
+rollEl.retry.addEventListener('click', () => loadRollRelationships());
+rollEl.more.addEventListener('click', () => loadRollRelationships(true));
+document.addEventListener('click', event => {
+  const history = event.target.closest('[data-history-from-roll]');
+  if (history) {
+    const channel = history.dataset.historyChannel, underlying = history.dataset.historyFromRoll;
+    if (!Array.from(el.historyBroker.options).some(o => o.value === channel)) {
+      const option = document.createElement('option'); option.value = channel; option.textContent = channel; el.historyBroker.append(option);
+    }
+    el.historyBroker.value = channel; el.historySearch.value = underlying;
+    el.historyRight.value = history.dataset.historyRight; el.historyStatus.value = 'all';
+    el.historyFrom.value = ''; el.historyTo.value = '';
+    setOptionTab('history');
+    void loadOptionHistory().then(() => {
+      if (optionTab !== 'history' || el.historyBroker.value !== channel || el.historySearch.value !== underlying) return;
+      const episode = optionHistory.episodes.find(row => row.channel === channel && row.contract.underlying === underlying &&
+        row.contract.right === history.dataset.historyRight && row.contract.expiry === history.dataset.historyExpiry &&
+        Number(row.contract.strike) === Number(history.dataset.historyStrike));
+      if (episode) showOptionHistoryDetail(episode.id);
+    });
+    return;
+  }
+  const button = event.target.closest('[data-roll-contract]');
+  if (!button) return;
+  const channel = button.dataset.rollChannel;
+  if (!Array.from(rollEl.broker.options).some(o => o.value === channel)) {
+    const option = document.createElement('option'); option.value = channel; option.textContent = channel; rollEl.broker.append(option);
+  }
+  rollEl.broker.value = channel; rollEl.search.value = button.dataset.rollContract;
+  rollTarget = { underlying: button.dataset.rollContract, strike: button.dataset.rollStrike, expiry: button.dataset.rollExpiry };
+  const globalChannel = selectedChannel === MERGED_CHANNEL_VIEW || selectedChannel === 'all' ? '' : selectedChannel;
+  rollContext = `${globalChannel}:${selectedDate}`;
+  setOptionTab('rolls'); void loadRollRelationships();
+  el.optionRollsPanel.scrollIntoView({ block: 'start', behavior: 'auto' });
+});
 
 function fundIndex(value, cost) {
   // Short-option credits make totalCost non-positive; use abs only when cost is
@@ -1776,7 +1931,7 @@ function renderOpenOptions(view) {
       .filter(([channel]) => view.channelView === MERGED_CHANNEL_VIEW || channel === view.channelView)
       .map(([channel, date]) => `${channel.toUpperCase()} ${optionDateLabel(date)}`) : [];
     el.openOptionsHead.innerHTML = sectionHead(
-      'Section 03',
+      'Open book',
       'Open options positions · broker view',
       `The full open option book, grouped by expiry month. Opening dates and STO credits require matching recorded fills. Credits marked “before fees” are gross proceeds; net credits are unknown when the broker omits fees. ${dates.length ? `Broker positions as of ${dates.join(' · ')}.` : 'Broker position date unavailable.'}`,
     );
@@ -1854,7 +2009,7 @@ function renderOpenOptions(view) {
       const closeButton = trade && trade.openedFrom === trade.openedTo
         ? `<button type="button" class="option-close-lookup" data-option-price="${escapeHtml(p.ticker)}" title="Look up the underlying adjusted daily close on the opening date">Daily close</button>` : '';
       return `<tr class="option-ledger-row${highlightedUnderlying === o.underlying ? ' option-underlying-highlight' : ''}" data-option-underlying="${escapeHtml(o.underlying)}">
-        <td class="option-instrument">${escapeHtml(label)}</td>
+        <td class="option-instrument">${escapeHtml(label)}<br><button type="button" class="chip-btn" data-roll-contract="${escapeHtml(o.underlying)}" data-roll-channel="${escapeHtml(p.channel)}" data-roll-strike="${escapeHtml(o.strike)}" data-roll-expiry="${escapeHtml(o.expiry)}">Check roll relationships</button></td>
         <td class="num">${position}</td>
         <td class="option-opened">${opened}${closeButton}</td>
         <td class="num">${exposure ? rowMoney(exposure, 0) : '—'}</td>
@@ -2658,6 +2813,7 @@ async function load() {
       initDashboard();
     }
     await loadOptionHistory();
+    if (optionTab === 'rolls') await loadRollRelationships();
     if (selectedChannel !== MERGED_CHANNEL_VIEW) followHistoryBroker(selectedChannel);
     el.status.textContent = `Last refresh ${new Date().toLocaleTimeString()}`;
   } catch (e) {

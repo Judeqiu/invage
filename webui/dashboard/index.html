@@ -70,12 +70,13 @@
       <section id="optionsWorkspace" class="options-workspace" aria-label="Option position history">
         <div class="options-workspace-head">
           <div>
-            <div class="label-eyebrow">Options</div>
-            <h2>Position record</h2>
+            <div class="label-eyebrow">Section 03</div>
+            <h2>Option positions &amp; rolls</h2>
           </div>
           <div class="option-view-tabs" role="group" aria-label="Option position view">
             <button type="button" class="chip-btn on" id="optionOpenTab" aria-pressed="true">Open</button>
             <button type="button" class="chip-btn" id="optionHistoryTab" aria-pressed="false">History</button>
+            <button type="button" class="chip-btn" id="optionRollsTab" aria-pressed="false">Rolls</button>
           </div>
         </div>
         <p id="optionFreshness" class="option-freshness"></p>
@@ -92,6 +93,22 @@
           <div id="optionHistoryTable"></div>
           <div id="optionHistoryDetail"></div>
           <button type="button" class="chip-btn hidden" id="historyMore">Show older records</button>
+        </div>
+        <div id="optionRollsPanel" class="hidden">
+          <div class="option-ledger-filters roll-filters">
+            <label>Broker / account <select id="rollBroker"><option value="">All accounts</option></select></label>
+            <label>Contract <input id="rollSearch" type="search" placeholder="Ticker, strike, expiry" /></label>
+            <label>Evidence <select id="rollEvidence"><option value="">All evidence</option><option value="order">Order-linked</option><option value="execution">Execution-linked</option><option value="possible">Possible</option><option value="review">Needs review</option></select></label>
+            <label>From <input id="rollFrom" type="date" /></label>
+            <label>To <input id="rollTo" type="date" /></label>
+            <button type="button" class="chip-btn" id="rollExpand">Expand groups</button>
+            <button type="button" class="chip-btn" id="rollCollapse">Collapse all</button>
+          </div>
+          <p class="option-freshness">Expand a contract group to follow its roll history. Latest replacement is a trade record, not confirmation of a current position. Roll cash flow is not realized profit.</p>
+          <p id="rollStatus" class="option-freshness" role="status" aria-live="polite"></p>
+          <button type="button" class="chip-btn hidden" id="rollRetry">Retry</button>
+          <div id="rollGroups"></div>
+          <button type="button" class="chip-btn hidden" id="rollMore">Show older groups</button>
         </div>
       </section>
 

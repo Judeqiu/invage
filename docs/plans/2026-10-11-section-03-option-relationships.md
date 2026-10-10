@@ -1,6 +1,6 @@
 # Section 03: option positions and roll relationships
 
-Date: 2026-10-11. Status: revised to a foldable hierarchy following user feedback; clickable prototype only. Live detection and dashboard integration are not implemented.
+Date: 2026-10-11. Status: foldable Rolls view and authenticated archive-backed relationship detection implemented in the local source. Production deployment is separate. The standalone prototype remains a design reference.
 
 Prototype: [Section 03 option relationships](./section-03-option-relationships.html).
 Evidence: [Victor's broker linkage review](../audits/2026-10-11-victor-option-roll-linkage.md).
@@ -81,3 +81,21 @@ Preserve raw broker order/deal/execution identifiers during import and backfill 
 The revised prototype focuses on the Rolls view and uses a small, explicitly labeled selection of Victor's reviewed records. It does not query production or embed invented live positions. Broker/underlying/evidence filters, nested group/roll/source disclosures, and expand/collapse controls work locally. The AMD folder contains all four reviewed transitions. Open and History integration remains specified above and is not embedded in this revision.
 
 Production acceptance includes: explicit shared-order rolls; IBKR inferred links; Tiger newly opened spreads and existing long sell legs; resized Webull candidates; partial fills and branch/merge chains; unknown commission; account separation; conflicting source copies; no current positions; loading/error/empty states; keyboard and mobile access; stale position observations; and suppression of future links in dated replay.
+
+## Implemented behavior
+
+Section 03 now contains Open, History, and Rolls. Rolls uses native nested disclosures for account-scoped groups, transitions, and source records. Filters, date replay, stable pagination, expand/collapse, loading, retry, empty states, and coverage gaps are supported. Open and History offer **Check roll relationships**; each roll leg offers **Position history**. An observed episode is selected when it is available in the returned history page; otherwise the account/underlying history remains visible without inventing an episode.
+
+`GET /api/domain/invage/option-relationships` binds the owner through the existing authenticated user resolver. Parameters: `channel`, `q`, `evidence` (`order`, `execution`, `possible`, `review`), `from`, `to`, `as_of`, `offset`, and `limit` (1–100). Filtering and replay cutoff occur before grouping and pagination. Response includes groups, account connections, returned execution coverage, gaps, total matching groups, and next offset. Monetary values and quantities remain exact decimal strings in the read model.
+
+Detection reads existing retained archives instead of changing the normalized execution schema or mutating investor state. This preserves access to original linkage fields and closed contracts while keeping imports and current holdings unchanged. Source references include archive ID/version and broker record/order IDs. Matching is confined to currently configured, bound accounts. Unsupported brokers or history formats are not guessed.
+
+IBKR uses explicit shared brokerage orders first, then complete paired execution-prefix matches. Tiger uses parent legs, prior balances including lifecycle events, and parent filled-quantity reconciliation. MooMoo uses explicit trading direction and shared order IDs. Its historical cash is withheld when contract-size metadata is absent. Webull supports only unique nearby candidates with a supported prior position; resized candidates remain possible, with cash unavailable. Unresolved corrections and conflicting economic records suppress that account's relationships.
+
+Chains are conservative paths: compatible account/contract/side, equal transferred quantity, increasing timestamps, unique predecessor/successor, and no recorded intervening activity in the connecting contract. Possible/review links never join a chain automatically. A path is still labeled as unverified continuous ownership and is never labeled currently open from trade evidence alone.
+
+Readers cap scans at 500 archives and 100 MiB per filtered request, 10 MiB per archive, and 250,000 retained fill rows per account; limit failures are explicit. Parsed archives use a bounded, tenant/account/version-scoped cache. This is a read-only backfill, not a migration or a guarantee of complete trade history.
+
+Validation includes pure matching tests, authenticated API/tenant/filter/replay tests, and a Chromium dashboard interaction test covering nested disclosures, evidence escaping, empty books, pagination, retry, keyboard access, and responsive widths. The reader was also checked against the previously reviewed local copies of Victor's archives: 100 IBKR candidates (24 order-linked, 76 inferred), 110 Tiger order-linked rolls plus one review case, 125 MooMoo linked rolls, and one possible Webull candidate. No production data was changed.
+
+The final targeted run passed all 64 tests across six files; the TypeScript build and diff whitespace check passed. A broader regression run had eight existing dashboard/history fixture failures. The same eight failures reproduced on the pre-change commit, involving investor account lookup and legacy non-UUID fixture IDs.
