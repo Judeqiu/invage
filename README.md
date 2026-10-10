@@ -104,12 +104,14 @@ Questions menu, grouped into setup/strike selection, technical analysis,
 assignment/rolls/wheel, and psychology/review. Ticker questions require a ticker;
 selection prepares an editable draft for the user to send.
 
-The Utarus `v4.2.0` pin requires framework database migration 28 before starting an
-existing deployment. With the target deployment's database environment loaded,
+Upgrades from before Utarus `v4.2.0` require framework database migration 28 before
+starting an existing deployment. With the target deployment's database environment loaded,
 run `node node_modules/utarus/dist/database/cli.js migrate`, then
 `node node_modules/utarus/dist/database/cli.js check personal` (or `check org`
 for organization mode). See the framework's `docs/releases/v4.2.0.md` upgrade
 checklist for intervening migrations and deployment verification.
+The `v4.2.1` pin fixes the Questions menu in personal chats with invited specialists
+and requires no additional database migration from `v4.2.0`.
 
 ## Run
 
