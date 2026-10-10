@@ -6,7 +6,7 @@ import { financialRoots } from '../data-query/records.js';
 import { limits, operators, runQuery } from '../data-query/engine.js';
 import { channelIdParams, resolveInvestorFromChannel, type ChannelIds } from './channel.js';
 
-export const DATA_QUERY_GUIDE = '\nFor stored-data questions, use get_data_dictionary and query_data across ALL financial sources: positions (stocks/funds/options), financial_state (every nested financial field), books_* accounting tables, valuation_snapshots, broker_sync_runs, raw_files, and source_records (complete archived broker JSON/XML/CSV/YAML). For source_records provide source:{file_id,version} from raw_files. Use revision as expected_revision and source_version as expected_source_version for subsequent pages. An option-only dataset does NOT establish absence of stock data: inspect positions and relevant archives before claiming missing stock trades or profit. Held-stock appreciation can use recorded quantity/cost plus get_quote; sold-stock profit requires verified sales/cost evidence. Accounting reconciliations, option premium cash flows and realized P/L are different; do not call them interchangeable journals or profits. Read availability, dates, units and caveats; no implicit FX. Produce available report sections and label remaining gaps. These read tools do not modify data, fetch live quotes, or expose credentials.';
+export const DATA_QUERY_GUIDE = '\nFor stored-data questions, use get_data_dictionary and query_data across ALL financial sources: positions (stocks/funds/options), financial_state (every nested financial field), books_* accounting tables, valuation_snapshots, broker_sync_runs, raw_files, and source_records (complete archived broker JSON/XML/CSV/YAML). For financial_state, scope large accounts with a root equality filter or source:{path:JSON_POINTER}, e.g. /portfolio, /option_observations/0. Scoping happens before expansion. For source_records provide source:{file_id,version} from raw_files. Use revision as expected_revision and source_version as expected_source_version for subsequent pages. An option-only dataset does NOT establish absence of stock data: inspect positions and relevant archives before claiming missing stock trades or profit. Held-stock appreciation can use recorded quantity/cost plus get_quote; sold-stock profit requires verified sales/cost evidence. Accounting reconciliations, option premium cash flows and realized P/L are different; do not call them interchangeable journals or profits. Read availability, dates, units and caveats; no implicit FX. Produce available report sections and label remaining gaps. These read tools do not modify data, fetch live quotes, or expose credentials.';
 function result<T>(details: T) { return { content: [{ type: 'text' as const, text: JSON.stringify(details) }], details }; }
 function failure(error: unknown) { return { content: [{ type: 'text' as const, text: error instanceof Error ? error.message : String(error) }], details: null }; }
 
@@ -42,7 +42,7 @@ export function createDataQueryTools(options: { allowDrive?: boolean } = {}): Ag
             aggregates: 'Array of {op: count|sum|min|max, field?, as}. min/max require comparison_group_by when documented. count without field counts rows; other operations require field. Sum outputs exact decimal strings; missing members produce null, not partial totals.',
             order_by: 'Array of {field,direction: asc|desc}. May use fields omitted from select, or aggregate aliases. Nulls sort last.',
             pagination: 'limit 1–200, offset >= 0. Subsequent pages require expected_revision plus expected_source_version for external stores. Aggregation uses the full filtered dataset before pagination.',
-            source: 'For source_records only: {file_id,version} from raw_files. Reads all source fields without instrument filtering. Unsupported/binary or oversized sources remain accessible through fetch_raw_data.',
+            source: 'source_records: {file_id,version} from raw_files. financial_state: {path:JSON_POINTER} scopes expansion to a financial subtree, e.g. /portfolio or /portfolio/AMD@ibkr. A root equality filter is also scoped before expansion. Unsupported/binary or oversized file sources remain accessible through fetch_raw_data.',
             joins: 'No implicit or arbitrary joins in v1. Query related datasets at the same revision using dictionary relationship keys; positions include reconciled opening evidence.',
           }, examples: [
             { from: 'positions', where: { field: 'instrument', op: 'eq', value: 'equity' }, select: ['key', 'channel', 'currency', 'units', 'avg_price'] },
@@ -69,7 +69,10 @@ export function createDataQueryTools(options: { allowDrive?: boolean } = {}): Ag
         limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 200 })), offset: Type.Optional(Type.Integer({ minimum: 0 })),
         expected_revision: Type.Optional(Type.Integer({ minimum: 0 })),
         expected_source_version: Type.Optional(Type.String()),
-        source: Type.Optional(Type.Object({ file_id: Type.String(), version: Type.String() }, { additionalProperties: false })),
+        source: Type.Optional(Type.Union([
+          Type.Object({ file_id: Type.String(), version: Type.String() }, { additionalProperties: false }),
+          Type.Object({ path: Type.String({ description: 'financial_state only: JSON Pointer to a financial subtree, e.g. /portfolio.' }) }, { additionalProperties: false }),
+        ])),
       }, { additionalProperties: false }),
     }),
     async execute(_id, raw) {

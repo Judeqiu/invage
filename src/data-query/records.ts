@@ -39,18 +39,49 @@ export function scalarRecords(value: unknown, root: string, path = '', out: Row[
   return out;
 }
 
-export function financialRecords(state: InvestorState): Row[] {
-  const rows: Row[] = [];
+function financialProjection(state: InvestorState, requestedRoot?: string): Record<string, unknown> {
+  const projection: Record<string, unknown> = Object.create(null);
   const data = state as unknown as Record<string, unknown>;
-  for (const root of financialRoots) if (data[root] !== undefined) scalarRecords(data[root], root, `/${root}`, rows);
-  if (state.broker_connections !== undefined || state.broker_sources !== undefined) {
+  for (const root of financialRoots) if ((!requestedRoot || requestedRoot === root) && data[root] !== undefined) projection[root] = data[root];
+  if ((!requestedRoot || ['broker_connections', 'broker_sources'].includes(requestedRoot))
+    && (state.broker_connections !== undefined || state.broker_sources !== undefined)) {
     // Reuse the public projection's credential redaction, then remove access/config values entirely.
     const publicData = publicBrokerAccounts(state);
-    scalarRecords(publicData.connections.map(({ config: _config, ...connection }) => connection),
-      'broker_connections', '/broker_connections', rows);
-    scalarRecords(publicData.sources.map(({ id, broker_id }) => ({ id, broker_id })), 'broker_sources', '/broker_sources', rows);
+    if (!requestedRoot || requestedRoot === 'broker_connections') projection.broker_connections = publicData.connections.map(({ config: _config, ...connection }) => connection);
+    if (!requestedRoot || requestedRoot === 'broker_sources') projection.broker_sources = publicData.sources.map(({ id, broker_id }) => ({ id, broker_id }));
   }
+  return projection;
+}
+
+function scopedFinancialValue(state: InvestorState, path: string) {
+  if (!path.startsWith('/') || /~(?![01])/.test(path)) throw new Error('Financial source path must be a valid JSON Pointer.');
+  const parts = path.slice(1).split('/').map(part => part.replaceAll('~1', '/').replaceAll('~0', '~'));
+  const root = parts[0];
+  if (![...financialRoots, 'broker_connections', 'broker_sources'].includes(root)) throw new Error('Unknown financial root. Read get_data_dictionary.');
+  let value: unknown = financialProjection(state, root);
+  for (const part of parts) {
+    if (!value || typeof value !== 'object' || !Object.hasOwn(value, part)) return { root, available: false, value: null };
+    value = (value as Record<string, unknown>)[part];
+  }
+  return { root, available: true, value };
+}
+
+export function financialRecords(state: InvestorState, path?: string): Row[] {
+  if (path !== undefined) {
+    const scoped = scopedFinancialValue(state, path);
+    return scoped.available ? scalarRecords(scoped.value, scoped.root, path) : [];
+  }
+  const rows: Row[] = [];
+  for (const [root, value] of Object.entries(financialProjection(state))) scalarRecords(value, root, `/${root}`, rows);
   return rows;
+}
+
+export function scopedFinancialDataset(path: string): Dataset {
+  // Validate the path independently of availability; credentials/auth roots are never eligible.
+  scopedFinancialValue({} as InvestorState, path);
+  return { ...financialStateDataset, source: 'investor_state:' + path,
+    available: state => scopedFinancialValue(state, path).available, rows: state => financialRecords(state, path),
+    caveats: [...financialStateDataset.caveats, `Source counts cover the selected subtree ${path}, not all financial state.`] };
 }
 
 export const financialStateDataset: Dataset = {

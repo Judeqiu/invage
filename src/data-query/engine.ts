@@ -14,7 +14,7 @@ export interface Query {
   offset?: number;
   expected_revision?: number;
   expected_source_version?: string;
-  source?: { file_id: string; version: string };
+  source?: { file_id: string; version: string } | { path: string };
 }
 export const limits = { rows: 200, default_rows: 50, input_chars: 20000, output_bytes: 65536, source_rows: 50000, filter_nodes: 80, filter_depth: 8 };
 function object(value: unknown, keys: string[], label: string): Record<string, unknown> {
@@ -119,7 +119,7 @@ export function runQuery(snapshot: InvestorSnapshot, raw: unknown, catalog: Reco
   const p = object(raw, ['from', 'select', 'where', 'group_by', 'aggregates', 'order_by', 'limit', 'offset', 'expected_revision', 'expected_source_version', 'source'], 'query') as unknown as Query;
   if (typeof p.from !== 'string' || !Object.hasOwn(catalog, p.from)) throw new Error('Unknown dataset. Read get_data_dictionary.');
   const dataset = catalog[p.from]; const fields = dataset.fields;
-  if (p.source !== undefined && p.from !== 'source_records') throw new Error('source is only supported for source_records.');
+  if (p.source !== undefined && !['source_records', 'financial_state'].includes(p.from)) throw new Error('source is only supported for source_records or financial_state.');
   if (p.expected_source_version !== undefined && p.expected_source_version !== dataset.source_version) throw new Error('Source data changed; restart from offset 0.');
   const limit = p.limit ?? limits.default_rows; const offset = p.offset ?? 0;
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > limits.rows || !Number.isSafeInteger(offset) || offset < 0) throw new Error('limit must be 1–200; offset must be a nonnegative integer.');

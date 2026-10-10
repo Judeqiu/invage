@@ -30,6 +30,8 @@ Complete nested holding fields, including fields not projected in `positions`:
 {"from":"financial_state","where":{"field":"root","op":"eq","value":"portfolio"}}
 ```
 
+For large accounts, a `root` equality filter scopes `financial_state` before expansion. To inspect a large root in smaller parts, provide `source:{"path":"/option_observations/0"}` (a JSON Pointer into a financial subtree). Source counts cover that subtree; omitted or missing data is still unknown. Authentication and private broker configuration are not valid paths.
+
 Scalar datasets return `root`, `path`, `value_type`, `text_value`, `number_value` and `boolean_value`. Paths are JSON Pointers with array indices and escaped map keys. Nulls and empty collections are preserved. Related leaves with the same parent path belong to the same record. XML paths include element names, sibling indices, `@attribute` and `#text`; `root` is the element name. CSV paths are row/column indices and retain headers as original cells, including repeated broker tables. Original decimal strings stay strings, without inferred units or profit semantics.
 
 Discover archived files:

@@ -5,7 +5,7 @@ import { assertUserId } from 'utarus';
 import { listRawData, fetchRawData, type RawFile } from '../raw-data/store.js';
 import { listBrokerSyncChannels, listBrokerSyncRuns } from '../brokers/sync-history.js';
 import { datasets, field, type Dataset, type Field, type Row } from './catalog.js';
-import { financialStateDataset, recordFields, recordsDataset, scalarRecords } from './records.js';
+import { financialStateDataset, recordFields, recordsDataset, scalarRecords, scopedFinancialDataset } from './records.js';
 import { booksDatasets, loadBooksDataset } from './books.js';
 import { limits, type Query } from './engine.js';
 import type { InvestorSnapshot } from '../state/investor-store.js';
@@ -100,6 +100,7 @@ export function parseSourceRecords(id: string, text: string): Row[] {
 
 function readSourceText(userId: string, source: Query['source']): string {
   if (!source || typeof source !== 'object' || Array.isArray(source) || Object.keys(source).some(k => !['file_id', 'version'].includes(k))
+    || !('file_id' in source) || !('version' in source)
     || typeof source.file_id !== 'string' || typeof source.version !== 'string') throw new Error('source_records requires source: {file_id, version} from raw_files.');
   const chunks: Buffer[] = []; let offset = 0;
   for (;;) {
@@ -114,7 +115,7 @@ function readSourceText(userId: string, source: Query['source']): string {
 
 function readSource(userId: string, source: Query['source']): Dataset {
   const text = readSourceText(userId, source);
-  if (!source) throw new Error('Source required.');
+  if (!source || !('file_id' in source)) throw new Error('File source required.');
   const rows = parseSourceRecords(source.file_id, text);
   return { ...queryDatasets.source_records, source: source.file_id, source_version: source.version, rows: () => rows };
 }
@@ -124,10 +125,19 @@ export async function loadQueryCatalog(snapshot: InvestorSnapshot, raw: unknown)
   if (JSON.stringify(raw).length > limits.input_chars) throw new Error('Query input limit exceeded.');
   const query = raw as Query; const name = query.from;
   if (typeof name !== 'string' || !Object.hasOwn(queryDatasets, name)) throw new Error('Unknown dataset. Read get_data_dictionary.');
-  if (query.source !== undefined && name !== 'source_records') throw new Error('source is only supported for source_records.');
+  if (query.source !== undefined && !['source_records', 'financial_state'].includes(name)) throw new Error('source is only supported for source_records or financial_state.');
   const userId = snapshot.state.user.id; assertUserId(userId);
   let dataset = queryDatasets[name];
-  if (Object.hasOwn(booksDatasets, name)) dataset = await loadBooksDataset(name, userId);
+  if (name === 'financial_state') {
+    if (query.source !== undefined) {
+      const source = query.source;
+      if (!source || typeof source !== 'object' || Array.isArray(source) || Object.keys(source).length !== 1 || !('path' in source) || typeof source.path !== 'string') throw new Error('financial_state source requires {path: JSON_POINTER}.');
+      dataset = scopedFinancialDataset(source.path);
+    } else {
+      const root = constrainedFinancialRoot(query.where);
+      if (root !== undefined) dataset = scopedFinancialDataset('/' + root.replaceAll('~', '~0').replaceAll('/', '~1'));
+    }
+  } else if (Object.hasOwn(booksDatasets, name)) dataset = await loadBooksDataset(name, userId);
   else if (name === 'valuation_snapshots') {
     const files = allRawFiles(userId); const index = files.find(file => file.id === 'snapshots.json');
     const values: unknown[] = [];
@@ -159,4 +169,15 @@ export async function loadQueryCatalog(snapshot: InvestorSnapshot, raw: unknown)
     const files = allRawFiles(userId); dataset = { ...dataset, rows: () => files.map(file => ({ ...file })), source_version: hash(files) };
   } else if (name === 'source_records') dataset = readSource(userId, query.source);
   return { ...queryDatasets, [name]: dataset };
+}
+
+/** A mandatory root equality can be pushed down before expanding large execution/observation collections. */
+function constrainedFinancialRoot(where: unknown, depth = 0): string | undefined {
+  if (depth > limits.filter_depth || !where || typeof where !== 'object' || Array.isArray(where)) return undefined;
+  const filter = where as Record<string, unknown>;
+  if (filter.field === 'root' && filter.op === 'eq' && typeof filter.value === 'string') return filter.value;
+  if (Array.isArray(filter.all)) {
+    for (const child of filter.all) { const root = constrainedFinancialRoot(child, depth + 1); if (root !== undefined) return root; }
+  }
+  return undefined;
 }

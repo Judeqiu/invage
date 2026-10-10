@@ -34,6 +34,26 @@ function file(userId: string, id: string, body: string) {
 async function query(raw: unknown) { return runQuery(snapshot, raw, await loadQueryCatalog(snapshot, raw)); }
 
 describe('all financial data through one query interface', () => {
+  it('scopes large financial state before expansion, including nested roots, without exposing auth paths', async () => {
+    Object.assign(snapshot.state, { option_observations: Array.from({ length: 3000 }, () =>
+      Object.fromEntries(Array.from({ length: 20 }, (_, index) => ['field' + index, index]))) });
+    await expect(query({ from: 'financial_state', limit: 1 })).rejects.toThrow(/record\/depth limit/);
+    const scoped = await query({ from: 'financial_state', where: { field: 'root', op: 'eq', value: 'portfolio' } });
+    expect(scoped.available).toBe(true);
+    expect(scoped.rows).toContainEqual(expect.objectContaining({ path: '/portfolio/AMD@ibkr/units', number_value: 100 }));
+    expect(scoped.source).toBe('investor_state:/portfolio');
+    const nested = await query({ from: 'financial_state', source: { path: '/option_observations/0' } });
+    expect(nested.source_rows).toBe(20);
+    const missing = await query({ from: 'financial_state', source: { path: '/portfolio/missing' } });
+    expect(missing).toMatchObject({ available: false, rows: [] });
+    for (const path of ['/user/auth_token', '/broker_sources/0/credentials', '/portfolio/~bad']) {
+      if (path.includes('credentials')) expect((await query({ from: 'financial_state', source: { path } })).rows).toEqual([]);
+      else await expect(query({ from: 'financial_state', source: { path } })).rejects.toThrow(/financial root|JSON Pointer/);
+    }
+    const any = { from: 'financial_state', where: { any: [{ field: 'root', op: 'eq', value: 'portfolio' }, { field: 'root', op: 'eq', value: 'option_observations' }] } };
+    await expect(query(any)).rejects.toThrow(/record\/depth limit/);
+  });
+
   it('keeps full stock/fund fields and nested future holding fields visible, excluding auth and broker secrets', () => {
     const sourceId = addBrokerSource(snapshot.state, 'ibkr', { token: 'BROKER_SECRET' });
     addBrokerAccount(snapshot.state, { source_id: sourceId, account_id: 'U1', label: 'IBKR', config: { activity_query_id: '123' } });
