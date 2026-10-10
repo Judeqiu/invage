@@ -222,7 +222,13 @@ const server = createServer(async (req, res) => {
     const url = req.url.split('?')[0];
     if (url === '/discussion-shell') {
       res.setHeader('Content-Type', 'text/html');
-      res.end('<iframe title="Dashboard" src="/dashboard/" style="width:100%;height:900px;border:0"></iframe>');
+      res.end(`<iframe title="Dashboard" src="/dashboard/" style="width:100%;height:900px;border:0"></iframe><script>
+        window.panelMessages = [];
+        addEventListener('message', event => {
+          if (event.origin === location.origin && event.source === document.querySelector('iframe').contentWindow)
+            panelMessages.push(event.data);
+        });
+      </script>`);
       return;
     }
     if (url === '/') {
@@ -396,9 +402,18 @@ try {
   await dashboardFrame.$eval('[data-option-discuss]', button => button.scrollIntoView());
   await discussionPage.screenshot({ path: '/tmp/invage-option-discuss-mobile.png' });
   discussionFailure = false;
-  await dashboardFrame.click('[data-option-discuss]');
-  await discussionPage.waitForFunction(() => location.search === '?c=option-chat-123');
-  assert.equal(discussionPage.frames().length, 1, 'discussion navigates app shell out of iframe');
+  await discussionPage.evaluate(() => {
+    const failed = window.panelMessages.find(message => message.type === 'utarus:chat-panel:open');
+    document.querySelector('iframe').contentWindow.postMessage({ type: 'utarus:chat-panel:retry', requestId: failed.requestId }, location.origin);
+  });
+  await discussionPage.waitForFunction(() => window.panelMessages.some(message => message.type === 'utarus:chat-panel:ready'));
+  assert(discussionPage.url().endsWith('/discussion-shell'), 'discussion keeps dashboard shell in place');
+  assert.equal(discussionPage.frames().length, 2, 'dashboard iframe stays mounted');
+  const panelMessages = await discussionPage.evaluate(() => window.panelMessages);
+  assert(panelMessages.some(message => message.type === 'utarus:chat-panel:open' && message.title.includes('140 PUT')), 'panel gets exact contract header');
+  assert(panelMessages.some(message => message.type === 'utarus:chat-panel:error'), 'failed launch reports error to panel');
+  assert(panelMessages.at(-1).conversationId === 'option-chat-123', 'panel opens created conversation');
+  assert(await dashboardFrame.$eval('[data-option-discuss]', button => button.getAttribute('aria-expanded') === 'true'), 'selected discussion is highlighted');
   const discussion = discussionRequests.at(-1);
   assert.equal(discussion.conversationId, undefined, 'discussion starts a new focused chat');
   assert(discussion.text.includes('AAPL  260918P00140000'), 'chat gets full contract identifier');
@@ -406,6 +421,13 @@ try {
   assert(discussion.text.includes('Broker/channel: ibkr') && discussion.text.includes('Quantity: 1 contracts. Multiplier: 100'), 'chat gets broker and position size');
   assert(discussion.text.includes('as of 2026-09-16') && discussion.text.includes('verify the current holding'), 'snapshot date and freshness preserved');
   assert.equal(discussionRequests.length, 2, 'one request per deliberate attempt');
+  await discussionPage.evaluate(() => document.querySelector('iframe').contentWindow.postMessage({ type: 'utarus:chat-panel:closed' }, location.origin));
+  await dashboardFrame.waitForFunction(() => document.querySelector('[data-option-discuss]')?.getAttribute('aria-expanded') === 'false');
+  await dashboardFrame.click('[data-option-discuss]');
+  assert.equal(discussionRequests.length, 2, 'reopening the same option reuses its conversation');
+  await discussionPage.setViewport({ width: 1280, height: 844 });
+  await dashboardFrame.click('[data-option-discuss]');
+  assert.equal(discussionRequests.length, 2, 'resizing preserves discussion association');
   await discussionPage.close();
   const archivedDiscussion = await page.evaluate(() => {
     const position = payload.model.live.positions.find(p => p.instrument === 'option');

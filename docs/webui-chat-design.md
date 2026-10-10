@@ -59,3 +59,16 @@ Framework-reserved (do **not** register): `/clear`, `/help`.
 - Web login / redeem / admin REST  
 
 Those ship inside the pinned `utarus` dependency (`web/dist`, `src/webapp/chat/*`).
+
+## Dashboard option discussions
+
+Discuss opens Utarus's contextual chat panel through the same-origin domain
+iframe bridge (`utarus:chat-panel:open`, then `ready` or `error`). The panel uses
+the normal chat component: a floating right drawer on desktop and a full-screen
+view on mobile, with Close returning to the existing dashboard state.
+
+Invage creates the initial focused conversation with the exact option, broker,
+and snapshot context. It caches the conversation per contract/broker/view for
+this dashboard visit, so reopening does not resend the initial assessment.
+Closing and switching panels preserve draft messages. Framework integration is
+documented in `utarus/docs/webui-integration.md` under Contextual chat panels.

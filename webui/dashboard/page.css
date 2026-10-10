@@ -172,3 +172,5 @@ footer { text-align: center; font-size: 0.72rem; color: var(--muted-foreground);
   .donut-container { height: 240px; }
   .bar-container { height: 280px; }
 }
+
+.option-discuss-active { background: color-mix(in oklab, var(--brand) 15%, var(--card)); border-color: var(--brand); box-shadow: 0 0 0 1px var(--brand); }

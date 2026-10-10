@@ -1431,6 +1431,39 @@ function renderOverview(view) {
 }
 
 let optionChatPending = false;
+const optionDiscussions = new Map();
+let activeOptionDiscussionKey = null;
+let optionDiscussionTrigger = null;
+
+function sendOptionPanelMessage(message) {
+  window.parent.postMessage(message, window.location.origin);
+}
+
+function highlightOptionDiscussion() {
+  el.expiryTable.querySelectorAll('[data-option-discuss]').forEach(button => {
+    const selected = button.dataset.optionKey === activeOptionDiscussionKey;
+    button.classList.toggle('option-discuss-active', selected);
+    button.setAttribute('aria-expanded', String(selected));
+  });
+}
+
+window.addEventListener('message', event => {
+  if (event.origin !== window.location.origin || event.source !== window.parent ||
+      !event.data) return;
+  if (event.data.type === 'utarus:chat-panel:retry') {
+    if (event.data.requestId === optionDiscussionTrigger?.dataset.optionRequestId) {
+      void startOptionDiscussion(optionDiscussionTrigger);
+    }
+    return;
+  }
+  if (event.data.type !== 'utarus:chat-panel:closed') return;
+  const previousKey = activeOptionDiscussionKey;
+  activeOptionDiscussionKey = null;
+  highlightOptionDiscussion();
+  const trigger = optionDiscussionTrigger?.isConnected ? optionDiscussionTrigger
+    : [...el.expiryTable.querySelectorAll('[data-option-discuss]')].find(button => button.dataset.optionKey === previousKey);
+  trigger?.focus({ preventScroll: true });
+});
 
 function optionDiscussionPrompt(p, view, asOf) {
   const o = p.option;
@@ -1446,7 +1479,24 @@ function optionDiscussionPrompt(p, view, asOf) {
 
 async function startOptionDiscussion(button) {
   if (optionChatPending) return;
+  const key = button.dataset.optionKey;
+  let discussion = optionDiscussions.get(key);
+  if (discussion) {
+    document.getElementById('optionChatStatus').textContent = '';
+    activeOptionDiscussionKey = key;
+    optionDiscussionTrigger = button;
+    sendOptionPanelMessage({ type: 'utarus:chat-panel:open', ...discussion });
+    highlightOptionDiscussion();
+    return;
+  }
   optionChatPending = true;
+  discussion = { requestId: crypto.randomUUID(), title: button.dataset.optionTitle, context: button.dataset.optionContext };
+  button.dataset.optionRequestId = discussion.requestId;
+  optionDiscussions.set(key, discussion);
+  activeOptionDiscussionKey = key;
+  optionDiscussionTrigger = button;
+  sendOptionPanelMessage({ type: 'utarus:chat-panel:open', ...discussion });
+  highlightOptionDiscussion();
   const status = document.getElementById('optionChatStatus');
   status.textContent = 'Starting your option discussion…';
   status.classList.remove('error');
@@ -1465,10 +1515,14 @@ async function startOptionDiscussion(button) {
     if (typeof body.conversationId !== 'string' || !body.conversationId.trim()) {
       throw new Error('The chat did not return a conversation.');
     }
-    const destination = `/?c=${encodeURIComponent(body.conversationId)}`;
-    // The dashboard is embedded in the app shell; navigate the shell, not its iframe.
-    window.top.location.assign(destination);
+    discussion.conversationId = body.conversationId;
+    sendOptionPanelMessage({ type: 'utarus:chat-panel:ready', requestId: discussion.requestId, conversationId: body.conversationId });
+    status.textContent = '';
+    // Standalone report previews have no shell to host the panel.
+    if (window.parent === window) window.location.assign(`/?c=${encodeURIComponent(body.conversationId)}`);
   } catch (error) {
+    optionDiscussions.delete(key);
+    sendOptionPanelMessage({ type: 'utarus:chat-panel:error', requestId: discussion.requestId, error: error instanceof Error ? error.message : 'Please try again.' });
     status.textContent = `Couldn't open the discussion. ${error instanceof Error ? error.message : 'Please try again.'}`;
     status.classList.add('error');
   } finally {
@@ -1587,7 +1641,7 @@ function renderExpiryRisk(view, asOf) {
             const premium = Number(p.premiumAbsolute || Number(p.avgCost) * Number(p.units));
             return `<tr class="risk-row risk-row-${tone}" data-risk-underlying="${escapeHtml(o.underlying)}" tabindex="0" aria-label="Highlight ${escapeHtml(o.underlying)} in open options">
               <td><span class="risk-contract">${tone === 'danger' ? '<span class="pulse-dot" aria-hidden="true"></span>' : ''}<strong>${escapeHtml(o.underlying || p.ticker)}</strong><span class="risk-contract-meta">${escapeHtml(o.right.toUpperCase())} · ${o.right === 'put' ? 'CSP' : 'CC'} · ${p.units}x</span></span>
-                <button type="button" class="option-discuss" data-option-discuss="${escapeHtml(optionDiscussionPrompt(p, view, asOf))}" aria-label="Discuss ${escapeHtml(`${optionUnderlyingLabel(o)} ${o.side} ${o.right}, strike ${o.strike}, expiry ${o.expiry}, ${p.channel}`)}" title="Start a new chat with this contract’s details"${optionChatPending ? ' disabled' : ''}>Discuss</button>
+                <button type="button" class="option-discuss" aria-expanded="false" data-option-key="${escapeHtml(JSON.stringify([p.ticker, p.channel, view.isLive ? 'latest' : asOf]))}" data-option-title="${escapeHtml(`${optionUnderlyingLabel(o)} · ${o.strike} ${o.right.toUpperCase()} · ${o.expiry}`)}" data-option-context="${escapeHtml(`${p.channel} · ${p.units} contracts · Snapshot ${asOf}`)}" data-option-discuss="${escapeHtml(optionDiscussionPrompt(p, view, asOf))}" aria-label="Discuss ${escapeHtml(`${optionUnderlyingLabel(o)} ${o.side} ${o.right}, strike ${o.strike}, expiry ${o.expiry}, ${p.channel}`)}" title="Discuss this contract in the chat panel"${optionChatPending ? ' disabled' : ''}>Discuss</button>
               </td>
               <td class="num">${spot > 0 ? Number(spot).toFixed(2) : '—'}</td>
               <td class="num">${fmtPrettyMoney(o.strike, p.currency || reportingCcyCode(view), 0)}</td>
@@ -1607,6 +1661,7 @@ function renderExpiryRisk(view, asOf) {
   }
   renderPremiumEngine(view);
   renderOpenOptions(view);
+  highlightOptionDiscussion();
 }
 
 el.expiryTable?.addEventListener('click', (event) => {
