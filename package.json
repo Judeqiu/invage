@@ -1,6 +1,6 @@
 {
   "name": "invage",
-  "version": "0.3.6",
+  "version": "0.3.7",
   "description": "AI investment portfolio analyst. Built on the Utarus agent framework (BinDrive, Telegram, PostgreSQL personal user state).",
   "type": "module",
   "main": "dist/index.js",
