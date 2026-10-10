@@ -1,6 +1,6 @@
 # Section 03: option positions and roll relationships
 
-Date: 2026-10-11. Status: proposed design with a clickable prototype; live detection and dashboard integration are not implemented.
+Date: 2026-10-11. Status: revised to a foldable hierarchy following user feedback; clickable prototype only. Live detection and dashboard integration are not implemented.
 
 Prototype: [Section 03 option relationships](./section-03-option-relationships.html).
 Evidence: [Victor's broker linkage review](../audits/2026-10-11-victor-option-roll-linkage.md).
@@ -13,21 +13,25 @@ Open retains the current book, expiry grouping, prices, obligations, and freshne
 
 ## Layout and interactions
 
-Use the existing report typography, purple accent, broker chips, and quiet tables. The relationship is the primary visual: **old contract → replacement contract**. Show expiry, strike, right, and quantity on each side. A row shows broker/account, roll date, linkage label, cash basis, and an **Inspect relationship** action. On small screens, stack the old contract above the replacement with a downward arrow and use a full-width detail area below the list.
+Use a **foldable hierarchy** with the existing report typography and purple accent. Each top-level folder represents one relationship group within an underlying, broker, and account. Its collapsed row shows the latest replacement contract, expiry, quantity, last roll date, and number of rolls. Multiple unrelated chains in one underlying/account remain separate folders. Latest replacement is explicitly distinguished from a confirmed current position.
+
+Expanding a folder reveals an indented roll history, newest first. Each roll is another foldable row: **date · old contract → replacement contract · evidence label**. Expanding that row reveals closing/opening quantities, cash basis when available, and evidence interpretation. A third nested disclosure contains source identifiers. All detail stays inside its parent folder; there is no detached detail panel or separate chain toggle.
+
+Use native `details`/`summary` disclosures, directional chevrons, and branch lines to express hierarchy. The AMD folder opens initially in the preview to illustrate its four transitions; roll details start collapsed. Other folders start collapsed. Provide **Expand groups** and **Collapse all**; expanding groups does not automatically expose every source record. Remember disclosure state across filter changes. On mobile, wrap summary fields and stack close/open legs vertically without horizontal scrolling.
 
 The Rolls toolbar contains broker/account, underlying, evidence, and date-range filters. Global broker selection carries into all three views. Default order is newest roll first. Unknown account identity never falls into another account's group. Use an explicit account selector or account label when one broker has multiple accounts.
 
-Selecting a relationship opens its detail below the list without navigating away:
+Expanding a roll shows:
 
 - Contract transition and quantity on each leg.
 - Trade date and time with the broker clock or timezone.
 - Cash flow labeled **net cash**, **before fees**, or **unavailable**, with currency.
 - Evidence explanation, source references, parent order IDs, and fill quantities in expandable detail.
-- **Relationship / Chain** controls. Chain displays dated transitions within the same broker/account, with each contract appearing once in the path and the evidence label on each edge.
+- The roll's place in its account-scoped history through indentation and ordering. No additional selection step is required to see the chain.
 
-A chain is a path of linked transitions, not automatically a continuous position lifecycle. The AMD prototype uses four observed transitions of 15 contracts and labels continuous ownership as unverified. No node is marked currently open without a fresh position observation. Branches, partial quantities, and merges must be shown explicitly; do not draw a single uninterrupted line if quantity reconciliation is unresolved.
+A chain is a path of linked transitions, not automatically a continuous position lifecycle. The AMD prototype uses four observed transitions of 15 contracts and labels continuous ownership as unverified. No node is marked currently open without a fresh position observation. Branches, partial quantities, and merges must be shown explicitly as subgroups with allocated quantities; do not imply a single uninterrupted lifecycle if quantity reconciliation is unresolved.
 
-Clicking a linked contract in Open or History should open Rolls with that account and contract selected. A linked closing episode keeps its own outcome, such as **Closed by fills**, and adds **Rolled into …** as a separate relationship. Clicking a contract node opens its existing history detail.
+Clicking a linked contract in Open or History should open Rolls with that account and contract filtered, and expand the relevant folder and roll. A linked closing episode keeps its own outcome, such as **Closed by fills**, and adds **Rolled into …** as a separate relationship. A contract history action inside a roll opens its existing history detail.
 
 ## Evidence labels
 
@@ -74,6 +78,6 @@ Preserve raw broker order/deal/execution identifiers during import and backfill 
 
 ## Prototype scope and acceptance
 
-The prototype uses a small, explicitly labeled selection of Victor's reviewed records. It is a design preview, does not query production, and does not contain invented live positions. Filters, selection, evidence expansion, tabs, and the AMD chain view work locally. Open and History display integration guidance because their live datasets are not embedded.
+The revised prototype focuses on the Rolls view and uses a small, explicitly labeled selection of Victor's reviewed records. It does not query production or embed invented live positions. Broker/underlying/evidence filters, nested group/roll/source disclosures, and expand/collapse controls work locally. The AMD folder contains all four reviewed transitions. Open and History integration remains specified above and is not embedded in this revision.
 
 Production acceptance includes: explicit shared-order rolls; IBKR inferred links; Tiger newly opened spreads and existing long sell legs; resized Webull candidates; partial fills and branch/merge chains; unknown commission; account separation; conflicting source copies; no current positions; loading/error/empty states; keyboard and mobile access; stale position observations; and suppression of future links in dated replay.
