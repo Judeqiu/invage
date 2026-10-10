@@ -4,6 +4,7 @@ Operator deploy runbooks (not marketing changelogs).
 
 | Version | Date | Utarus pin | Summary |
 |---------|------|------------|---------|
+| [v0.3.8](./v0.3.8.md) | 2026-10-10 | `v4.2.3` | Generic queries across financial state, accounting, valuations and broker archives |
 | [v0.3.7](./v0.3.7.md) | 2026-10-10 | `v4.2.3` | Direct lookups, selective expert routing and batch option quotes |
 | [v0.3.6](./v0.3.6.md) | 2026-10-10 | `v4.2.3` | Dated broker evidence, accuracy repairs, and discoverable read-only queries |
 | [v0.3.5](./v0.3.5.md) | 2026-10-10 | `v4.2.3` | Dashboard chat sidebar and mobile full-screen discussions |
