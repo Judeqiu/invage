@@ -213,7 +213,7 @@ export function createSnapshotTool(): AgentTool[] {
           cash != null
             ? `\nCash: ${cash.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })} ${cash.currency}` +
               `\nPositions MTM: ${formatMoney(positionsValue)}`
-            : `\nCash: not recorded (NAV includes positions${live.depositsAmount ? ' and fixed deposits' : ''}). Use set_cash to include dry powder.`;
+            : `\nCash: not recorded (NAV includes positions${live.depositsAmount ? ' and fixed deposits' : ''}). Record a cash opening balance through Bookkeeper to include dry powder.`;
         return ok(
           `Snapshot saved as "${fileName}".\n` +
           `Total Value (NAV): ${formatMoney(totalValue)}\n` +
@@ -256,12 +256,14 @@ export function createSnapshotTool(): AgentTool[] {
         const snaps = loadSnapshots(state.user.id);
         const lines = snaps.map((snap, i) => {
           const sign = snap.totalPL >= 0 ? '+' : '';
-          return `  ${i + 1}. ${snap.date} — Value: $${snap.totalValue.toFixed(2)}, P/L: ${sign}${snap.totalPLPct.toFixed(1)}% (${snap.positions.length} positions)`;
+          return `  ${i + 1}. ${snap.date} — Value: ${snap.totalValue.toFixed(2)} ${snap.reportingCurrency ?? 'currency unavailable'}, P/L: ${sign}${snap.totalPLPct.toFixed(1)}% (${snap.positions.length} positions); broker as-of: ${JSON.stringify(snap.brokerAsOf ?? {})}`;
         });
 
         return ok(`${snaps.length} snapshot(s):\n${lines.join('\n')}`, {
           count: snaps.length,
           files,
+          snapshots: snaps,
+          caveat: 'Capture dates are valuation dates, not broker observation or execution dates. Older snapshots may lack currency and broker provenance.',
         });
       } catch (e) {
         return failFrom(e);

@@ -9,6 +9,7 @@
 import { yf } from './yf-client.js';
 import type { Holding, OptionQuoteSource, OptionRight, OptionSpec } from './types.js';
 import { isOptionHolding } from './position-value.js';
+import { canonicalOptionUnderlying } from '../brokers/option-symbol.js';
 
 export type OptionMarkSource = 'manual' | 'yahoo';
 
@@ -121,7 +122,7 @@ function manualMark(o: OptionSpec, note?: string): OptionLiveMark {
 export async function fetchYahooContractMark(
   o: OptionSpec,
 ): Promise<{ row: YahooContractRow; mark: number; perShare: number }> {
-  const underlying = o.underlying.trim().toUpperCase();
+  const underlying = canonicalOptionUnderlying(o.underlying, o);
   const expiryYmd = o.expiry;
 
   let chain;
@@ -150,6 +151,9 @@ export async function fetchYahooContractMark(
           `Available sample: ${available.slice(0, 8).join(', ')}${available.length > 8 ? '…' : ''}`,
       );
     }
+    if (chain.options.length !== 1 || chain.options[0].expirationDate != null) {
+      throw new Error(`Yahoo returned a different option expiry for ${underlying} @ ${expiryYmd}.`);
+    }
     series = chain.options[0];
   }
 
@@ -167,6 +171,9 @@ export async function fetchYahooContractMark(
       `No Yahoo ${o.right} strike ${o.strike} for ${underlying} @ ${expiryYmd}. ` +
         (near.length ? `Nearby strikes: ${near.join(', ')}` : `Strikes on series: ${strikes.slice(0, 12).join(', ')}…`),
     );
+  }
+  if (series.expirationDate == null && row.expiration == null) {
+    throw new Error(`Yahoo option expiry cannot be verified for ${underlying} @ ${expiryYmd}.`);
   }
 
   const perShare = pickPerSharePremium(row);

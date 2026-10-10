@@ -38,7 +38,7 @@ export function classifyMoneyness(
   strike: number,
   right: OptionRight,
 ): Moneyness {
-  if (!(spot > 0) || !(strike > 0)) {
+  if (!(spot > 0) || !(strike > 0) || !Number.isFinite(spot) || !Number.isFinite(strike)) {
     throw new Error('spot and strike must be finite numbers > 0.');
   }
   const rel = Math.abs(spot - strike) / spot;
@@ -75,7 +75,7 @@ export function structureEconomics(input: {
   if (!(premiumPerShare >= 0) || !Number.isFinite(premiumPerShare)) {
     throw new Error('premiumPerShare must be a finite number ≥ 0.');
   }
-  if (!(multiplier > 0) || !(units > 0)) {
+  if (!(multiplier > 0) || !(units > 0) || !Number.isFinite(multiplier) || !Number.isFinite(units) || !Number.isFinite(strike) || !(strike > 0)) {
     throw new Error('multiplier and units must be finite numbers > 0.');
   }
   const premiumPerContract = Number((premiumPerShare * multiplier).toFixed(2));
@@ -146,6 +146,7 @@ export function putCallOpenInterestRatio(
   calls: Array<{ openInterest?: number }>,
   puts: Array<{ openInterest?: number }>,
 ): number | null {
+  if (!calls.length || !puts.length || [...calls, ...puts].some(r => r.openInterest == null || !Number.isFinite(r.openInterest) || r.openInterest < 0)) return null;
   const callOi = calls.reduce((s, r) => s + (r.openInterest ?? 0), 0);
   const putOi = puts.reduce((s, r) => s + (r.openInterest ?? 0), 0);
   if (!(callOi > 0) || !(putOi >= 0)) return null;
@@ -284,6 +285,8 @@ export type LoadedChain = {
   expiry: string;
   calls: ChainContract[];
   puts: ChainContract[];
+  quote?: { asOf: string | null; marketState: string | null; priceField: string };
+  fetchedAt?: string;
 };
 
 function todayUtcYmd(): string {
@@ -343,9 +346,15 @@ export async function loadOptionsChain(
 
   const series =
     raw.options?.find((s) => s.expirationDate != null && toDateKey(s.expirationDate) === expiry) ??
-    raw.options?.[0];
+    (raw.options?.length === 1 && raw.options[0].expirationDate == null ? raw.options[0] : undefined);
   if (!series) {
-    throw new Error(`Yahoo returned no option series for ${symbol} @ ${expiry}.`);
+    throw new Error(`Yahoo returned no matching option series for ${symbol} @ ${expiry}.`);
+  }
+  for (const row of [...(series.calls ?? []), ...(series.puts ?? [])]) {
+    if ((series.expirationDate == null && row.expiration == null) ||
+        (row.expiration != null && toDateKey(row.expiration) !== expiry)) {
+      throw new Error(`Yahoo contract expiry cannot be verified for ${symbol} @ ${expiry}.`);
+    }
   }
 
   return {
@@ -357,6 +366,8 @@ export async function loadOptionsChain(
     expiry,
     calls: (series.calls ?? []).map(asChainContract),
     puts: (series.puts ?? []).map(asChainContract),
+    quote: { asOf: snap.asOf, marketState: snap.marketState, priceField: snap.priceField },
+    fetchedAt: new Date().toISOString(),
   };
 }
 
@@ -402,7 +413,7 @@ export function formatContractInsight(insight: ContractInsight): string {
       : 'unavailable (not invented)';
   const atmPct =
     insight.atmIv != null ? `${(insight.atmIv * 100).toFixed(1)}%` : 'unavailable';
-  const maxGain = e.maxGain == null ? 'undefined (naked short call)' : formatMoney(e.maxGain, insight.currency);
+  const maxGain = e.maxGain == null ? 'unlimited (long call)' : formatMoney(e.maxGain, insight.currency);
   const maxLoss = e.maxLoss == null ? 'undefined (naked short call)' : formatMoney(e.maxLoss, insight.currency);
   const lines = [
     `${insight.underlying} ${insight.right.toUpperCase()} ${insight.strike} ${insight.expiry} ${insight.side}`,

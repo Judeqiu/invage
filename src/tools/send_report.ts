@@ -98,7 +98,7 @@ export function createSendReportTool(): AgentTool {
         let subject: string;
         let kind: ReportKind = p.kind ?? 'analysis';
 
-        if (p.telegram_user_id != null || p.slack_user_id) {
+        if (p.telegram_user_id != null || p.slack_user_id || p.user_id) {
           if (kind !== 'analysis' && kind !== 'dashboard') {
             return fail(`Invalid kind "${String(p.kind)}". Use "analysis" or "dashboard".`);
           }

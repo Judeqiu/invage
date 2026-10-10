@@ -102,7 +102,8 @@ export function createUraCarparkTool(): AgentTool {
     execute: async (_id, raw) => {
       try {
         const p = raw as Params;
-        if (!p.action) throw new Error('action is required (availability | details | lookup)');
+        if (!['availability', 'details', 'lookup'].includes(p.action)) throw new Error('action must be availability | details | lookup');
+        if (p.limit != null && (!Number.isInteger(p.limit) || p.limit < 1 || p.limit > 100)) throw new Error('limit must be an integer from 1 to 100');
         getUraAccessKey(); // fail-fast early
 
         const want = Math.min(Math.max(p.limit ?? 25, 1), 100);
@@ -163,7 +164,12 @@ export function createUraCarparkTool(): AgentTool {
           fetchCarParkAvailability({ accessKey, token }),
           fetchCarParkDetails({ accessKey, token }),
         ]);
-        const availByCode = new Map(avail.map((a) => [a.carparkNo.toUpperCase(), a]));
+        const availByCode = new Map<string, typeof avail>();
+        for (const a of avail) {
+          if (p.lot_type && !includesCI(a.lotType, p.lot_type)) continue;
+          const key = a.carparkNo.toUpperCase();
+          availByCode.set(key, [...(availByCode.get(key) ?? []), a]);
+        }
 
         let det = details;
         if (p.carpark_no) det = det.filter((r) => includesCI(r.ppCode, p.carpark_no!));
@@ -171,7 +177,8 @@ export function createUraCarparkTool(): AgentTool {
         if (p.veh_cat) det = det.filter((r) => includesCI(r.vehCat || '', p.veh_cat!));
 
         const joined = det.map((d) => {
-          const a = availByCode.get(d.ppCode.toUpperCase());
+          const availability = availByCode.get(d.ppCode.toUpperCase()) ?? [];
+          const a = availability.length === 1 ? availability[0] : undefined;
           return {
             ppCode: d.ppCode,
             ppName: d.ppName.trim(),
@@ -180,19 +187,20 @@ export function createUraCarparkTool(): AgentTool {
             weekdayRate: d.weekdayRate,
             lotsAvailable: a?.lotsAvailable ?? null,
             lotType: a?.lotType ?? null,
-            hasLiveAvailability: a != null,
+            hasLiveAvailability: availability.length > 0,
+            availability,
           };
         });
 
         let rows = joined;
         if (p.lot_type) {
-          rows = rows.filter((r) => r.lotType != null && includesCI(String(r.lotType), p.lot_type!));
+          rows = rows.filter((r) => r.availability.length > 0);
         }
         const sample = rows.slice(0, want);
         const lines = sample.map(
           (r) =>
             `- ${r.ppCode} | ${r.ppName} | veh=${r.vehCat ?? '?'} | cap=${r.parkCapacity ?? '?'} | ` +
-            `weekday=${r.weekdayRate ?? '?'} | lotsAvailable=${r.lotsAvailable ?? 'n/a'} | lotType=${r.lotType ?? 'n/a'}`,
+            `weekday=${r.weekdayRate ?? '?'} | availability=${JSON.stringify(r.availability)}`,
         );
         const text = [
           'Source: URA Car_Park_Details + Car_Park_Availability (joined on code)',

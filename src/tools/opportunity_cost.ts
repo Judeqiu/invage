@@ -153,6 +153,9 @@ export function createOpportunityCostTool(): AgentTool {
           if (!h) {
             return fail(`Holding ${key} not found.`);
           }
+          if (!h.currency || h.currency.toUpperCase() !== p.currency.trim().toUpperCase()) {
+            return fail(`Holding ${key} currency ${h.currency ?? 'unknown'} cannot be matched to ${p.currency}. Supply capital and yield_pct explicitly in the requested currency instead of using holding_key.`);
+          }
           const cost = h.avg_price * h.units;
           capital = capital ?? cost;
           if (yieldPct == null) {

@@ -49,6 +49,11 @@ function mockDatastoreOk(records: unknown[], total?: number) {
 }
 
 describe('property_intel', () => {
+  it('uses the midpoint of the two middle prices for an even-sized sample', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockDatastoreOk(sampleRecords)));
+    const result = await createPropertyIntelTool().execute('median', { market: 'hdb', action: 'price_summary', town: 'TAMPINES' });
+    expect(textOf(result)).toContain('median S$675,000');
+  });
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();

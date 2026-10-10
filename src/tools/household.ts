@@ -69,15 +69,18 @@ function asHousehold(state: InvestorState): HouseholdInvestorState {
   return state as HouseholdInvestorState;
 }
 
-/** Portfolio book value = sum cost basis (equity/fund/option premium deployed). */
+/** Signed position cost in reporting currency; short-option liabilities stay negative. */
 export function portfolioCostBasis(state: InvestorState): number {
   const portfolio = getPortfolio(state);
+  const household = asHousehold(state);
+  const rep = getTreasury(household)?.reporting_currency;
+  const fx = getProjectionAssumptions(household)?.fx;
   let sum = 0;
   for (const [key, h] of Object.entries(portfolio)) {
     try {
-      // Use absolute capital at cost (long premium / equity cost; short uses negative deployed)
+      if (!h.currency || !rep) throw new Error('Holding currency and treasury.reporting_currency are required; cannot sum unknown currencies.');
       const d = cashDeployedForHolding(h);
-      sum += Math.abs(d);
+      sum += toReporting(d, h.currency, rep, fx, `holding ${key}`);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       throw new Error(`Cannot value holding ${key} for household: ${msg}`);
@@ -96,7 +99,10 @@ function formatHouseholdSummary(state: HouseholdInvestorState): string {
   const scenarios = getScenarios(state);
   const cashes = getCashes(state);
   const deposits = getDeposits(state);
-  const portCost = portfolioCostBasis(state);
+  let portCost: number | null = null;
+  let portCostError: string | null = null;
+  try { portCost = portfolioCostBasis(state); }
+  catch (error) { portCostError = error instanceof Error ? error.message : String(error); }
   const gaps = householdGaps(state);
   const fx = assumptions?.fx;
   const rep = treasury?.reporting_currency;
@@ -123,7 +129,8 @@ function formatHouseholdSummary(state: HouseholdInvestorState): string {
       );
     }
   }
-  lines.push(`Portfolio (cost basis): ${portCost.toFixed(2)} (pass portfolio_value for live MTM in projections)`);
+  lines.push(portCost === null ? `Portfolio cost basis unavailable: ${portCostError}`
+    : `Portfolio (signed cost basis): ${portCost.toFixed(2)} ${rep ?? 'currency unavailable'} (uses recorded assumption FX, not live MTM; pass portfolio_value for live MTM in projections)`);
   if (deposits.length === 1) {
     lines.push(
       `Deposits principal: ${deposits[0].amount.toFixed(2)} ${deposits[0].currency}`,
@@ -212,6 +219,8 @@ function formatHouseholdSummary(state: HouseholdInvestorState): string {
   // Net worth if reporting set and FX available for every foreign ccy
   if (treasury != null && rep != null) {
     try {
+      if (portCost === null) throw new Error(portCostError ?? 'Portfolio cost basis unavailable.');
+      if (!cashes.length) throw new Error('Free cash is unrecorded; cannot assume zero for net worth.');
       let free = 0;
       for (const c of cashes) {
         free += toReporting(
@@ -228,7 +237,6 @@ function formatHouseholdSummary(state: HouseholdInvestorState): string {
       }
       const prop = sumPropertiesReporting(props, rep, fx);
       const debt = sumLiabilitiesReporting(liabilities, rep, fx);
-      // Portfolio cost assumed same unit as free cash / reporting when no multi-ccy portfolio marks
       const nw = free + portCost + dep + prop - debt;
       lines.push(
         '',

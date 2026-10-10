@@ -1,7 +1,6 @@
 import { Type } from 'typebox';
 import type { AgentTool, AgentToolResult } from '@earendil-works/pi-agent-core';
 import {
-  fetchPrices,
   fetchPriceSnapshots,
   formatPriceSnapshot,
   fetchTargets,
@@ -21,7 +20,6 @@ import {
 } from '../market/value-assess.js';
 import type { FinancialMetrics, Holding, ValueAssessment } from '../market/index.js';
 import { thresholdsForPlaybook } from '../playbook/index.js';
-import { totalCashLive, totalDepositsLive } from '../market/sum-to-reporting.js';
 import {
   cashStrategyMetrics,
   getCashes,
@@ -29,11 +27,10 @@ import {
   getPlaybook,
   getPortfolio,
   type CashBalance,
+  type InvestorState,
 } from '../state/portfolio-state.js';
-import {
-  getTreasury,
-  type HouseholdInvestorState,
-} from '../state/household-state.js';
+import { liveForDashboardReport } from '../report/live-for-report.js';
+import { optionTradeEvidence } from './option_trades.js';
 import {
   channelIdParams,
   resolveInvestorFromChannel,
@@ -116,18 +113,6 @@ function formatValueSection(assessments: ValueAssessment[]): string {
   return lines.join('\n');
 }
 
-function contingentCashFromOptions(
-  rows: Awaited<ReturnType<typeof runFullAnalysis>>['fullAnalysis'],
-): number {
-  let sum = 0;
-  for (const s of rows) {
-    if ((s.contingentCashObligation ?? 0) > 0) {
-      sum += s.contingentCashObligation!;
-    }
-  }
-  return sum;
-}
-
 export function createPortfolioAnalyzerTool(): AgentTool {
   return {
     name: 'portfolio_analyzer',
@@ -151,6 +136,7 @@ export function createPortfolioAnalyzerTool(): AgentTool {
 
       try {
         let holdings: Record<string, Holding> | null = null;
+        let savedState: InvestorState | undefined;
         let tickerList: string[] = [];
         let valueTh: ValueThresholds = defaultValueThresholds();
         let analysisTh = undefined as ReturnType<typeof thresholdsForPlaybook> | undefined;
@@ -167,7 +153,8 @@ export function createPortfolioAnalyzerTool(): AgentTool {
 
         if (params.telegram_user_id != null || params.slack_user_id || params.user_id) {
           const snapshot = await resolveInvestorFromChannel(params);
-        const { state } = snapshot;
+          const { state } = snapshot;
+          savedState = state;
           holdings = getPortfolio(state);
           if (Object.keys(holdings).length === 0) {
             return fail('No portfolio saved. Use add_holding to build a portfolio first.');
@@ -180,20 +167,6 @@ export function createPortfolioAnalyzerTool(): AgentTool {
           cashTargetPct = pb.allocation.cash_target_pct;
           const deposits = getDeposits(state);
           depositCount = deposits.length;
-          const hh = state as HouseholdInvestorState;
-          const rep = getTreasury(hh)?.reporting_currency ?? null;
-          const cashLive = await totalCashLive(channelCashes, rep);
-          const depLive = await totalDepositsLive(deposits, rep);
-          depositsPrincipal = depLive.total?.amount ?? 0;
-          if (cashLive.fxApplied || depLive.fxApplied) {
-            cashFxOpts = {
-              reportingCurrency: cashLive.fxApplied
-                ? cashLive.reportingCurrency
-                : depLive.reportingCurrency,
-              fxRates: { ...depLive.fxRates, ...cashLive.fxRates },
-            };
-            cashFxNote = ` (live FX → ${cashFxOpts.reportingCurrency})`;
-          }
           playbookNote =
             `Playbook: ${pb.strategy} / ${pb.philosophy} / risk=${pb.risk.profile} ` +
             `(buy≥${analysisTh.buyMinUpsidePct}% strong≥${analysisTh.strongBuyUpsidePct}% | ` +
@@ -281,6 +254,8 @@ export function createPortfolioAnalyzerTool(): AgentTool {
 
           if (optionRows.length > 0) {
             output += '── OPTIONS ──\n';
+            const currencies = [...new Set(optionRows.map(s => valuedHoldings![s.ticker]?.currency))];
+            const canSumNative = currencies.length === 1 && !!currencies[0];
             let contingentCash = 0;
             let premiumCollected = 0;
             let premiumPaid = 0;
@@ -307,13 +282,13 @@ export function createPortfolioAnalyzerTool(): AgentTool {
               else premiumPaid += s.premiumAbsolute ?? 0;
               output += '\n';
             }
-            if (premiumCollected > 0) {
+            if (premiumCollected > 0 && canSumNative) {
               output += `  Premium collected (shorts): $${premiumCollected.toFixed(2)}\n`;
             }
-            if (premiumPaid > 0) {
+            if (premiumPaid > 0 && canSumNative) {
               output += `  Premium paid (longs): $${premiumPaid.toFixed(2)}\n`;
             }
-            if (contingentCash > 0) {
+            if (contingentCash > 0 && canSumNative) {
               output += `  Total contingent cash obligation: $${contingentCash.toFixed(2)}\n`;
             }
             output += '\n';
@@ -335,7 +310,16 @@ export function createPortfolioAnalyzerTool(): AgentTool {
             }
           }
 
-          const positionsValue = result.fullAnalysis.reduce((sum, s) => sum + s.value, 0);
+          const valuation = await liveForDashboardReport(savedState ?? {
+            user: { id: 'adhoc', created_at: new Date().toISOString().slice(0, 10) },
+            profile: { display_name: 'Ad hoc', contact_email: '' }, log: [], portfolio: valuedHoldings,
+          }, valuedHoldings, prices, optionMarks);
+          const positionsValue = valuation.positionsValue;
+          depositsPrincipal = valuation.depositsAmount;
+          cashFxOpts = { reportingCurrency: valuation.reportingCurrency!, fxRates: valuation.fxRates ?? {} };
+          cashFxNote = ` (reporting currency ${valuation.reportingCurrency})`;
+          const reportingCurrency = valuation.reportingCurrency;
+          const tradeEvidence = savedState ? optionTradeEvidence(savedState, holdings!) : null;
           const cashMetrics = cashStrategyMetrics(
             channelCashes,
             positionsValue,
@@ -343,10 +327,13 @@ export function createPortfolioAnalyzerTool(): AgentTool {
             depositsPrincipal,
             cashFxOpts,
           );
+          output += `\nAggregate currency: ${reportingCurrency}; FX rates: ${JSON.stringify(valuation.fxRates ?? {})}. Per-position prices, costs, and P/L above are native currency; currencies: ${JSON.stringify(Object.fromEntries(Object.entries(valuedHoldings).map(([key, h]) => [key, h.currency ?? null])))}.\n`;
+          output += `Price provenance: ${JSON.stringify(priceSnapshots)}\n`;
+          if (tradeEvidence) output += `Broker position/trade evidence: ${JSON.stringify(tradeEvidence)}\n`;
           output += '\n── CASH & NAV (strategy) ──\n';
           if (cashMetrics.cash == null) {
             output +=
-              '  Free cash: not recorded. Use set_cash so dry powder, cash weight, and cash_target_pct drift are known.\n';
+              '  Free cash: not recorded. Ask Bookkeeper to record an opening balance so dry powder and cash weight are known.\n';
             output += `  Positions MTM: $${positionsValue.toFixed(2)}\n`;
             if (depositsPrincipal > 0) {
               output += `  Fixed deposits principal: $${depositsPrincipal.toFixed(2)}${cashFxNote} (${depositCount} term${depositCount === 1 ? '' : 's'}; not free cash)\n`;
@@ -384,8 +371,8 @@ export function createPortfolioAnalyzerTool(): AgentTool {
             output += `  Free cash weight: ${cashMetrics.cashWeightPct!.toFixed(1)}% | target ${cashTargetPct}% → ${driftLabel}\n`;
             output +=
               '  Sizing: suggest new buys as % of Total NAV; fund from free cash only — never invent cash or spend deposits.\n';
-            if (contingentCashFromOptions(result.fullAnalysis) > 0) {
-              const oblig = contingentCashFromOptions(result.fullAnalysis);
+            if (valuation.contingentCashObligation > 0) {
+              const oblig = valuation.contingentCashObligation;
               const cover = c.amount - oblig;
               output +=
                 `  Short-put assignment cover: free cash ${c.amount.toFixed(2)} vs obligation $${oblig.toFixed(2)} → ` +
@@ -408,12 +395,16 @@ export function createPortfolioAnalyzerTool(): AgentTool {
             cashWeightPct: cashMetrics.cashWeightPct,
             cashVsTargetPp: cashMetrics.cashVsTargetPp,
             cashTargetPct: cashMetrics.cashTargetPct,
+            reportingCurrency,
+            fxRates: valuation.fxRates,
+            priceSnapshots,
+            option_trade_evidence: tradeEvidence,
           });
         }
 
         let output = `Market Data for ${tickerList.join(', ')}\n\n`;
         output +=
-          'Price fields: use "Price" as current MTM — do NOT report prevClose as the live price.\n\n';
+          'Price fields: report the selected field, currency, market state, and source timestamp. Closed-session prices and previous-close fallbacks are not live intraday quotes.\n\n';
         for (const ticker of tickerList) {
           const price = prices[ticker];
           const snap = priceSnapshots[ticker];

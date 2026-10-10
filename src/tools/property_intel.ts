@@ -373,7 +373,8 @@ function summarize(records: HdbRecord[]): string {
   });
   const avg = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
   const sorted = [...prices].sort((a, b) => a - b);
-  const med = sorted[Math.floor(sorted.length / 2)]!;
+  const mid = Math.floor(sorted.length / 2);
+  const med = sorted.length % 2 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
   const months = records.map((r) => r.month).sort();
   return [
     `Sample size: ${records.length} transactions`,
@@ -514,7 +515,8 @@ function summarizePrivate(sales: FlatPrivateSale[]): string {
   }
   const prices = priced.map((s) => s.price);
   const sorted = [...prices].sort((a, b) => a - b);
-  const med = sorted[Math.floor(sorted.length / 2)]!;
+  const mid = Math.floor(sorted.length / 2);
+  const med = sorted.length % 2 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
   const avg = prices.reduce((a, b) => a + b, 0) / prices.length;
   const months = sales.map((s) => s.contractMonth || s.contractDateRaw).filter(Boolean).sort();
   const psfs = priced

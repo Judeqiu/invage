@@ -2,6 +2,7 @@ import { Type } from 'typebox';
 import type { AgentTool, AgentToolResult } from '@earendil-works/pi-agent-core';
 import { mkdirSync, writeFileSync } from 'fs';
 import { join } from 'path';
+import { reportFilename } from './report-filename.js';
 import { resolveDataRoot, signedBinDriveViewUrl } from 'utarus';
 import { computeSleeveIndex, type SleeveIndexResult, type SleeveLot } from '../aideal/index-math.js';
 import {
@@ -11,6 +12,7 @@ import {
 import { AIDEAL_SLEEVES, getAidealSleeve, lotsFromPortfolio } from '../aideal/sleeves.js';
 import { fetchHistoricalCloses } from '../market/fetch-history.js';
 import { getPortfolio } from '../state/portfolio-state.js';
+import { validDate } from '../brokers/option-executions.js';
 import {
   channelIdParams,
   resolveInvestorFromChannel,
@@ -26,8 +28,6 @@ function fail(text: string): AgentToolResult<null> {
 function failFrom(error: unknown): AgentToolResult<null> {
   return fail(error instanceof Error ? error.message : String(error));
 }
-
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 function parseLots(raw: unknown): SleeveLot[] | null {
   if (raw == null) return null;
@@ -174,7 +174,7 @@ export function createComputeSleeveIndexTool(): AgentTool {
         lots?: unknown;
       };
       try {
-        if (!DATE_RE.test(p.report_date)) {
+        if (!validDate(p.report_date)) {
           return fail(`report_date must be YYYY-MM-DD, got "${p.report_date}".`);
         }
         const explicit = parseLots(p.lots);
@@ -311,6 +311,7 @@ export function createSaveAidealNewsletterTool(): AgentTool {
       try {
         const snapshot = await resolveInvestorFromChannel(p);
         const { state } = snapshot;
+        if (!validDate(p.report_date)) return fail('report_date must be a valid YYYY-MM-DD calendar date.');
         const html = buildAidealNewsletterHtml({
           title: p.title,
           reportDate: p.report_date,
@@ -319,7 +320,7 @@ export function createSaveAidealNewsletterTool(): AgentTool {
           overpriced: parseSection(p.overpriced, 'overpriced'),
           buyOpportunities: parseSection(p.buy_opportunities, 'buy_opportunities'),
         });
-        const fileName = p.filename ?? `aideal-${p.report_date}.html`;
+        const fileName = reportFilename(p.filename ?? `aideal-${p.report_date}.html`);
         const driveDir = join(resolveDataRoot(), 'drive', state.user.id);
         mkdirSync(driveDir, { recursive: true });
         writeFileSync(join(driveDir, fileName), html, 'utf-8');

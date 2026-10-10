@@ -4,7 +4,7 @@ import {
   fetchPriceSnapshots,
   formatPriceSnapshot,
 } from '../market/fetch-prices.js';
-import { equityQuoteSymbol, isOptionHolding } from '../market/position-value.js';
+import { equityQuoteSymbol, isFundHolding, isOptionHolding } from '../market/position-value.js';
 import { getPortfolio } from '../state/portfolio-state.js';
 import {
   channelIdParams,
@@ -31,7 +31,7 @@ export function createQuoteTool(): AgentTool {
     name: 'get_quote',
     label: 'Get Quote',
     description:
-      'Fetch LIVE stock/ETF prices from Yahoo Finance for one or more tickers. ' +
+      'Fetch the latest reported stock/ETF prices from Yahoo Finance for one or more tickers. ' +
       'REQUIRED for any "current price", "live price", "what is X trading at", or P/L vs market questions. ' +
       'Call this every time in the same turn — NEVER reuse a price from earlier in the chat, dashboard HTML, or snapshots. ' +
       'Returns current Price (use this), prevClose (NOT live), pre/post when available, marketState. ' +
@@ -63,20 +63,23 @@ export function createQuoteTool(): AgentTool {
         }
 
         let portfolio: ReturnType<typeof getPortfolio> | null = null;
+        let portfolioError: string | null = null;
         try {
           if (p.telegram_user_id != null || p.slack_user_id || p.user_id) {
             const snapshot = await resolveInvestorFromChannel(p);
         const { state } = snapshot;
             portfolio = getPortfolio(state);
           }
-        } catch {
+        } catch (error) {
           // Quote still works without portfolio
           portfolio = null;
+          portfolioError = error instanceof Error ? error.message : String(error);
         }
 
         const lines: string[] = [
-          'LIVE QUOTES (Yahoo Finance — this tool call only)',
-          'RULE: Report "Price (LIVE)" as the current price. prevClose is NOT the live price.',
+          'LATEST REPORTED QUOTES (Yahoo Finance — fetched this tool call)',
+          'Report the selected price field, currency, market state, and source timestamp. A closed-market print or previous-close fallback is not a live intraday quote. Fetch time does not establish quote freshness.',
+          ...(portfolioError ? [`Portfolio overlay unavailable: ${portfolioError}. Do not infer that the user has no holdings.`] : []),
           '',
         ];
 
@@ -88,6 +91,8 @@ export function createQuoteTool(): AgentTool {
             priceField: string;
             marketState: string | null;
             asOf: string | null;
+            currency: string;
+            priceKind: string;
             post?: number | null;
             pre?: number | null;
             holdingPl?: { cost: number; units: number; avg: number; pl: number; plPct: number };
@@ -98,7 +103,7 @@ export function createQuoteTool(): AgentTool {
           const s = snaps[t];
           lines.push(formatPriceSnapshot(s));
           lines.push(
-            `  → Price (LIVE): $${s.price.toFixed(2)}  [${s.priceField}]` +
+            `  → Selected price: ${s.price} ${s.currency}  [${s.priceField}]` +
               (s.marketState ? `  marketState=${s.marketState}` : '') +
               (s.asOf ? `  asOf=${s.asOf}` : ''),
           );
@@ -126,7 +131,7 @@ export function createQuoteTool(): AgentTool {
             | undefined;
           if (portfolio) {
             const lots = Object.entries(portfolio).filter(
-              ([k, h]) => !isOptionHolding(h) && equityQuoteSymbol(k) === t,
+              ([k, h]) => !isOptionHolding(h) && !(isFundHolding(h) && h.fund?.quote_source === 'manual') && equityQuoteSymbol(k) === t,
             );
             if (lots.length > 0) {
               let totalUnits = 0;
@@ -139,6 +144,10 @@ export function createQuoteTool(): AgentTool {
                 pl: number;
               }> = [];
               for (const [key, h] of lots) {
+                if (!h.currency || h.currency.toUpperCase() !== s.currency.toUpperCase()) {
+                  lines.push(`  → Holding ${key}: P/L unavailable; book currency ${h.currency ?? 'unknown'} does not establish a match to quote currency ${s.currency}.`);
+                  continue;
+                }
                 const cost = h.avg_price * h.units;
                 const value = s.price * h.units;
                 const pl = value - cost;
@@ -164,7 +173,7 @@ export function createQuoteTool(): AgentTool {
               const pl = totalValue - totalCost;
               const plPct = totalCost > 0 ? (pl / totalCost) * 100 : 0;
               const avg = totalUnits > 0 ? totalCost / totalUnits : 0;
-              holdingPl = {
+              if (lotDetails.length === lots.length) holdingPl = {
                 cost: totalCost,
                 units: totalUnits,
                 avg,
@@ -172,7 +181,7 @@ export function createQuoteTool(): AgentTool {
                 plPct,
                 ...(lots.length > 1 ? { lots: lotDetails } : {}),
               };
-              if (lots.length > 1) {
+              if (lots.length > 1 && lotDetails.length === lots.length) {
                 lines.push(
                   `  → Combined ${t}: ${totalUnits} sh wavg @ $${avg.toFixed(2)}` +
                     ` | MTM $${totalValue.toFixed(2)} | P/L ${pl >= 0 ? '+' : ''}$${pl.toFixed(2)}` +
@@ -189,13 +198,17 @@ export function createQuoteTool(): AgentTool {
             priceField: s.priceField,
             marketState: s.marketState,
             asOf: s.asOf,
+            currency: s.currency,
+            priceKind: s.priceField === 'regularMarketPreviousClose' ? 'previous_close_fallback'
+              : ['CLOSED', 'POST', 'POSTPOST', 'PRE', 'PREPRE'].includes(s.marketState ?? '') && s.priceField === 'regularMarketPrice'
+                ? 'last_regular_session' : 'reported_session_price',
             post: s.postMarketPrice,
             pre: s.preMarketPrice,
             holdingPl,
           };
         }
 
-        return ok(lines.join('\n'), { quotes: details, snapshots: snaps });
+        return ok(lines.join('\n'), { quotes: details, snapshots: snaps, portfolio_error: portfolioError });
       } catch (e) {
         return failFrom(e);
       }

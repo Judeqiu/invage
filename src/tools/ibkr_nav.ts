@@ -1,7 +1,8 @@
 import { Type } from 'typebox';
 import type { AgentTool, AgentToolResult } from '@earendil-works/pi-agent-core';
 import { fetchRawData, listRawData, type RawFile } from '../raw-data/store.js';
-import { extractSectionInner, xmlSelfClosingTags } from '../ibkr/flex-parse.js';
+import { SaxesParser } from 'saxes';
+import { readBrokerAccountModel } from '../brokers/accounts.js';
 import { channelIdParams, resolveInvestorFromChannel, type ChannelIds } from './channel.js';
 
 const MAX_FILES = 100;
@@ -34,9 +35,17 @@ function dateFromFlex(raw: string): string | null {
 }
 
 export function parseIbkrNavMarks(xml: string): NavMark[] {
-  const section = extractSectionInner(xml, 'EquitySummaryInBase');
-  if (section == null) return [];
-  return xmlSelfClosingTags(section, 'EquitySummaryByReportDateInBase').map((row) => {
+  const rows: Record<string, string>[] = [];
+  const path: string[] = [];
+  const parser = new SaxesParser({ xmlns: false });
+  parser.on('doctype', () => { throw new Error('Flex XML must not include a document type.'); });
+  parser.on('opentag', tag => {
+    if (tag.name === 'EquitySummaryByReportDateInBase' && path.at(-1) === 'EquitySummaryInBase') rows.push(tag.attributes);
+    path.push(tag.name);
+  });
+  parser.on('closetag', () => { path.pop(); });
+  parser.write(xml).close();
+  return rows.map((row) => {
     const date = dateFromFlex(row.reportDate ?? '');
     const accountId = row.accountId?.trim();
     const currency = row.currency?.trim().toUpperCase();
@@ -61,17 +70,23 @@ export function createInspectIbkrNavHistoryTool(): AgentTool {
     parameters: Type.Object({
       ...channelIdParams,
       month: Type.Optional(Type.String({ description: 'YYYY-MM; defaults to current UTC month.' })),
+      file_offset: Type.Optional(Type.Integer({ minimum: 0, description: 'Archive page offset; use next_file_offset for further coverage.' })),
     }),
     async execute(_id, raw) {
-      const p = raw as ChannelIds & { month?: string };
+      const p = raw as ChannelIds & { month?: string; file_offset?: number };
       try {
         const month = p.month ?? new Date().toISOString().slice(0, 7);
         if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
           return result('month must be YYYY-MM.', null);
         }
         const { state } = await resolveInvestorFromChannel(p);
-        const page = listRawData(state.user.id, 0, MAX_FILES, 'ibkr');
+        const offset = p.file_offset ?? 0;
+        if (!Number.isInteger(offset) || offset < 0) return result('file_offset must be a nonnegative integer.', null);
+        const channels = new Set(['ibkr', ...Object.values(readBrokerAccountModel(state).connections)
+          .filter(c => c.broker_id === 'ibkr').map(c => c.channel)]);
+        const page = listRawData(state.user.id, offset, MAX_FILES);
         const xmlFiles = page.files.filter((file) => file.id.endsWith('.xml') &&
+          file.channel !== null && channels.has(file.channel) &&
           (file.source_kind === 'broker-sync' || file.source_kind === 'broker-triage'));
         const marks = new Map<string, NavMark>();
         const conflicts: string[] = [];
@@ -88,8 +103,9 @@ export function createInspectIbkrNavHistoryTool(): AgentTool {
           if (rows.length > 0) filesWithMarks++;
           for (const mark of rows) {
             const key = `${mark.account_id}|${mark.currency}|${mark.date}`;
+            if (conflicts.includes(key)) continue;
             const previous = marks.get(key);
-            if (previous && previous.total !== mark.total && !conflicts.includes(key)) conflicts.push(key);
+            if (previous && previous.total !== mark.total) { conflicts.push(key); marks.delete(key); }
             else if (!previous) marks.set(key, mark);
           }
         }
@@ -116,6 +132,9 @@ export function createInspectIbkrNavHistoryTool(): AgentTool {
           files_with_flow_sections: filesWithFlowSections,
           files_too_large: tooLarge,
           file_listing_truncated: page.next_offset != null,
+          file_offset: offset,
+          next_file_offset: page.next_offset,
+          coverage_scope: 'This archive page only; combine all pages and reconcile duplicate marks before calculating coverage.',
           conflicting_mark_keys: conflicts,
           accounts: coverage,
           twr_ready: false,

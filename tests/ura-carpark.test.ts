@@ -17,6 +17,24 @@ function jsonBuf(obj: unknown) {
 }
 
 describe('ura_carpark', () => {
+  it('preserves every lot category when joining availability by car park', async () => {
+    process.env.URA_ACCESS_KEY = 'k';
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ Status: 'Success', Result: 'tok' }) })
+      .mockResolvedValueOnce(jsonBuf({ Status: 'Success', Result: [
+        { carparkNo: 'S0049', lotsAvailable: '80', lotType: 'C' },
+        { carparkNo: 'S0049', lotsAvailable: '2', lotType: 'M' },
+      ] }))
+      .mockResolvedValueOnce(jsonBuf({ Status: 'Success', Result: [
+        { ppCode: 'S0049', ppName: 'Test', vehCat: 'Car', parkCapacity: '100' },
+      ] })));
+    const result = await createUraCarparkTool().execute('t', { action: 'lookup' });
+    expect(result.details).toMatchObject({ rows: [{ lotsAvailable: null, lotType: null,
+      availability: [{ lotType: 'C', lotsAvailable: '80' }, { lotType: 'M', lotsAvailable: '2' }],
+    }] });
+    expect(textOf(result)).toContain('"lotType":"C"');
+    expect(textOf(result)).toContain('"lotType":"M"');
+  });
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();

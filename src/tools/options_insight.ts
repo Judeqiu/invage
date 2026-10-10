@@ -21,6 +21,7 @@ import {
 } from './channel.js';
 import { coerceToolNumber } from './coerce-tool-numbers.js';
 import type { OptionRight, OptionSide } from '../market/types.js';
+import { canonicalOptionUnderlying } from '../brokers/option-symbol.js';
 
 function ok<T>(text: string, details: T): AgentToolResult<T> {
   return { content: [{ type: 'text' as const, text }], details };
@@ -65,6 +66,7 @@ function formatExpirySnapshot(chain: Awaited<ReturnType<typeof loadOptionsChain>
   return [
     `${chain.underlying} options expiry ${chain.expiry}`,
     `Spot: ${formatMoney(chain.spot, chain.currency)}`,
+    `Quote source: ${JSON.stringify(chain.quote ?? null)} | fetched at ${chain.fetchedAt ?? 'unknown'} (not an option quote timestamp).`,
     `ATM IV calls: ${atmCallIv != null ? `${(atmCallIv * 100).toFixed(1)}%` : 'unavailable'} | puts: ${atmPutIv != null ? `${(atmPutIv * 100).toFixed(1)}%` : 'unavailable'}`,
     `Put/call OI ratio: ${pcr ?? 'unavailable'}`,
     `Expirations (Yahoo): ${chain.expirationDates.slice(0, 12).join(', ')}${chain.expirationDates.length > 12 ? '…' : ''}`,
@@ -175,9 +177,10 @@ export function createOptionsInsightTool(): AgentTool {
             puts: chain.puts,
           });
           let text = formatContractInsight(insight);
+          text += `\nQuote provenance: ${JSON.stringify(chain.quote ?? null)}; chain fetched at ${chain.fetchedAt ?? 'unknown'}. Option bid/ask time is unavailable; last trade time is not bid/ask time.`;
           const books = p.include_books ? await booksOverlay(p, chain.underlying, insight) : null;
           if (books) text += `\n\n${books}`;
-          return ok(text, { insight, expirations: chain.expirationDates, books: books ?? null });
+          return ok(text, { insight, expirations: chain.expirationDates, books: books ?? null, quote: chain.quote ?? null, fetched_at: chain.fetchedAt ?? null });
         }
 
         const text = formatExpirySnapshot(chain);
@@ -189,6 +192,14 @@ export function createOptionsInsightTool(): AgentTool {
             spot: chain.spot,
             currency: chain.currency,
             expirationDates: chain.expirationDates,
+            asOfYmd: chain.asOfYmd,
+            quote: chain.quote ?? null,
+            fetched_at: chain.fetchedAt ?? null,
+            calls: nearestStrikes(chain.calls, chain.spot, 5),
+            puts: nearestStrikes(chain.puts, chain.spot, 5),
+            atmCallIv: atmImpliedVol(chain.calls, chain.spot),
+            atmPutIv: atmImpliedVol(chain.puts, chain.spot),
+            putCallOiRatio: putCallOpenInterestRatio(chain.calls, chain.puts),
           },
           books: books ?? null,
         });
@@ -214,7 +225,7 @@ async function booksOverlay(
     const lots = Object.entries(portfolio).filter(([, h]) => {
       if (!isOptionHolding(h) || h.option == null) return false;
       return (
-        h.option.underlying.trim().toUpperCase() === underlying.toUpperCase() &&
+        canonicalOptionUnderlying(h.option.underlying, h.option) === underlying.toUpperCase() &&
         h.option.right === insight.right &&
         Math.abs(h.option.strike - insight.strike) < 1e-6 &&
         h.option.expiry === insight.expiry
@@ -226,13 +237,16 @@ async function booksOverlay(
     return lots
       .map(([key, h]) => {
         const o = h.option!;
-        const live = insight.economics.premiumPerContract;
+        if (!h.currency || h.currency.toUpperCase() !== insight.currency.toUpperCase()) {
+          return `BOOKS lot ${key}: P/L unavailable; book currency ${h.currency ?? 'unknown'} differs from or cannot be matched to ${insight.currency}.`;
+        }
+        const live = insight.premiumPerShare * o.multiplier;
         const dir = o.side === 'short' ? -1 : 1;
         const pl = Number((dir * (live - h.avg_price) * h.units).toFixed(2));
         return (
           `BOOKS lot ${key}: ${o.side} ${h.units} ct @ avg ${h.avg_price}/ct ` +
-          `stored mark ${o.mark} | live mark ${live} | MTM P/L vs cost ${pl} ${insight.currency} ` +
-          `(does not rewrite YAML).`
+          `stored mark ${o.mark} | selected chain mark ${live} | MTM P/L vs cost ${pl} ${insight.currency} ` +
+          `(multiplier=${o.multiplier}; stored position, not confirmation of current broker status; does not rewrite books).`
         );
       })
       .join('\n');
@@ -250,7 +264,7 @@ async function booksLotsSummary(p: ChannelIds, underlying: string): Promise<stri
   const portfolio = getPortfolio(state);
   const lots = Object.entries(portfolio).filter(([, h]) => {
     if (!isOptionHolding(h) || h.option == null) return false;
-    return h.option.underlying.trim().toUpperCase() === underlying.toUpperCase();
+    return canonicalOptionUnderlying(h.option.underlying, h.option) === underlying.toUpperCase();
   });
   if (lots.length === 0) return `BOOKS: no option lots on ${underlying}.`;
   return (

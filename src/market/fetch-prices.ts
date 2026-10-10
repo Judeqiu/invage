@@ -38,7 +38,7 @@ type LooseQuote = {
 };
 
 function num(v: unknown): number | null {
-  if (v == null || typeof v !== 'number' || Number.isNaN(v)) return null;
+  if (v == null || typeof v !== 'number' || !Number.isFinite(v)) return null;
   return v;
 }
 
@@ -64,7 +64,7 @@ function toIso(v: unknown): string | null {
  * Never treat previousClose as live while a regular/session price exists.
  * - REGULAR → regularMarketPrice
  * - PRE → preMarketPrice if set, else regular (last session)
- * - POST → postMarketPrice if set, else regular (session last)
+ * - POST → regularMarketPrice (official session last), else postMarketPrice
  * - CLOSED / other → regularMarketPrice (last session print)
  * - only if all missing → previousClose (last resort, labeled)
  */
@@ -128,14 +128,14 @@ export function snapshotFromYahooQuote(ticker: string, q: LooseQuote): YahooPric
   const picked = pickCurrentPrice(q);
   return {
     ticker: (q.symbol ?? ticker).toUpperCase(),
-    price: Number(picked.price.toFixed(2)),
+    price: picked.price,
     priceField: picked.priceField,
     previousClose: num(q.regularMarketPreviousClose),
     regularMarketPrice: num(q.regularMarketPrice),
     preMarketPrice: num(q.preMarketPrice),
     postMarketPrice: num(q.postMarketPrice),
     marketState: q.marketState ?? null,
-    currency: q.currency ?? 'USD',
+    currency: q.currency?.trim().toUpperCase() || 'UNKNOWN',
     shortName: q.shortName ?? ticker,
     asOf: picked.asOf,
   };

@@ -80,7 +80,7 @@ function buildBooks(
   const cashes = getCashes(state);
   if (cashes.length === 0) {
     throw new Error(
-      'Free cash not recorded. Call set_cash before projections (cannot invent 0 cash).',
+      'Free cash not recorded. Ask Bookkeeper to record an opening balance before projections (cannot invent 0 cash).',
     );
   }
   // Convert each cash line (supports multi-currency free cash).
@@ -97,6 +97,9 @@ function buildBooks(
   // Validate deposit FX early
   for (const d of deposits) {
     toReporting(d.amount, d.currency, rep, fx, `deposit ${d.id}`);
+  }
+  if (portfolioValue != null && (!Number.isFinite(portfolioValue) || portfolioValue < 0)) {
+    throw new Error('portfolio_value must be a finite number ≥ 0.');
   }
   const port =
     portfolioValue != null && Number.isFinite(portfolioValue)

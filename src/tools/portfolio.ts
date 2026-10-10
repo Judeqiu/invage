@@ -222,6 +222,8 @@ async function formatPortfolio(
     : undefined;
 
   const keys = Object.keys(portfolio);
+  const currencies = [...new Set(Object.values(portfolio).map(h => h.currency?.trim().toUpperCase()))];
+  let aggregateCurrency = currencies.length === 1 && currencies[0] ? currencies[0] : null;
   if (keys.length === 0) {
     return [
       'Portfolio is empty. Use add_holding to add positions.',
@@ -250,8 +252,10 @@ async function formatPortfolio(
       assertHolding(key, h);
     } catch (e) {
       lines.push(`  ${key}: INVALID — ${e instanceof Error ? e.message : String(e)}`);
+      aggregateCurrency = null;
       continue;
     }
+    lines.push(`  Currency for ${key}: ${h.currency ?? 'unavailable'} (amounts below are native, not FX converted).`);
 
     if (isOptionHolding(h)) {
       optionCount += 1;
@@ -310,29 +314,29 @@ async function formatPortfolio(
   }
 
   lines.push('');
-  lines.push(`Equities: ${equityCount} · cost basis $${equityCost.toFixed(2)}`);
+  lines.push(`Equities: ${equityCount}` + (aggregateCurrency ? ` · cost basis ${equityCost.toFixed(2)} ${aggregateCurrency}` : ' · combined cost unavailable (mixed/unknown currencies or invalid positions)'));
   if (fundCount > 0) {
-    lines.push(`Funds: ${fundCount} · cost basis $${fundCost.toFixed(2)}`);
+    lines.push(`Funds: ${fundCount}` + (aggregateCurrency ? ` · cost basis ${fundCost.toFixed(2)} ${aggregateCurrency}` : ' · combined cost unavailable'));
   }
   if (optionCount > 0) {
     lines.push(`Options: ${optionCount}`);
-    if (optionPremiumCollected > 0) {
-      lines.push(`  Premium collected (shorts): $${optionPremiumCollected.toFixed(2)}`);
+    if (optionPremiumCollected > 0 && aggregateCurrency) {
+      lines.push(`  Premium collected (shorts): ${optionPremiumCollected.toFixed(2)} ${aggregateCurrency}`);
     }
-    if (optionPremiumPaid > 0) {
-      lines.push(`  Premium paid (longs): $${optionPremiumPaid.toFixed(2)}`);
+    if (optionPremiumPaid > 0 && aggregateCurrency) {
+      lines.push(`  Premium paid (longs): ${optionPremiumPaid.toFixed(2)} ${aggregateCurrency}`);
     }
-    if (contingentCash > 0) {
-      lines.push(`  Contingent cash obligation (short puts): $${contingentCash.toFixed(2)}`);
+    if (contingentCash > 0 && aggregateCurrency) {
+      lines.push(`  Contingent cash obligation (short puts): ${contingentCash.toFixed(2)} ${aggregateCurrency}`);
     }
     if (contingentShares > 0) {
-      lines.push(`  Contingent share delivery (short calls): ${contingentShares} shares`);
+      lines.push('  Share delivery obligations are per underlying; do not add unlike shares across contracts. See individual lots.');
     }
   }
   lines.push('');
   lines.push(formatCashSection(cashes, cashTargetPct, cashLive.total, cashFxNote));
   const total = cashLive.total;
-  if (total != null && contingentCash > 0) {
+  if (total != null && contingentCash > 0 && aggregateCurrency === total.currency) {
     const cover = total.amount - contingentCash;
     lines.push(
       `  Short-put assignment cover: cash ${total.amount.toFixed(2)} ${total.currency} vs obligation $${contingentCash.toFixed(2)} → ` +

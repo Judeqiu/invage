@@ -2,6 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { parseIbkrNavMarks } from '../src/tools/ibkr_nav.js';
 
 describe('IBKR NAV source inspection', () => {
+  it('reads every account section without selecting only the first account', () => {
+    expect(parseIbkrNavMarks(`<FlexQueryResponse><FlexStatements>
+      <FlexStatement><EquitySummaryInBase><EquitySummaryByReportDateInBase accountId="U1" reportDate="20261001" currency="USD" total="100" /></EquitySummaryInBase></FlexStatement>
+      <FlexStatement><EquitySummaryInBase><EquitySummaryByReportDateInBase accountId="U2" reportDate="20261001" currency="SGD" total="200" /></EquitySummaryInBase></FlexStatement>
+    </FlexStatements></FlexQueryResponse>`)).toEqual([
+      { account_id: 'U1', date: '2026-10-01', currency: 'USD', total: 100 },
+      { account_id: 'U2', date: '2026-10-01', currency: 'SGD', total: 200 },
+    ]);
+  });
   it('reads dated total equity marks from a multi-day Flex statement', () => {
     const xml = `<FlexStatement><EquitySummaryInBase>
       <EquitySummaryByReportDateInBase accountId="U123" reportDate="20260930" currency="USD" total="1000.25" cash="200" />

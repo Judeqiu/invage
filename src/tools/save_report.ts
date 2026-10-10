@@ -16,6 +16,7 @@ import { buildDashboardModel } from '../report/dashboard-model.js';
 import { liveForDashboardReport } from '../report/live-for-report.js';
 import { buildDashboardReport } from '../report/dashboard-template.js';
 import { productDisplayName } from '../product-name.js';
+import { reportFilename } from './report-filename.js';
 import {
   channelIdParams,
   resolveInvestorFromChannel,
@@ -60,6 +61,7 @@ export function createSaveReportTool(): AgentTool {
     async execute(_id, raw) {
       const p = raw as ChannelIds & { kind?: ReportKind; name?: string };
       try {
+        if (p.name != null) reportFilename(p.name);
         const kind: ReportKind = p.kind ?? 'analysis';
         if (kind !== 'analysis' && kind !== 'dashboard') {
           return fail(`Invalid kind "${String(p.kind)}". Use "analysis" or "dashboard".`);
@@ -111,7 +113,7 @@ export function createSaveReportTool(): AgentTool {
           positions = result.fullAnalysis.length;
         }
 
-        const fileName = p.name ?? defaultName;
+        const fileName = reportFilename(p.name ?? defaultName);
         const driveDir = join(resolveDataRoot(), 'drive', state.user.id);
         mkdirSync(driveDir, { recursive: true });
         writeFileSync(join(driveDir, fileName), html, 'utf-8');
