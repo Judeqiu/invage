@@ -16,11 +16,14 @@ Load by capability fit when the user needs: call/put insight, chain scan, covere
 | Underlying spot / metrics | `get_quote` / `portfolio_analyzer` |
 | User option lots | `get_portfolio` + `options_insight include_books=true` |
 | Dated option trades / opened in a period | `list_option_trades` + `get_portfolio` matched opening evidence |
+| Roll history / linked option legs | `get_data_dictionary` + `query_data` on `option_relationships`; inspect coverage/gaps and related fills/sources |
 | Playbook risk | `get_playbook` |
 | HTML note | `save_report` |
 | Earnings/event narrative | `firecrawl` primary source — still no invented crush magnitude |
 
 Underlying **buy/sell stock thesis** → consult **InvestmentAdvisor** (host routes). Recording lots → **Bookkeeper**. Integrity of numbers → host **Factchecker**.
+
+For historical roll questions, retrieve the relationship datasets before making linkage claims; live chain quotes are needed only when discussing current market prices or payoff. Report old and replacement strike/expiry, actual quantities, account, recorded execution dates, evidence and source references. `order` is reconciled parent-order linkage; `execution` is an inference; `possible` and `review` must remain qualified. Inspect `replacement_effect`: a review combination may close an existing long rather than open a replacement. A shared order can be a new spread. Roll cash credit/debit is not realized P/L; preserve currency and net/gross basis. A group is a recorded path with unverified continuity, not proof that its last leg is still open. Read `option_relationship_coverage` and `option_relationship_gaps` even when no rows match. Follow pagination with revision and source_version. Archive-derived datasets are unavailable in incognito.
 
 ---
 
