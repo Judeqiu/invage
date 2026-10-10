@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
+import { lstatSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { assertUserId, resolveDataRoot } from 'utarus';
 
@@ -14,6 +14,19 @@ export interface BrokerSyncRun {
   lots_removed?: number;
   error?: string;
   raw_data_id?: string;
+}
+
+/** Includes retired/disconnected channels, not only current broker connections. */
+export function listBrokerSyncChannels(userId: string): string[] {
+  assertUserId(userId);
+  const root = join(resolveDataRoot(), 'broker-sync-history', userId);
+  const stat = lstatSync(root, { throwIfNoEntry: false });
+  if (!stat) return [];
+  if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('Invalid sync history directory.');
+  return readdirSync(root, { withFileTypes: true }).map(entry => {
+    if (!entry.isDirectory() || entry.isSymbolicLink() || !/^[a-z][a-z0-9_-]*$/.test(entry.name)) throw new Error('Invalid sync history channel directory.');
+    return entry.name;
+  }).sort();
 }
 
 function historyDir(slug: string, channel: string): string {

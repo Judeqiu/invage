@@ -6,7 +6,7 @@
 import type { DomainExtension } from 'utarus';
 import { createBoundBinDriveTools } from '../tools/bindrive.js';
 import { createRawDataTools } from '../tools/raw_data.js';
-import { DATA_QUERY_GUIDE } from '../tools/data_query.js';
+import { createDataQueryTools, DATA_QUERY_GUIDE } from '../tools/data_query.js';
 import { bindDomainToolsToUser } from '../tools/bound-identity.js';
 import { invageExtension } from '../extension.js';
 import { productHostLabel } from '../product-name.js';
@@ -64,8 +64,9 @@ export function buildFrameworkAgentList(
         const original = entry.extension.tools;
         const tools = typeof original === 'function'
           ? await original(userSlug, isAdmin, incognito) : original;
+        const restrictedQueries = incognito === true ? createDataQueryTools({ allowDrive: false }) : [];
         return [
-          ...bindDomainToolsToUser(tools, userSlug),
+          ...bindDomainToolsToUser(tools.map(tool => restrictedQueries.find(replacement => replacement.name === tool.name) ?? tool), userSlug),
           ...createBoundBinDriveTools(userSlug, incognito),
           ...(incognito === true ? [] : createRawDataTools(userSlug)),
         ];

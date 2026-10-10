@@ -17,13 +17,15 @@ export interface Field {
   comparison_group_by?: string[];
 }
 export interface Dataset {
+  source?: string;
+  source_version?: string;
   description: string;
   fields: Record<string, Field>;
   caveats: string[];
   available: (state: InvestorState) => boolean;
   rows: (state: InvestorState) => Row[];
 }
-const field = (type: Field['type'], description: string, extra: Partial<Field> = {}): Field => ({ type, description, nullable: true, ...extra });
+export const field = (type: Field['type'], description: string, extra: Partial<Field> = {}): Field => ({ type, description, nullable: true, ...extra });
 const str = (description: string) => field('string', description);
 const date = (description: string) => field('date', description);
 const number = (description: string, unit?: string) => field('number', description, { unit });
@@ -78,6 +80,10 @@ export const datasets: Record<string, Dataset> = {
       units: field('number', 'Shares/fund units/contracts according to instrument; do not sum unlike instruments.', { unit: 'instrument units', sum_group_by: ['key'] }),
       avg_price: field('number', 'Recorded average cost per share/unit, or premium per option CONTRACT.', { unit: 'native currency per unit/contract', comparison_group_by: ['currency', 'instrument'] }),
       category: str('Recorded category.'), ...terms, side: str('Option long or short; null for other instruments.'),
+      fund_mark: number('Stored fund NAV per unit; null for equities/options. Fetch equity prices with get_quote.'),
+      quote_source: str('Recorded option/fund quote policy; not evidence of a fresh quote.'),
+      fund_name: str('Recorded fund name.'), listing_exchange: str('Broker-native listing exchange.'),
+      encumbrance_kind: str('pledged, lent, or right_to_use.'), encumbered_units: number('Encumbered shares/units/contracts.'),
       mark: field('number', 'Stored option premium per CONTRACT; not a fresh quote.', { unit: 'native currency per contract', comparison_group_by: ['currency'] }),
       settlement: str('Recorded option settlement.'), contract_id: str('Recorded broker-native id if present.'),
       opening_status: str('matched or unverified for options; null for non-options.'), opened_from: date('First outstanding FIFO opening date; derived evidence, not a broker tax-lot date.'),
@@ -93,6 +99,9 @@ export const datasets: Record<string, Dataset> = {
           avg_price: h.avg_price, category: h.category ?? null, underlying: o ? canonicalOptionUnderlying(o.underlying, o) : null,
           right: o?.right ?? null, expiry: o?.expiry ?? null, strike: o ? String(o.strike) : null, multiplier: o ? String(o.multiplier) : null,
           side: o?.side ?? null, mark: o?.mark ?? null, settlement: o?.settlement ?? null, contract_id: h.broker_ref?.native_id ?? null,
+          fund_mark: h.fund?.mark ?? null, quote_source: o?.quote_source ?? h.fund?.quote_source ?? null,
+          fund_name: h.fund?.name ?? null, listing_exchange: h.broker_ref?.listing_exchange ?? null,
+          encumbrance_kind: h.encumbrance?.kind ?? null, encumbered_units: h.encumbrance?.units ?? null,
           opening_status: e?.status ?? null, opened_from: opening?.openedFrom ?? null, opened_to: opening?.openedTo ?? null };
       });
     },
@@ -122,6 +131,12 @@ export const datasets: Record<string, Dataset> = {
 };
 
 export const relationships = [
+  { from: 'books_journal_lines', to: 'books_journal_entries', keys: ['entry_id -> id'], meaning: 'Accounting lines belong to this entry; the entry may be a reconcile, opening balance or trade-related change.' },
+  { from: 'books_journal_lines', to: 'books_accounts', keys: ['account_id -> id'], meaning: 'Account supplies financial instrument/cash identity, channel and native currency.' },
+  { from: 'books_account_balances', to: 'books_accounts', keys: ['account_id -> id'], meaning: 'Balance projection belongs to the account; monetary minor units use scale 6.' },
+  { from: 'books_position_meta', to: 'books_accounts', keys: ['account_id -> id'], meaning: 'Complete option/fund metadata and instrument kind for this position account.' },
+  { from: 'books_deposit_meta', to: 'books_accounts', keys: ['account_id -> id'], meaning: 'Recorded deposit terms, currency and account identity.' },
+  { from: 'books_audit_events', to: 'books_journal_entries', keys: ['journal_entry_id -> id'], meaning: 'Audit provenance when linked to an accounting entry.' },
   { from: 'option_executions', to: 'broker_accounts', keys: ['channel', 'account_id'], meaning: 'Both keys must agree; same broker can have multiple accounts.' },
   { from: 'option_events', to: 'option_executions', keys: ['channel', 'account_id', 'contract_id'], meaning: 'Only when native IDs are present and consistent; lifecycle is not an execution.' },
   { from: 'positions', to: 'option_executions', keys: ['channel', 'contract_id'], meaning: 'Also verify bound account, terms, side and quantity. Use reconciled opened_from/to for outstanding opening evidence, not a naive join.' },

@@ -1,5 +1,5 @@
 import { addDecimals, decimal, validDate } from '../brokers/option-executions.js';
-import { datasets, type Cell, type Field, type Row } from './catalog.js';
+import { datasets, type Cell, type Dataset, type Field, type Row } from './catalog.js';
 import type { InvestorSnapshot } from '../state/investor-store.js';
 
 export const operators = ['eq', 'ne', 'gt', 'gte', 'lt', 'lte', 'in', 'not_in', 'contains', 'starts_with', 'is_null', 'not_null'] as const;
@@ -13,6 +13,8 @@ export interface Query {
   limit?: number;
   offset?: number;
   expected_revision?: number;
+  expected_source_version?: string;
+  source?: { file_id: string; version: string };
 }
 export const limits = { rows: 200, default_rows: 50, input_chars: 20000, output_bytes: 65536, source_rows: 50000, filter_nodes: 80, filter_depth: 8 };
 function object(value: unknown, keys: string[], label: string): Record<string, unknown> {
@@ -55,14 +57,14 @@ function compare(a: Cell, b: Cell, field: Field): number {
   }
   return a < b ? -1 : a > b ? 1 : 0;
 }
-function validateValue(value: unknown, field: Field): asserts value is Exclude<Cell, null> {
+function validateValue(value: unknown, field: Field, predicateValue = true): asserts value is Exclude<Cell, null> {
   if (value === null || value === undefined) throw new Error('Use is_null/not_null for missing values.');
   if (field.type === 'decimal') {
     if (typeof value !== 'string') throw new Error('Decimal predicates require exact decimal strings.'); decimal(value); return;
   }
   if (field.type === 'number') { if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error('Numeric predicates require finite numbers.'); return; }
   if (field.type === 'boolean') { if (typeof value !== 'boolean') throw new Error('Boolean predicates require true/false.'); return; }
-  if (typeof value !== 'string' || value.length > 2000) throw new Error('Text predicates require bounded strings.');
+  if (typeof value !== 'string' || (predicateValue && value.length > 2000)) throw new Error('Text predicates require bounded strings.');
   if (field.type === 'date' && !validDate(value)) throw new Error('Date predicates require a valid YYYY-MM-DD date.');
   if (field.type === 'datetime' && (!/^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?$/.test(value) || !validDate(value.slice(0, 10)))) throw new Error('Datetime predicates require an explicit ISO-style timestamp; use trade_date for broker-local date windows.');
 }
@@ -112,15 +114,18 @@ function predicate(raw: unknown, fields: Record<string, Field>): (row: Row) => M
   return build(raw, 0);
 }
 
-export function runQuery(snapshot: InvestorSnapshot, raw: unknown) {
+export function runQuery(snapshot: InvestorSnapshot, raw: unknown, catalog: Record<string, Dataset> = datasets) {
   if (JSON.stringify(raw).length > limits.input_chars) throw new Error('Query input limit exceeded.');
-  const p = object(raw, ['from', 'select', 'where', 'group_by', 'aggregates', 'order_by', 'limit', 'offset', 'expected_revision'], 'query') as unknown as Query;
-  if (typeof p.from !== 'string' || !Object.hasOwn(datasets, p.from)) throw new Error('Unknown dataset. Read get_data_dictionary.');
-  const dataset = datasets[p.from]; const fields = dataset.fields;
+  const p = object(raw, ['from', 'select', 'where', 'group_by', 'aggregates', 'order_by', 'limit', 'offset', 'expected_revision', 'expected_source_version', 'source'], 'query') as unknown as Query;
+  if (typeof p.from !== 'string' || !Object.hasOwn(catalog, p.from)) throw new Error('Unknown dataset. Read get_data_dictionary.');
+  const dataset = catalog[p.from]; const fields = dataset.fields;
+  if (p.source !== undefined && p.from !== 'source_records') throw new Error('source is only supported for source_records.');
+  if (p.expected_source_version !== undefined && p.expected_source_version !== dataset.source_version) throw new Error('Source data changed; restart from offset 0.');
   const limit = p.limit ?? limits.default_rows; const offset = p.offset ?? 0;
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > limits.rows || !Number.isSafeInteger(offset) || offset < 0) throw new Error('limit must be 1–200; offset must be a nonnegative integer.');
   if (p.expected_revision !== undefined && (!Number.isSafeInteger(p.expected_revision) || p.expected_revision !== snapshot.revision)) throw new Error('Data revision changed or expected_revision is invalid. Restart the query from offset 0.');
   if (offset > 0 && p.expected_revision === undefined) throw new Error('Pagination requires expected_revision from the first response.');
+  if (offset > 0 && dataset.source_version && p.expected_source_version === undefined) throw new Error('External-source pagination requires expected_source_version from the first response.');
   const selected = p.select === undefined ? Object.keys(fields) : fieldList(p.select, fields, 'select');
   if (!selected.length) throw new Error('select must not be empty.');
   const groupBy = p.group_by === undefined ? [] : fieldList(p.group_by, fields, 'group_by');
@@ -153,7 +158,7 @@ export function runQuery(snapshot: InvestorSnapshot, raw: unknown) {
   const available = dataset.available(snapshot.state);
   const source = available ? dataset.rows(snapshot.state) : [];
   if (source.length > limits.source_rows) throw new Error('Source row limit exceeded; this query has not scanned complete data.');
-  for (const row of source) for (const [key, f] of Object.entries(fields)) if (row[key] != null) validateValue(row[key], f);
+  for (const row of source) for (const [key, f] of Object.entries(fields)) if (row[key] != null) validateValue(row[key], f, false);
   const matched = source.filter(row => filter(row) === true);
   const missing: Record<string, number> = {};
   let rows: Row[];
@@ -185,6 +190,7 @@ export function runQuery(snapshot: InvestorSnapshot, raw: unknown) {
   });
   if (!aggregates) rows = sortingRows.map(row => Object.fromEntries(selected.map(k => [k, row[k]])));
   const details = { schema_version: 1, from: p.from, revision: snapshot.revision, available,
+    source: dataset.source ?? 'investor_state', source_version: dataset.source_version ?? null,
     source_rows: available ? source.length : null, matched_source_rows: available ? matched.length : null,
     total_rows: available ? rows.length : null, offset, limit, rows: rows.slice(offset, offset + limit),
     next_offset: offset + limit < rows.length ? offset + limit : null,
