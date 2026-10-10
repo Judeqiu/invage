@@ -7,6 +7,8 @@ describe('OptionsExpert local agent', () => {
     const names = createOptionsExpertTools().map((t) => t.name);
     expect(names).toEqual(
       expect.arrayContaining([
+        'get_data_dictionary',
+        'query_data',
         'get_portfolio',
         'list_option_trades',
         'get_playbook',
@@ -16,7 +18,7 @@ describe('OptionsExpert local agent', () => {
         'save_report',
       ]),
     );
-    expect(names).toHaveLength(7);
+    expect(names).toHaveLength(9);
     const set = new Set(names);
     for (const forbidden of [
       'add_holding',

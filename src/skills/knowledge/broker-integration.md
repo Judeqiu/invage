@@ -10,6 +10,10 @@ Never invent numbers. Never echo Flex tokens, RSA PEMs, Tiger tokens, Webull app
 
 Use `get_portfolio` for matched opening date ranges and coverage, then `list_option_trades` for dated activity filtered by underlying, channel, right, effect, and inclusive start/end dates. Follow `next_offset` until all matching records are read. Calculate the requested date window from the current date; do not include older trades. Current position snapshots and books reconcile journals do not establish execution dates. An opening record proves neither that a position remains open nor that it was not part of a roll. Use reconciled outstanding opening records and explicitly label unknown dates, FIFO matching, timestamp precision, and failed/stale syncs. First/last retained activity dates do not prove complete coverage. Do not assert that dated records are absent without reading this tool; the journal can exist even when a lot has no open-date field.
 
+## Custom queries
+
+For a question not covered by fixed tool parameters, call `get_data_dictionary` to discover the current dataset/field/date/unit definitions, then construct `query_data` with filters, selection, sorting, grouping and aggregates. Query `option_executions.trade_date` for activity windows and `positions.opened_from/opened_to/opening_status` for reconciled outstanding opening evidence. Pin further pages and related queries to the returned revision. Group monetary sums by the dictionary's required currency keys; do not convert unknown fees into zero or interpret stored marks as live prices. Read availability and caveats before claiming no trades. Raw archives remain accessible through `list_raw_data` / `fetch_raw_data` when a field/history is not present in query datasets.
+
 ## Tools
 
 - `list_option_trades` — read retained option activity and date evidence from every broker channel; no writes.

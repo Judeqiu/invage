@@ -7,6 +7,8 @@ describe('AIDeal local agent', () => {
     const names = createAidealTools().map((t) => t.name);
     expect(names).toEqual(
       expect.arrayContaining([
+        'get_data_dictionary',
+        'query_data',
         'list_aideal_sleeves',
         'compute_sleeve_index',
         'save_aideal_newsletter',
@@ -16,7 +18,7 @@ describe('AIDeal local agent', () => {
         'save_report',
       ]),
     );
-    expect(names).toHaveLength(7);
+    expect(names).toHaveLength(9);
   });
 
   it('excludes ledger mutations', () => {

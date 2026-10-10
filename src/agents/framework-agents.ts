@@ -6,6 +6,7 @@
 import type { DomainExtension } from 'utarus';
 import { createBoundBinDriveTools } from '../tools/bindrive.js';
 import { createRawDataTools } from '../tools/raw_data.js';
+import { DATA_QUERY_GUIDE } from '../tools/data_query.js';
 import { bindDomainToolsToUser } from '../tools/bound-identity.js';
 import { invageExtension } from '../extension.js';
 import { productHostLabel } from '../product-name.js';
@@ -58,6 +59,7 @@ export function buildFrameworkAgentList(
     ...entry,
     extension: {
       ...entry.extension,
+      purpose: entry.extension.purpose + DATA_QUERY_GUIDE,
       tools: async (userSlug, isAdmin, incognito) => {
         const original = entry.extension.tools;
         const tools = typeof original === 'function'

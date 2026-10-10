@@ -9,6 +9,8 @@ import {
 import { factcheckerExtension } from '../src/agents/factchecker.js';
 
 const EXPECTED_TOOLS = [
+  'get_data_dictionary',
+  'query_data',
   'get_portfolio',
   'list_option_trades',
   'list_journal_entries',
@@ -33,10 +35,10 @@ const EXPECTED_TOOLS = [
 ] as const;
 
 describe('Factchecker local agent', () => {
-  it('has exact read-only tool set of length 21', () => {
+  it('has exact read-only tool set of length 23', () => {
     const names = createFactcheckerTools().map((t) => t.name).sort();
     expect(names).toEqual([...EXPECTED_TOOLS].sort());
-    expect(names).toHaveLength(21);
+    expect(names).toHaveLength(23);
   });
 
   it('excludes mutations, optimize, snapshots, playbook updates, reports', () => {

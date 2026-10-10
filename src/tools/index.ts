@@ -1,3 +1,4 @@
+import { createDataQueryTools } from './data_query.js';
 import type { AgentTool } from '@earendil-works/pi-agent-core';
 import {
   createGetPortfolioTool,
@@ -57,6 +58,7 @@ import { createListOptionTradesTool } from './option_trades.js';
  */
 export function createInvageTools(): AgentTool[] {
   return [
+    ...createDataQueryTools(),
     createListBrokerAccountsTool(),
     ...createPlaybookTools(),
     ...createHouseholdReadTools(),
@@ -70,6 +72,7 @@ export function createInvageTools(): AgentTool[] {
  */
 export function createBookkeeperTools(): AgentTool[] {
   return [
+    ...createDataQueryTools(),
     ...createPortfolioTools(),
     ...createHouseholdTools(),
     ...createProjectionTools(),
@@ -95,6 +98,7 @@ export function createBookkeeperTools(): AgentTool[] {
  */
 export function createFinancialPlannerTools(): AgentTool[] {
   return [
+    ...createDataQueryTools(),
     ...createPortfolioReadTools(),
     ...createHouseholdReadTools(),
     ...createProjectionReadTools(),
@@ -112,6 +116,7 @@ export function createFinancialPlannerTools(): AgentTool[] {
  */
 export function createInvestmentAdvisorTools(): AgentTool[] {
   return [
+    ...createDataQueryTools(),
     createGetPortfolioTool(),
     createListOptionTradesTool(),
     createGetPlaybookTool(),
@@ -126,6 +131,7 @@ export function createInvestmentAdvisorTools(): AgentTool[] {
  */
 export function createOptionsExpertTools(): AgentTool[] {
   return [
+    ...createDataQueryTools(),
     createGetPortfolioTool(),
     createListOptionTradesTool(),
     createGetPlaybookTool(),
@@ -142,6 +148,7 @@ export function createOptionsExpertTools(): AgentTool[] {
  */
 export function createRealEstateExpertTools(): AgentTool[] {
   return [
+    ...createDataQueryTools(),
     createPropertyIntelTool(),
     createUraCarparkTool(),
     ...createHouseholdReadTools(),
@@ -156,6 +163,7 @@ export function createRealEstateExpertTools(): AgentTool[] {
  */
 export function createAidealTools(): AgentTool[] {
   return [
+    ...createDataQueryTools(),
     createListAidealSleevesTool(),
     createComputeSleeveIndexTool(),
     createSaveAidealNewsletterTool(),
@@ -173,6 +181,7 @@ export function createAidealTools(): AgentTool[] {
  */
 export function createFactcheckerTools(): AgentTool[] {
   return [
+    ...createDataQueryTools(),
     createGetPortfolioTool(),
     createListOptionTradesTool(),
     createListJournalEntriesTool(),
