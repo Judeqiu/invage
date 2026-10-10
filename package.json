@@ -32,7 +32,7 @@
     "pg": "^8.23.0",
     "saxes": "^6.0.0",
     "tsx": "^4.22.4",
-    "utarus": "github:Judeqiu/utarus#v4.0.2",
+    "utarus": "github:Judeqiu/utarus#v4.2.0",
     "yahoo-finance2": "^3.15.3",
     "yaml": "^2.9.0"
   },

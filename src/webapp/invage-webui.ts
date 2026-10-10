@@ -17,6 +17,7 @@ import { type ProductProfileId, readProductProfile } from '../agents/roster.js';
 import { readFlexEgressIpv4 } from '../brokers/egress.js';
 import { createBrokerConnectionsRouter } from './broker-api.js';
 import { createDashboardApiRouter } from './dashboard-api.js';
+import { createInvageChatQuestionLibrary } from './chat-questions.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -149,6 +150,7 @@ export function createInvageWebUi(): DomainWebUiExtension {
     version: appVersion,
     defaultPath: '/dashboard',
     chatEmptyState: empty,
+    chatQuestionLibrary: createInvageChatQuestionLibrary(),
     nav: [
       {
         id: 'dashboard',

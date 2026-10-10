@@ -99,6 +99,18 @@ Database tests require an isolated `UTARUS_TEST_DATABASE_URL` naming
 `utarus_test_admin`; the test role creates and drops uniquely named test databases.
 Run `npm test` plus `UTARUS_LOADED_BY_HOST=1 node --test tests/migration/*.test.mjs`.
 
+Chat includes the Lovable mockup's 18 preset questions in the composer's searchable
+Questions menu, grouped into setup/strike selection, technical analysis,
+assignment/rolls/wheel, and psychology/review. Ticker questions require a ticker;
+selection prepares an editable draft for the user to send.
+
+The Utarus `v4.2.0` pin requires framework database migration 28 before starting an
+existing deployment. With the target deployment's database environment loaded,
+run `node node_modules/utarus/dist/database/cli.js migrate`, then
+`node node_modules/utarus/dist/database/cli.js check personal` (or `check org`
+for organization mode). See the framework's `docs/releases/v4.2.0.md` upgrade
+checklist for intervening migrations and deployment verification.
+
 ## Run
 
 ```bash
