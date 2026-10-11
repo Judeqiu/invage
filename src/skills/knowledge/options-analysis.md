@@ -21,7 +21,13 @@ Load by capability fit when the user needs: call/put insight, chain scan, covere
 | HTML note | `save_report` |
 | Earnings/event narrative | `firecrawl` primary source — still no invented crush magnitude |
 
-Underlying **buy/sell stock thesis** → consult **InvestmentAdvisor** (host routes). Recording lots → **Bookkeeper**. Integrity of numbers → host **Factchecker**.
+Standalone **buy/sell stock thesis** → consult **InvestmentAdvisor** when installed (host routes). OptionsExpert owns public underlying research needed for its options thesis, including on the consultant profile where InvestmentAdvisor is absent. Recording lots → **Bookkeeper**. Integrity of numbers → host **Factchecker**.
+
+## Public evidence for the options thesis
+
+Public research works without broker holdings. For strategy, risk or expiry analysis, use `portfolio_analyzer` with `tickers` only when valuation, debt, cash flow, margins, growth or analyst expectations affect underlying risk. Use `firecrawl` to verify earnings/dividend dates, issuer reports, material news and relevant macro events against primary pages. Fetch only inputs needed for the requested decision; a historical-trade lookup does not need a market research pack.
+
+Explain how sourced evidence changes the option direction, expiry, premium, assignment or downside assumptions. Cite URLs and reporting/event dates for web facts, and source timestamps for quotes. Do not infer the user's past trades from public prices or compute IV Rank from a single IV snapshot. A historical price series is available only when actually retrieved from a tool or cited source; no dedicated general-purpose chat history tool is registered. Missing inputs become explicit gaps, not invented numbers or a reason to discard verified evidence.
 
 For historical roll questions, retrieve the relationship datasets before making linkage claims; live chain quotes are needed only when discussing current market prices or payoff. Report old and replacement strike/expiry, actual quantities, account, recorded execution dates, evidence and source references. `order` is reconciled parent-order linkage; `execution` is an inference; `possible` and `review` must remain qualified. Inspect `replacement_effect`: a review combination may close an existing long rather than open a replacement. A shared order can be a new spread. Roll cash credit/debit is not realized P/L; preserve currency and net/gross basis. A group is a recorded path with unverified continuity, not proof that its last leg is still open. Read `option_relationship_coverage` and `option_relationship_gaps` even when no rows match. Follow pagination with revision and source_version. Archive-derived datasets are unavailable in incognito.
 
@@ -36,7 +42,7 @@ For historical roll questions, retrieve the relationship datasets before making 
 4. Market       IV vs ATM when sourced; OI/volume; bid-ask spread % (wide spread = poor fill)
 5. Risk class   Defined-risk (long option / funded spread) vs undefined (naked short call) vs large (naked/cash-secured short put)
 6. Overlay      If books lots exist, compare live mark vs avg_price (tool books block)
-7. Thesis fit   Directional / hedge / income / vol — horizon must fit DTE
+7. Thesis fit   Directional / hedge / income / vol — horizon must fit DTE; retrieve relevant fundamentals, filings and events before concluding
 8. Gate         Do not sell lottery long-calls on a broken underlying; do not default to naked shorts
 9. Output       Options verdict template
 ```
@@ -114,5 +120,5 @@ Playbook: conservative → prefer defined-risk hedges / covered calls over short
 | **InvestmentAdvisor** / `investment-analysis` | Underlying equity/fund thesis |
 | **Bookkeeper** | Journal option lots |
 | **Factchecker** | Re-run `options_insight` on claimed premiums/IV |
-| **`firecrawl`** | Event/filing text only |
+| **`firecrawl`** | Verify public fundamentals, filings, events, news and macro inputs for the options thesis |
 | **`bindrive`** | Save HTML |

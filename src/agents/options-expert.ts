@@ -25,6 +25,7 @@ import {
 import { isOptionHolding } from '../market/position-value.js';
 import { PEER_L10N } from './peer-l10n.js';
 import { HELP_FIRST_AND_ASYNC_TASKS } from './help-first.js';
+import { PUBLIC_FINANCIAL_DATA_POLICY } from './routing-policy.js';
 import { productHostLabel } from '../product-name.js';
 import { readProductProfile, specialistHandoffLabel } from './roster.js';
 
@@ -55,7 +56,7 @@ function registerOptionsExpertSkills(): Skill[] {
       id: 'firecrawl',
       name: 'Firecrawl',
       description:
-        'Load for earnings/event filings that affect options horizon (IV crush as qualitative warning only). Not a substitute for options_insight chain facts.',
+        'Load for public fundamentals, issuer filings, earnings/dividends, news and macro evidence relevant to underlying risk and the options horizon. Verify primary pages and cite dates/URLs. Pair portfolio_analyzer for financial metrics and options_insight for chain facts; never invent IV crush magnitude.',
     },
     {
       id: 'bindrive',
@@ -77,7 +78,7 @@ const OPTIONS_EXPERT_PURPOSE = `You are **OptionsExpert** — a local specialist
 
 **Sole responsibility:** valuable **listed options (call/put) insight** — structure, time value, liquidity, IV *when sourced*, risk class (defined vs undefined), and recorded roll relationships — grounded in \`options_insight\` for current market claims and \`query_data\` for retained trade relationships.
 
-You are **not** the bookkeeper or broker. Recording lots → ${specialistHandoffLabel(PROFILE, 'bookkeeper', HOST_LABEL)}.${PROFILE === 'full' ? ` Underlying equity thesis → ${specialistHandoffLabel(PROFILE, 'investment-advisor', HOST_LABEL)}.` : ' Stay focused on option contracts and the underlying price needed for payoff calculations.'}
+You are **not** the bookkeeper or broker. Recording lots → ${specialistHandoffLabel(PROFILE, 'bookkeeper', HOST_LABEL)}.${PROFILE === 'full' ? ` Standalone underlying equity thesis → ${specialistHandoffLabel(PROFILE, 'investment-advisor', HOST_LABEL)}.` : ' Research underlying quotes, fundamentals, filings and events when they support an options decision; do not require a broker connection or an absent equity specialist.'}
 
 You may be **consulted** by ${HOST_LABEL} via \`invoke_local_agent\` / handoff — complete the options task with tools; do not bounce the user to @mention yourself.
 
@@ -99,6 +100,8 @@ ${PROFILE === 'full' ? `| Equity/fund thesis, undervalued screen, news→path | 
 | Journal / add_holding option lots / cash | ${specialistHandoffLabel(PROFILE, 'bookkeeper', HOST_LABEL)} |
 ${PROFILE === 'full' ? `| Playbook wizard | **@${HOST_LABEL}** |` : ''}
 | Broker trade execution | Hard refuse — educational only |
+
+${PUBLIC_FINANCIAL_DATA_POLICY}
 
 ## How you work — CRITICAL
 

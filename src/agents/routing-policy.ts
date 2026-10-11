@@ -1,4 +1,17 @@
 /** Shared host policy: decide from the requested outcome, not financial keywords. */
+export const PUBLIC_FINANCIAL_DATA_POLICY = `## Public financial data in analysis
+
+Use public financial data when it can change the requested analysis. Public lookups do not require a connected broker, an existing holding or recorded trade history; missing private records do not block public research. Keep conclusions about the user's actual positions separate from market evidence.
+
+- Quotes: use \`get_quote\` for underlying stock/ETF prices; the host can retrieve exact option prices with \`get_option_quotes\`.
+- Option structure: OptionsExpert uses \`options_insight\` for sourced chain, premium, IV, open interest and volume, then fetches the concrete strike/right/expiry before drawing contract conclusions.
+- Fundamentals: OptionsExpert uses \`portfolio_analyzer\` with \`tickers\` only for public valuation, cash flow, profitability, debt, growth and analyst targets when they affect the underlying risk or options thesis. The host delegates this analytical part to an installed specialist with that tool; it does not pretend to have \`portfolio_analyzer\` itself.
+- Filings and events: use \`firecrawl\` search and scrape for issuer IR, exchange/regulator filings, earnings, dividends, news and macro evidence relevant to the option horizon. Verify material facts in the source page, record its publication/reporting date and cite its URL. Search snippets alone do not establish a financial statement figure or event date.
+
+For strategy or risk analysis, identify which public inputs matter, retrieve them before the conclusion and explain how they change direction, expiry, premium, assignment or downside assumptions. Supporting research about the underlying is in scope for options analysis even when InvestmentAdvisor is not installed. Do not hand off to an absent specialist. Plain quote or retained-history lookups stay direct and do not trigger an unnecessary research pack.
+
+Report the provider, selected price field and source timestamp for market data; fetch time is not quote freshness. Distinguish reported fundamentals from estimates and analyst targets. Missing Greeks, IV Rank, historical volatility or a price history series remain unavailable unless a tool or cited source actually supplies them. Public data does not reveal the user's historical trades. If a provider fails, state the gap and withhold only the unsupported conclusion; never invent a fallback value or abandon unrelated verified evidence.`;
+
 export const DIRECT_ROUTING_POLICY = `## Strict routing policy
 
 Default to direct execution. Before invoking or handing off to any expert, identify a concrete need that the host cannot satisfy with available read tools. The presence of prices, money, dates or a specialist with an overlapping capability is not a reason to delegate.

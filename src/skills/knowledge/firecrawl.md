@@ -265,7 +265,7 @@ https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=AAPL&type=10-K&co
 | Ticker exists / public listing check | `portfolio_analyzer` first; then Yahoo/SEC/HKEX/CNINFO via Firecrawl |
 | IPO / S-1 / private vs public | SEC EDGAR + Reuters/company IR via Firecrawl — **never invent** |
 | EV, FCF, detailed key stats, Finviz multi-metric | Firecrawl scrape Yahoo key-statistics / Finviz quote |
-| Options premium / IV / chain | Firecrawl Yahoo `/options` — never invent Greeks |
+| Options premium / IV / chain | Prefer `options_insight` for analysis or `get_option_quotes` for direct exact-contract lookup; Firecrawl is supplementary source verification, never a substitute for required chain tools |
 | News, narrative, “why moved” | Firecrawl search + scrape |
 | Filings, risk factors | SEC (US) / HKEXnews (HK) / CNINFO·SSE·SZSE (A) / IR via Firecrawl |
 | Cost basis, units, P/L | `get_portfolio` only |
@@ -285,7 +285,7 @@ For each factual sentence about the world:
 ## Rules
 
 1. Call tools **before** user-visible claims — never claim you browsed without results.
-2. Cite **title + URL** for web claims; for quotes say the price came from live market data.
+2. Cite **title + URL** and publication/reporting dates for web claims. For quotes identify the provider, selected price field and source timestamp; a newly fetched closed-market print is not a live intraday price.
 3. Keep Slack/Telegram replies scannable (bullets, short sections).
 4. Portfolio mutations still use portfolio tools; Firecrawl is research only.
 5. Off-scope: licensed advice, tax, trade execution — **not** market themes, macro, or “how will X affect stocks?” (those are in scope; use playbook D2).

@@ -23,6 +23,12 @@ interface RawSkill {
 /** Default host skills — orchestration residuals only (no peer craft DIY). */
 const CATALOG: RawSkill[] = [
   {
+    id: 'firecrawl',
+    name: 'Public Financial Research',
+    description:
+      'Load for public issuer filings, financial statements, earnings/dividends, news and macro evidence relevant to the requested analysis. Search then verify primary pages and cite dates/URLs. Use get_quote for prices; delegate analytical fundamentals and options chain work to the installed specialist with portfolio_analyzer/options_insight. Public research does not require broker holdings.',
+  },
+  {
     id: 'bindrive',
     name: 'BinDrive',
     description:
@@ -52,7 +58,7 @@ function readContent(id: string): string {
 
 export function registerInvageSkills(profile: ProductProfileId = readProductProfile()): Skill[] {
   const skills: Skill[] = [];
-  for (const raw of CATALOG.filter((entry) => profile === 'full' || entry.id === 'bindrive')) {
+  for (const raw of CATALOG.filter((entry) => profile === 'full' || entry.id === 'bindrive' || entry.id === 'firecrawl')) {
     const content = readContent(raw.id);
     registerDomainSkill(raw.id, content);
     skills.push({ ...raw, kind: 'knowledge' });
