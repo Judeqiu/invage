@@ -4,6 +4,7 @@ Operator deploy runbooks (not marketing changelogs).
 
 | Version | Date | Utarus pin | Summary |
 |---------|------|------------|---------|
+| [v0.3.10](./v0.3.10.md) | 2026-10-11 | `v4.2.3` | Foldable option roll relationships and generic agent queries with evidence and coverage |
 | [v0.3.9](./v0.3.9.md) | 2026-10-10 | `v4.2.3` | Scope nested financial queries before expanding large account history |
 | [v0.3.8](./v0.3.8.md) | 2026-10-10 | `v4.2.3` | Generic queries across financial state, accounting, valuations and broker archives |
 | [v0.3.7](./v0.3.7.md) | 2026-10-10 | `v4.2.3` | Direct lookups, selective expert routing and batch option quotes |
