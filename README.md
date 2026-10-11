@@ -103,6 +103,9 @@ Chat includes the Lovable mockup's 18 preset questions in the composer's searcha
 Questions menu, grouped into setup/strike selection, technical analysis,
 assignment/rolls/wheel, and psychology/review. Ticker questions require a ticker;
 selection prepares an editable draft for the user to send.
+The consultant's initial chat page also shows these 18 questions as cards, using
+the same preset source. Clicking a card starts the question in chat; questions
+about a specific stock first ask which ticker to use.
 
 Upgrades from before Utarus `v4.2.0` require framework database migration 28 before
 starting an existing deployment. With the target deployment's database environment loaded,

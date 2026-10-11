@@ -17,7 +17,7 @@ import { type ProductProfileId, readProductProfile } from '../agents/roster.js';
 import { readFlexEgressIpv4 } from '../brokers/egress.js';
 import { createBrokerConnectionsRouter } from './broker-api.js';
 import { createDashboardApiRouter } from './dashboard-api.js';
-import { createInvageChatQuestionLibrary } from './chat-questions.js';
+import { createInvageChatQuestionLibrary, createInvageChatQuestionStarters } from './chat-questions.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -88,7 +88,7 @@ export function chatEmptyStateFor(profile: ProductProfileId): ChatEmptyState {
       title: `Explore options with ${productDisplayName()}`,
       body: [
         'Explore listed calls and puts, compare risk and payoff, or review the option positions in your connected brokers.',
-        'Choose a shortcut below or ask about a ticker and expiry. Chain quotes and IV are checked when available; missing data is called out.',
+        'Choose a preset question below or ask about a ticker and expiry. Questions about a specific stock will ask which ticker to use. Chain quotes and IV are checked when available; missing data is called out.',
       ],
       bullets: [
         'Compare a covered call, protective put, or cash-secured put',
@@ -97,38 +97,7 @@ export function chatEmptyStateFor(profile: ProductProfileId): ChatEmptyState {
       ],
       startersVariant: 'cards',
       startersPlacement: 'above',
-      starters: [
-        {
-          id: 'review_options',
-          label: 'Review my options',
-          description: 'Open positions and assignment risk',
-          message: 'Review my open option positions across connected brokers. Show mark versus cost, expiry, assignment exposure, and any missing data.',
-        },
-        {
-          id: 'explore_chain',
-          label: 'Explore a call or put',
-          description: 'Premium, breakeven, and liquidity',
-          message: 'Show the nearest listed call and put chain for SPY. Pick a concrete contract from sourced data and explain premium, breakeven, time value, liquidity, and risk.',
-        },
-        {
-          id: 'covered_call',
-          label: 'Covered call',
-          description: 'Income versus upside cap',
-          message: 'Help me evaluate a covered call on a stock I own. Check my share position and the available chain, then compare premium, upside cap, and assignment risk.',
-        },
-        {
-          id: 'cash_secured_put',
-          label: 'Cash-secured put',
-          description: 'Premium and assignment cash',
-          message: 'Help me evaluate a cash-secured put on SPY using the nearest expiry. Check a concrete contract, assignment cash required, breakeven, and downside risk.',
-        },
-        {
-          id: 'protective_put',
-          label: 'Protective put',
-          description: 'Downside protection and cost',
-          message: 'Help me compare a protective put for a stock I own using available option contracts. Show protection, premium cost, and expiry tradeoffs.',
-        },
-      ],
+      starters: createInvageChatQuestionStarters(),
       footer: 'Options analysis is educational. Quotes change; verify the live chain before placing an order.',
     };
   }

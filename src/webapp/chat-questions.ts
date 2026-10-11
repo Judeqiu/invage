@@ -1,4 +1,4 @@
-import type { ChatQuestionLibraryConfig, QuestionPreset } from 'utarus';
+import type { ChatEmptyStarter, ChatQuestionLibraryConfig, QuestionPreset } from 'utarus';
 
 // Preset wording and grouping from https://velovest-ai.lovable.app/chat.
 // The host supports these options/journal questions in both product profiles.
@@ -46,6 +46,18 @@ const GROUPS = [
     ],
   },
 ] as const;
+
+/** Empty-chat cards share the composer presets; ticker selection happens in chat. */
+export function createInvageChatQuestionStarters(): ChatEmptyStarter[] {
+  return GROUPS.flatMap((group) => group.questions.map(([id, , template]) => ({
+    id: `question_${id}`,
+    label: template.replaceAll('{ticker}', '[ticker]'),
+    description: group.label,
+    message: template.includes('{ticker}')
+      ? `${template.replaceAll('{ticker}', 'the ticker I choose')} First ask me which ticker to use.`
+      : template,
+  })));
+}
 
 /** Persistent composer library; selection prepares a draft and never sends it. */
 export function createInvageChatQuestionLibrary(): ChatQuestionLibraryConfig {
