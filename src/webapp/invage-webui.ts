@@ -17,7 +17,7 @@ import { type ProductProfileId, readProductProfile } from '../agents/roster.js';
 import { readFlexEgressIpv4 } from '../brokers/egress.js';
 import { createBrokerConnectionsRouter } from './broker-api.js';
 import { createDashboardApiRouter } from './dashboard-api.js';
-import { createInvageChatQuestionLibrary, createInvageChatQuestionStarters } from './chat-questions.js';
+import { createInvageChatQuestionLibrary, sampleInvageChatQuestionStarters } from './chat-questions.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -97,7 +97,11 @@ export function chatEmptyStateFor(profile: ProductProfileId): ChatEmptyState {
       ],
       startersVariant: 'cards',
       startersPlacement: 'above',
-      starters: createInvageChatQuestionStarters(),
+      // The framework reads this getter for each manifest request, rather than
+      // freezing one random selection when the server starts.
+      get starters() {
+        return sampleInvageChatQuestionStarters();
+      },
       footer: 'Options analysis is educational. Quotes change; verify the live chain before placing an order.',
     };
   }

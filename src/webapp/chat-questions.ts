@@ -1,3 +1,4 @@
+import { randomInt } from 'node:crypto';
 import type { ChatEmptyStarter, ChatQuestionLibraryConfig, QuestionPreset } from 'utarus';
 
 // Preset wording and grouping from https://velovest-ai.lovable.app/chat.
@@ -57,6 +58,16 @@ export function createInvageChatQuestionStarters(): ChatEmptyStarter[] {
       ? `${template.replaceAll('{ticker}', 'the ticker I choose')} First ask me which ticker to use.`
       : template,
   })));
+}
+
+/** Sample four distinct questions each time a page requests its WebUI manifest. */
+export function sampleInvageChatQuestionStarters(): ChatEmptyStarter[] {
+  const starters = createInvageChatQuestionStarters();
+  for (let i = 0; i < 4; i++) {
+    const selected = randomInt(i, starters.length);
+    [starters[i], starters[selected]] = [starters[selected], starters[i]];
+  }
+  return starters.slice(0, 4);
 }
 
 /** Persistent composer library; selection prepares a draft and never sends it. */
