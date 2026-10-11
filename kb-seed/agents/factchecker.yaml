@@ -4,7 +4,7 @@ updated_at: 2026-08-09T12:00:00.000Z
 entries:
   - id: a5000001-0001-4000-8000-000000000001
     scope: agent
-    owner_slug: system-seed
+    owner_user_id: null
     agent_id: factchecker
     title: Factchecker hard rules
     body: >
@@ -37,7 +37,7 @@ entries:
     updated_at: 2026-08-09T12:00:00.000Z
   - id: a5000001-0001-4000-8000-000000000002
     scope: agent
-    owner_slug: system-seed
+    owner_user_id: null
     agent_id: factchecker
     title: Trust classes and B 0.5% rule
     body: >
@@ -72,7 +72,7 @@ entries:
     updated_at: 2026-08-09T12:00:00.000Z
   - id: a5000001-0001-4000-8000-000000000003
     scope: agent
-    owner_slug: system-seed
+    owner_user_id: null
     agent_id: factchecker
     title: Verdict validation matrix
     body: >
@@ -98,7 +98,7 @@ entries:
     updated_at: 2026-08-09T12:00:00.000Z
   - id: a5000001-0001-4000-8000-000000000004
     scope: agent
-    owner_slug: system-seed
+    owner_user_id: null
     agent_id: factchecker
     title: Tools map and journal n/a
     body: >
@@ -124,7 +124,7 @@ entries:
     updated_at: 2026-08-09T12:00:00.000Z
   - id: a5000001-0001-4000-8000-000000000005
     scope: agent
-    owner_slug: system-seed
+    owner_user_id: null
     agent_id: factchecker
     title: REDO target map
     body: >

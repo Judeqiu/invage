@@ -4,7 +4,7 @@ updated_at: 2026-08-08T20:00:00.000Z
 entries:
   - id: a4000001-0001-4000-8000-000000000001
     scope: agent
-    owner_slug: system-seed
+    owner_user_id: null
     agent_id: real-estate-expert
     title: Real Estate Expert hard rules
     body: >
@@ -42,7 +42,7 @@ entries:
     updated_at: 2026-08-08T20:00:00.000Z
   - id: a4000001-0001-4000-8000-000000000002
     scope: agent
-    owner_slug: system-seed
+    owner_user_id: null
     agent_id: real-estate-expert
     title: Real Estate Expert tools map
     body: >
@@ -82,7 +82,7 @@ entries:
     updated_at: 2026-08-08T20:00:00.000Z
   - id: a4000001-0001-4000-8000-000000000003
     scope: agent
-    owner_slug: system-seed
+    owner_user_id: null
     agent_id: real-estate-expert
     title: Property analysis recipes
     body: >
@@ -138,7 +138,7 @@ entries:
     updated_at: 2026-08-08T20:00:00.000Z
   - id: a4000001-0001-4000-8000-000000000004
     scope: agent
-    owner_slug: system-seed
+    owner_user_id: null
     agent_id: real-estate-expert
     title: Hand-off matrix
     body: >
@@ -173,7 +173,7 @@ entries:
     updated_at: 2026-08-08T20:00:00.000Z
   - id: a4000001-0001-4000-8000-000000000005
     scope: agent
-    owner_slug: system-seed
+    owner_user_id: null
     agent_id: real-estate-expert
     title: Help-first and deferred property re-checks
     body: >

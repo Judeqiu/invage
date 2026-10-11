@@ -4,7 +4,7 @@ updated_at: 2026-08-08T12:00:00.000Z
 entries:
   - id: a3000001-0001-4000-8000-000000000001
     scope: agent
-    owner_slug: system-seed
+    owner_user_id: null
     agent_id: investment-advisor
     title: InvestmentAdvisor hard rules
     body: >
@@ -46,7 +46,7 @@ entries:
     updated_at: 2026-08-08T12:00:00.000Z
   - id: a3000001-0001-4000-8000-000000000002
     scope: agent
-    owner_slug: system-seed
+    owner_user_id: null
     agent_id: investment-advisor
     title: InvestmentAdvisor tools map
     body: >
@@ -84,7 +84,7 @@ entries:
     updated_at: 2026-08-08T12:00:00.000Z
   - id: a3000001-0001-4000-8000-000000000003
     scope: agent
-    owner_slug: system-seed
+    owner_user_id: null
     agent_id: investment-advisor
     title: Playbook application
     body: >
@@ -137,7 +137,7 @@ entries:
     updated_at: 2026-08-08T12:00:00.000Z
   - id: a3000001-0001-4000-8000-000000000004
     scope: agent
-    owner_slug: system-seed
+    owner_user_id: null
     agent_id: investment-advisor
     title: Analysis recipes
     body: >
@@ -222,7 +222,7 @@ entries:
     updated_at: 2026-08-09T12:00:00.000Z
   - id: a3000001-0001-4000-8000-000000000008
     scope: agent
-    owner_slug: system-seed
+    owner_user_id: null
     agent_id: investment-advisor
     title: Research analyst pack (Part H)
     body: >
@@ -287,7 +287,7 @@ entries:
     updated_at: 2026-08-09T12:00:00.000Z
   - id: a3000001-0001-4000-8000-000000000005
     scope: agent
-    owner_slug: system-seed
+    owner_user_id: null
     agent_id: investment-advisor
     title: Hand-off matrix
     body: >
@@ -329,7 +329,7 @@ entries:
     updated_at: 2026-08-08T12:00:00.000Z
   - id: a3000001-0001-4000-8000-000000000006
     scope: agent
-    owner_slug: system-seed
+    owner_user_id: null
     agent_id: investment-advisor
     title: Output templates (short)
     body: >
@@ -382,7 +382,7 @@ entries:
     updated_at: 2026-08-09T12:00:00.000Z
   - id: a3000001-0001-4000-8000-000000000007
     scope: agent
-    owner_slug: system-seed
+    owner_user_id: null
     agent_id: investment-advisor
     title: Help-first and async observe tasks
     body: >

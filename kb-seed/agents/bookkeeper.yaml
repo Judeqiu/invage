@@ -4,7 +4,7 @@ updated_at: 2026-08-08T10:00:00.000Z
 entries:
   - id: a1000001-0001-4000-8000-000000000001
     scope: agent
-    owner_slug: system-seed
+    owner_user_id: null
     agent_id: bookkeeper
     title: Bookkeeper hard rules
     body: >
@@ -47,7 +47,7 @@ entries:
     updated_at: 2026-08-08T10:00:00.000Z
   - id: a1000001-0001-4000-8000-000000000002
     scope: agent
-    owner_slug: system-seed
+    owner_user_id: null
     agent_id: bookkeeper
     title: Bookkeeper tools map
     body: |
@@ -81,7 +81,7 @@ entries:
     updated_at: 2026-08-08T10:00:00.000Z
   - id: a1000001-0001-4000-8000-000000000003
     scope: agent
-    owner_slug: system-seed
+    owner_user_id: null
     agent_id: bookkeeper
     title: Cash and deposit journal recipes
     body: >
@@ -125,7 +125,7 @@ entries:
     updated_at: 2026-08-08T10:00:00.000Z
   - id: a1000001-0001-4000-8000-000000000004
     scope: agent
-    owner_slug: system-seed
+    owner_user_id: null
     agent_id: bookkeeper
     title: Fund screenshot reconcile recipe
     body: >
@@ -172,7 +172,7 @@ entries:
     updated_at: 2026-08-08T10:00:00.000Z
   - id: a1000001-0001-4000-8000-000000000005
     scope: agent
-    owner_slug: system-seed
+    owner_user_id: null
     agent_id: bookkeeper
     title: Reconcile and read recipes
     body: >
@@ -215,7 +215,7 @@ entries:
     updated_at: 2026-08-08T10:00:00.000Z
   - id: a1000001-0001-4000-8000-000000000006
     scope: agent
-    owner_slug: system-seed
+    owner_user_id: null
     agent_id: bookkeeper
     title: Help-first and deferred reconcile
     body: >

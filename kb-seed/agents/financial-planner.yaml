@@ -4,7 +4,7 @@ updated_at: 2026-08-08T10:00:00.000Z
 entries:
   - id: a2000001-0001-4000-8000-000000000001
     scope: agent
-    owner_slug: system-seed
+    owner_user_id: null
     agent_id: financial-planner
     title: FinancialPlanner hard rules
     body: >
@@ -42,7 +42,7 @@ entries:
     updated_at: 2026-08-08T10:00:00.000Z
   - id: a2000001-0001-4000-8000-000000000002
     scope: agent
-    owner_slug: system-seed
+    owner_user_id: null
     agent_id: financial-planner
     title: HARD vs SOFT opportunity cost
     body: >
@@ -83,7 +83,7 @@ entries:
     updated_at: 2026-08-08T10:00:00.000Z
   - id: a2000001-0001-4000-8000-000000000003
     scope: agent
-    owner_slug: system-seed
+    owner_user_id: null
     agent_id: financial-planner
     title: Debt and liquidity strategies
     body: >
@@ -121,7 +121,7 @@ entries:
     updated_at: 2026-08-08T10:00:00.000Z
   - id: a2000001-0001-4000-8000-000000000004
     scope: agent
-    owner_slug: system-seed
+    owner_user_id: null
     agent_id: financial-planner
     title: FinancialPlanner tools map
     body: >
@@ -184,7 +184,7 @@ entries:
     updated_at: 2026-08-08T10:00:00.000Z
   - id: a2000001-0001-4000-8000-000000000005
     scope: agent
-    owner_slug: system-seed
+    owner_user_id: null
     agent_id: financial-planner
     title: Payment plan recipes
     body: >
@@ -250,7 +250,7 @@ entries:
     updated_at: 2026-08-08T10:00:00.000Z
   - id: a2000001-0001-4000-8000-000000000006
     scope: agent
-    owner_slug: system-seed
+    owner_user_id: null
     agent_id: financial-planner
     title: Help-first and deferred re-plans
     body: >
