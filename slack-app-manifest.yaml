@@ -1,4 +1,4 @@
-# Slack App Manifest for Invester (Invage)
+# Slack App Manifest for WalletStreet (Invage)
 #
 # Create the app:
 #   1. https://api.slack.com/apps → Create New App → From an app manifest
@@ -25,17 +25,17 @@
 # invite-to-channel command. Use /invitecode instead (matches Utarus).
 
 display_information:
-  name: Invester
+  name: WalletStreet
   description: AI portfolio analyst — holdings, 3-axis analysis, BinDrive reports (Utarus).
   background_color: "#1a1a2e"
   long_description: |
-    Invester (Invage) is a portfolio analysis agent. Chat in DM or @mention in channels.
+    WalletStreet (Invage) is a portfolio analysis agent. Chat in DM or @mention in channels.
     Track holdings, run Laggards / Overpriced / Buy Opportunity analysis, save reports
     to BinDrive. Invite-gated onboarding. Same backend also supports Telegram.
 
 features:
   bot_user:
-    display_name: Invester
+    display_name: WalletStreet
     always_online: true
 
   app_home:
@@ -46,12 +46,12 @@ features:
   # request_url is required by the manifest schema; Socket Mode ignores it at runtime.
   slash_commands:
     - command: /help
-      description: Show Invester commands
+      description: Show WalletStreet commands
       usage_hint: "(no arguments)"
       url: https://example.com/slack/commands
       should_escape: false
     - command: /guidance
-      description: How to use Invester (skills and workflows)
+      description: How to use WalletStreet (skills and workflows)
       usage_hint: "[start|portfolio|analysis|research|reports|skills|admin|chat]"
       url: https://example.com/slack/commands
       should_escape: false

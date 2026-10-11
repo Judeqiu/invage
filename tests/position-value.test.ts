@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  assertHolding,
   buildHoldingKey,
   buildOptionKey,
   equityQuoteSymbol,
@@ -180,6 +181,62 @@ describe('fund holdings', () => {
     expect(live.equityCount).toBe(1);
     expect(live.positionCount).toBe(2);
     expect(live.equityValue).toBe(5000 + 550);
+  });
+});
+
+describe('holding custody extras (any broker)', () => {
+  it('accepts pledged/lent/right_to_use and native_id', () => {
+    const h: Holding = {
+      avg_price: 10,
+      units: 100,
+      channel: 'ibkr',
+      encumbrance: { kind: 'lent', units: 40 },
+      broker_ref: { native_id: '265598', listing_exchange: 'NASDAQ' },
+    };
+    assertHolding('AAPL@ibkr', h);
+    expect(h.encumbrance).toEqual({ kind: 'lent', units: 40 });
+    expect(h.broker_ref).toEqual({ native_id: '265598', listing_exchange: 'NASDAQ' });
+  });
+
+  it('rejects broker-specific field names', () => {
+    expect(() =>
+      assertHolding('AAPL', {
+        avg_price: 10,
+        units: 10,
+        encumbrance: { kind: 'lent_syep', units: 1 },
+      } as Holding),
+    ).toThrow(/pledged\|lent\|right_to_use/);
+    expect(() =>
+      assertHolding('AAPL', {
+        avg_price: 10,
+        units: 10,
+        broker_ref: { conid: '265598' },
+      } as Holding),
+    ).toThrow(/unknown broker_ref field "conid"/);
+  });
+
+  it('fails when encumbered units exceed the lot', () => {
+    expect(() =>
+      assertHolding('PATH', {
+        avg_price: 10,
+        units: 5,
+        encumbrance: { kind: 'pledged', units: 6 },
+      }),
+    ).toThrow(/cannot exceed holding.units/);
+  });
+
+  it('NAV still uses full units when part of the lot is lent', () => {
+    const e = valuePosition(
+      'PATH',
+      {
+        avg_price: 10,
+        units: 100,
+        encumbrance: { kind: 'lent', units: 80 },
+      },
+      12,
+    );
+    expect(e.units).toBe(100);
+    expect(e.value).toBe(1200);
   });
 });
 

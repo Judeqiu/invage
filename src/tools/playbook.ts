@@ -1,12 +1,15 @@
 import { Type } from 'typebox';
 import type { AgentTool, AgentToolResult } from '@earendil-works/pi-agent-core';
-import { saveState } from 'utarus';
+import { saveInvestor } from '../state/investor-store.js';
 import {
   PHILOSOPHIES,
   REBALANCE_MODES,
   RISK_PROFILES,
   STRATEGIES,
+  WATCH_INSTRUMENTS,
+  addWatchProduct,
   formatPlaybookSummary,
+  removeWatchProduct,
   type Philosophy,
   type PlaybookPatch,
   type RebalanceMode,
@@ -30,19 +33,20 @@ function failFrom(error: unknown): AgentToolResult<null> {
   return fail(error instanceof Error ? error.message : String(error));
 }
 
-/** Read-only playbook tool for analysis peers (e.g. Investment Expert). */
+/** Read-only playbook tool for analysis peers (e.g. InvestmentAdvisor). */
 export function createGetPlaybookTool(): AgentTool {
   return {
     name: 'get_playbook',
     label: 'Get Investment Playbook',
     description:
-      "Retrieve the user's investment playbook (strategy, philosophy, risk, allocation, buy/sell, rebalancing, watchlists). " +
+      "Retrieve the user's investment playbook (strategy, philosophy, risk, allocation, buy/sell, rebalancing, watchlists including named products). " +
       'Missing config returns the balanced market-standard defaults. Pass telegram_user_id or slack_user_id from message context.',
     parameters: Type.Object({ ...channelIdParams }),
     async execute(_id, raw) {
       const p = raw as ChannelIds;
       try {
-        const state = resolveInvestorFromChannel(p);
+        const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
         const playbook = getPlaybook(state);
         const configured = state.playbook != null;
         const text =
@@ -132,7 +136,8 @@ export function createPlaybookTools(): AgentTool[] {
         themes?: string[];
       };
       try {
-        const state = resolveInvestorFromChannel(p);
+        const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
         const patch: PlaybookPatch = {};
 
         if (p.strategy != null) patch.strategy = p.strategy as Strategy;
@@ -210,7 +215,7 @@ export function createPlaybookTools(): AgentTool[] {
           action: 'playbook_updated',
           fields: Object.keys(patch),
         });
-        saveState(state);
+        await saveInvestor(snapshot);
 
         return ok(`Updated playbook.\n\n${formatPlaybookSummary(playbook)}`, {
           playbook,
@@ -222,5 +227,89 @@ export function createPlaybookTools(): AgentTool[] {
     },
   };
 
-  return [getPlaybookTool, updatePlaybookTool];
+  const addWatchProductTool: AgentTool = {
+    name: 'add_watch_product',
+    label: 'Add Watch Product',
+    description:
+      "Add a named financial product to the user's playbook watch list (interest only — not a holding). " +
+      'Yahoo-quotable equity or fund symbols only. Duplicate symbol fails. ' +
+      'Pass telegram_user_id or slack_user_id or user_slug from message context.',
+    parameters: Type.Object({
+      ...channelIdParams,
+      symbol: Type.String({ description: 'Quote symbol (e.g. AAPL, 2800.HK).' }),
+      instrument: Type.String({
+        description: `One of: ${WATCH_INSTRUMENTS.join(', ')}`,
+      }),
+      note: Type.Optional(Type.String({ description: 'Optional short reason for watching.' })),
+    }),
+    async execute(_id, raw) {
+      const p = raw as ChannelIds & { symbol: string; instrument: string; note?: string };
+      try {
+        const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
+        const current = getPlaybook(state);
+        const products = addWatchProduct(current.watchlists.products, {
+          symbol: p.symbol,
+          instrument: p.instrument,
+          note: p.note,
+        });
+        const playbook = updatePlaybook(state, { watchlists: { products } });
+        const added = playbook.watchlists.products.find(
+          (x) => x.symbol === p.symbol.trim().toUpperCase(),
+        );
+        if (!added) {
+          throw new Error('add_watch_product: product missing after save');
+        }
+        state.log.push({
+          ts: new Date().toISOString().slice(0, 10),
+          action: 'watch_product_added',
+          symbol: added.symbol,
+        });
+        await saveInvestor(snapshot);
+        return ok(`Added ${added.symbol} to the watch list.\n\n${formatPlaybookSummary(playbook)}`, {
+          playbook,
+          added,
+        });
+      } catch (e) {
+        return failFrom(e);
+      }
+    },
+  };
+
+  const removeWatchProductTool: AgentTool = {
+    name: 'remove_watch_product',
+    label: 'Remove Watch Product',
+    description:
+      "Remove a named product from the user's playbook watch list. Missing symbol fails. " +
+      'Pass telegram_user_id or slack_user_id or user_slug from message context.',
+    parameters: Type.Object({
+      ...channelIdParams,
+      symbol: Type.String({ description: 'Quote symbol to remove.' }),
+    }),
+    async execute(_id, raw) {
+      const p = raw as ChannelIds & { symbol: string };
+      try {
+        const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
+        const current = getPlaybook(state);
+        const products = removeWatchProduct(current.watchlists.products, p.symbol);
+        const playbook = updatePlaybook(state, { watchlists: { products } });
+        const symbol = p.symbol.trim().toUpperCase();
+        state.log.push({
+          ts: new Date().toISOString().slice(0, 10),
+          action: 'watch_product_removed',
+          symbol,
+        });
+        await saveInvestor(snapshot);
+        return ok(`Removed ${symbol} from the watch list.\n\n${formatPlaybookSummary(playbook)}`, {
+          playbook,
+          removed: symbol,
+        });
+      } catch (e) {
+        return failFrom(e);
+      }
+    },
+  };
+
+  return [getPlaybookTool, updatePlaybookTool, addWatchProductTool, removeWatchProductTool];
 }

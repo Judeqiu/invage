@@ -31,6 +31,11 @@ export function playbookAgentGuidance(pb: InvestmentPlaybook): string {
       `Watchlists (prefer these universes for discovery when the user does not name a ticker): ${wl.join('; ')}.`,
     );
   }
+  if (pb.watchlists.products.length) {
+    parts.push(
+      `Named watch products (interest list, not holdings): ${pb.watchlists.products.map((p) => p.symbol).join(', ')}.`,
+    );
+  }
 
   parts.push(
     'When recommending size: express as % of portfolio and respect position/sector caps; flag breaches. ' +

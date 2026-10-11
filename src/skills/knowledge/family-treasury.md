@@ -1,6 +1,6 @@
 # Family Treasury & Projections
 
-**Invester skill** for household books and **deterministic** multi-year projections (cash flow, net worth path, house affordability). Complements portfolio tools — does not replace investment-analysis.
+**WalletStreet skill** for household books and **deterministic** multi-year projections (cash flow, net worth path, house affordability). Complements portfolio tools — does not replace investment-analysis.
 
 Load when the user asks about:
 
@@ -21,7 +21,7 @@ Load when the user asks about:
 5. **Property purchase cash** (OTP / booking / S&P / PPS) lives on `properties[].payments` via `record_property_payment`. Omit payments = paid_to_date **unknown** (not zero). Cash reduction alone is incomplete.  
 6. **Deposits stay locked** until maturity (principal only at maturity in projections).  
 7. **Do not auto-inflate** expense lines; inflation assumption is transparency only in v1.  
-8. **Still Invester** — not a licensed advisor; educational/planning framing.  
+8. **Still WalletStreet** — not a licensed advisor; educational/planning framing.  
 9. **SG stamp duties / comps / yield** — when stamp duty or comps affect affordability cash need, also load `sg-real-estate-portfolio` and verify duties this turn before inventing `one_off` amounts. Do not invent ABSD/BSD/SSD from memory.
 
 ---

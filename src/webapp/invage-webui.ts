@@ -1,8 +1,8 @@
 /**
  * Invage DomainExtension.webUi — Dashboard tab + chat empty-state guidance.
  *
- * Nav "Dashboard" → iframe route → static page under domain-assets
- * that fetches live data from /api/domain/invage/dashboard.
+ * Nav "Dashboard" / "Watch List" / "Brokers" → iframe routes → static pages under
+ * domain-assets that fetch /api/domain/invage/dashboard|watchlist|broker-connections.
  *
  * chatEmptyState: WebUI-only hero on new / empty conversations
  * (utarus SPA manifest → ChatPage).
@@ -11,6 +11,10 @@
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import type { DomainWebUiExtension } from 'utarus';
+import { productDisplayName } from '../product-name.js';
+import { type ProductProfileId, readProductProfile } from '../agents/roster.js';
+import { readFlexEgressIpv4 } from '../brokers/egress.js';
+import { createBrokerConnectionsRouter } from './broker-api.js';
 import { createDashboardApiRouter } from './dashboard-api.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -29,7 +33,7 @@ export const INVAGE_CHAT_EMPTY_STATE = {
   title: 'Your investment analyst — with household books',
   body: [
     'I analyze portfolios (live marks, playbook, undervalued screens) and can keep household books for cash flow and big decisions like buying a house.',
-    'Use the Dashboard tab for portfolio value. For family net worth or 5-year cash flow, set treasury data then ask me to project.',
+    'Use the Dashboard tab for portfolio value, Watch List for playbook names, and Brokers to connect Interactive Brokers Flex. Bookkeeper journals the ledger; InvestmentAdvisor researches; AIDeal runs the Aideal sleeve pack; Factchecker audits numbers before the final answer.',
   ],
   bullets: [
     'Import or add holdings (equity / fund / options) · set free cash and fixed deposits',
@@ -62,23 +66,59 @@ export const INVAGE_CHAT_EMPTY_STATE = {
       message:
         'Help me run a house affordability scenario. First check what household data I already have, then ask only for the missing purchase details.',
     },
+    {
+      label: 'Aideal sleeve pack',
+      message:
+        'Run the Aideal sleeve scorecard for today (all sleeves) and tell me what lots are missing category tags.',
+    },
   ],
   footer:
     'Tables, code, and BinDrive reports render inline. Select text to quote it into your next message. Educational analysis only — not licensed financial advice.',
 } as const;
 
+export function chatEmptyStateFor(profile: ProductProfileId): {
+  title: string;
+  body: string[];
+  bullets: string[];
+  starters: Array<{ label: string; message: string }>;
+  footer: string;
+} {
+  if (profile === 'consultant') {
+    return {
+      title: INVAGE_CHAT_EMPTY_STATE.title,
+      body: [
+        'I analyze portfolios (live marks, playbook, undervalued screens) and can keep household books for cash flow and big decisions.',
+        'Use the Dashboard tab for portfolio value, Watch List for playbook names, and Brokers to connect Interactive Brokers Flex. Bookkeeper journals the ledger; InvestmentAdvisor researches securities; OptionsExpert reads listed calls/puts; Factchecker audits numbers before the final answer.',
+      ],
+      bullets: [...INVAGE_CHAT_EMPTY_STATE.bullets],
+      starters: [
+        ...INVAGE_CHAT_EMPTY_STATE.starters.filter((s) => s.label !== 'Aideal sleeve pack'),
+        {
+          label: 'Options insight',
+          message:
+            'If I have option lots, analyse those contracts. Otherwise show the listed call/put chain on my largest equity (or SPY) for the nearest expiry: moneyness, time value, and defined vs undefined risk. Do not invent IV or Greeks.',
+        },
+      ],
+      footer: INVAGE_CHAT_EMPTY_STATE.footer,
+    };
+  }
+  return {
+    title: INVAGE_CHAT_EMPTY_STATE.title,
+    body: [...INVAGE_CHAT_EMPTY_STATE.body],
+    bullets: [...INVAGE_CHAT_EMPTY_STATE.bullets],
+    starters: INVAGE_CHAT_EMPTY_STATE.starters.map((s) => ({ ...s })),
+    footer: INVAGE_CHAT_EMPTY_STATE.footer,
+  };
+}
+
 export function createInvageWebUi(): DomainWebUiExtension {
+  readFlexEgressIpv4();
+  const empty = chatEmptyStateFor(readProductProfile());
   return {
     agentKey: 'invage',
-    productName: 'Invester',
-    defaultPath: '/',
-    chatEmptyState: {
-      title: INVAGE_CHAT_EMPTY_STATE.title,
-      body: [...INVAGE_CHAT_EMPTY_STATE.body],
-      bullets: [...INVAGE_CHAT_EMPTY_STATE.bullets],
-      starters: INVAGE_CHAT_EMPTY_STATE.starters.map((s) => ({ ...s })),
-      footer: INVAGE_CHAT_EMPTY_STATE.footer,
-    },
+    productName: productDisplayName(),
+    defaultPath: '/dashboard',
+    chatEmptyState: empty,
     nav: [
       {
         id: 'dashboard',
@@ -86,6 +126,41 @@ export function createInvageWebUi(): DomainWebUiExtension {
         path: '/dashboard',
         icon: 'layout-dashboard',
         order: 10,
+      },
+      {
+        id: 'positions',
+        label: 'Positions',
+        path: '/positions',
+        icon: 'table',
+        order: 11,
+      },
+      {
+        id: 'watchlist',
+        label: 'Watch List',
+        path: '/watchlist',
+        icon: 'star',
+        order: 12,
+      },
+      {
+        id: 'trades',
+        label: 'Trades',
+        path: '/trades',
+        icon: 'list',
+        order: 13,
+      },
+      {
+        id: 'insights',
+        label: 'Insights',
+        path: '/insights',
+        icon: 'sparkles',
+        order: 14,
+      },
+      {
+        id: 'brokers',
+        label: 'Brokers',
+        path: '/brokers',
+        icon: 'landmark',
+        order: 15,
       },
     ],
     routes: [
@@ -95,11 +170,56 @@ export function createInvageWebUi(): DomainWebUiExtension {
         iframeSrc: '/domain-assets/invage/dashboard/index.html',
         title: 'Portfolio Dashboard',
       },
+      {
+        path: '/positions',
+        pageKind: 'iframe',
+        iframeSrc: '/domain-assets/invage/positions/index.html',
+        title: 'Positions',
+      },
+      {
+        path: '/watchlist',
+        pageKind: 'iframe',
+        iframeSrc: '/domain-assets/invage/watchlist/index.html',
+        title: 'Watch List',
+      },
+      {
+        path: '/trades',
+        pageKind: 'iframe',
+        iframeSrc: '/domain-assets/invage/trades/index.html',
+        title: 'Trades',
+      },
+      {
+        path: '/insights',
+        pageKind: 'iframe',
+        iframeSrc: '/domain-assets/invage/insights/index.html',
+        title: 'Insights',
+      },
+      {
+        path: '/brokers',
+        pageKind: 'iframe',
+        iframeSrc: '/domain-assets/invage/brokers/index.html',
+        title: 'Brokers',
+      },
+    ],
+    settingsSections: [
+      {
+        id: 'brokers',
+        title: 'Brokers',
+        description: 'Connect read-only brokerage channels',
+        icon: 'landmark',
+        iframeSrc: '/domain-assets/invage/settings/brokers/index.html',
+        iframeHeightPx: 400,
+      },
     ],
     apiRouters: [
       {
         mountPath: '',
         router: createDashboardApiRouter(),
+        auth: 'user',
+      },
+      {
+        mountPath: '',
+        router: createBrokerConnectionsRouter(),
         auth: 'user',
       },
     ],

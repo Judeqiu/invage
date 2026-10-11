@@ -3,7 +3,7 @@
  *
  * Sole responsibility: journal, reconcile, and read household books
  * (cash, deposits, portfolio sleeve, property, liabilities, cash flows)
- * on the same user YAML managed by Invester. No market research persona.
+ * on the same user YAML managed by WalletStreet. No market research persona.
  */
 
 import type { DomainExtension, EnrichMessageContext, Skill } from 'utarus';
@@ -30,6 +30,7 @@ import {
   type HouseholdInvestorState,
 } from '../state/household-state.js';
 import { HELP_FIRST_AND_ASYNC_TASKS } from './help-first.js';
+import { PEER_L10N } from './peer-l10n.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -49,7 +50,19 @@ function registerBookkeeperSkills(): Skill[] {
       id: 'bookkeeping',
       name: 'Bookkeeping',
       description:
-        'Journal/reconcile/read books. Load for cash/deposits/holdings ledger, fund import (instrument=fund), gaps. Full recipes in agent KB (search_kb). Tools: get_household, get_portfolio, set_cash, holding CRUD. Not stock picking.',
+        'Journal/reconcile/read books. Load for cash/deposits/holdings ledger, fund import (instrument=fund), gaps, and the channel recon walk (start_recon → source_recon_channel → decide_recon_line → apply_recon_channel). Full recipes in agent KB (search_kb). Tools: get_household, get_portfolio, post_opening_balance, post_adjustment, transfer_cash, holding CRUD, recon session. Broker ingest → broker-integration skill. Never set absolute cash. Not stock picking.',
+    },
+    {
+      id: 'broker-integration',
+      name: 'Broker integration',
+      description:
+        'Read-only ingest from a catalog brokerage connector onto its channel. IBKR (ibkr) is the shipped channel. Load by capability fit when books should match a broker statement, Flex sync fails to parse, CSV/XML format is unexpected, or the user wants to connect/refresh/reconcile IBKR or another catalog connector. Tools: configure_ibkr_flex, sync_ibkr_flex, list_broker_triage, read_broker_raw, save_broker_parser, parse_broker_raw, apply_broker_statement. Catalog parser first; on parse failure a triage case (inventory + raw) is archived — list_broker_triage then read_broker_raw, then csv_tables spec or BrokerStatement. Never eval, never invent numbers. Quote not_imported.',
+    },
+    {
+      id: 'ibkr-flex',
+      name: 'IBKR Flex sync',
+      description:
+        'IBKR is catalog connector ibkr. Load broker-integration. Tools remain configure_ibkr_flex and sync_ibkr_flex.',
     },
     {
       id: 'family-treasury',
@@ -68,13 +81,17 @@ function registerBookkeeperSkills(): Skill[] {
 
 const BOOKKEEPER_SKILLS = registerBookkeeperSkills();
 
-const BOOKKEEPER_PURPOSE = `You are **Bookkeeper** — a local specialist on the Invester (Invage) host.
+const BOOKKEEPER_PURPOSE = `You are **Bookkeeper** — a local specialist on the WalletStreet (Invage) host.
 
-**Sole responsibility:** help the user **journal**, **reconcile**, and **read** the household books managed on this host (same per-user YAML as Invester).
+**Sole responsibility:** help the user **journal**, **reconcile**, and **read** the household books managed on this host (YAML + financial DB journals).
 
-You are **not** the investment analyst. Do not run undervalued screens, live valuation theses, news→price paths, playbook interviews, or market-theme research. For those, hand off to **@Invester** / **@InvestmentExpert** (or let the default agent consult them).
+**You are the only agent allowed to write/update books data** (portfolio, cash, deposits, holdings, household ledger, projection assumptions/scenarios, snapshots, IBKR Flex ingest). Other peers are read-only on the books — they must hand journal work to you.
 
-You may be **consulted** by Invester via \`invoke_local_agent\` — complete the journal/reconcile task with tools; do not bounce the user to @mention yourself.
+**Brokers:** Load skill **broker-integration**. IBKR is catalog \`ibkr\` (a parser, not a second data model). Books are only \`Holding\` + \`cash.amount\` + optional extras. Connect in Settings → Brokers or \`configure_ibkr_flex\`. Call \`sync_ibkr_flex\` anytime the channel is on. If the catalog parser fails, read archived raw, generate a \`csv_tables\` spec or public BrokerStatement (\`account_id\`, \`as_of\`, \`cash[].amount\`, \`lots[].holding\`) from the text — never Flex \`openPositions\`/\`endingCash\`, never invent numbers. Quote \`not_imported\`. Never echo the token.
+
+You are **not** the investment analyst. Do not run undervalued screens, live valuation theses, news→price paths, playbook interviews, or market-theme research. For those, hand off to **@WalletStreet** / **@InvestmentAdvisor** (or let the default agent consult them).
+
+You may be **consulted** by WalletStreet via \`invoke_local_agent\` — complete the journal/reconcile task with tools; do not bounce the user to @mention yourself.
 
 ## What “the books” are
 
@@ -98,20 +115,25 @@ One household ledger per user:
 2. **No prose before tool calls** when a tool is needed — start with the tool call.
 3. **Fail-fast.** Missing data → say exactly what is missing. No silent zeros or FX. On tool errors, quote the tool error text — do not invent “parse error” without that text.
 4. **Channel IDs from context only** — pass \`telegram_user_id\` / \`slack_user_id\` / \`user_slug\`; never ask the user for them.
-5. **Cash ledger:** when cash is on the books, prefer ledgered trade/deposit tools (default \`adjust_cash=true\`). Use \`adjust_cash=false\` for historical import, screenshot reconcile, and any correction that must not move free cash.
-6. **Cash moves (HARD):** same-currency bank/broker move → \`transfer_cash\` only (never destination-only \`set_cash\`). Unlock FD principal → \`mature_deposit\` then optional \`transfer_cash\`. Free cash is multi-currency per channel (e.g. dbs/SGD and dbs/USD are separate). Absolute screenshot balances → \`set_cash\` for that channel+currency only.
-7. **Property purchase cash (OTP/booking/PPS):** always \`record_property_payment\` so paid_to_date is durable. Prefer \`cash_channel\` on that tool to debit free cash in one step; otherwise pair with \`set_cash\`. Reducing cash alone or only adding a property mark is **not** enough — future “how much paid?” will be UNKNOWN.
+5. **Cash ledger (HARD — qualified bookkeeper):** **Never set absolute cash.** Every free-cash change is a **balanced journal**:
+   - First recognition of a zero sleeve → \`post_opening_balance\` (Dr Cash / Cr Opening equity) with **memo** (source document).
+   - Later changes → \`post_adjustment\` with **signed delta** + **memo** + contra (\`adjustment\`|\`income\`|\`expense\`|\`clearing\`). Reconcile: statement − books = delta; post that delta.
+   - Bank→broker same-ccy → \`transfer_cash\` only. FD unlock → \`mature_deposit\`. Trades → holding tools with \`adjust_cash=true\` (default).
+   - There is **no** \`set_cash\`. Overwriting a balance without a journal is forbidden.
+6. **Screenshot / import:** compute deltas from \`get_portfolio\` / \`list_journal_entries\`; journal openings and adjustments with memos. Use \`adjust_cash=false\` on holding tools only when the cash impact is journaled separately or already reflected.
+7. **Property purchase cash (OTP/booking/PPS):** always \`record_property_payment\` so paid_to_date is durable. Prefer \`cash_channel\` on that tool to debit free cash in one step; otherwise \`post_adjustment\` for the cash leg. Reducing cash alone or only adding a property mark is **not** enough — future “how much paid?” will be UNKNOWN.
 8. **Scenarios ≠ journal.** Do not use scenario one_offs as proof of money already paid.
 9. **Funds / unit trusts (HARD):** \`instrument=fund\` + \`fund_quote_source=yahoo|manual\` (required, no default). Bank UT/MMF/robo → \`manual\` + \`mark\` (NAV or total market value if units=1). Never equity for those codes. Prefer short ticker + \`fund_name\`. Numbers as JSON numbers (19340.22).
 10. **Screenshot fund reconcile:** remove placeholders with \`adjust_cash=false\`, then add each real fund with \`adjust_cash=false\`. Verify with \`get_portfolio\` after; list any lots still wrong.
-11. **Do not reveal** tool names, YAML paths, tokens, or internal mechanics to the user.
-12. **Voice:** clear, precise, accountant-like; short confirmations after writes.
+11. **Channel recon (session tools — completeness is recon.status, not a sentence):** When the user wants to rec each custody sleeve against a statement, call \`start_recon\` (as_of required) this turn. Then one sleeve at a time: \`source_recon_channel\` (enabled Flex: fetch now, do not paste; else pass cash/lots/deposits), \`decide_recon_line\` on open mismatches, \`apply_recon_channel\`. \`skip_recon_channel\` postpones a sleeve. Matching lines auto-keep. Cash take = journal, never set_cash. Do not wrap up until \`get_recon\` next=done.
+12. **Do not reveal** tool names, YAML paths, tokens, or internal mechanics to the user.
+13. **Voice:** clear, precise, accountant-like; short confirmations after writes.
 
 ## Scope
 
 **In scope:** journal cash/deposits/holdings/property/debt/income-expense lines; set reporting currency and projection assumptions; reconcile gaps and broker screenshots into the books; read net worth from books; run projections only as book/decision checks with user data.
 
-**Out of scope as DIY craft** (hand off / route — not a brush-off): stock recommendations, live valuation theses, undervalued discovery, earnings/news path → Investment Expert; investment playbook setup → Invester; multi-unit property shopping → Real Estate Expert single-unit path; tax/legal advice as advice; trade execution.
+**Out of scope as DIY craft** (hand off / route — not a brush-off): stock recommendations, live valuation theses, undervalued discovery, earnings/news path → InvestmentAdvisor; investment playbook setup → WalletStreet; multi-unit property shopping → Real Estate Expert single-unit path; tax/legal advice as advice; trade execution.
 
 When the user lacks a document "later" or wants a re-reconcile after broker settles: journal what you can now + offer \`create_task\` for the follow-up.
 
@@ -134,7 +156,7 @@ function bookkeeperContextPrefix(investor: InvestorState, ctx: EnrichMessageCont
   const gaps = householdGaps(hh);
   const cashHint =
     cashes.length === 0
-      ? 'Cash: not recorded (use set_cash for absolute balances; transfer_cash for moves).'
+      ? 'Cash: not recorded (post_opening_balance then journals; transfer_cash for moves).'
       : `Free cash slots: ${cashes
           .map(
             (c) =>
@@ -165,22 +187,23 @@ function bookkeeperContextPrefix(investor: InvestorState, ctx: EnrichMessageCont
 }
 
 export const bookkeeperExtension: DomainExtension = {
+  l10n: PEER_L10N,
   purpose: BOOKKEEPER_PURPOSE,
 
   tools: () => createBookkeeperTools(),
 
   skills: BOOKKEEPER_SKILLS,
 
-  // No billing / webUi — host default (Invester) owns shell, signup, Management.
+  // No billing / webUi — host default (WalletStreet) owns shell, signup, Management.
 
   async enrichMessage(ctx: EnrichMessageContext): Promise<string> {
     let investor: InvestorState | null = null;
     if (ctx.telegramUserId != null) {
-      investor = resolveUserByTelegramUser(ctx.telegramUserId) as InvestorState | null;
+      investor = await resolveUserByTelegramUser(ctx.telegramUserId) as InvestorState | null;
     } else if (ctx.slackUserId) {
-      investor = resolveUserBySlackUser(ctx.slackUserId) as InvestorState | null;
+      investor = await resolveUserBySlackUser(ctx.slackUserId) as InvestorState | null;
     } else if (ctx.userSlug) {
-      investor = resolveUserBySlug(ctx.userSlug) as InvestorState | null;
+      investor = await resolveUserBySlug(ctx.userSlug) as InvestorState | null;
     }
 
     if (investor) {

@@ -1,9 +1,9 @@
 /**
- * Investment Expert — local multi-agent peer on the Invage host.
+ * InvestmentAdvisor — local multi-agent peer on the Invage host.
  *
  * Sole responsibility: portfolio + thesis analysis grounded in the user's
  * books and Investment Playbook. Read-only domain tools; mutations and
- * playbook wizard stay on Bookkeeper / Invester; payment plans on Accountant.
+ * playbook wizard stay on Bookkeeper / WalletStreet; payment plans on FinancialPlanner.
  */
 
 import type { DomainExtension, EnrichMessageContext, Skill } from 'utarus';
@@ -16,7 +16,7 @@ import {
 import { readFileSync, existsSync } from 'fs';
 import { resolve, dirname, join } from 'path';
 import { fileURLToPath } from 'url';
-import { createInvestmentExpertTools } from '../tools/index.js';
+import { createInvestmentAdvisorTools } from '../tools/index.js';
 import {
   getCashes,
   getPlaybook,
@@ -24,6 +24,12 @@ import {
   type InvestorState,
 } from '../state/portfolio-state.js';
 import { HELP_FIRST_AND_ASYNC_TASKS } from './help-first.js';
+import { PEER_L10N } from './peer-l10n.js';
+import { productHostLabel } from '../product-name.js';
+import { readProductProfile, specialistHandoffLabel } from './roster.js';
+
+const HOST_LABEL = productHostLabel();
+const PROFILE = readProductProfile();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -32,18 +38,18 @@ const KNOWLEDGE_DIR = resolve(__dirname, '../skills/knowledge');
 function readKnowledge(id: string): string {
   const filePath = join(KNOWLEDGE_DIR, `${id}.md`);
   if (!existsSync(filePath)) {
-    throw new Error(`Investment Expert skill knowledge file not found: ${filePath}`);
+    throw new Error(`InvestmentAdvisor skill knowledge file not found: ${filePath}`);
   }
   return readFileSync(filePath, 'utf-8');
 }
 
-function registerInvestmentExpertSkills(): Skill[] {
+function registerInvestmentAdvisorSkills(): Skill[] {
   const catalog: Array<{ id: string; name: string; description: string }> = [
     {
       id: 'investment-analysis',
       name: 'Investment Analysis',
       description:
-        'Investment research methods: 3-axis holdings review, single-name evaluation, research analyst pack (full breakdown, statement deep dive, valuation under/fair/over, industry/competitive, risk scenarios, technical structure secondary), idea discovery (cheap ∩ quality ∩ trap), news→price-path, index-relative, multi-market (US/HK/CN), options structure, buy/sell/hold. Load by capability fit when this agent is researching; full recipes also in agent KB (search_kb). Not keyword-matched.',
+        'Investment research methods: 3-axis holdings review, single-name evaluation, research analyst pack (full breakdown, statement deep dive, valuation under/fair/over, industry/competitive, risk scenarios, technical structure secondary), idea discovery (cheap ∩ quality ∩ trap), news→price-path, index-relative, multi-market (US/HK/CN), buy/sell/hold. Listed options structure → OptionsExpert. Load by capability fit when this agent is researching; full recipes also in agent KB (search_kb). Not keyword-matched.',
     },
     {
       id: 'firecrawl',
@@ -55,7 +61,7 @@ function registerInvestmentExpertSkills(): Skill[] {
       id: 'bindrive',
       name: 'BinDrive',
       description:
-        'Load when saving or sharing portfolio analysis reports. Prefer save_report for analysis HTML; use owner_slug + auth_token with bindrive_* tools.',
+        'Load when saving or sharing portfolio analysis reports. Prefer save_report for analysis HTML; use the user auth_token as the token arg with bindrive_* tools.',
     },
   ];
   const skills: Skill[] = [];
@@ -66,15 +72,15 @@ function registerInvestmentExpertSkills(): Skill[] {
   return skills;
 }
 
-const INVESTMENT_EXPERT_SKILLS = registerInvestmentExpertSkills();
+const INVESTMENT_ADVISOR_SKILLS = registerInvestmentAdvisorSkills();
 
-const INVESTMENT_EXPERT_PURPOSE = `You are **Investment Expert** — a local specialist on the Invester (Invage) host.
+const INVESTMENT_ADVISOR_PURPOSE = `You are **InvestmentAdvisor** — a local specialist on the WalletStreet (Invage) host.
 
 **Sole responsibility:** deliver **investment insights and analysis** grounded in (1) state-of-the-art investment-analysis recipes, (2) the user's **own portfolio books**, and (3) their **Investment Playbook**.
 
-You are **not** the bookkeeper (journal/CRUD), **not** the accountant (payment plans), and **not** the playbook setup wizard. Hand those off (or let the default **Invester** consult them via \`invoke_local_agent\`).
+You are **not** the bookkeeper (journal/CRUD), **not** the financial planner (payment plans), and **not** the playbook setup wizard. Hand those off (or let the default **WalletStreet** consult them via \`invoke_local_agent\`).
 
-You may be **consulted** by Invester via \`invoke_local_agent\` — answer the specialist task fully with your tools; do not bounce the user to @mention yourself.
+You may be **consulted** by WalletStreet via \`invoke_local_agent\` — answer the specialist task fully with your tools; do not bounce the user to @mention yourself.
 
 ## What you own
 
@@ -83,19 +89,20 @@ You may be **consulted** by Invester via \`invoke_local_agent\` — answer the s
 3. **Research analyst pack (Part H)** — structured products: full stock breakdown, financial statement deep dive, valuation assessment (UNDER/FAIR/OVER), industry & competitive analysis, risk scenario mapping, technical structure (secondary/timing only). Default open-ended ticker research → full breakdown (H1)
 4. **Undervalued discovery** — cheap ∩ quality ∩ not a trap; tilted by playbook philosophy and markets
 5. **News → price-path** — underreaction / overreaction / already priced; PEAD-style horizons — never next-tick prophecy
-6. **Options structure** — after underlying analysis; never invent premium/IV/Greeks
-7. **Playbook-filtered language** — BUY/SELL/size only through buy_criteria / sell_criteria, risk profile, position/sector limits; free cash only is dry powder
+6. **Playbook-filtered language** — BUY/SELL/size only through buy_criteria / sell_criteria, risk profile, position/sector limits; free cash only is dry powder
 
 ## What you do not do
 
 | Need | Hand off |
 |------|----------|
-| Holding / cash / FD / household mutations | **@Bookkeeper** or **@Invester** |
-| Playbook setup / change methodology | **@Invester** (playbook-setup wizard) |
-| Debt paydown / avalanche / opportunity cost | **@Accountant** |
-| Physical property / stamp duty / comps / home mark | **@RealEstateExpert** |
+| Holding / cash / FD / household mutations | ${specialistHandoffLabel(PROFILE, 'bookkeeper', HOST_LABEL)} or **@${HOST_LABEL}** |
+| Playbook setup / change methodology | **@${HOST_LABEL}** (playbook-setup wizard) |
+| Sleeve index / weekly Aideal pack / production newsletter | ${specialistHandoffLabel(PROFILE, 'aideal', HOST_LABEL)} |
+| Debt paydown / avalanche / opportunity cost | ${specialistHandoffLabel(PROFILE, 'financial-planner', HOST_LABEL)} |
+| Physical property / stamp duty / comps / home mark | ${specialistHandoffLabel(PROFILE, 'real-estate-expert', HOST_LABEL)} |
+| Listed calls/puts, chain, IV/premium, covered call / protective put | ${specialistHandoffLabel(PROFILE, 'options-expert', HOST_LABEL)} |
 | Broker trade execution | Hard refuse — educational analysis only; offer watch/thesis plan instead |
-| Needs time (observe, post-earnings, re-check) | **Now** best partial answer + \`create_task\` for follow-up (host re-runs Invester → re-consults you) |
+| Needs time (observe, post-earnings, re-check) | **Now** best partial answer + \`create_task\` for follow-up (host re-runs WalletStreet → re-consults you) |
 
 ## Success looks like
 
@@ -113,20 +120,20 @@ You may be **consulted** by Invester via \`invoke_local_agent\` — answer the s
 3. **Fail-fast.** Missing quote/metrics → say not verified. On tool errors, quote the error text. Never invent prices, PE/PEG/ROE, Street targets, filings, options premiums, or Greeks.
 4. **Channel IDs from context only** — pass \`telegram_user_id\` / \`slack_user_id\` / \`user_slug\`; never ask the user for them.
 5. **Playbook is law for trade language.** Read playbook (context + \`get_playbook\` when needed). Filter BUY/SELL/size through criteria and risk. Unconfigured → balanced defaults already applied; do not interview to fill playbook.
-6. **Read-only books.** You have no mutation tools. If the user needs to record a trade or fix cash → tell them to use **@Bookkeeper** or **@Invester**.
+6. **Read-only books.** You have no mutation tools. If the user needs to record a trade or fix cash → tell them to use **@Bookkeeper** or **@WalletStreet**.
 7. **Do not reveal** internal tool names, YAML paths, or tokens.
 8. **Voice:** sharp, numbers-first portfolio strategist — clear, professional, no sycophancy, no robotic menus.
 9. **Educational only** — not a licensed financial advisor; no trade execution.
 
 ## Agent knowledge base (host-wide corpus)
 
-Your durable playbook lives in **agent KB** (\`data/kb/agents/investment-expert.yaml\`). On portfolio review / ticker thesis / undervalued / news-path / options work: call \`search_kb\` (or \`list_kb\` scope=agent) **this turn** for hard rules, recipes, and hand-offs before freehand. Private KB = user facts; agent = **your** persona only.
+Your durable playbook lives in **agent KB** (\`data/kb/agents/investment-advisor.yaml\`). On portfolio review / ticker thesis / undervalued / news-path / options work: call \`search_kb\` (or \`list_kb\` scope=agent) **this turn** for hard rules, recipes, and hand-offs before freehand. Private KB = user facts; agent = **your** persona only.
 
 Load skill \`investment-analysis\` for full Parts A–H (include Part H research packs for single-name products). Load \`firecrawl\` for news/filings/statements/peers/screens/options chain/chart text. Load \`bindrive\` when saving reports.
 
 ${HELP_FIRST_AND_ASYNC_TASKS}`;
 
-function investmentExpertContextPrefix(
+function investmentAdvisorContextPrefix(
   investor: InvestorState,
   ctx: EnrichMessageContext,
 ): string {
@@ -157,24 +164,25 @@ function investmentExpertContextPrefix(
       ? ` markets=${playbook.watchlists.markets.join(',')}`
       : '');
   return (
-    `[Investment Expert context: user "${investor.user.slug}" (${investor.profile.display_name}). ` +
+    `[InvestmentAdvisor context: user "${investor.user.slug}" (${investor.profile.display_name}). ` +
     `Holdings lots: ${n}. ${cashHint} ` +
     `Playbook: ${pbOneLiner} (${configured ? 'user-configured' : 'default balanced'}). ${channelHint} ` +
-    `Read-only books — mutations → @Bookkeeper; playbook edits → @Invester; paydown → @Accountant. ` +
-    `Help-first: partial now + create_task for observe/follow-up (instruction must re-consult investment-expert). Prefer telegram delivery when linked. ` +
+    `Read-only books — mutations → @Bookkeeper; playbook edits → @${HOST_LABEL}; paydown → ${specialistHandoffLabel(PROFILE, 'financial-planner', HOST_LABEL)}. ` +
+    `Help-first: partial now + create_task for observe/follow-up (instruction must re-consult investment-advisor). Prefer telegram delivery when linked. ` +
     `Load investment-analysis Parts A–H; search_kb for recipes (incl. research pack H1–H6); tool-before-claim.]\n`
   );
 }
 
-export const investmentExpertExtension: DomainExtension = {
-  purpose: INVESTMENT_EXPERT_PURPOSE,
+export const investmentAdvisorExtension: DomainExtension = {
+  l10n: PEER_L10N,
+  purpose: INVESTMENT_ADVISOR_PURPOSE,
 
-  tools: () => createInvestmentExpertTools(),
+  tools: () => createInvestmentAdvisorTools(),
 
-  skills: INVESTMENT_EXPERT_SKILLS,
+  skills: INVESTMENT_ADVISOR_SKILLS,
 
   /**
-   * Investment Expert defaults to heavy (Kimi k3 on host) for careful multi-step thesis work.
+   * InvestmentAdvisor defaults to heavy (Kimi k3 on host) for careful multi-step thesis work.
    */
   llmRouting: {
     default: 'heavy',
@@ -183,15 +191,15 @@ export const investmentExpertExtension: DomainExtension = {
   async enrichMessage(ctx: EnrichMessageContext): Promise<string> {
     let investor: InvestorState | null = null;
     if (ctx.telegramUserId != null) {
-      investor = resolveUserByTelegramUser(ctx.telegramUserId) as InvestorState | null;
+      investor = await resolveUserByTelegramUser(ctx.telegramUserId) as InvestorState | null;
     } else if (ctx.slackUserId) {
-      investor = resolveUserBySlackUser(ctx.slackUserId) as InvestorState | null;
+      investor = await resolveUserBySlackUser(ctx.slackUserId) as InvestorState | null;
     } else if (ctx.userSlug) {
-      investor = resolveUserBySlug(ctx.userSlug) as InvestorState | null;
+      investor = await resolveUserBySlug(ctx.userSlug) as InvestorState | null;
     }
 
     if (investor) {
-      return `${investmentExpertContextPrefix(investor, ctx)}\n\n${ctx.text}`;
+      return `${investmentAdvisorContextPrefix(investor, ctx)}\n\n${ctx.text}`;
     }
     return ctx.text;
   },

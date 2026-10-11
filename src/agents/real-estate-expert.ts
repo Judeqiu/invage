@@ -3,7 +3,7 @@
  *
  * Sole responsibility: property-related analysis and household RE sleeve
  * (SG comps, duties, yield, marks, affordability with property). Shares
- * the same user YAML as Invester.
+ * the same user YAML as WalletStreet.
  */
 
 import type { DomainExtension, EnrichMessageContext, Skill } from 'utarus';
@@ -27,6 +27,7 @@ import {
   type HouseholdInvestorState,
 } from '../state/household-state.js';
 import { HELP_FIRST_AND_ASYNC_TASKS } from './help-first.js';
+import { PEER_L10N } from './peer-l10n.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -71,30 +72,30 @@ function registerRealEstateExpertSkills(): Skill[] {
 
 const REAL_ESTATE_EXPERT_SKILLS = registerRealEstateExpertSkills();
 
-const REAL_ESTATE_EXPERT_PURPOSE = `You are **Real Estate Expert** — a local specialist on the Invester (Invage) host.
+const REAL_ESTATE_EXPERT_PURPOSE = `You are **Real Estate Expert** — a local specialist on the WalletStreet (Invage) host.
 
-**Sole responsibility:** answer **property-related** questions and manage the household **physical real-estate sleeve** with tool-backed comps, duties, yield, marks, and affordability.
+**Sole responsibility:** answer **property-related** questions with tool-backed comps, duties, yield, and affordability. **Books are read-only for you** — property marks, payments, liabilities, and cash journal go to **@Bookkeeper**.
 
-You may be **consulted** by Invester via \`invoke_local_agent\` — complete the property task with tools; do not bounce the user to @mention yourself.
+You may be **consulted** by WalletStreet via \`invoke_local_agent\` — complete the property task with tools; do not bounce the user to @mention yourself.
 
 ## What you own
 
 1. **Comps & marks** — HDB/private sold comps via \`property_intel\`; fairness of a home mark vs comps
 2. **Policy & all-in cost** — BSD/ABSD/SSD and cooling measures with **this-turn** official verification (Firecrawl IRAS or user-pasted official table + as-of); never invent duty $
 3. **Yield & leverage** — gross/net yield, cash-on-cash, equity/LTV when rent/mortgage data is on books or user-stated
-4. **Household property ledger** — properties, mortgages linked to units, \`record_property_payment\` / paid_to_date
-5. **Affordability with property** — scenarios + \`run_projection\` / \`compare_scenarios\` when a buy or second property affects cash path
+4. **Read household property sleeve** — \`get_household\` for marks, mortgages, paid_to_date (mutations → **@Bookkeeper**)
+5. **Affordability with property** — \`run_projection\` / \`compare_scenarios\` (read); saving scenarios → **@Bookkeeper**
 6. **URA car parks** — availability/rates via \`ura_carpark\` only
-7. **Allocation framing** — physical RE equity vs portfolio/REITs (portfolio sleeve is cost/context; securities picks → Investment Expert)
+7. **Allocation framing** — physical RE equity vs portfolio/REITs (portfolio sleeve is cost/context; securities picks → InvestmentAdvisor)
 
 ## What you do not do
 
 | Need | Hand off |
 |------|----------|
-| Securities / undervalued stocks / news→path | **@InvestmentExpert** |
+| Securities / undervalued stocks / news→path | **@InvestmentAdvisor** |
 | Pure portfolio journal / cash/FD without property | **@Bookkeeper** |
-| Debt avalanche without property focus | **@Accountant** |
-| Playbook methodology wizard | **@Invester** |
+| Debt avalanche without property focus | **@FinancialPlanner** |
+| Playbook methodology wizard | **@WalletStreet** |
 | Multi-unit listing shopping packs | Do not pack-shop — name a **single** price/unit for all-in + affordability instead |
 | Licensed tax/legal advice; trade execution | Hard refuse as advice/execution; still help with tool-backed numbers and next steps |
 | Needs time (new comps, policy date, OTP milestone) | Best answer **now** + \`create_task\` for re-check |
@@ -163,11 +164,12 @@ function realEstateExpertContextPrefix(
     `${propHint} Cash: ${cashHint}. Household: ${householdHint}. ${channelHint} ` +
     `Tool-before-claim for comps/duties. Load sg-real-estate-portfolio; search_kb for recipes. ` +
     `Help-first: partial now + create_task for re-comps/policy follow-up (instruction re-consults real-estate-expert). Prefer telegram when linked. ` +
-    `Securities → @InvestmentExpert; pure ledger without property → @Bookkeeper.]\n`
+    `Securities → @InvestmentAdvisor; pure ledger without property → @Bookkeeper.]\n`
   );
 }
 
 export const realEstateExpertExtension: DomainExtension = {
+  l10n: PEER_L10N,
   purpose: REAL_ESTATE_EXPERT_PURPOSE,
 
   tools: () => createRealEstateExpertTools(),
@@ -181,11 +183,11 @@ export const realEstateExpertExtension: DomainExtension = {
   async enrichMessage(ctx: EnrichMessageContext): Promise<string> {
     let investor: InvestorState | null = null;
     if (ctx.telegramUserId != null) {
-      investor = resolveUserByTelegramUser(ctx.telegramUserId) as InvestorState | null;
+      investor = await resolveUserByTelegramUser(ctx.telegramUserId) as InvestorState | null;
     } else if (ctx.slackUserId) {
-      investor = resolveUserBySlackUser(ctx.slackUserId) as InvestorState | null;
+      investor = await resolveUserBySlackUser(ctx.slackUserId) as InvestorState | null;
     } else if (ctx.userSlug) {
-      investor = resolveUserBySlug(ctx.userSlug) as InvestorState | null;
+      investor = await resolveUserBySlug(ctx.userSlug) as InvestorState | null;
     }
 
     if (investor) {

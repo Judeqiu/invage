@@ -12,6 +12,9 @@ export {
   type BuySellRules,
   type RebalancingRules,
   type RiskManagement,
+  WATCH_INSTRUMENTS,
+  type WatchInstrument,
+  type WatchProduct,
   type Watchlists,
   type InvestmentPlaybook,
   type PlaybookPatch,
@@ -25,3 +28,9 @@ export {
 
 export { playbookAgentGuidance } from './guidance.js';
 export { thresholdsForPlaybook, type PlaybookThresholds } from './thresholds.js';
+export {
+  addWatchProduct,
+  normalizeWatchSymbol,
+  parseWatchProducts,
+  removeWatchProduct,
+} from './watch-products.js';

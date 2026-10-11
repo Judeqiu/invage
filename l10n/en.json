@@ -1,0 +1,19 @@
+{
+  "nav.dashboard": "Dashboard",
+  "nav.positions": "Positions",
+  "nav.watchlist": "Watch List",
+  "nav.trades": "Trades",
+  "nav.insights": "Insights",
+  "nav.brokers": "Brokers",
+  "settings.brokers.title": "Brokers",
+  "settings.brokers.description": "Connect read-only brokerage channels",
+  "page.dashboard": "Portfolio Dashboard",
+  "page.positions": "Positions",
+  "page.watchlist": "Watch List",
+  "page.trades": "Trades",
+  "page.insights": "Insights",
+  "page.brokers": "Brokers",
+  "chat.empty.title": "Your investment analyst — with household books",
+  "chat.empty.body": "I analyze portfolios (live marks, playbook, undervalued screens) and can keep household books for cash flow and big decisions like buying a house. Use the Dashboard tab for portfolio value, Watch List for playbook names, and Brokers to connect Interactive Brokers Flex.",
+  "chat.empty.footer": "Tables, code, and BinDrive reports render inline. Select text to quote it into your next message. Educational analysis only — not licensed financial advice."
+}

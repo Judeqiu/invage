@@ -144,6 +144,30 @@ export interface OptionSpec {
 }
 
 /**
+ * Why some units of this lot are not free to sell. Same shape for every broker.
+ * Omit the whole object when the full lot is free.
+ * - pledged: posted as collateral (margin / customer borrowing)
+ * - lent: on loan (securities lending)
+ * - right_to_use: broker may rehypothecate / use the shares
+ */
+export type EncumbranceKind = 'pledged' | 'lent' | 'right_to_use';
+
+export interface HoldingEncumbrance {
+  kind: EncumbranceKind;
+  /** Encumbered quantity in the same units as the holding. 0 < units ≤ holding.units. */
+  units: number;
+}
+
+/**
+ * Broker-native instrument identity. Omit when unknown.
+ * `native_id` is the broker's own contract/instrument id (not the ticker).
+ */
+export interface HoldingBrokerRef {
+  native_id?: string;
+  listing_exchange?: string;
+}
+
+/**
  * Portfolio holding.
  * - Equity (default when instrument omitted): avg_price = cost/share, units = shares.
  * - Option: avg_price = premium $ per contract at trade, units = contracts; option fields required.
@@ -164,6 +188,13 @@ export interface Holding {
   option?: OptionSpec;
   /** Required when instrument === "fund". */
   fund?: FundSpec;
+  /**
+   * Pledged / lent / right-to-use quantity. Omit when the full lot is free.
+   * Does not change NAV (still `units`). Do not split into a second map key.
+   */
+  encumbrance?: HoldingEncumbrance;
+  /** Optional broker-native instrument id / listing. Omit when unknown. */
+  broker_ref?: HoldingBrokerRef;
 }
 
 export interface PositionAnalysis {

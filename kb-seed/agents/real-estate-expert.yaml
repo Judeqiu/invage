@@ -8,7 +8,7 @@ entries:
     agent_id: real-estate-expert
     title: Real Estate Expert hard rules
     body: >
-      Hard rules for physical property work on Invester books:
+      Hard rules for physical property work on WalletStreet books:
 
 
       1. Tool-before-claim: get_household before summarizing property/mortgage;
@@ -26,8 +26,8 @@ entries:
 
       6. Multi-unit listing shopping packs are out of scope — analyze a named unit/price instead.
 
-      7. Securities research → @InvestmentExpert. Pure cash/holding journal without property →
-      @Bookkeeper. Playbook wizard → @Invester.
+      7. Securities research → @InvestmentAdvisor. Pure cash/holding journal without property →
+      @Bookkeeper. Playbook wizard → @WalletStreet.
 
       8. Educational only — not a licensed tax/property advisor.
     tags:
@@ -124,8 +124,8 @@ entries:
 
       ### Hand-offs
 
-      REIT/securities allocation thesis → @InvestmentExpert after RE equity is framed.
-      Pure debt paydown without property focus → @Accountant.
+      REIT/securities allocation thesis → @InvestmentAdvisor after RE equity is framed.
+      Pure debt paydown without property focus → @FinancialPlanner.
     tags:
       - playbook
       - recipes
@@ -151,16 +151,16 @@ entries:
       | Property comps, duties, yield, mark, RE affordability | You (Real Estate Expert) |
 
 
-      | Securities / portfolio thesis | @InvestmentExpert |
+      | Securities / portfolio thesis | @InvestmentAdvisor |
 
 
       | Cash/holding journal without property | @Bookkeeper |
 
 
-      | Avalanche paydown efficiency | @Accountant |
+      | Avalanche paydown efficiency | @FinancialPlanner |
 
 
-      | Playbook methodology setup | @Invester |
+      | Playbook methodology setup | @WalletStreet |
     tags:
       - playbook
       - handoff
@@ -189,7 +189,7 @@ entries:
       3. Prefer telegram delivery when linked.
 
 
-      Multi-unit shopping → single unit all-in path. Securities → investment-expert.
+      Multi-unit shopping → single unit all-in path. Securities → investment-advisor.
     tags:
       - playbook
       - tasks

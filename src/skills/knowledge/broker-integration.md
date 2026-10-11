@@ -1,0 +1,77 @@
+# Broker integration
+
+Read-only ingest from a **catalog connector** (`catalog.get(id)`) onto that connector’s channel. IBKR (`ibkr`) is the shipped channel. Load whenever books should match a brokerage statement — connect, refresh, scheduled pull, parse failure, or reconcile vs the broker.
+
+Never invent numbers. Never echo Flex tokens. Select by catalog id + capability, not synonyms.
+
+## Tools
+
+- `configure_ibkr_flex` / `sync_ibkr_flex` — IBKR Flex Web Service (XML catalog parser). Call sync anytime the channel is on.
+- `list_broker_triage` — failed ingest cases (error + inventory: tags, cash currencies, `position` vs `quantity`). No raw body.
+- `read_broker_raw` — archived raw after catalog parse fails (case dir, `case.yaml`, or `raw.xml`).
+- `save_broker_parser` — persist a **declarative** `csv_tables` spec (host interprets; **no eval**).
+- `parse_broker_raw` — run that spec against archived raw → BrokerStatement (does not write books).
+- `apply_broker_statement` — same apply path as catalog sync.
+
+Settings → Brokers uses the same store. Off refuses pull; lots stay. `not_imported` must be quoted.
+
+## Parse pipeline
+
+1. **Catalog parser** (IBKR: Flex XML Open Positions + Cash Report).
+2. If that throws: a **triage case** is written under `drive/<slug>/broker-raw/<connector>/<id>/` (`raw.xml` + `case.yaml` inventory). **Do not stop at the error text.**
+3. `list_broker_triage` then `read_broker_raw` for connector `ibkr` (path = `raw_path` from the case). Read the text. Produce either:
+   - a `csv_tables` spec (headers + column map + `skipCurrencies` such as `BASE_SUMMARY`), `save_broker_parser`, then `sync_ibkr_flex` or `parse_broker_raw` + `apply_broker_statement`; or
+   - a **BrokerStatement** JSON (`account_id`, `as_of`, `cash[].amount`, `lots[].holding`) taken only from the raw, then `apply_broker_statement`. Never submit Flex `openPositions` / `endingCash`.
+4. If a field is not in the raw, omit it or list it in `skipped` — never guess cost, qty, or cash.
+
+IBKR Flex XML (catalog parser): Open Positions **Quantity** is often the attribute `position` (not `quantity`). `quantity` on `<Trade>` is a different section. Cash Report `BASE_SUMMARY` is base-currency total — not an ISO sleeve. Per-currency Cash Report rows are preferred; if the query only sent BASE_SUMMARY, Equity Summary In Base `currency` + `cash` on `toDate` must match `endingCash` or the parse fails.
+
+Fatal without apply: channel off, missing creds, Flex HTTP, empty cash sleeves. Partial: unsupported lots listed in `not_imported`.
+
+## Public extras (any broker — omit when unknown)
+
+YAML types are **the only store**. IBKR Flex/CSV is mapped in memory and discarded. Do not store vendor field names (`conid`, `sma`, `lent_syep`, `endingCash`). Map `conid` → `broker_ref.native_id`.
+
+| Idea | Public field | Rule |
+|------|----------------|------|
+| Shares pledged / on loan / RTU | `holding.encumbrance` `{ kind: pledged\|lent\|right_to_use, units }` | Same lot; `units` ≤ holding; not a second key |
+| Broker instrument id | `holding.broker_ref.native_id` | String; not the ticker. Optional `listing_exchange` |
+| Settled ≠ available cash | `cash.settled_amount` | Same `(channel, currency)` sleeve as `amount` |
+| Accrued interest | `cash.accrued_interest` | Do not add into `amount` until settled |
+| Buying power / excess / maint. | `broker_connections.<id>.metrics` | `as_of` + `currency` + ≥1 number; never invent from cash |
+
+v1 catalog ingest writes lots + `cash.amount` only. Do not invent extras. Later ingest may set them. `add_holding` does not merge encumbrance; `update_holding` preserves existing extras.
+
+IBKR activity is prior-day. Marks stay Yahoo.
+
+## `csv_tables` spec shape
+
+```json
+{
+  "kind": "csv_tables",
+  "skipCurrencies": ["BASE_SUMMARY"],
+  "cash": {
+    "headerMustInclude": ["EndingCash", "CurrencyPrimary"],
+    "columns": {
+      "accountId": "ClientAccountID",
+      "fromDate": "FromDate",
+      "toDate": "ToDate",
+      "currency": "CurrencyPrimary",
+      "amount": "EndingCash"
+    }
+  },
+  "positions": {
+    "headerMustInclude": ["Symbol", "AssetClass"],
+    "columns": {
+      "accountId": "ClientAccountID",
+      "symbol": "Symbol",
+      "quantity": "Quantity",
+      "currency": "CurrencyPrimary",
+      "assetCategory": "AssetClass",
+      "markPrice": "MarkPrice",
+      "costBasisPrice": "CostBasisPrice",
+      "costBasisMoney": "CostBasisMoney"
+    }
+  }
+}
+```

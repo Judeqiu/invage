@@ -18,6 +18,7 @@ The WebUI is **owned by Utarus**, not Invage.
 | **WebUI plugin (Dashboard tab)** | `src/extension.ts` → `webUi: createInvageWebUi()` |
 | Dashboard API | `GET /api/domain/invage/dashboard` — live model JSON |
 | Dashboard page (iframe) | `webui/dashboard/` served at `/domain-assets/invage/dashboard/` |
+| Watch List page (iframe) | `webui/watchlist/` served at `/domain-assets/invage/watchlist/` |
 | Landing QR register | `src/onboard/api.ts` (mounted as extra router) |
 | Optional drive-only process | `src/webapp/server.ts` |
 | E2E | `tests/webui-e2e.mjs` |
@@ -28,9 +29,9 @@ Utarus SPA shell loads `GET /api/webui/manifest` from `DomainExtension.webUi`. I
 
 | Field | Value |
 |---|---|
-| Nav | **Dashboard** → `/dashboard` (`layout-dashboard` icon) |
-| Route | `pageKind: iframe` → `/domain-assets/invage/dashboard/index.html` |
-| API | `GET /api/domain/invage/dashboard` (session auth) — live prices + snapshot history |
+| Nav | **Dashboard** → `/dashboard` (`layout-dashboard`) · **Watch List** → `/watchlist` (`star`) |
+| Routes | iframe → `/domain-assets/invage/dashboard/index.html` and `/domain-assets/invage/watchlist/index.html` |
+| API | `GET /api/domain/invage/dashboard` (live portfolio) · `GET /api/domain/invage/watchlist` (playbook universe + named product quotes) |
 | Static | `webui/` → `/domain-assets/invage/` |
 
 The page is **dynamic**: Refresh / optional 60s auto-refresh re-fetches Yahoo prices and reloads snapshot history. Same model as `save_report kind=dashboard` (not a frozen HTML file).

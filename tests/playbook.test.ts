@@ -1,9 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import {
   DEFAULT_PLAYBOOK,
+  addWatchProduct,
   applyPlaybookPatch,
   formatPlaybookSummary,
   playbookAgentGuidance,
+  removeWatchProduct,
   resolvePlaybook,
   thresholdsForPlaybook,
 } from '../src/playbook/index.js';
@@ -58,6 +60,58 @@ describe('applyPlaybookPatch', () => {
     });
     expect(next.watchlists.themes).toEqual(['AI', 'energy transition']);
     expect(next.watchlists.markets).toEqual(['US']);
+    expect(next.watchlists.products).toEqual([]);
+  });
+
+  it('round-trips named watch products', () => {
+    const next = applyPlaybookPatch(resolvePlaybook(null), {
+      watchlists: {
+        products: [
+          { symbol: 'AAPL', instrument: 'equity', added_at: '2026-08-16', note: 'pullback' },
+        ],
+      },
+    });
+    expect(next.watchlists.products).toEqual([
+      { symbol: 'AAPL', instrument: 'equity', added_at: '2026-08-16', note: 'pullback' },
+    ]);
+    expect(next.watchlists.markets).toEqual(['US']);
+  });
+});
+
+describe('watchlists.products resolve', () => {
+  it('defaults missing products to empty array', () => {
+    const pb = resolvePlaybook({ watchlists: { markets: ['US', 'HK'] } });
+    expect(pb.watchlists.products).toEqual([]);
+    expect(pb.watchlists.markets).toEqual(['US', 'HK']);
+  });
+
+  it('rejects products that are not an array', () => {
+    expect(() => resolvePlaybook({ watchlists: { products: { symbol: 'AAPL' } } })).toThrow(
+      /watchlists.products must be an array/,
+    );
+  });
+
+  it('rejects duplicate symbols after normalize', () => {
+    expect(() =>
+      resolvePlaybook({
+        watchlists: {
+          products: [
+            { symbol: 'aapl', instrument: 'equity', added_at: '2026-08-16' },
+            { symbol: 'AAPL', instrument: 'equity', added_at: '2026-08-16' },
+          ],
+        },
+      }),
+    ).toThrow(/duplicate symbol AAPL/);
+  });
+
+  it('rejects unknown instrument', () => {
+    expect(() =>
+      resolvePlaybook({
+        watchlists: {
+          products: [{ symbol: 'AAPL', instrument: 'option', added_at: '2026-08-16' }],
+        },
+      }),
+    ).toThrow(/instrument/);
   });
 });
 
@@ -107,6 +161,39 @@ describe('formatPlaybookSummary', () => {
     expect(s).toMatch(/Investment Playbook/);
     expect(s).toMatch(/Strategy:/);
     expect(s).toMatch(/Risk:/);
+  });
+
+  it('lists named watch products when present', () => {
+    const pb = applyPlaybookPatch(resolvePlaybook(null), {
+      watchlists: {
+        products: [{ symbol: '2800.HK', instrument: 'equity', added_at: '2026-08-16' }],
+      },
+    });
+    expect(formatPlaybookSummary(pb)).toMatch(/Watch products: 2800\.HK/);
+  });
+});
+
+describe('addWatchProduct / removeWatchProduct', () => {
+  it('adds a product and rejects a duplicate', () => {
+    const one = addWatchProduct([], {
+      symbol: 'aapl',
+      instrument: 'equity',
+      added_at: '2026-08-16',
+    });
+    expect(one).toEqual([{ symbol: 'AAPL', instrument: 'equity', added_at: '2026-08-16' }]);
+    expect(() => addWatchProduct(one, { symbol: 'AAPL', instrument: 'equity' })).toThrow(
+      /already on the list/,
+    );
+  });
+
+  it('removes by symbol and rejects a missing symbol', () => {
+    const one = addWatchProduct([], {
+      symbol: 'MSFT',
+      instrument: 'equity',
+      added_at: '2026-08-16',
+    });
+    expect(removeWatchProduct(one, 'msft')).toEqual([]);
+    expect(() => removeWatchProduct(one, 'AAPL')).toThrow(/not on the list/);
   });
 });
 

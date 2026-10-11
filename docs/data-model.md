@@ -24,7 +24,9 @@ data/
     └── ...
 ```
 
-Each user gets a **single YAML file** at `data/users/<slug>.yaml`. This file is the source of truth for that user's identity, profile, portfolio, and activity log. Users cannot access each other's files.
+Each user gets a **single YAML file** at `data/users/<slug>.yaml`. This file is the source of truth for that user's identity, profile, and (legacy) portfolio snapshot. Users cannot access each other's files.
+
+**Books of record (optional, recommended):** when `INVAGE_BOOKS_DATABASE_URL` is set, money mutations (cash, deposits, holding cash legs) post to an **append-only PostgreSQL journal** (`src/books/`). YAML free-cash and deposits are dual-written from ledger projections. See [plans/2026-08-09-financial-database-ledger-design.md](./plans/2026-08-09-financial-database-ledger-design.md).
 
 ---
 
@@ -136,6 +138,7 @@ playbook:
     markets: [US]              # also: HK, CN/China for multi-market discovery
     sectors: []
     themes: []
+    products: []               # named interest list (not holdings)
 ```
 
 | Field | Role in agent guidance |
@@ -145,9 +148,11 @@ playbook:
 | `risk` / allocation caps | BUY bar, take-profit speed, sizing language |
 | `buy_sell` | Hard criteria before BUY/SELL wording |
 | `rebalancing` | When to flag rebalance / concentration drift |
-| `watchlists` | Default discovery universe when no ticker is named (`US`, `HK`, `CN`/`China`, …) |
+| `watchlists` | Discovery universe (`markets` / `sectors` / `themes`) plus named `products` (interest list, not holdings) |
 
-**Tools:** `get_playbook`, `update_playbook` (channel-bound like portfolio tools).
+**Tools:** `get_playbook`, `update_playbook` (universe only), `add_watch_product`, `remove_watch_product` (named products). Channel-bound like portfolio tools.
+
+Named `products` are Yahoo-quotable `equity` or `fund` symbols (`symbol`, `instrument`, `added_at`, optional `note`). Unique symbol. They never post to the books ledger and never appear as portfolio lots. WebUI **Watch List** tab: `GET /api/domain/invage/watchlist`.
 
 **Guided setup skill:** `playbook-setup` — patient one-question-at-a-time wizard (user-initiated only). Knowledge: `src/skills/knowledge/playbook-setup.md`.
 
@@ -175,6 +180,177 @@ log:
 ```
 
 Every mutation appends to `log[]`. The agent never manually logs — the framework handles it.
+
+### Broker connections
+
+Optional top-level `broker_connections` on the same user file. Key = connector id from the Invage catalog (`ibkr` in v1). Secrets (Flex token) live here — the Settings GET never returns the token.
+
+```yaml
+broker_connections:
+  ibkr:
+    enabled: true
+    credentials:
+      token: "123456789123456789"
+      activity_query_id: "111222"
+    last_sync:
+      at: "2026-08-22T04:12:00.000Z"
+      ok: true
+      as_of: "2026-08-21"
+      account_id: "U1234567"
+      lots_upserted: 12
+      lots_removed: 1
+      not_imported:   # omitted when empty; each skipped lot/cash row
+        - "ES: assetCategory FUT is not imported (supported: STK, ETF, OPT, FUND)"
+```
+
+Legacy `ibkr_flex` is accepted on **read** only. The first Settings save, `configure_ibkr_flex`, or Flex sync (including a failed sync) writes `broker_connections` and **deletes** `ibkr_flex`. Both keys present is an error. Unknown connector or credential keys fail on read. **Disable does not delete** holdings tagged `channel: ibkr`.
+
+### Channel recon session
+
+Optional top-level `recon` on the same user file. Bookkeeper owns it. Completeness is this object, not chat text.
+
+```yaml
+recon:
+  as_of: "2026-08-28"          # required YYYY-MM-DD
+  status: in_progress          # in_progress | done
+  current_channel: ibkr        # custody tag; empty string = unassigned
+  sleeves:
+    - channel: ibkr
+      status: pending          # pending | sourced | compared | applied | skipped
+      source: connector        # connector | paste — omit until sourced
+      statement:               # omit until sourced
+        cash:
+          - currency: USD
+            amount: 1200.50
+        lots:
+          - ticker: AAPL
+            units: 10
+            avg_price: 190
+        deposits: []
+      lines: []                # filled on compare
+```
+
+| Field | Role |
+|---|---|
+| `as_of` | Statement date for the whole walk |
+| `sleeves` | One entry per included custody sleeve (books channels + enabled connectors) |
+| `lines[].decision` | `keep` / `take` / `skip`. Matching lines auto-`keep` |
+| `status: done` | Every sleeve is `applied` or `skipped` |
+
+Missing `recon` = no open session. Unknown keys fail on read. Cash `take` posts a journal (`post_adjustment` / `post_opening_balance`); never `set_cash`. See [plans/2026-08-28-channel-recon-flow-design.md](./plans/2026-08-28-channel-recon-flow-design.md).
+
+**One books snapshot.** YAML stores only public types: `Holding`, `cash.amount` (optional `settled_amount` / `accrued_interest`), `broker_connections.<id>` (credentials, `last_sync`, optional `metrics`). IBKR Flex XML/CSV is a **parser**, not a second schema: `conid` → `broker_ref.native_id`, Cash Report ending cash → `cash.amount`. Apply is `applyBrokerStatement` for every connector. Do not persist `openPositions`, `endingCash`, `assetCategory`, or `conid`.
+
+Catalog apply is a **channel snapshot** of what mapped: every ISO cash sleeve on that channel, every mappable lot as a `Holding`. IBKR Flex `CashReportCurrency` with `currency: BASE_SUMMARY` is **not** an ISO sleeve — drop it when per-currency rows exist. When the query only returns BASE_SUMMARY, the catalog parser books that `endingCash` in the ISO code from `EquitySummaryByReportDateInBase` for the statement `toDate`, and **fails** if that section is missing or `cash` disagrees with BASE_SUMMARY `endingCash`. Open Positions quantity is XML `quantity` or `position` (IBKR docs label “Quantity”; Flex XML often uses `position`). Unsupported rows are listed in `last_sync.not_imported` and are **not** invented as holdings. Missing Open Positions / Cash Report wrappers, or zero importable cash sleeves, fail the catalog parser (no wipe).
+
+**Triage (parse failure).** Each failed catalog parse writes a case, not a loose dump:
+
+```
+drive/<slug>/broker-raw/<connector>/<id>/
+  raw.xml          # or raw.txt (CSV / unknown)
+  case.yaml        # error + inventory; unknown keys fail
+```
+
+```yaml
+id: "2026-09-04T22-52-05-319Z"
+connector: ibkr
+at: "2026-09-04T22:52:05.319Z"
+as_of: "2026-09-04"
+account_id: "U1234567"    # omit when not in the raw
+error: "IBKR Flex CashReport is BASE_SUMMARY only …"
+status: open
+inventory:
+  looks_like: flex_xml     # flex_xml | csv | unknown
+  tags: { OpenPosition: 141, CashReportCurrency: 1 }
+  cash_currencies: [BASE_SUMMARY]
+  position_qty_attr: position  # quantity | position | both | missing | none
+raw_rel: raw.xml
+raw_bytes: 51752
+```
+
+`list_broker_triage` returns this inventory (no raw body). `read_broker_raw` returns the bytes. Legacy flat `*.txt` files in the connector folder are still readable as latest raw. A declarative `csv_tables` spec maps **CSV headers → public fields** (`amount`, not `endingCash`) at `drive/<slug>/broker-parsers/<connector>.json`. LLM `BrokerStatement` is `{ account_id, as_of, cash[].amount, lots[].holding }` — same apply path.
+
+**Broker statement vs v1 snapshot (any connector).** v1 ingest writes **end-of-day lots + free cash on one channel**. A monthly/activity statement is a **period pack**. Extra layers live on the public types below — omit the field when that broker does not report it. Do not invent a second map key, a second currency, or a silent 0.
+
+### Optional statement extras (public, broker-agnostic)
+
+These fields are on the agent-facing YAML types. Names are **economic**, not a vendor schema. A connector maps its native labels into this shape. IBKR Flex maps `conid` → `broker_ref.native_id` and listing → `listing_exchange`. Encumbrance, settled cash, and margin metrics stay omitted until the statement actually includes them.
+
+**Holding — custody (same lot, never a child key)**
+
+```yaml
+PATH@ibkr:
+  avg_price: 12.4
+  units: 500                 # NAV still uses full units
+  channel: ibkr
+  encumbrance:
+    kind: lent               # pledged | lent | right_to_use
+    units: 200               # 0 < units ≤ holding.units
+  broker_ref:
+    native_id: "12345678"    # broker contract/instrument id (not the ticker)
+    listing_exchange: NASDAQ
+```
+
+| Field | Type | Required | Agent meaning |
+|-------|------|----------|----------------|
+| `encumbrance` | object | No | Omit when the full lot is free to sell |
+| `encumbrance.kind` | `pledged` \| `lent` \| `right_to_use` | With encumbrance | `pledged` = collateral; `lent` = securities loan; `right_to_use` = broker may rehypothecate. Not a program name |
+| `encumbrance.units` | number | With encumbrance | Encumbered qty in the same units as the lot. Fail if &gt; `holding.units` |
+| `broker_ref` | object | No | Omit when unknown. Need `native_id` and/or `listing_exchange` |
+| `broker_ref.native_id` | string | No | Broker’s own instrument id (IBKR conid, Futu stock id, …). Never a ticker |
+| `broker_ref.listing_exchange` | string | No | Venue code when the broker reports one |
+
+Do **not** store pledged/lent shares as a second `PATH@channel#lent` lot. `add_holding` does not merge `encumbrance` / `broker_ref`; `update_holding` preserves them.
+
+**Cash sleeve — settled vs available**
+
+| Field | Type | Required | Agent meaning |
+|-------|------|----------|----------------|
+| `amount` | number | Yes | **Available** cash. NAV and dry powder |
+| `settled_amount` | number ≥ 0 | No | Settled cash when the broker reports it separately. Omit = unknown — **not** equal to `amount`. Not a second currency |
+| `accrued_interest` | number ≥ 0 | No | Interest earned but not yet in `amount`. Do not add into `amount` until it settles |
+
+Cash ledger writes (`applyCashDelta`) update `amount` and **omit** settlement extras until the next statement ingest (those figures are statement snapshots, not trade-by-trade).
+
+**Connector — margin snapshot** (`broker_connections.<id>.metrics`)
+
+```yaml
+broker_connections:
+  ibkr:
+    enabled: true
+    credentials: { ... }
+    metrics:                    # omit when unknown; never invent from cash
+      as_of: "2026-07-31"
+      currency: USD
+      buying_power: 25000
+      excess_liquidity: 8000
+      maintenance_margin: 3000
+```
+
+| Field | Type | Required | Agent meaning |
+|-------|------|----------|----------------|
+| `metrics.as_of` | `YYYY-MM-DD` | With metrics | Statement / snapshot date |
+| `metrics.currency` | 3–4 letters | With metrics | No silent default |
+| `metrics.buying_power` | number ≥ 0 | One of three | Purchasing power as the broker reports it |
+| `metrics.excess_liquidity` | number ≥ 0 | One of three | Excess / surplus liquidity |
+| `metrics.maintenance_margin` | number ≥ 0 | One of three | Maintenance requirement. Not SMA or a vendor acronym |
+
+At least one of the three numbers is required. Unknown keys fail. Settings PATCH and Flex credential writes **preserve** `metrics`.
+
+**Still not on the lot / cash sleeve** (any broker): fill blotter, tax lots (FIFO / ST–LT), commissions as fees, TWR/change-in-NAV as household NAV, futures until an `instrument` exists. Those stay journals, `not_imported`, or a later table keyed by the broker’s trade id.
+
+**Example mapping (IBKR Activity Statement)** — other brokers use the same public fields.
+
+| Statement idea | Public field |
+|---|---|
+| Open stock / option / fund | `Holding` + `channel` (already v1) |
+| Available cash | `cash.amount` on `(channel, currency)` |
+| Settled cash ≠ available | `cash.settled_amount` on the **same** sleeve |
+| Interest accrual (NAV line, not cash) | `cash.accrued_interest`; never fold into `amount` |
+| Stock loan / SYEP / pledge / RTU | `encumbrance.kind` `lent` / `pledged` / `right_to_use` |
+| Broker contract id / listing | `broker_ref.native_id` / `listing_exchange` |
+| Buying power / excess liq / maint. margin | `broker_connections.<id>.metrics` |
+| Fills, commissions, ST/LT, TWR | Journals / later tables — not `avg_price` |
 
 ---
 
@@ -278,6 +454,8 @@ playbook:
 | `units` | number | Yes | Number of shares owned |
 | `category` | string | No | Fund category (e.g. "SL Technology S1") |
 | `channel` | string | No | Broker / custody source (e.g. `moomoo`, `ibkr`, `webull`, `tiger`). **Omit or empty when unassigned** — no silent default |
+| `encumbrance` | object | No | See [Optional statement extras](#optional-statement-extras-public-broker-agnostic). Same lot; omit when free |
+| `broker_ref` | object | No | Broker-native instrument id / listing. Omit when unknown |
 
 ### Holding Shape (fund — ETF / open-end 基金)
 
@@ -288,6 +466,7 @@ playbook:
 | `units` | number | Yes | Fund units / shares |
 | `category` | string | No | e.g. Bond, Equity fund |
 | `channel` | string | No | Broker / custody source |
+| `encumbrance` / `broker_ref` | object | No | Same as equity (any instrument) |
 | `fund.quote_source` | `yahoo` \| `manual` | Yes | **No silent default.** yahoo = live Yahoo on map base key; manual = stored NAV |
 | `fund.mark` | number | If manual | Current NAV/price per unit ≥ 0 |
 | `fund.name` | string | No | Product display name |
@@ -307,6 +486,7 @@ playbook:
 | `units` | number | Yes | Number of **contracts** |
 | `category` | string | No | e.g. `Private / Secondary` |
 | `channel` | string | No | Broker / custody source (same semantics as equity). Omit when unassigned |
+| `encumbrance` / `broker_ref` | object | No | Same as equity (any instrument) |
 | `option.right` | `call` \| `put` | Yes | Option type |
 | `option.side` | `long` \| `short` | Yes | Bought or written |
 | `option.strike` | number | Yes | Strike per share |
@@ -366,6 +546,8 @@ e.g. `SPACEX-P-90-20260807-S`. When `channel` is set, the stored map key is `{ba
 
 Live Yahoo option marks are applied **in memory** for analysis/dashboard/snapshot valuation; they do not rewrite YAML unless you `update_holding` mark.
 
+**Options insight (ephemeral):** `options_insight` (OptionsExpert) reads the Yahoo chain for structure (moneyness, intrinsic/extrinsic, IV/OI/volume when Yahoo provides them). That payload is **not** stored on the user file. Greeks are not in the Yahoo chain used here — omit, do not invent.
+
 ### Cash Balance (strategy dry powder)
 
 Top-level `cash` on the same user file. **Missing `cash` means unknown** — do not treat as zero for weight or deployable capital.
@@ -385,6 +567,8 @@ Each entry:
 | `currency` | string | Yes | 3–4 letter code (`USD`, `HKD`, …). No silent default |
 | `updated_at` | `YYYY-MM-DD` | Yes | Date last set |
 | `channel` | string | No | Broker / custody source for this cash. Omit or empty when unassigned |
+| `settled_amount` | number | No | Settled cash when reported separately from available. Omit = unknown |
+| `accrued_interest` | number | No | Accrued interest not yet in `amount`. Omit = unknown |
 
 **Rules:** at most one entry per channel key (including one unassigned). NAV sums all slots only when they share the same currency (no silent FX). Dashboard **All (merged)** shows total cash; each channel view shows that channel's cash only.
 
@@ -485,6 +669,7 @@ deposits:
 | `update_deposit` | channel id | Patch deposit by `id`; amount changes adjust cash |
 | `remove_deposit` | channel id | Remove by `id`; credits principal to cash when recorded |
 | `clear_deposits` | channel id | Remove all deposits, or one channel when `channel` is set (requires confirm); no cash ledger |
+| `start_recon` / `get_recon` / `source_recon_channel` / `decide_recon_line` / `apply_recon_channel` / `skip_recon_channel` | channel id | Bookkeeper **channel recon walk**. Session on user YAML `recon`. Completeness is `recon.status`, not chat. Cash take journals; never `set_cash`. |
 
 **Isolation**: Every tool resolves the user via channel id from the message context. The LLM never directly specifies which user file to access — the framework enforces it.
 

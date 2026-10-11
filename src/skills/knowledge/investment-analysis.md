@@ -1,6 +1,6 @@
 # Investment Analysis
 
-**Invester agent skill** for evaluating stocks, **options (calls/puts)**, and portfolio positions across **US, Hong Kong, and China** markets. Combines:
+**WalletStreet agent skill** for evaluating stocks, **options (calls/puts)**, and portfolio positions across **US, Hong Kong, and China** markets. Combines:
 
 1. **Portfolio 3-axis** — cost basis vs live price vs analyst targets (action on holdings)
 2. **Stock evaluation workflow** — fundamentals, valuation, style filters, risks (analyze any ticker)

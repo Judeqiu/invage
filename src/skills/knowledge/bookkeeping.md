@@ -18,10 +18,12 @@ Seeded agent entries cover: hard rules, tools map, cash/deposit recipes, fund sc
 1. No invented numbers — tools/state or user statement only.  
 2. Fail-fast — never silent 0 cash or FX.  
 3. Tool-before-claim — `get_household` / `get_portfolio` this turn.  
-4. Cash per **(channel, currency)**; wires → `transfer_cash`; FD unlock → `mature_deposit`.  
-5. Import/screenshot corrections → `adjust_cash=false`.  
-6. Funds → `instrument=fund` + `fund_quote_source` (required).  
-7. Scope: journal/reconcile/read only → valuation is **@Invester**.
+4. **Never set absolute cash** — only journals: `post_opening_balance` (first open), `post_adjustment` (signed delta + memo), `transfer_cash`, `mature_deposit`, trade tools.  
+5. Cash per **(channel, currency)**; wires → `transfer_cash`; FD unlock → `mature_deposit`.  
+6. Reconcile: delta = statement − books; `post_adjustment` that delta with memo (document + date). **Channel walk:** `start_recon` → per sleeve `source_recon_channel` → `decide_recon_line` → `apply_recon_channel`. Completeness is `get_recon` next=done. Enabled Flex = fetch now (already-have), not skip. Never `set_cash`.  
+7. Funds → `instrument=fund` + `fund_quote_source` (required).  
+8. Scope: journal/reconcile/read only → valuation is **@WalletStreet**.  
+9. **Brokers:** load skill **broker-integration**. IBKR is catalog `ibkr`. Quote `not_imported`. Never print the token.
 
 ## Minimum fund correction shape
 
@@ -39,5 +41,5 @@ Optional yield (all three or omit): `expected_yield_pct` + `yield_basis` + `yiel
 |----------|------|
 | Agent KB (`search_kb`) | Full recipes / playbook for this persona |
 | `family-treasury` skill | Multi-year projection detail |
-| **@Invester** | Live prices, valuation, undervalued |
-| **@Accountant** | Payment plans / opportunity cost |
+| **@WalletStreet** | Live prices, valuation, undervalued |
+| **@FinancialPlanner** | Payment plans / opportunity cost |

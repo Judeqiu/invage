@@ -25,19 +25,19 @@ const CATALOG: RawSkill[] = [
     id: 'bindrive',
     name: 'BinDrive',
     description:
-      'Load when listing or managing the user file portal after specialists produce artifacts. Use owner_slug + user.auth_token with bindrive_* tools. Analysis HTML is produced by specialists — orchestrator does not run research reports.',
+      'Load when listing or managing the user file portal after specialists produce artifacts. Use the user auth_token (user.auth_token) as the token arg with bindrive_* tools. Analysis HTML is produced by specialists — orchestrator does not run research reports.',
   },
   {
     id: 'playbook-setup',
     name: 'Playbook Setup Wizard',
     description:
-      'Patient guided setup of the Investment Playbook (host-owned methodology config). Load by capability fit when the user intends to configure strategy, philosophy, risk, allocation, buy/sell rules, rebalancing, or watchlists. One easy question at a time. Uses get_playbook / update_playbook. Not keyword-matched.',
+      'Patient guided setup of the Investment Playbook (host-owned methodology config). Load by capability fit when the user intends to configure strategy, philosophy, risk, allocation, buy/sell rules, rebalancing, or watchlists (markets/sectors/themes). Named products use add_watch_product / remove_watch_product. One easy question at a time. Uses get_playbook / update_playbook. Not keyword-matched.',
   },
   {
     id: 'family-treasury',
     name: 'Family Treasury & Projections',
     description:
-      'Host residual for non-property cash-path work: recurring cash flows, multi-year projection without a property thesis. Load by capability fit. Property-centric affordability/comps/duties → route Real Estate Expert. Securities research → Investment Expert. Ledger journal → Bookkeeper.',
+      'Host residual for non-property cash-path work: recurring cash flows, multi-year projection without a property thesis. Load by capability fit. Property-centric affordability/comps/duties → route Real Estate Expert. Securities research → InvestmentAdvisor. Ledger journal → Bookkeeper.',
   },
 ];
 

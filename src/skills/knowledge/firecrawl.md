@@ -196,7 +196,7 @@ Yahoo extras when useful: `https://finance.yahoo.com/quote/{TICKER}/financials`,
 
 Examples: AI impact on markets, energy transition, regulation, geopolitics, bubbles, sector futures.
 
-1. **Do not refuse** — thematic market questions are core Invester research, not off-topic.
+1. **Do not refuse** — thematic market questions are core WalletStreet research, not off-topic.
 2. `firecrawl` **search** 2–3 queries, e.g.:
    - `"AI impact stock market" OR "artificial intelligence equities" site:reuters.com OR site:cnbc.com`
    - `"AI capital expenditure semiconductors cloud" 2025 OR 2026`

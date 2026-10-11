@@ -1,0 +1,110 @@
+version: 1
+agent_id: aideal
+updated_at: 2026-08-19T12:00:00.000Z
+entries:
+  - id: a6000001-0001-4000-8000-000000000001
+    scope: agent
+    owner_slug: system-seed
+    agent_id: aideal
+    title: AIDeal hard rules
+    body: >
+      Hard rules for Aideal Investment production on Excelsis Holdings:
+
+
+      1. Tool-before-claim: list_aideal_sleeves / compute_sleeve_index / get_portfolio /
+      portfolio_analyzer this turn before any fund index, vs-benchmark, or P/L table.
+
+      2. Fail-fast — never invent Yahoo closes, units, sleeve NAV, or indices. Missing category
+      tags or quotes → say not computed.
+
+      3. report_date is required (YYYY-MM-DD). Use last session on or before that day.
+
+      4. Newsletter HTML only via save_aideal_newsletter with exact compute details.sleeves.
+      No rgba(); tables + bgcolor + hex.
+
+      5. Read-only books. Mutations → @Bookkeeper. Full stock thesis → @InvestmentAdvisor.
+
+      6. IBKR FYI digest and Supabase dashboard publish are not installed — do not pretend.
+
+      7. Educational production pack — not licensed advice; no trade execution.
+    tags:
+      - rules
+      - aideal-production
+    source: invage-seed
+    provenance: system
+    domain_tag: aideal-production
+    refs: []
+    created_at: 2026-08-19T12:00:00.000Z
+    updated_at: 2026-08-19T12:00:00.000Z
+  - id: a6000001-0001-4000-8000-000000000002
+    scope: agent
+    owner_slug: system-seed
+    agent_id: aideal
+    title: AIDeal tools map
+    body: >
+      | Need | Tool |
+
+
+      |------|------|
+
+
+      | Sleeve catalog | list_aideal_sleeves |
+
+      | Fund / bench index | compute_sleeve_index |
+
+      | Weekly HTML | save_aideal_newsletter |
+
+      | Books lots / P/L | get_portfolio |
+
+      | Live price | get_quote |
+
+      | Metrics / 3-axis / targets | portfolio_analyzer |
+
+      | Generic analysis HTML | save_report |
+
+
+      Lots for an index: holding.category = sleeve id, or pass lots. No mutation tools.
+    tags:
+      - tools
+      - aideal-production
+    source: invage-seed
+    provenance: system
+    domain_tag: aideal-production
+    refs: []
+    created_at: 2026-08-19T12:00:00.000Z
+    updated_at: 2026-08-19T12:00:00.000Z
+  - id: a6000001-0001-4000-8000-000000000003
+    scope: agent
+    owner_slug: system-seed
+    agent_id: aideal
+    title: AIDeal sleeve catalog
+    body: >
+      Production sleeves (benchmark / base date):
+
+
+      financial → SPY / 2025-07-29
+
+      healthcare → IYH / 2025-08-12
+
+      aerospace → ITA / 2025-08-12
+
+      food-staples → VDC / 2025-08-14
+
+      utility → XLU / 2025-08-14
+
+      technology → QQQ / 2025-11-13
+
+      overall → SPY / 2025-09-22 (union of the six)
+
+
+      Always call list_aideal_sleeves if you need the documented ticker universe. Weights
+      never come from that list — only from lots.
+    tags:
+      - sleeves
+      - aideal-production
+    source: invage-seed
+    provenance: system
+    domain_tag: aideal-production
+    refs: []
+    created_at: 2026-08-19T12:00:00.000Z
+    updated_at: 2026-08-19T12:00:00.000Z

@@ -32,6 +32,15 @@ function failFrom(error: unknown): AgentToolResult<null> {
   return fail(error instanceof Error ? error.message : String(error));
 }
 
+export function createSnapshotReadTools(): AgentTool[] {
+  return createSnapshotTool().filter((t) => t.name === 'list_snapshots');
+}
+
+export function createSnapshotWriteTools(): AgentTool[] {
+  return createSnapshotTool().filter((t) => t.name === 'save_snapshot');
+}
+
+/** Full snapshot tools (save + list). Bookkeeper owns save. */
 export function createSnapshotTool(): AgentTool[] {
   const saveSnapshot: AgentTool = {
     name: 'save_snapshot',
@@ -43,7 +52,7 @@ export function createSnapshotTool(): AgentTool[] {
     async execute(_id, raw) {
       const p = raw as ChannelIds;
       try {
-        const state = resolveInvestorFromChannel(p);
+        const { state } = await resolveInvestorFromChannel(p);
 
         const portfolio = getPortfolio(state);
         if (Object.keys(portfolio).length === 0) {
@@ -202,7 +211,7 @@ export function createSnapshotTool(): AgentTool[] {
     async execute(_id, raw) {
       const p = raw as ChannelIds;
       try {
-        const state = resolveInvestorFromChannel(p);
+        const { state } = await resolveInvestorFromChannel(p);
         const files = loadSnapshotIndex(state.user.slug);
         if (files.length === 0) {
           return fail('No snapshots saved yet. Use save_snapshot first.');

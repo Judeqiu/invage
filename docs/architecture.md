@@ -70,8 +70,9 @@ Legend: ✅ correctly placed · 🔁 duplicates utarus · ⬆️ generic, should
 | File | LOC | Class | Note |
 |---|---|---|---|
 | `server.ts` | — | 🎯 | Drive-only process entry (re-exports utarus BinDrive). |
-| `invage-webui.ts` | — | 🎯 | `DomainExtension.webUi` — Dashboard nav tab + API + staticDir. |
+| `invage-webui.ts` | — | 🎯 | `DomainExtension.webUi` — Dashboard + Watch List nav tabs + API + staticDir. |
 | `dashboard-api.ts` / `dashboard-data.ts` | — | 🎯 | Live portfolio dashboard JSON for WebUI iframe. |
+| `watchlist-data.ts` | — | 🎯 | Playbook watchlists + named-product quotes for Watch List iframe. |
 | `chat/router.ts` | 303 | ⬆️ | Generic chat router. Only investor-tinted line: `loadInvestorState` import for the gate. Replace with a `loadState` hook and upstream. |
 | `chat/run-agent.ts` | 181 | ⬆️ | Pure generic. Subscribe to pi-agent-core events → push to stream-registry. Upstream. |
 | `chat/sse.ts` | 41 | ⬆️ | Pure SSE wire helpers. Upstream. |
@@ -202,13 +203,13 @@ How invage wires into utarus, by concern:
 
 | Concern | Utarus exports used | Invage adds |
 |---|---|---|
-| Boot | `createFramework({ extension })` | `invageExtension` |
+| Boot | `createFramework({ defaultAgentId, agents })` | `invageExtension` as host; peers from `INVAGE_PRODUCT_PROFILE` (`full` \| `consultant`) via `src/agents/roster.ts` |
 | Per-turn context | `enrichMessage(ctx)` hook | `investorContextPrefix(investor, ctx)` |
 | User lookup | `resolveUserBySlackUser` / `resolveUserByTelegramUser` / (gap: by slug) | Wraps in `resolveInvestorFromChannel` for tool params |
 | Onboarding (instant) | `redeemInviteInstantly`, `ensureChannelUser` | — (uses utarus) |
 | Onboarding (QR / BIND) | — | `onboard/handshake.ts` + `/bind` Slack command |
 | State I/O | `loadState` / `saveState` | Wraps to add `portfolio` + `playbook` fields |
-| Tools | `AgentTool` interface | `tools/{portfolio,playbook,portfolio_analyzer,snapshot,save_report,send_report}.ts` |
+| Tools | `AgentTool` interface | `tools/{portfolio,playbook,portfolio_analyzer,snapshot,save_report,send_report,recon}.ts` |
 | Skills | `Skill` interface + `use_skill` tool | `skills.ts` registers 3 investor knowledge docs |
 | Channels | Telegram, Slack, CLI built-in | WebUI (today: invage-local; future: utarus-shared) |
 | Files | BinDrive portal + `/api/files/*` | `save_report` writes there |

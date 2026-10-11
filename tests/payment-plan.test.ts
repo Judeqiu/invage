@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildPaymentPlan,
   impliedDepositAnnualPct,
+  optimizePaymentPlan,
 } from '../src/treasury/payment-plan.js';
 
 describe('impliedDepositAnnualPct', () => {
@@ -98,5 +99,115 @@ describe('buildPaymentPlan', () => {
     expect(fd).toBeDefined();
     expect(fd!.action).toMatch(/matur|compare|hold/i);
     expect(fd!.detail.length).toBeGreaterThan(20);
+  });
+});
+
+describe('optimizePaymentPlan', () => {
+  const base = {
+    asOf: '2026-08-01',
+    currency: 'SGD',
+    freeCash: [{ amount: 5000, currency: 'SGD', channel: 'bank' }],
+    deposits: [] as Array<{
+      id: string;
+      amount: number;
+      interest: number;
+      currency: string;
+      start_date: string;
+      end_date: string;
+    }>,
+    monthlyIncome: 8000,
+    monthlyExpense: 5000,
+    liabilities: [
+      {
+        id: 'card',
+        kind: 'loan',
+        principal: 8000,
+        annual_rate_pct: 22,
+        payment_amount: 200,
+        currency: 'SGD',
+        label: 'card',
+      },
+      {
+        id: 'loan',
+        kind: 'loan',
+        principal: 4000,
+        annual_rate_pct: 8,
+        payment_amount: 150,
+        currency: 'SGD',
+        label: 'personal',
+      },
+    ],
+  };
+
+  it('evaluates strategy × emergency axes and ranks by lowest HARD interest then faster debt-free', () => {
+    const result = optimizePaymentPlan(base, {
+      strategies: ['avalanche', 'snowball'],
+      emergencyMonths: [undefined, 3],
+      extraMonthlies: [undefined],
+      maxMonths: 120,
+    });
+    expect(result.candidates_evaluated).toBe(4);
+    expect(result.ranking).toHaveLength(4);
+    expect(result.best.config.strategy).toBe('avalanche');
+    // Best must have interest ≤ every other candidate
+    for (const c of result.ranking) {
+      expect(result.best.summary.total_interest).toBeLessThanOrEqual(c.summary.total_interest + 1e-9);
+    }
+    // Ranking is sorted best→worst by objective
+    for (let i = 1; i < result.ranking.length; i++) {
+      const a = result.ranking[i - 1].summary;
+      const b = result.ranking[i].summary;
+      const aMonths = a.months_to_debt_free ?? Number.POSITIVE_INFINITY;
+      const bMonths = b.months_to_debt_free ?? Number.POSITIVE_INFINITY;
+      if (a.total_interest === b.total_interest) {
+        expect(aMonths).toBeLessThanOrEqual(bMonths);
+      } else {
+        expect(a.total_interest).toBeLessThanOrEqual(b.total_interest);
+      }
+    }
+    expect(result.interest_saved_vs_worst).toBeGreaterThanOrEqual(0);
+    expect(result.best_plan.strategy).toBe(result.best.config.strategy);
+    expect(result.best_plan.summary.total_interest).toBe(result.best.summary.total_interest);
+  });
+
+  it('fails fast when strategies list is empty', () => {
+    expect(() =>
+      optimizePaymentPlan(base, {
+        strategies: [],
+        emergencyMonths: [undefined],
+        extraMonthlies: [undefined],
+      }),
+    ).toThrow(/strateg/i);
+  });
+
+  it('fails fast when no candidates after cartesian product', () => {
+    expect(() =>
+      optimizePaymentPlan(base, {
+        strategies: ['avalanche'],
+        emergencyMonths: [],
+        extraMonthlies: [undefined],
+      }),
+    ).toThrow(/candidate|emergency|empty/i);
+  });
+
+  it('respects pinned extra_monthly across candidates', () => {
+    const result = optimizePaymentPlan(base, {
+      strategies: ['avalanche', 'snowball'],
+      emergencyMonths: [undefined],
+      extraMonthlies: [500, 1500],
+      maxMonths: 60,
+    });
+    expect(result.candidates_evaluated).toBe(4);
+    const extras = new Set(result.ranking.map((c) => c.config.extra_monthly));
+    expect(extras.has(500)).toBe(true);
+    expect(extras.has(1500)).toBe(true);
+    // Higher extra should not produce higher interest for same strategy
+    const ava500 = result.ranking.find(
+      (c) => c.config.strategy === 'avalanche' && c.config.extra_monthly === 500,
+    )!;
+    const ava1500 = result.ranking.find(
+      (c) => c.config.strategy === 'avalanche' && c.config.extra_monthly === 1500,
+    )!;
+    expect(ava1500.summary.total_interest).toBeLessThanOrEqual(ava500.summary.total_interest);
   });
 });

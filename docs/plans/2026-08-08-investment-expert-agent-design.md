@@ -1,23 +1,23 @@
-# Investment Expert — Local Peer Agent Design
+# InvestmentAdvisor — Local Peer Agent Design
 
 **Date:** 2026-08-08  
 **Status:** Validated design (implementation follows this doc)  
-**Scope:** New multi-local peer on the Invage host, same pattern as Bookkeeper / Accountant.
+**Scope:** New multi-local peer on the Invage host, same pattern as Bookkeeper / FinancialPlanner.
 
 ---
 
 ## Overview
 
-**Investment Expert** is a dedicated peer agent for **portfolio + thesis** work: playbook-aware holdings review, single-name deep dives, undervalued discovery, news→path, and options structure analysis. It reads the user’s portfolio and playbook, uses live market tools and Firecrawl, and packages SOTA recipes via **skill + agent KB** (like Accountant).
+**InvestmentAdvisor** is a dedicated peer agent for **portfolio + thesis** work: playbook-aware holdings review, single-name deep dives, undervalued discovery, news→path, and options structure analysis. It reads the user’s portfolio and playbook, uses live market tools and Firecrawl, and packages SOTA recipes via **skill + agent KB** (like FinancialPlanner).
 
 It does **not** mutate books, run the playbook wizard, or design payment plans.
 
 | Concern | Owner |
 |---------|--------|
 | Bare messages, billing, WebUI shell, playbook wizard, full toolset | **Invester** (`invage`, default) |
-| Portfolio + thesis (read-only books) | **@InvestmentExpert** (`investment-expert`) |
+| Portfolio + thesis (read-only books) | **@InvestmentAdvisor** (`investment-advisor`) |
 | Journal / reconcile / holding CRUD | **@Bookkeeper** |
-| Payment plans / cash efficiency | **@Accountant** |
+| Payment plans / cash efficiency | **@FinancialPlanner** |
 
 ---
 
@@ -25,9 +25,9 @@ It does **not** mutate books, run the playbook wizard, or design payment plans.
 
 | Field | Value |
 |-------|--------|
-| Agent id | `investment-expert` |
-| Label | Investment Expert |
-| Mention | `@InvestmentExpert` (label must be one token — no spaces; WebUI @ insert + room parser) |
+| Agent id | `investment-advisor` |
+| Label | InvestmentAdvisor |
+| Mention | `@InvestmentAdvisor` (label must be one token — no spaces; WebUI @ insert + room parser) |
 | LLM routing | `{ default: 'heavy' }` |
 | Billing / webUi | None (host default owns shell) |
 
@@ -53,7 +53,7 @@ It does **not** mutate books, run the playbook wizard, or design payment plans.
 |------|----------|
 | Holding / cash / FD / household mutations | `@Bookkeeper` or Invester |
 | Playbook setup / `update_playbook` | **Invester** only |
-| Payment plans / avalanche / opportunity cost | `@Accountant` |
+| Payment plans / avalanche / opportunity cost | `@FinancialPlanner` |
 | Property shopping / stamp duty deep dives | Invester + `property_intel` |
 | Trade execution | None (educational only) |
 
@@ -61,7 +61,7 @@ It does **not** mutate books, run the playbook wizard, or design payment plans.
 
 ## Tools
 
-`createInvestmentExpertTools()` — **read / research only**:
+`createInvestmentAdvisorTools()` — **read / research only**:
 
 | Tool | Role |
 |------|------|
@@ -95,8 +95,8 @@ Bodies from existing `src/skills/knowledge/*.md`. No `playbook-setup`, `family-t
 
 | Path | Purpose |
 |------|---------|
-| `kb-seed/agents/investment-expert.yaml` | System seed |
-| `data/kb/agents/investment-expert.yaml` | Runtime (via `scripts/seed-agent-kb.mjs`) |
+| `kb-seed/agents/investment-advisor.yaml` | System seed |
+| `data/kb/agents/investment-advisor.yaml` | Runtime (via `scripts/seed-agent-kb.mjs`) |
 
 **Purpose rule:** on portfolio review / ticker thesis / undervalued / news-path work, call `search_kb` (or `list_kb` scope=agent) **this turn** before freehand recipes.
 
@@ -128,13 +128,13 @@ Pattern: `` `${prefix}\n\n${ctx.text}` `` — never drop user text.
 |------|--------|
 | `src/tools/portfolio.ts` | Export `createGetPortfolioTool()` |
 | `src/tools/playbook.ts` | Export `createGetPlaybookTool()` |
-| `src/tools/index.ts` | `createInvestmentExpertTools()` |
-| `src/agents/investment-expert.ts` | DomainExtension |
+| `src/tools/index.ts` | `createInvestmentAdvisorTools()` |
+| `src/agents/investment-advisor.ts` | DomainExtension |
 | `src/index.ts` | Register peer |
-| `src/extension.ts` | Mention `@InvestmentExpert` in Invester purpose |
-| `kb-seed/agents/investment-expert.yaml` | Seed corpus |
-| `scripts/seed-agent-kb.mjs` | Add `investment-expert` to `AGENTS` |
-| `tests/investment-expert-agent.test.ts` | Allowlist / denylist / purpose / skills / routing |
+| `src/extension.ts` | Mention `@InvestmentAdvisor` in Invester purpose |
+| `kb-seed/agents/investment-advisor.yaml` | Seed corpus |
+| `scripts/seed-agent-kb.mjs` | Add `investment-advisor` to `AGENTS` |
+| `tests/investment-advisor-agent.test.ts` | Allowlist / denylist / purpose / skills / routing |
 
 ---
 
@@ -147,7 +147,7 @@ On multi-local hosts, framework tools (every local agent including Invester):
 | `list_local_agents` | Peer id / label / purpose |
 | `invoke_local_agent` | Run a peer turn; return reply (max depth 1) |
 
-Invester purpose instructs when to consult Bookkeeper / Accountant / Investment Expert and synthesize. See utarus `docs/releases/v3.0.0-beta.10.md` and `docs/multi-agent-host-guide.md` §4.3.
+Invester purpose instructs when to consult Bookkeeper / FinancialPlanner / InvestmentAdvisor and synthesize. See utarus `docs/releases/v3.0.0-beta.10.md` and `docs/multi-agent-host-guide.md` §4.3.
 
 **Pin:** `"utarus": "github:Judeqiu/utarus#v3.0.0-beta.10"`
 
@@ -163,7 +163,7 @@ Invester purpose instructs when to consult Bookkeeper / Accountant / Investment 
 
 ## Success criteria
 
-- Room invite can `@InvestmentExpert` and get playbook-aware analysis without write tools  
+- Room invite can `@InvestmentAdvisor` and get playbook-aware analysis without write tools  
 - Unit tests enforce tool surface and purpose contracts  
 - Agent KB seed installs via existing seed script  
 - Invester remains default; analysis still available on Invester for bare messages  

@@ -97,7 +97,8 @@ export function createOpportunityCostTool(): AgentTool {
           return fail('years must be a finite number > 0 (forgone horizon is required).');
         }
 
-        const state = resolveInvestorFromChannel(p);
+        const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
         let capital = p.capital;
         let yieldPct = p.yield_pct;
         let source: 'explicit_yield_pct' | 'fund_expected_yield' | 'deposit_implied_yield' =

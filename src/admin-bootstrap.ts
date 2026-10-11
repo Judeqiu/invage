@@ -1,85 +1,20 @@
-/**
- * Admin bootstrap — guarantee TELEGRAM_ADMIN_IDS and SLACK_ADMIN_IDS entries
- * have Utarus user records at startup (Binary-style, extended for Slack).
- * Idempotent; never overwrites existing files.
- */
+/** Validate migrated administrator identities; startup never invents user records. */
+import { getDatabaseRuntime } from 'utarus/database';
 
-import { writeFileSync, existsSync, mkdirSync } from 'fs';
-import { dirname, join } from 'path';
-import { randomUUID } from 'crypto';
-import { stringify } from 'yaml';
-import { resolveDataRoot } from 'utarus';
-
-function readTelegramAdminIds(): number[] {
-  const raw = process.env.TELEGRAM_ADMIN_IDS;
-  if (!raw) return [];
-  return raw
-    .split(',')
-    .map((s) => parseInt(s.trim(), 10))
-    .filter((n) => !isNaN(n));
-}
-
-function readSlackAdminIds(): string[] {
-  const raw = process.env.SLACK_ADMIN_IDS;
-  if (!raw) return [];
-  return raw
-    .split(',')
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
-}
-
-function userPath(slug: string): string {
-  return join(resolveDataRoot(), 'users', `${slug}.yaml`);
-}
-
-function ensureUser(params: {
-  slug: string;
-  displayName: string;
-  telegramIds?: number[];
-  slackIds?: string[];
-}): void {
-  const path = userPath(params.slug);
-  if (existsSync(path)) return;
-
-  const today = new Date().toISOString().slice(0, 10);
-  const doc = {
-    user: {
-      id: randomUUID(),
-      slug: params.slug,
-      created_at: today,
-      telegram_user_ids: params.telegramIds ?? [],
-      slack_user_ids: params.slackIds ?? [],
-      auth_token: randomUUID(),
-    },
-    profile: {
-      display_name: params.displayName,
-      contact_email: 'admin@localhost',
-    },
-    log: [{ ts: today, action: 'admin_bootstrap' }],
-    portfolio: {},
-  };
-
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, stringify(doc), 'utf-8');
-  console.log(`[admin-bootstrap] Created user "${params.slug}"`);
-}
-
-export function ensureAdminUsersExist(): void {
-  for (const id of readTelegramAdminIds()) {
-    ensureUser({
-      slug: `admin-${id}`,
-      displayName: `Admin ${id}`,
-      telegramIds: [id],
-    });
-  }
-
-  for (const slackId of readSlackAdminIds()) {
-    // Slack IDs are alphanumeric (e.g. U012ABCDEF); keep slug kebab-safe.
-    const safe = slackId.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-    ensureUser({
-      slug: `admin-slack-${safe}`,
-      displayName: `Admin Slack ${slackId}`,
-      slackIds: [slackId],
-    });
+export async function ensureAdminUsersExist(): Promise<void> {
+  const users = getDatabaseRuntime().users;
+  for (const [provider, variable] of [['telegram', 'TELEGRAM_ADMIN_IDS'], ['slack', 'SLACK_ADMIN_IDS']] as const) {
+    const configured = process.env[variable];
+    if (configured === undefined || configured.trim() === '') continue;
+    for (const entry of configured.split(',')) {
+      const identity = entry.trim();
+      if (!identity || (provider === 'telegram' && (!Number.isSafeInteger(Number(identity)) || Number(identity) <= 0))) {
+        throw new Error(`Invalid identity in ${variable}`);
+      }
+      const snapshot = await users.findByExternalIdentity(provider, identity, 'all');
+      if (snapshot === null || snapshot.state.user.deleted_at !== undefined) {
+        throw new Error(`Configured ${provider} administrator has no active migrated user record`);
+      }
+    }
   }
 }

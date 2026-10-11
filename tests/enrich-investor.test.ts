@@ -1,8 +1,10 @@
+import { useTestDatabase, createInvestorFixture } from './helpers/database.js';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'fs';
+import { mkdtempSync, rmSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { stringify } from 'yaml';
+
+const testDatabase = await useTestDatabase();
 
 const dataRoot = mkdtempSync(join(tmpdir(), 'invage-enrich-'));
 process.env.UTARUS_LOADED_BY_HOST = '1';
@@ -11,11 +13,9 @@ process.env.UTARUS_DATA_ROOT = dataRoot;
 const { invageExtension } = await import('../src/extension.js');
 
 describe('invage enrichMessage (domain only — access is Utarus)', () => {
-  beforeAll(() => {
+  beforeAll(async () => {
     mkdirSync(join(dataRoot, 'users'), { recursive: true });
-    writeFileSync(
-      join(dataRoot, 'users', 'cy.yaml'),
-      stringify({
+    await createInvestorFixture({
         user: {
           id: '00000000-0000-4000-8000-000000000099',
           slug: 'cy',
@@ -26,8 +26,7 @@ describe('invage enrichMessage (domain only — access is Utarus)', () => {
         profile: { display_name: 'CY', contact_email: 'cy@invite.local' },
         log: [{ ts: '2026-07-13', action: 'created' }],
         portfolio: {},
-      }),
-    );
+      });
   });
 
   afterAll(() => {
@@ -52,7 +51,7 @@ describe('invage enrichMessage (domain only — access is Utarus)', () => {
     expect(text).not.toMatch(/invite code|display_name would you|Option A/i);
   });
 
-  it('exposes chatEmptyState with treasury starters on webUi', () => {
+  it('exposes chatEmptyState with treasury starters on webUi', async () => {
     const empty = invageExtension.webUi?.chatEmptyState;
     expect(empty).toBeTruthy();
     expect(empty!.title.length).toBeGreaterThan(0);

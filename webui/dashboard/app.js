@@ -21,7 +21,20 @@ const COLORS = [
 const el = {
   subtitle: document.getElementById('subtitle'),
   dateSelect: document.getElementById('dateSelect'),
+  dateInput: document.getElementById('dateInput'),
+  datePrev: document.getElementById('datePrev'),
+  dateNext: document.getElementById('dateNext'),
+  dateLatest: document.getElementById('dateLatest'),
   channelSelect: document.getElementById('channelSelect'),
+  channelPills: document.getElementById('channelPills'),
+  deskEyebrow: document.getElementById('deskEyebrow'),
+  heroDate: document.getElementById('heroDate'),
+  heroLead: document.getElementById('heroLead'),
+  navValue: document.getElementById('navValue'),
+  navDelta: document.getElementById('navDelta'),
+  kpiRow: document.getElementById('kpiRow'),
+  expiryRow: document.getElementById('expiryRow'),
+  expiryLead: document.getElementById('expiryLead'),
   statusBadge: document.getElementById('statusBadge'),
   status: document.getElementById('status'),
   refreshBtn: document.getElementById('refreshBtn'),
@@ -74,6 +87,69 @@ function fmtUsd2(n) {
     '$' +
     Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   );
+}
+
+function fmtPrettyMoney(n, ccy, digits = 2) {
+  const v = Number(n);
+  const abs = Math.abs(v).toLocaleString('en-US', {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  });
+  const sign = v < 0 ? '-' : '';
+  const code = (ccy || '').toUpperCase();
+  if (code === 'SGD') return `${sign}S$${abs}`;
+  if (!code || code === 'USD') return `${sign}$${abs}`;
+  return `${sign}${abs} ${code}`;
+}
+
+function longDateLabel(ymd) {
+  const d = new Date(`${ymd}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return ymd;
+  return d.toLocaleDateString('en-GB', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
+}
+
+function daysToExpiry(expiry, asOf) {
+  if (!expiry) return null;
+  const e = Date.parse(`${expiry}T00:00:00Z`);
+  const a = Date.parse(`${asOf}T00:00:00Z`);
+  if (!Number.isFinite(e) || !Number.isFinite(a)) return null;
+  return Math.round((e - a) / 86400000);
+}
+
+function metricCardHtml(label, value, sub, help, valueClass) {
+  const vcls = ['metric-value', valueClass || ''].filter(Boolean).join(' ');
+  const helpBtn = help
+    ? `<button type="button" class="help-dot" title="${escapeHtml(help)}">?</button>`
+    : '';
+  return `<div class="metric-card">
+    <div class="metric-head">
+      <div class="label-eyebrow">${escapeHtml(label)}</div>
+      ${helpBtn}
+    </div>
+    <div class="${vcls}">${value}</div>
+    ${sub ? `<div class="metric-sub">${sub}</div>` : ''}
+  </div>`;
+}
+
+function metricsForView(view) {
+  const all = payload?.connectionMetrics || {};
+  if (view.channelView !== MERGED_CHANNEL_VIEW) {
+    return all[view.channelView] ? [all[view.channelView]] : [];
+  }
+  return Object.values(all);
+}
+
+function sumMetric(rows, key) {
+  const nums = rows.map((r) => r[key]).filter((n) => typeof n === 'number' && Number.isFinite(n));
+  if (nums.length === 0) return null;
+  const ccys = [...new Set(rows.filter((r) => r[key] != null).map((r) => r.currency))];
+  if (ccys.length > 1) return null;
+  return { amount: nums.reduce((s, n) => s + n, 0), currency: ccys[0] };
 }
 
 function fmtSigned(n, digits = 2) {
@@ -937,161 +1013,206 @@ function renderDetailTables(view) {
 }
 
 /**
- * High-level KPI strip + compact per-channel chips (merged multi-channel only).
- * Detail numbers live in the tables below.
+ * Snapshot hero + KPI cards (Wheel Desk layout). Unknown broker metrics stay "—".
  */
 function renderOverview(view) {
-  if (!el.kpiGrid) return;
-  const benchTicker = payload.benchmark?.ticker || 'SPY';
-  const baseDate = payload.benchmark?.baseDate || 'cost basis';
   const repCcy = reportingCcyCode(view);
-  const channelCount =
-    view.channelView === MERGED_CHANNEL_VIEW
-      ? (view.channels && view.channels.length) || channelRowsForView(view).length
-      : 1;
-  const holdingN = view.positions.length;
-  const fdN = view.depositCount || (view.deposits || []).length || 0;
-  const fdAmt = Number(view.depositsAmount || 0);
+  const channels = Array.isArray(view.channels) ? view.channels : [];
+  const asOf = view.isLive
+    ? (payload.generatedAt || '').slice(0, 10) || new Date().toISOString().slice(0, 10)
+    : view.label;
+  const brokerNames = channels
+    .filter((c) => c && c !== DEFAULT_CHANNEL)
+    .join(', ');
 
-  if (el.overviewMeta) {
-    const scope =
+  if (el.deskEyebrow) {
+    el.deskEyebrow.textContent =
       view.channelView === MERGED_CHANNEL_VIEW
-        ? `All channels · ${channelCount} broker${channelCount === 1 ? '' : 's'}`
-        : `Channel ${view.channelLabel || view.channelView}`;
-    el.overviewMeta.textContent =
-      `${scope} · Cost base ${baseDate}` +
-      ` · ${holdingN} holding${holdingN === 1 ? '' : 's'}` +
-      (fdN > 0 ? ` · ${fdN} FD term${fdN === 1 ? '' : 's'}` : '') +
-      fxFootnote(view);
+        ? `Multi-broker${channels.length ? ` · ${channels.length} channel${channels.length === 1 ? '' : 's'}` : ''}`
+        : `Channel · ${view.channelLabel || view.channelView}`;
+  }
+  if (el.heroDate) {
+    el.heroDate.textContent = longDateLabel(asOf);
+  }
+  if (el.heroLead) {
+    el.heroLead.textContent = brokerNames
+      ? `Unified view across ${brokerNames}. Pick a date to replay the numbers captured at that day's close.`
+      : 'Unified view of recorded holdings and cash. Pick a date to replay numbers captured at that day’s close.';
+  }
+  if (el.navValue) {
+    el.navValue.textContent = fmtPrettyMoney(view.totalValue, repCcy, 2);
+  }
+  if (el.navDelta) {
+    const hist = payload.model?.history || [];
+    const prior = [...hist].reverse().find((h) => h.date < asOf) || hist[hist.length - 1];
+    if (view.isLive && hist.length > 0) {
+      const last = hist[hist.length - 1];
+      const delta = view.totalValue - last.totalValue;
+      const pct = last.totalValue ? (delta / last.totalValue) * 100 : null;
+      el.navDelta.className = 'metric-sub ' + (delta > 0 ? 'up' : delta < 0 ? 'down' : '');
+      el.navDelta.textContent =
+        `${fmtSignedUsd0(delta)}` +
+        (pct != null ? ` · ${fmtSigned(pct, 2)}% on ${last.date}` : ` vs ${last.date}`);
+    } else if (prior && prior.date !== asOf) {
+      const delta = view.totalValue - prior.totalValue;
+      el.navDelta.className = 'metric-sub ' + (delta > 0 ? 'up' : delta < 0 ? 'down' : '');
+      el.navDelta.textContent = `${fmtSignedUsd0(delta)} vs ${prior.date}`;
+    } else {
+      el.navDelta.className = 'metric-sub';
+      el.navDelta.textContent = view.isLive ? 'Live marks' : `Archived ${view.label}`;
+    }
   }
 
-  const plTone = view.totalPL > 0 ? 'positive' : view.totalPL < 0 ? 'negative' : '';
-  const diffTone =
-    view.diff == null ? '' : view.diff > 0 ? 'positive' : view.diff < 0 ? 'negative' : '';
-  const idxTone =
-    view.diff == null ? '' : view.diff > 0 ? 'positive' : view.diff < 0 ? 'negative' : '';
+  const metrics = metricsForView(view);
+  const buying = sumMetric(metrics, 'buying_power');
+  const maint = sumMetric(metrics, 'maintenance_margin');
+  const excess = sumMetric(metrics, 'excess_liquidity');
+  let marginPct = null;
+  if (maint && excess && maint.amount + excess.amount > 0) {
+    marginPct = (maint.amount / (maint.amount + excess.amount)) * 100;
+  } else if (maint && buying && buying.amount > 0) {
+    marginPct = (maint.amount / buying.amount) * 100;
+  }
 
-  const kpis = [
-    {
-      label: 'NAV',
-      value: fmtMoney0(view.totalValue, repCcy),
-      sub:
-        (view.positionsValue != null
-          ? `Positions ${fmtUsd0(view.positionsValue)}`
-          : 'Mark-to-market + cash + FD') +
-        (view.cashWeightPct != null ? ` · cash ${view.cashWeightPct.toFixed(1)}%` : ''),
-      accent: true,
-    },
-    {
-      label: 'Cost basis',
-      value: fmtMoney0(view.totalCost, repCcy),
-      sub: `Since ${baseDate}`,
-    },
-    {
-      label: 'Unrealized P/L',
-      value: fmtSignedUsd0(view.totalPL),
-      sub: dashOrPct(view.totalPLPct),
-      tone: plTone,
-    },
-    {
-      label: 'Fund index',
-      value: dashOrIndex(view.fundIndex),
-      sub:
-        view.benchmarkIndex == null
-          ? `vs ${benchTicker} n/a`
-          : `vs ${benchTicker} ${dashOrIndex(view.benchmarkIndex)}`,
-      tone: idxTone,
-    },
-    {
-      label: `vs ${benchTicker}`,
-      value: view.diff == null ? '—' : fmtSigned(view.diff),
-      sub: view.diff == null ? 'Benchmark unavailable' : 'Fund − benchmark (index pts)',
-      tone: diffTone,
-    },
-    {
-      label: 'Cash',
-      value:
-        view.cashAmount != null
-          ? fmtMoney0(view.cashAmount, view.cashCurrency || repCcy)
+  const cashCcy = view.cashCurrency || repCcy;
+  const optionPl =
+    (view.positions || [])
+      .filter((p) => p.instrument === 'option')
+      .reduce((s, p) => s + Number(p.pl || 0), 0);
+
+  if (el.kpiRow) {
+    el.kpiRow.innerHTML = [
+      metricCardHtml(
+        'Premium · open',
+        view.optionCount
+          ? fmtPrettyMoney(optionPl, repCcy, 0)
           : '—',
-      sub:
-        view.cashAmount != null
-          ? view.cashChannel
-            ? `Channel ${view.cashChannel}`
-            : 'Free cash'
-          : 'No free cash recorded',
-    },
-    {
-      label: 'Fixed deposits',
-      value: fdAmt > 0 || fdN > 0 ? fmtUsd0(fdAmt) : '—',
-      sub:
-        fdN > 0
-          ? `${fdN} term${fdN === 1 ? '' : 's'} · in NAV, not free cash`
-          : 'None',
-    },
-    {
-      label: 'Holdings',
-      value: String(holdingN),
-      sub: `${view.equityCount || 0} eq · ${view.optionCount || 0} opt · ${view.fundCount || 0} fund`,
-      valueClass: 'sm',
-    },
-  ];
-
-  el.kpiGrid.innerHTML = kpis
-    .map((k) => {
-      const cls = ['kpi', k.accent ? 'accent' : '', k.tone || ''].filter(Boolean).join(' ');
-      const valCls = ['kpi-value', k.valueClass || ''].filter(Boolean).join(' ');
-      return `<div class="${cls}">
-        <div class="kpi-label">${escapeHtml(k.label)}</div>
-        <div class="${valCls}">${k.value}</div>
-        <div class="kpi-sub">${k.sub}</div>
-      </div>`;
-    })
-    .join('');
-
-  // Compact channel chips only when merged multi-channel.
-  if (!el.channelStrip) return;
-  const rows = channelRowsForView(view);
-  const showChips =
-    view.channelView === MERGED_CHANNEL_VIEW && rows.length > 1;
-  if (!showChips) {
-    el.channelStrip.classList.add('hidden');
-    el.channelStrip.innerHTML = '';
-    return;
+        view.optionCount
+          ? `${view.optionCount} option lot${view.optionCount === 1 ? '' : 's'} · open P/L, not a day blotter`
+          : 'No option lots',
+        'Open option mark-to-market vs book premium. Daily premium is not stored.',
+        optionPl > 0 ? 'up' : optionPl < 0 ? 'down' : '',
+      ),
+      metricCardHtml(
+        'Buying power',
+        buying ? fmtPrettyMoney(buying.amount, buying.currency, 0) : '—',
+        buying ? 'From broker margin snapshot' : 'Not recorded on this channel',
+        'broker_connections.<id>.metrics.buying_power. Never invented from cash.',
+      ),
+      metricCardHtml(
+        'Cash available',
+        view.cashAmount != null ? fmtPrettyMoney(view.cashAmount, cashCcy, 0) : '—',
+        view.cashAmount != null ? 'Free cash (not deposits)' : 'Cash not recorded',
+        'YAML cash.amount. Missing cash is unknown, not zero.',
+      ),
+      metricCardHtml(
+        'Margin used',
+        marginPct != null ? `${marginPct.toFixed(0)}%` : '—',
+        maint
+          ? `Maint. ${fmtPrettyMoney(maint.amount, maint.currency, 0)}`
+          : 'Need maintenance_margin on the connection',
+        'maintenance_margin / (maintenance_margin + excess_liquidity) when both are set.',
+      ),
+    ].join('');
   }
-  el.channelStrip.classList.remove('hidden');
-  el.channelStrip.innerHTML = rows
-    .map((c) => {
-      const chIdx = portfolioFundIndex({
-        equityCost: c.equityCost,
-        equityValue: c.equityValue,
-        totalValue: c.totalValue,
-        totalCost: c.totalCost,
-      });
-      const chDiff = view.benchmarkIndex == null ? null : chIdx - view.benchmarkIndex;
-      const diffCls = chDiff == null ? 'pl-flat' : plClass(chDiff);
-      const plCls = plClass(c.totalPL);
-      return `<div class="channel-chip">
-        <div class="channel-chip-head">
-          ${channelBadgeHtml(c.channel)}
-          <span class="diff ${diffCls}">${chDiff == null ? '—' : fmtSigned(chDiff)}</span>
-        </div>
-        <div class="channel-chip-nav">${fmtUsd0(c.totalValue)}</div>
-        <div class="channel-chip-meta">
-          ${c.positionCount} hld · idx ${dashOrIndex(chIdx)} ·
-          <span class="${plCls}">${fmtSignedUsd0(c.totalPL)}</span>
-          ${
-            c.cashAmount != null
-              ? ` · cash ${fmtMoney0(c.cashAmount, c.cashCurrency)}`
-              : ''
-          }
-          ${
-            c.depositsAmount != null && c.depositsAmount > 0
-              ? ` · FD ${fmtUsd0(c.depositsAmount)}`
-              : ''
-          }
-        </div>
-      </div>`;
+
+  renderExpiryRisk(view, asOf, buying);
+  renderChannelPills(view);
+}
+
+function renderExpiryRisk(view, asOf, buying) {
+  if (!el.expiryRow) return;
+  const prices = payload?.equityPrices || {};
+  const shorts = (view.positions || []).filter(
+    (p) => p.instrument === 'option' && p.option?.side === 'short',
+  );
+  let itmExposure = 0;
+  let itmKnown = false;
+  let unknownItm = 0;
+  for (const p of shorts) {
+    const uSym = p.option?.underlying;
+    const strike = p.option?.strike;
+    const px = uSym ? prices[uSym] : null;
+    const cashIf = Number(p.contingentCashObligation || 0);
+    if (p.option?.right === 'put' && px != null && strike != null) {
+      itmKnown = true;
+      if (px < strike) itmExposure += cashIf;
+    } else if (p.option?.right === 'call' && px != null && strike != null) {
+      itmKnown = true;
+      if (px > strike) itmExposure += Number(p.contingentShareObligation || 0) * px;
+    } else {
+      unknownItm += 1;
+    }
+  }
+  const contingent = Number(view.contingentCashObligation || 0);
+  const cash = view.cashAmount;
+  const bp = buying ? buying.amount : null;
+  const dry = cash != null && bp != null ? cash + bp : cash != null ? cash : bp;
+  const cover =
+    itmKnown && itmExposure > 0 && cash != null ? (cash / itmExposure) * 100 : null;
+
+  if (el.expiryLead) {
+    const n = shorts.length;
+    el.expiryLead.textContent =
+      n === 0
+        ? 'No short option lots in this view. Section 03 (holdings table) lists every open position.'
+        : `Only short option lots from books. ITM uses live underlying vs strike when a quote exists. Assignment probability is not modeled. ${unknownItm ? `${unknownItm} short lot${unknownItm === 1 ? '' : 's'} have no underlying quote.` : ''}`;
+  }
+
+  el.expiryRow.innerHTML = [
+    metricCardHtml(
+      'High-risk ITM exposure',
+      itmKnown ? fmtPrettyMoney(itmExposure, reportingCcyCode(view), 0) : '—',
+      itmKnown ? 'ITM vs live underlying quote' : 'Need an underlying quote to classify ITM',
+      'Short put ITM if last < strike; short call ITM if last > strike. Not a probability.',
+    ),
+    metricCardHtml(
+      'Probability-weighted exposure',
+      '—',
+      'Not modeled — no assignment probability on the books',
+      'Would require an explicit probability model. We do not invent one.',
+      'down',
+    ),
+    metricCardHtml(
+      'Cash + buying power',
+      dry != null ? fmtPrettyMoney(dry, view.cashCurrency || buying?.currency || reportingCcyCode(view), 0) : '—',
+      cash != null && bp != null
+        ? `Cash ${fmtPrettyMoney(cash, view.cashCurrency, 0)} + BP ${fmtPrettyMoney(bp, buying.currency, 0)}`
+        : cash != null
+          ? 'Buying power not recorded'
+          : 'Cash and/or buying power unknown',
+      'Sum only of recorded figures. Missing legs stay omitted.',
+    ),
+    metricCardHtml(
+      'High-risk coverage',
+      cover != null ? `${cover.toFixed(0)}%` : '—',
+      cover != null
+        ? 'Free cash / ITM assignment cash'
+        : contingent > 0
+          ? `Contingent cash ${fmtPrettyMoney(contingent, reportingCcyCode(view), 0)}`
+          : 'No short-put assignment cash',
+      'cash.amount ÷ ITM contingent cash. Not a margin-requirement ratio.',
+      cover != null && cover < 100 ? 'down' : '',
+    ),
+  ].join('');
+}
+
+function renderChannelPills(view) {
+  if (!el.channelPills) return;
+  const live = payload.model.live;
+  const channels =
+    Array.isArray(live.channels) && live.channels.length > 0 ? live.channels : [DEFAULT_CHANNEL];
+  const pills = [
+    { id: MERGED_CHANNEL_VIEW, label: 'All platforms' },
+    ...channels.map((ch) => ({
+      id: ch,
+      label: ch === DEFAULT_CHANNEL ? 'Unassigned' : ch,
+    })),
+  ];
+  el.channelPills.innerHTML = pills
+    .map((p) => {
+      const on = p.id === selectedChannel ? ' on' : '';
+      return `<button type="button" class="chip-btn${on}" data-channel="${escapeHtml(p.id)}">${escapeHtml(p.label)}</button>`;
     })
     .join('');
 }
@@ -1649,10 +1770,15 @@ function renderDate(dateKey, channelKey = selectedChannel) {
     view.channelView === MERGED_CHANNEL_VIEW
       ? 'All channels (merged)'
       : `Channel: ${view.channelLabel || view.channelView}`;
-  el.subtitle.textContent =
-    `${payload.displayName || payload.slug} · ${view.label} · ${view.isLive ? 'Latest' : 'Archived'} · ${chLabel}`;
-  el.statusBadge.className = view.isLive ? 'live-badge' : 'archive-badge';
-  el.statusBadge.textContent = view.isLive ? 'LIVE' : 'ARCHIVE';
+  if (el.subtitle) {
+    el.subtitle.textContent =
+      `${payload.displayName || payload.slug} · ${view.label} · ${view.isLive ? 'Latest' : 'Archived'} · ${chLabel}`;
+  }
+  if (el.statusBadge) {
+    el.statusBadge.className = view.isLive ? 'live-badge' : 'archive-badge';
+    el.statusBadge.textContent = view.isLive ? 'LIVE' : 'ARCHIVE';
+  }
+  syncDateControls();
 
   destroyCharts();
   renderWarnings();
@@ -1666,29 +1792,53 @@ function renderDate(dateKey, channelKey = selectedChannel) {
   renderDepositsTable(view);
 }
 
+function historyDates() {
+  return (payload?.model?.history || []).map((h) => h.date).sort();
+}
+
+function syncDateControls() {
+  const dates = historyDates();
+  const inputYmd =
+    selectedDate === 'live'
+      ? dates[dates.length - 1] || new Date().toISOString().slice(0, 10)
+      : selectedDate;
+  if (el.dateInput) {
+    el.dateInput.max = dates[dates.length - 1] || inputYmd;
+    el.dateInput.value = inputYmd;
+  }
+  const idx = dates.indexOf(inputYmd);
+  if (el.datePrev) el.datePrev.disabled = dates.length === 0 || idx <= 0;
+  if (el.dateNext) {
+    el.dateNext.disabled =
+      selectedDate === 'live' || dates.length === 0 || idx >= dates.length - 1;
+  }
+}
+
 function initChannelSelect() {
   const live = payload.model.live;
   const channels = Array.isArray(live.channels) && live.channels.length > 0
     ? live.channels
     : [DEFAULT_CHANNEL];
 
-  el.channelSelect.innerHTML = '';
-  const mergedOpt = document.createElement('option');
-  mergedOpt.value = MERGED_CHANNEL_VIEW;
-  mergedOpt.textContent = 'All (merged)';
-  el.channelSelect.appendChild(mergedOpt);
+  if (el.channelSelect) {
+    el.channelSelect.innerHTML = '';
+    const mergedOpt = document.createElement('option');
+    mergedOpt.value = MERGED_CHANNEL_VIEW;
+    mergedOpt.textContent = 'All (merged)';
+    el.channelSelect.appendChild(mergedOpt);
 
-  channels.forEach((ch) => {
-    const opt = document.createElement('option');
-    opt.value = ch;
-    opt.textContent = ch === DEFAULT_CHANNEL ? 'default (unassigned)' : ch;
-    el.channelSelect.appendChild(opt);
-  });
+    channels.forEach((ch) => {
+      const opt = document.createElement('option');
+      opt.value = ch;
+      opt.textContent = ch === DEFAULT_CHANNEL ? 'default (unassigned)' : ch;
+      el.channelSelect.appendChild(opt);
+    });
+  }
 
   const stillValid =
     selectedChannel === MERGED_CHANNEL_VIEW || channels.includes(selectedChannel);
   if (!stillValid) selectedChannel = MERGED_CHANNEL_VIEW;
-  el.channelSelect.value = selectedChannel;
+  if (el.channelSelect) el.channelSelect.value = selectedChannel;
 }
 
 function initDashboard() {
@@ -1723,6 +1873,42 @@ function renderEmpty(body) {
   el.loading.classList.add('hidden');
   el.error.classList.add('hidden');
   el.dashboard.classList.remove('hidden');
+  if (el.heroDate) {
+    el.heroDate.textContent = longDateLabel(new Date().toISOString().slice(0, 10));
+  }
+  if (el.heroLead) {
+    el.heroLead.textContent =
+      body.message || 'No holdings or cash recorded yet. Add positions in chat, then refresh.';
+  }
+  if (el.navValue) el.navValue.textContent = '—';
+  if (el.navDelta) el.navDelta.textContent = 'Empty books';
+  if (el.dateInput) {
+    const today = new Date().toISOString().slice(0, 10);
+    el.dateInput.value = today;
+    el.dateInput.max = today;
+  }
+  if (el.datePrev) el.datePrev.disabled = true;
+  if (el.dateNext) el.dateNext.disabled = true;
+  if (el.kpiRow) {
+    el.kpiRow.innerHTML = [
+      metricCardHtml('Premium · open', '—', 'No option lots', ''),
+      metricCardHtml('Buying power', '—', 'Not recorded', ''),
+      metricCardHtml('Cash available', '—', 'Cash not recorded', ''),
+      metricCardHtml('Margin used', '—', 'Not recorded', ''),
+    ].join('');
+  }
+  if (el.expiryRow) {
+    el.expiryRow.innerHTML = [
+      metricCardHtml('High-risk ITM exposure', '—', 'No short options', ''),
+      metricCardHtml('Probability-weighted exposure', '—', 'Not modeled', ''),
+      metricCardHtml('Cash + buying power', '—', 'Unknown', ''),
+      metricCardHtml('High-risk coverage', '—', 'No assignment cash', ''),
+    ].join('');
+  }
+  if (el.channelPills) {
+    el.channelPills.innerHTML =
+      '<button type="button" class="chip-btn on" data-channel="merged">All platforms</button>';
+  }
   destroyCharts();
   if (el.channelDetailBody) {
     el.channelDetailBody.innerHTML =
@@ -1744,7 +1930,7 @@ async function load() {
   if (loading) return;
   loading = true;
   el.refreshBtn.disabled = true;
-  el.status.className = 'status';
+  el.status.className = 'status-line';
   el.status.textContent = 'Fetching live prices…';
   try {
     const res = await fetch(API, { credentials: 'include' });
@@ -1760,7 +1946,7 @@ async function load() {
     }
     el.status.textContent = `Last refresh ${new Date().toLocaleTimeString()}`;
   } catch (e) {
-    el.status.className = 'status error';
+    el.status.className = 'status-line error';
     el.status.textContent = e instanceof Error ? e.message : String(e);
     el.loading.classList.add('hidden');
     if (!payload) {
@@ -1791,6 +1977,60 @@ el.channelSelect.addEventListener('change', (e) => {
   selectedChannel = e.target.value;
   renderDate(selectedDate, selectedChannel);
 });
+if (el.dateInput) {
+  el.dateInput.addEventListener('change', (e) => {
+    const ymd = e.target.value;
+    const dates = historyDates();
+    if (dates.length > 0 && ymd === dates[dates.length - 1] && selectedDate === 'live') {
+      selectedDate = 'live';
+    } else {
+      selectedDate = ymd;
+    }
+    if (el.dateSelect) el.dateSelect.value = selectedDate;
+    renderDate(selectedDate, selectedChannel);
+  });
+}
+if (el.datePrev) {
+  el.datePrev.addEventListener('click', () => {
+    const dates = historyDates();
+    const cur =
+      selectedDate === 'live' ? dates[dates.length - 1] : selectedDate;
+    const idx = dates.indexOf(cur);
+    if (idx > 0) {
+      selectedDate = dates[idx - 1];
+      if (el.dateSelect) el.dateSelect.value = selectedDate;
+      renderDate(selectedDate, selectedChannel);
+    }
+  });
+}
+if (el.dateNext) {
+  el.dateNext.addEventListener('click', () => {
+    const dates = historyDates();
+    if (selectedDate === 'live') return;
+    const idx = dates.indexOf(selectedDate);
+    if (idx >= 0 && idx < dates.length - 1) {
+      selectedDate = dates[idx + 1];
+      if (el.dateSelect) el.dateSelect.value = selectedDate;
+      renderDate(selectedDate, selectedChannel);
+    }
+  });
+}
+if (el.dateLatest) {
+  el.dateLatest.addEventListener('click', () => {
+    selectedDate = 'live';
+    if (el.dateSelect) el.dateSelect.value = 'live';
+    renderDate(selectedDate, selectedChannel);
+  });
+}
+if (el.channelPills) {
+  el.channelPills.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-channel]');
+    if (!btn) return;
+    selectedChannel = btn.getAttribute('data-channel');
+    if (el.channelSelect) el.channelSelect.value = selectedChannel;
+    renderDate(selectedDate, selectedChannel);
+  });
+}
 el.refreshBtn.addEventListener('click', () => void load());
 el.autoRefresh.addEventListener('change', syncTimer);
 

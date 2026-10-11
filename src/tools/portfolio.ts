@@ -1,9 +1,10 @@
 import { Type } from 'typebox';
 import type { AgentTool, AgentToolResult } from '@earendil-works/pi-agent-core';
-import { saveState } from 'utarus';
+import { saveInvestor } from '../state/investor-store.js';
 import type { FundSpec, Holding, OptionSpec } from '../market/types.js';
 import {
   assertHolding,
+  attachHoldingCustody,
   buildHoldingKey,
   buildOptionKey,
   formatOptionLabel,
@@ -17,6 +18,21 @@ import {
   valuePosition,
 } from '../market/position-value.js';
 import { totalCashLive, totalDepositsLive } from '../market/sum-to-reporting.js';
+import {
+  booksAddDeposit,
+  booksApplyCashDelta,
+  booksClearCashSleeve,
+  booksListJournals,
+  booksMatureDeposit,
+  booksPostAdjustment,
+  booksPostHoldingClose,
+  booksPostHoldingOpen,
+  booksPostOpeningBalance,
+  booksRemoveDeposit,
+  booksTransferCash,
+  isBooksEnabled,
+  type CashContraKind,
+} from '../books/index.js';
 import {
   accumulateHoldingBuy,
   applyCashDelta,
@@ -37,6 +53,7 @@ import {
   getPortfolio,
   matureDeposit,
   removeDeposit,
+  resolveCashCurrencyForChannel,
   setCash,
   setCashes,
   setPortfolio,
@@ -663,7 +680,8 @@ export function createPortfolioTools(): AgentTool[] {
         if (p.units <= 0) return fail('units must be positive.');
 
         const instrument = p.instrument ?? 'equity';
-        const state = resolveInvestorFromChannel(p);
+        const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
         const portfolio = getPortfolio(state);
         const adjustCash = p.adjust_cash !== false;
         const channelProvided = Object.prototype.hasOwnProperty.call(raw, 'channel');
@@ -695,7 +713,7 @@ export function createPortfolioTools(): AgentTool[] {
             instrument: 'option',
             avg_price: p.avg_price,
             units: p.units,
-            category: p.category ?? portfolio[key]?.category,
+            ...((p.category ?? portfolio[key]?.category) === undefined ? {} : { category: p.category ?? portfolio[key]?.category }),
             option,
             ...(channel != null ? { channel } : {}),
           };
@@ -726,7 +744,7 @@ export function createPortfolioTools(): AgentTool[] {
             instrument: 'fund',
             avg_price: p.avg_price,
             units: p.units,
-            category: p.category ?? portfolio[key]?.category,
+            ...((p.category ?? portfolio[key]?.category) === undefined ? {} : { category: p.category ?? portfolio[key]?.category }),
             fund,
             ...(channel != null ? { channel } : {}),
           };
@@ -758,7 +776,7 @@ export function createPortfolioTools(): AgentTool[] {
             instrument: 'equity',
             avg_price: p.avg_price,
             units: p.units,
-            category: p.category ?? portfolio[key]?.category,
+            ...((p.category ?? portfolio[key]?.category) === undefined ? {} : { category: p.category ?? portfolio[key]?.category }),
             ...(channel != null ? { channel } : {}),
           };
           assertHolding(key, holding);
@@ -776,16 +794,40 @@ export function createPortfolioTools(): AgentTool[] {
         const today = new Date().toISOString().slice(0, 10);
         // Ledger against the holding's channel so multi-broker cash stays isolated.
         // Delta is only this-trade cost when accumulating (blended position − prior).
-        const cashResult = applyCashDelta(
-          getCashes(state),
-          cashDeltaForHoldingChange(before, holding),
-          today,
-          adjustCash,
-          holding.channel,
-          undefined,
-        );
-        if (cashResult.adjusted) {
-          setCashes(state, cashResult.cashes);
+        let cashResult: CashApplyResult;
+        let booksRequestId: string | undefined;
+        if (isBooksEnabled()) {
+          const posted = await booksPostHoldingOpen(state, {
+            mapKey: key,
+            holding,
+            purchaseUnits: purchase.units,
+            purchaseAvg: purchase.avg_price,
+            valueDate: today,
+            adjustCash,
+          });
+          booksRequestId = posted.requestId;
+          const delta = cashDeltaForHoldingChange(before, holding);
+          cashResult = {
+            cashes: posted.cashes,
+            cash: findCashForSlot(posted.cashes, holding.channel, 'USD'),
+            cashDelta: adjustCash ? delta : 0,
+            adjusted: adjustCash && delta !== 0,
+            note: adjustCash
+              ? `Cash books trade delta ${delta.toFixed(2)} USD`
+              : 'Cash ledger not adjusted (adjust_cash=false).',
+          };
+        } else {
+          cashResult = applyCashDelta(
+            getCashes(state),
+            cashDeltaForHoldingChange(before, holding),
+            today,
+            adjustCash,
+            holding.channel,
+            undefined,
+          );
+          if (cashResult.adjusted) {
+            setCashes(state, cashResult.cashes);
+          }
         }
 
         portfolio[key] = holding;
@@ -803,11 +845,11 @@ export function createPortfolioTools(): AgentTool[] {
           instrument,
           avg_price: purchase.avg_price,
           units: purchase.units,
-          category: p.category,
-          channel: holding.channel,
-          cash_delta: cashResult.adjusted ? cashResult.cashDelta : undefined,
-          cash_after: cashAfter?.amount,
-          cash_channel: cashResult.adjusted ? cashResult.cash?.channel : undefined,
+          ...((p.category) === undefined ? {} : { category: p.category }),
+          ...((holding.channel) === undefined ? {} : { channel: holding.channel }),
+          ...((cashResult.adjusted ? cashResult.cashDelta : undefined) === undefined ? {} : { cash_delta: cashResult.adjusted ? cashResult.cashDelta : undefined }),
+          ...((cashAfter?.amount) === undefined ? {} : { cash_after: cashAfter?.amount }),
+          ...((cashResult.adjusted ? cashResult.cash?.channel : undefined) === undefined ? {} : { cash_channel: cashResult.adjusted ? cashResult.cash?.channel : undefined }),
           ...(isAccumulate
             ? {
                 accumulated: true,
@@ -815,10 +857,10 @@ export function createPortfolioTools(): AgentTool[] {
                 position_units: holding.units,
               }
             : {}),
-          ...(instrument === 'option' ? { option: holding.option } : {}),
-          ...(instrument === 'fund' ? { fund: holding.fund } : {}),
+          ...(instrument === 'option' ? { ...((holding.option) === undefined ? {} : { option: holding.option }) } : {}),
+          ...(instrument === 'fund' ? { ...((holding.fund) === undefined ? {} : { fund: holding.fund }) } : {}),
         });
-        saveState(state);
+        await saveInvestor(snapshot);
 
         const cashLine = formatCashApplyNote(cashResult);
         const channelLine = holding.channel ? `Channel: ${holding.channel}\n` : '';
@@ -945,7 +987,8 @@ export function createPortfolioTools(): AgentTool[] {
     async execute(_id, raw) {
       const p = raw as ChannelIds & { ticker: string; channel?: string; adjust_cash?: boolean };
       try {
-        const state = resolveInvestorFromChannel(p);
+        const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
         const portfolio = getPortfolio(state);
         const adjustCash = p.adjust_cash !== false;
         const channelProvided = Object.prototype.hasOwnProperty.call(raw, 'channel');
@@ -958,16 +1001,36 @@ export function createPortfolioTools(): AgentTool[] {
 
         const removed = portfolio[ticker];
         const today = new Date().toISOString().slice(0, 10);
-        const cashResult = applyCashDelta(
-          getCashes(state),
-          cashDeltaForHoldingChange(removed, null),
-          today,
-          adjustCash,
-          removed.channel,
-          undefined,
-        );
-        if (cashResult.adjusted) {
-          setCashes(state, cashResult.cashes);
+        let cashResult: CashApplyResult;
+        if (isBooksEnabled()) {
+          const posted = await booksPostHoldingClose(state, {
+            mapKey: ticker,
+            holding: removed,
+            valueDate: today,
+            adjustCash,
+          });
+          const delta = cashDeltaForHoldingChange(removed, null);
+          cashResult = {
+            cashes: posted.cashes,
+            cash: findCashForSlot(posted.cashes, removed.channel, 'USD'),
+            cashDelta: adjustCash ? delta : 0,
+            adjusted: adjustCash && delta !== 0,
+            note: adjustCash
+              ? `Cash books close delta ${delta.toFixed(2)} USD`
+              : 'Cash ledger not adjusted (adjust_cash=false).',
+          };
+        } else {
+          cashResult = applyCashDelta(
+            getCashes(state),
+            cashDeltaForHoldingChange(removed, null),
+            today,
+            adjustCash,
+            removed.channel,
+            undefined,
+          );
+          if (cashResult.adjusted) {
+            setCashes(state, cashResult.cashes);
+          }
         }
 
         delete portfolio[ticker];
@@ -981,12 +1044,12 @@ export function createPortfolioTools(): AgentTool[] {
           avg_price: removed.avg_price,
           units: removed.units,
           instrument: removed.instrument ?? 'equity',
-          channel: removed.channel,
-          cash_delta: cashResult.adjusted ? cashResult.cashDelta : undefined,
-          cash_after: cashAfter?.amount,
-          cash_channel: cashResult.adjusted ? cashResult.cash?.channel : undefined,
+          ...((removed.channel) === undefined ? {} : { channel: removed.channel }),
+          ...((cashResult.adjusted ? cashResult.cashDelta : undefined) === undefined ? {} : { cash_delta: cashResult.adjusted ? cashResult.cashDelta : undefined }),
+          ...((cashAfter?.amount) === undefined ? {} : { cash_after: cashAfter?.amount }),
+          ...((cashResult.adjusted ? cashResult.cash?.channel : undefined) === undefined ? {} : { cash_channel: cashResult.adjusted ? cashResult.cash?.channel : undefined }),
         });
-        saveState(state);
+        await saveInvestor(snapshot);
 
         const kind = isOptionHolding(removed)
           ? 'option'
@@ -1014,104 +1077,241 @@ export function createPortfolioTools(): AgentTool[] {
 
   const getPortfolioTool = createGetPortfolioTool();
 
-  const setCashTool: AgentTool = {
-    name: 'set_cash',
-    label: 'Set Cash',
+  const postOpeningBalanceTool: AgentTool = {
+    name: 'post_opening_balance',
+    label: 'Post Opening Balance',
     description:
-      'Set the **full free-cash balance** for one **(channel, currency)** sleeve (absolute import/screenshot correction). ' +
-      'amount is the NEW absolute balance for that sleeve — NOT a delta. "I deposited $1k more" → read get_portfolio, then set amount = prior + 1000. ' +
-      'currency required (e.g. USD, HKD, SGD) — no silent default. ' +
-      'Optional channel tags the broker (e.g. dbs, ibkr, moomoo). ' +
-      'Upserts only that channel+currency; other channels and other currencies on the same channel are preserved ' +
-      '(e.g. set dbs USD does not wipe dbs SGD). ' +
-      'NOT for transfers between banks/brokers — use transfer_cash. NOT for unlocking FDs — use mature_deposit. ' +
-      'Totals convert to treasury.reporting_currency via live FX when mixed. ' +
-      'Omit or empty channel when unassigned (at most one unassigned sleeve per currency). ' +
-      'Pass telegram_user_id or slack_user_id from the message context. Does not clear holdings.',
+      'Double-entry **opening balance** for a free-cash sleeve that currently has **zero / no balance**. ' +
+      'Debits cash, credits Opening equity. amount > 0. **memo required** (source document). ' +
+      'If the sleeve already has cash, this fails — use post_adjustment with a signed **delta**, never overwrite. ' +
+      'NOT for bank→broker wires (transfer_cash) or FD unlock (mature_deposit). ' +
+      'Requires INVAGE_BOOKS_DATABASE_URL. Pass channel ids from message context.',
     parameters: Type.Object({
       ...channelIdParams,
       amount: Type.Number({
-        description:
-          'Full free-cash balance after this set (≥ 0), not an increment. Settled / deployable dry powder for this channel+currency.',
+        description: 'Opening free-cash amount (> 0) for this channel+currency.',
       }),
       currency: Type.String({
-        description: 'Currency code (e.g. USD, HKD, SGD). Required — no default. Part of the slot key with channel.',
+        description: 'Currency code (e.g. USD, SGD). Required — no default.',
       }),
       channel: Type.Optional(
         Type.String({
-          description:
-            'Broker / custody source (e.g. dbs, ibkr, moomoo). ' +
-            'Upserts this channel+currency only. Omit or empty when unassigned.',
+          description: 'Broker/bank channel (e.g. dbs, ibkr). Omit when unassigned.',
         }),
+      ),
+      memo: Type.String({
+        description:
+          'Journal narrative: source (statement/screenshot date), what was opened, and why (min 3 chars).',
+      }),
+      value_date: Type.Optional(
+        Type.String({ description: 'Accounting value date YYYY-MM-DD (default: today).' }),
       ),
     }),
     prepareArguments(args) {
       return prepareNumericToolArgs(args, CASH_NUMERIC_FIELDS);
     },
     async execute(_id, raw) {
-      const p = raw as ChannelIds & { amount: number; currency: string; channel?: string };
+      const p = raw as ChannelIds & {
+        amount: number;
+        currency: string;
+        channel?: string;
+        memo: string;
+        value_date?: string;
+      };
       try {
-        if (typeof p.amount !== 'number' || !Number.isFinite(p.amount)) {
-          return fail('amount must be a finite number.');
+        if (!isBooksEnabled()) {
+          return fail(
+            'Books of record required for journals (set INVAGE_BOOKS_DATABASE_URL). ' +
+              'Cash cannot be written without a balanced journal.',
+          );
         }
-        if (p.amount < 0) return fail('amount must be ≥ 0.');
-        if (!p.currency?.trim()) {
-          return fail('currency is required (e.g. USD, HKD) — no silent default.');
+        if (typeof p.amount !== 'number' || !Number.isFinite(p.amount) || p.amount <= 0) {
+          return fail('amount must be a finite number > 0.');
         }
-
-        const state = resolveInvestorFromChannel(p);
+        if (!p.currency?.trim()) return fail('currency is required — no silent default.');
+        if (!p.memo?.trim() || p.memo.trim().length < 3) {
+          return fail('memo is required (source document + reason, min 3 chars).');
+        }
+        const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
         const today = new Date().toISOString().slice(0, 10);
-        // set_cash always writes the channel from this call (or unassigned if omitted).
-        // Do NOT inherit previous single-slot channel — that overwrote multi-channel cash.
+        const valueDate =
+          p.value_date != null && String(p.value_date).trim().length > 0
+            ? String(p.value_date).trim()
+            : today;
         const channelProvided = Object.prototype.hasOwnProperty.call(raw, 'channel');
         const channel = channelProvided
           ? normalizeOptionalChannel(p.channel, 'channel')
           : undefined;
-        const cash: CashBalance = {
+        const posted = await booksPostOpeningBalance(state, {
           amount: p.amount,
-          currency: p.currency.trim().toUpperCase(),
-          updated_at: today,
-          ...(channel != null ? { channel } : {}),
-        };
-        setCash(state, cash);
-        const cashes = getCashes(state);
+          currency: p.currency,
+          channel,
+          valueDate,
+          memo: p.memo,
+        });
+        const cash =
+          findCashForSlot(posted.cashes, channel, p.currency.trim().toUpperCase()) ??
+          ({
+            amount: posted.amount,
+            currency: p.currency.trim().toUpperCase(),
+            updated_at: valueDate,
+            ...(channel != null ? { channel } : {}),
+          } satisfies CashBalance);
         state.log.push({
           ts: today,
-          action: 'cash_set',
-          amount: cash.amount,
+          action: 'journal_opening_balance',
+          amount: posted.amount,
           currency: cash.currency,
-          channel: cash.channel,
-          cash_slots: cashes.length,
+          ...((cash.channel) === undefined ? {} : { channel: cash.channel }),
+          books_request_id: posted.requestId,
+          memo: p.memo.trim(),
         });
-        saveState(state);
-
-        const target = getPlaybook(state).allocation.cash_target_pct;
-        const cashLive = await totalCashLive(cashes, reportingCurrencyOf(state));
-        const total = cashLive.total;
-        const multiNote =
-          cashes.length > 1 && total != null
-            ? `\nAll cash channels (${cashes.length}): total ${total.amount.toFixed(2)} ${total.currency}` +
-              (cashLive.fxApplied
-                ? ` (live FX → ${cashLive.reportingCurrency}: ${Object.entries(cashLive.fxRates)
-                    .filter(([c]) => c !== cashLive.reportingCurrency)
-                    .map(([c, r]) => `${c}=${r}`)
-                    .join(', ')})`
-                : '') +
-              '.'
-            : '';
+        await saveInvestor(snapshot);
+        const cashLive = await totalCashLive(posted.cashes, reportingCurrencyOf(state));
         return ok(
-          `Cash set to ${cash.amount.toFixed(2)} ${cash.currency} (as of ${cash.updated_at})` +
-            ` [${formatCashSlotLabel(cash)}].` +
-            multiNote +
-            `\nPlaybook cash target: ${target}%. Use get_portfolio / portfolio_analyzer for weight vs target after live marks.`,
+          `Journal opening_balance: +${posted.amount.toFixed(2)} ${cash.currency} ` +
+            `[${formatCashSlotLabel(cash)}] (Dr Cash / Cr Opening equity).\n` +
+            `Memo: ${p.memo.trim()}`,
           {
             cash,
-            cashes,
-            cash_target_pct: target,
-            total_cash: total,
-            fx_applied: cashLive.fxApplied,
-            reporting_currency: cashLive.reportingCurrency || null,
-            fx_rates: cashLive.fxApplied ? cashLive.fxRates : undefined,
+            cashes: posted.cashes,
+            entry_type: 'opening_balance',
+            books_request_id: posted.requestId,
+            total_cash: cashLive.total,
+          },
+        );
+      } catch (e) {
+        return failFrom(e);
+      }
+    },
+  };
+
+  const postAdjustmentTool: AgentTool = {
+    name: 'post_adjustment',
+    label: 'Post Cash Adjustment',
+    description:
+      'Double-entry **cash adjustment** by **signed delta** (never an absolute balance set). ' +
+      'amount > 0 increases free cash; amount < 0 decreases. **memo required**. ' +
+      'contra: adjustment (reconciling/equity), income, expense, or clearing. ' +
+      'Bank statement reconcile: read get_portfolio, compute delta = statement − books, post that delta. ' +
+      'NOT for transfers (transfer_cash), FD unlock (mature_deposit), or first open of a zero sleeve (post_opening_balance). ' +
+      'Requires INVAGE_BOOKS_DATABASE_URL. Pass channel ids from message context.',
+    parameters: Type.Object({
+      ...channelIdParams,
+      amount: Type.Number({
+        description:
+          'Signed delta to free cash (not absolute). e.g. +250 bank interest, −12 fee, +500 reconciling understatement.',
+      }),
+      currency: Type.String({
+        description: 'Currency code (e.g. USD, SGD). Required — no default.',
+      }),
+      channel: Type.Optional(
+        Type.String({
+          description: 'Broker/bank channel (e.g. dbs, ibkr). Omit when unassigned.',
+        }),
+      ),
+      memo: Type.String({
+        description:
+          'Journal narrative: document/source, period, reason for the delta (min 3 chars).',
+      }),
+      contra: Type.Optional(
+        Type.String({
+          description:
+            'Offset account: adjustment (default) | income | expense | clearing. Not opening.',
+        }),
+      ),
+      value_date: Type.Optional(
+        Type.String({ description: 'Accounting value date YYYY-MM-DD (default: today).' }),
+      ),
+    }),
+    prepareArguments(args) {
+      return prepareNumericToolArgs(args, CASH_NUMERIC_FIELDS);
+    },
+    async execute(_id, raw) {
+      const p = raw as ChannelIds & {
+        amount: number;
+        currency: string;
+        channel?: string;
+        memo: string;
+        contra?: string;
+        value_date?: string;
+      };
+      try {
+        if (!isBooksEnabled()) {
+          return fail(
+            'Books of record required for journals (set INVAGE_BOOKS_DATABASE_URL). ' +
+              'Cash cannot be written without a balanced journal.',
+          );
+        }
+        if (typeof p.amount !== 'number' || !Number.isFinite(p.amount) || p.amount === 0) {
+          return fail('amount must be a non-zero finite signed delta (not an absolute balance).');
+        }
+        if (!p.currency?.trim()) return fail('currency is required — no silent default.');
+        if (!p.memo?.trim() || p.memo.trim().length < 3) {
+          return fail('memo is required (source document + reason, min 3 chars).');
+        }
+        const contraRaw = (p.contra ?? 'adjustment').trim().toLowerCase();
+        const allowed: CashContraKind[] = ['adjustment', 'income', 'expense', 'clearing'];
+        if (!allowed.includes(contraRaw as CashContraKind)) {
+          return fail(
+            `contra must be one of: adjustment, income, expense, clearing (got "${p.contra}"). ` +
+              `Use post_opening_balance for first open of a zero sleeve.`,
+          );
+        }
+        const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
+        const today = new Date().toISOString().slice(0, 10);
+        const valueDate =
+          p.value_date != null && String(p.value_date).trim().length > 0
+            ? String(p.value_date).trim()
+            : today;
+        const channelProvided = Object.prototype.hasOwnProperty.call(raw, 'channel');
+        const channel = channelProvided
+          ? normalizeOptionalChannel(p.channel, 'channel')
+          : undefined;
+        const posted = await booksPostAdjustment(state, {
+          amount: p.amount,
+          currency: p.currency,
+          channel,
+          valueDate,
+          memo: p.memo,
+          contra: contraRaw as CashContraKind,
+        });
+        const cash = findCashForSlot(
+          posted.cashes,
+          channel,
+          p.currency.trim().toUpperCase(),
+        );
+        state.log.push({
+          ts: today,
+          action: 'journal_cash_adjustment',
+          amount: posted.delta,
+          balance_after: posted.balanceAfter,
+          currency: p.currency.trim().toUpperCase(),
+          ...((channel ?? undefined) === undefined ? {} : { channel: channel ?? undefined }),
+          books_request_id: posted.requestId,
+          memo: p.memo.trim(),
+          contra: contraRaw,
+        });
+        await saveInvestor(snapshot);
+        const cashLive = await totalCashLive(posted.cashes, reportingCurrencyOf(state));
+        const sign = posted.delta >= 0 ? '+' : '';
+        return ok(
+          `Journal cash_adjustment: ${sign}${posted.delta.toFixed(2)} ${p.currency.trim().toUpperCase()} ` +
+            `[${formatCashSlotLabel({ channel: channel ?? undefined, currency: p.currency.trim().toUpperCase() })}] ` +
+            `(contra=${contraRaw}).\n` +
+            `Prior ${posted.prior.toFixed(2)} → ${posted.balanceAfter.toFixed(2)}.\n` +
+            `Memo: ${p.memo.trim()}`,
+          {
+            cash,
+            cashes: posted.cashes,
+            delta: posted.delta,
+            prior: posted.prior,
+            balance_after: posted.balanceAfter,
+            contra: contraRaw,
+            books_request_id: posted.requestId,
+            total_cash: cashLive.total,
           },
         );
       } catch (e) {
@@ -1122,16 +1322,18 @@ export function createPortfolioTools(): AgentTool[] {
 
   const clearCashTool: AgentTool = {
     name: 'clear_cash',
-    label: 'Clear Cash',
+    label: 'Clear Cash (via adjustment journal)',
     description:
-      'Remove recorded free cash. With no channel: clears ALL free cash (unknown). ' +
-      'With channel only: clears every currency on that channel. ' +
-      'With channel + currency: clears one free-cash sleeve. Requires confirm=true. ' +
-      'Does not clear holdings. Pass telegram_user_id or slack_user_id from the message context.',
+      'Zero free cash by posting **adjustment journals** (not a silent delete). ' +
+      'Requires confirm=true and **memo** (reason). Channel/currency filters same as before. ' +
+      'Requires INVAGE_BOOKS_DATABASE_URL. Prefer post_adjustment for partial deltas.',
     parameters: Type.Object({
       ...channelIdParams,
       confirm: Type.Boolean({
         description: 'Must be true to proceed. Confirm with the user first.',
+      }),
+      memo: Type.String({
+        description: 'Journal reason for zeroing sleeves (min 3 chars).',
       }),
       channel: Type.Optional(
         Type.String({
@@ -1147,16 +1349,32 @@ export function createPortfolioTools(): AgentTool[] {
       ),
     }),
     async execute(_id, raw) {
-      const p = raw as ChannelIds & { confirm: boolean; channel?: string; currency?: string };
+      const p = raw as ChannelIds & {
+        confirm: boolean;
+        memo: string;
+        channel?: string;
+        currency?: string;
+      };
       try {
         if (!p.confirm) {
           return fail('Set confirm=true to clear recorded cash. Confirm with the user first.');
         }
-        const state = resolveInvestorFromChannel(p);
+        if (!p.memo?.trim() || p.memo.trim().length < 3) {
+          return fail('memo is required to journal the clear (min 3 chars).');
+        }
+        if (!isBooksEnabled()) {
+          return fail(
+            'Books of record required (INVAGE_BOOKS_DATABASE_URL). Cash is not deleted without journals.',
+          );
+        }
+        const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
         const before = getCashes(state);
         if (before.length === 0) {
           return fail('No cash is recorded. Nothing to clear.');
         }
+        const today = new Date().toISOString().slice(0, 10);
+        const memo = p.memo.trim();
         const channelProvided = Object.prototype.hasOwnProperty.call(raw, 'channel');
         if (channelProvided) {
           const ch = normalizeOptionalChannel(p.channel, 'channel');
@@ -1172,22 +1390,26 @@ export function createPortfolioTools(): AgentTool[] {
                 `No free cash for ${formatCashSlotLabel({ channel: ch ?? undefined, currency: ccy })}. Recorded: ${labels}.`,
               );
             }
-            clearCash(state, ch ?? '', ccy);
+            const posted = await booksClearCashSleeve(state, {
+              channel: ch,
+              currency: ccy,
+              valueDate: today,
+              memo,
+            });
             state.log.push({
-              ts: new Date().toISOString().slice(0, 10),
-              action: 'cash_cleared',
+              ts: today,
+              action: 'journal_cash_cleared',
               amount: target.amount,
               currency: target.currency,
-              channel: target.channel,
+              ...((target.channel) === undefined ? {} : { channel: target.channel }),
+              books_request_id: posted.requestId,
+              memo,
             });
-            saveState(state);
+            await saveInvestor(snapshot);
             const remaining = getCashes(state);
             return ok(
-              `Cleared free cash ${formatCashSlotLabel(target)} ` +
-                `(was ${target.amount.toFixed(2)} ${target.currency}). ` +
-                (remaining.length > 0
-                  ? `${remaining.length} other free-cash slot(s) remain.`
-                  : 'Cash is now unknown.'),
+              `Journaled clear of ${formatCashSlotLabel(target)} ` +
+                `(was ${target.amount.toFixed(2)} ${target.currency}). Memo: ${memo}`,
               { cleared: target, cashes: remaining },
             );
           }
@@ -1199,41 +1421,48 @@ export function createPortfolioTools(): AgentTool[] {
               `No cash for channel "${key || '(unassigned)'}". Recorded: ${labels}.`,
             );
           }
-          clearCash(state, ch ?? '');
+          for (const t of targets) {
+            await booksClearCashSleeve(state, {
+              channel: t.channel,
+              currency: t.currency,
+              valueDate: today,
+              memo,
+            });
+          }
           state.log.push({
-            ts: new Date().toISOString().slice(0, 10),
-            action: 'cash_cleared',
-            channel: ch ?? undefined,
+            ts: today,
+            action: 'journal_cash_cleared',
+            ...((ch ?? undefined) === undefined ? {} : { channel: ch ?? undefined }),
             cash_slots: targets.length,
+            memo,
           });
-          saveState(state);
+          await saveInvestor(snapshot);
           const remaining = getCashes(state);
           return ok(
-            `Cleared all free cash on channel "${key || '(unassigned)'}" ` +
-              `(${targets.map((t) => `${t.amount.toFixed(2)} ${t.currency}`).join(', ')}). ` +
-              (remaining.length > 0
-                ? `${remaining.length} other free-cash slot(s) remain.`
-                : 'Cash is now unknown.'),
+            `Journaled clear of channel "${key || '(unassigned)'}" ` +
+              `(${targets.map((t) => `${t.amount.toFixed(2)} ${t.currency}`).join(', ')}). Memo: ${memo}`,
             { cleared: targets, cashes: remaining },
           );
         }
 
-        const cashLive = await totalCashLive(before, reportingCurrencyOf(state));
-        const total = cashLive.total;
-        clearCash(state);
+        for (const t of before) {
+          await booksClearCashSleeve(state, {
+            channel: t.channel,
+            currency: t.currency,
+            valueDate: today,
+            memo,
+          });
+        }
         state.log.push({
-          ts: new Date().toISOString().slice(0, 10),
-          action: 'cash_cleared',
-          amount: total?.amount,
-          currency: total?.currency,
+          ts: today,
+          action: 'journal_cash_cleared',
           cash_slots: before.length,
+          memo,
         });
-        saveState(state);
+        await saveInvestor(snapshot);
         return ok(
-          `Cleared all cash records (${before.length} slot${before.length === 1 ? '' : 's'}` +
-            (total != null ? `, total was ${total.amount.toFixed(2)} ${total.currency}` : '') +
-            '). Cash is now unknown.',
-          { cleared: before },
+          `Journaled clear of all free-cash sleeves (${before.length}). Memo: ${memo}`,
+          { cleared: before, cashes: getCashes(state) },
         );
       } catch (e) {
         return failFrom(e);
@@ -1353,7 +1582,8 @@ export function createPortfolioTools(): AgentTool[] {
         option_right?: 'call' | 'put';
       };
       try {
-        const state = resolveInvestorFromChannel(p);
+        const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
         const portfolio = getPortfolio(state);
         const adjustCash = p.adjust_cash !== false;
         const channelProvided = Object.prototype.hasOwnProperty.call(raw, 'channel');
@@ -1400,14 +1630,17 @@ export function createPortfolioTools(): AgentTool[] {
             ...(p.option_side != null ? { side: p.option_side } : {}),
             ...(p.option_right != null ? { right: p.option_right } : {}),
           };
-          next = {
-            instrument: 'option',
-            avg_price: p.avg_price ?? existing.avg_price,
-            units: p.units ?? existing.units,
-            category: p.category ?? existing.category,
-            option: nextOption,
-            ...(channel != null ? { channel } : {}),
-          };
+          next = attachHoldingCustody(
+            {
+              instrument: 'option',
+              avg_price: p.avg_price ?? existing.avg_price,
+              units: p.units ?? existing.units,
+              category: p.category ?? existing.category,
+              option: nextOption,
+              ...(channel != null ? { channel } : {}),
+            },
+            existing,
+          );
           assertHolding(nextKey, next);
         } else if (isFundHolding(existing)) {
           if (!existing.fund) {
@@ -1458,14 +1691,17 @@ export function createPortfolioTools(): AgentTool[] {
           if (p.product_class != null) {
             nextFund.product_class = p.product_class;
           }
-          next = {
-            instrument: 'fund',
-            avg_price: p.avg_price ?? existing.avg_price,
-            units: p.units ?? existing.units,
-            category: p.category ?? existing.category,
-            fund: nextFund,
-            ...(channel != null ? { channel } : {}),
-          };
+          next = attachHoldingCustody(
+            {
+              instrument: 'fund',
+              avg_price: p.avg_price ?? existing.avg_price,
+              units: p.units ?? existing.units,
+              category: p.category ?? existing.category,
+              fund: nextFund,
+              ...(channel != null ? { channel } : {}),
+            },
+            existing,
+          );
           assertHolding(nextKey, next);
         } else {
           if (
@@ -1485,28 +1721,72 @@ export function createPortfolioTools(): AgentTool[] {
               `Holding ${oldKey} is equity. To convert to a fund or option, remove it and add_holding with the new instrument.`,
             );
           }
-          next = {
-            instrument: 'equity',
-            avg_price: p.avg_price ?? existing.avg_price,
-            units: p.units ?? existing.units,
-            category: p.category ?? existing.category,
-            ...(channel != null ? { channel } : {}),
-          };
+          next = attachHoldingCustody(
+            {
+              instrument: 'equity',
+              avg_price: p.avg_price ?? existing.avg_price,
+              units: p.units ?? existing.units,
+              category: p.category ?? existing.category,
+              ...(channel != null ? { channel } : {}),
+            },
+            existing,
+          );
           assertHolding(nextKey, next);
         }
 
         const today = new Date().toISOString().slice(0, 10);
         // Debit/credit the channel on the *resulting* holding (channel moves with the position).
-        const cashResult = applyCashDelta(
-          getCashes(state),
-          cashDeltaForHoldingChange(existing, next),
-          today,
-          adjustCash,
-          next.channel,
-          undefined,
-        );
-        if (cashResult.adjusted) {
-          setCashes(state, cashResult.cashes);
+        const holdingCashDelta = cashDeltaForHoldingChange(existing, next);
+        let cashResult: CashApplyResult;
+        // Match YAML applyCashDelta: unknown cash (empty) → skip ledger, no invent.
+        const cashesKnown = getCashes(state).length > 0;
+        if (
+          isBooksEnabled() &&
+          adjustCash &&
+          holdingCashDelta !== 0 &&
+          cashesKnown
+        ) {
+          const ccy = resolveCashCurrencyForChannel(getCashes(state), next.channel, undefined);
+          const posted = await booksApplyCashDelta(state, {
+            channel: next.channel,
+            currency: ccy,
+            cashDelta: holdingCashDelta,
+            valueDate: today,
+            toolName: 'update_holding',
+            createIfMissing: holdingCashDelta > 0,
+          });
+          cashResult = {
+            cashes: posted.cashes,
+            cash: findCashForSlot(posted.cashes, next.channel, ccy),
+            cashDelta: holdingCashDelta,
+            adjusted: true,
+            note: `Cash books update_holding delta ${holdingCashDelta.toFixed(2)} ${ccy}`,
+          };
+        } else if (isBooksEnabled()) {
+          cashResult = {
+            cashes: getCashes(state),
+            cash: findCashForChannel(getCashes(state), next.channel),
+            cashDelta: 0,
+            adjusted: false,
+            note:
+              !adjustCash
+                ? 'Cash ledger not adjusted (adjust_cash=false).'
+                : holdingCashDelta === 0
+                  ? 'No cash impact (cost/premium unchanged).'
+                  : 'Cash not recorded — set_cash first so buys deduct dry powder.',
+          };
+        } else {
+          cashResult = applyCashDelta(
+            getCashes(state),
+            holdingCashDelta,
+            today,
+            adjustCash,
+            next.channel,
+            undefined,
+          );
+          if (cashResult.adjusted) {
+            setCashes(state, cashResult.cashes);
+          }
         }
 
         if (nextKey !== oldKey) {
@@ -1522,11 +1802,11 @@ export function createPortfolioTools(): AgentTool[] {
           ticker: nextKey,
           ...(nextKey !== oldKey ? { previous_ticker: oldKey } : {}),
           ...portfolio[nextKey],
-          cash_delta: cashResult.adjusted ? cashResult.cashDelta : undefined,
-          cash_after: cashAfter?.amount,
-          cash_channel: cashResult.adjusted ? cashResult.cash?.channel : undefined,
+          ...((cashResult.adjusted ? cashResult.cashDelta : undefined) === undefined ? {} : { cash_delta: cashResult.adjusted ? cashResult.cashDelta : undefined }),
+          ...((cashAfter?.amount) === undefined ? {} : { cash_after: cashAfter?.amount }),
+          ...((cashResult.adjusted ? cashResult.cash?.channel : undefined) === undefined ? {} : { cash_channel: cashResult.adjusted ? cashResult.cash?.channel : undefined }),
         });
-        saveState(state);
+        await saveInvestor(snapshot);
 
         const h = portfolio[nextKey];
         const cashLine = formatCashApplyNote(cashResult);
@@ -1613,7 +1893,8 @@ export function createPortfolioTools(): AgentTool[] {
       try {
         if (!p.confirm) return fail('Set confirm=true to clear the portfolio. Confirm with the user first.');
 
-        const state = resolveInvestorFromChannel(p);
+        const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
         const portfolio = getPortfolio(state);
         const count = Object.keys(portfolio).length;
 
@@ -1625,7 +1906,7 @@ export function createPortfolioTools(): AgentTool[] {
           action: 'portfolio_cleared',
           positions_removed: count,
         });
-        saveState(state);
+        await saveInvestor(snapshot);
 
         return ok(`Cleared portfolio — ${count} position${count === 1 ? '' : 's'} removed.`, {
           cleared: count,
@@ -1684,7 +1965,8 @@ export function createPortfolioTools(): AgentTool[] {
         adjust_cash?: boolean;
       };
       try {
-        const state = resolveInvestorFromChannel(p);
+        const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
         const today = new Date().toISOString().slice(0, 10);
         const channelProvided = Object.prototype.hasOwnProperty.call(raw, 'channel');
         const channel = channelProvided
@@ -1716,20 +1998,51 @@ export function createPortfolioTools(): AgentTool[] {
         });
 
         const adjustCash = p.adjust_cash !== false;
-        const cashesBefore = getCashes(state);
-        const cashResult = applyCashDelta(
-          cashesBefore,
-          -deposit.amount,
-          today,
-          adjustCash,
-          deposit.channel,
-          deposit.currency,
-        );
-        if (cashResult.adjusted) {
-          setCashes(state, cashResult.cashes);
+        let cashResult: CashApplyResult;
+        let booksRequestId: string | undefined;
+        if (isBooksEnabled()) {
+          const posted = await booksAddDeposit(state, {
+            id: deposit.id,
+            amount: deposit.amount,
+            interest: deposit.interest,
+            currency: deposit.currency,
+            channel: deposit.channel,
+            startDate: deposit.start_date,
+            endDate: deposit.end_date,
+            label: deposit.label,
+            valueDate: today,
+            adjustCash,
+          });
+          booksRequestId = posted.requestId;
+          const cashAfter = findCashForSlot(
+            posted.cashes,
+            deposit.channel,
+            deposit.currency,
+          );
+          cashResult = {
+            cashes: posted.cashes,
+            cash: cashAfter,
+            cashDelta: adjustCash ? -deposit.amount : 0,
+            adjusted: adjustCash,
+            note: adjustCash
+              ? `Cash −${deposit.amount.toFixed(2)} ${deposit.currency} (books)`
+              : 'Cash ledger not adjusted (adjust_cash=false).',
+          };
+        } else {
+          const cashesBefore = getCashes(state);
+          cashResult = applyCashDelta(
+            cashesBefore,
+            -deposit.amount,
+            today,
+            adjustCash,
+            deposit.channel,
+            deposit.currency,
+          );
+          if (cashResult.adjusted) {
+            setCashes(state, cashResult.cashes);
+          }
+          upsertDeposit(state, deposit);
         }
-
-        upsertDeposit(state, deposit);
         state.log.push({
           ts: today,
           action: 'deposit_added',
@@ -1737,13 +2050,14 @@ export function createPortfolioTools(): AgentTool[] {
           amount: deposit.amount,
           interest: deposit.interest,
           currency: deposit.currency,
-          channel: deposit.channel,
+          ...((deposit.channel) === undefined ? {} : { channel: deposit.channel }),
           start_date: deposit.start_date,
           end_date: deposit.end_date,
           cash_adjusted: cashResult.adjusted,
           cash_delta: cashResult.adjusted ? cashResult.cashDelta : 0,
+          ...(booksRequestId != null ? { books_request_id: booksRequestId } : {}),
         });
-        saveState(state);
+        await saveInvestor(snapshot);
 
         const cashNote = formatCashApplyNote(cashResult);
         return ok(
@@ -1755,11 +2069,12 @@ export function createPortfolioTools(): AgentTool[] {
             '.\nPrincipal is in NAV but not free cash.' +
             (cashNote ? `\n${cashNote}` : ''),
           {
-            deposit,
+            deposit: findDepositById(getDeposits(state), deposit.id) ?? deposit,
             deposits: getDeposits(state),
             cashes: cashResult.cashes,
             cashAdjusted: cashResult.adjusted,
             cashDelta: cashResult.adjusted ? cashResult.cashDelta : 0,
+            ...(booksRequestId != null ? { books_request_id: booksRequestId } : {}),
           },
         );
       } catch (e) {
@@ -1815,7 +2130,8 @@ export function createPortfolioTools(): AgentTool[] {
       };
       try {
         if (!p.id?.trim()) return fail('id is required.');
-        const state = resolveInvestorFromChannel(p);
+        const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
         const existing = findDepositById(getDeposits(state), p.id);
         if (existing == null) {
           return fail(`Deposit id "${p.id.trim()}" not found.`);
@@ -1858,19 +2174,37 @@ export function createPortfolioTools(): AgentTool[] {
           adjusted: false,
           note: 'No cash impact (principal unchanged).',
         };
-        if (amountDelta !== 0) {
-          const cashesBefore = getCashes(state);
-          cashResult = applyCashDelta(
-            cashesBefore,
-            amountDelta,
-            today,
-            adjustCash,
-            cashChannel,
-            next.currency,
-            amountDelta > 0 ? { createIfMissing: true } : undefined,
-          );
-          if (cashResult.adjusted) {
-            setCashes(state, cashResult.cashes);
+        if (amountDelta !== 0 && adjustCash) {
+          if (isBooksEnabled()) {
+            const posted = await booksApplyCashDelta(state, {
+              channel: cashChannel,
+              currency: next.currency,
+              cashDelta: amountDelta,
+              valueDate: today,
+              toolName: 'update_deposit',
+              createIfMissing: amountDelta > 0,
+            });
+            cashResult = {
+              cashes: posted.cashes,
+              cash: findCashForSlot(posted.cashes, cashChannel, next.currency),
+              cashDelta: amountDelta,
+              adjusted: true,
+              note: `Cash books update_deposit delta ${amountDelta.toFixed(2)} ${next.currency}`,
+            };
+          } else {
+            const cashesBefore = getCashes(state);
+            cashResult = applyCashDelta(
+              cashesBefore,
+              amountDelta,
+              today,
+              true,
+              cashChannel,
+              next.currency,
+              amountDelta > 0 ? { createIfMissing: true } : undefined,
+            );
+            if (cashResult.adjusted) {
+              setCashes(state, cashResult.cashes);
+            }
           }
         }
 
@@ -1882,11 +2216,11 @@ export function createPortfolioTools(): AgentTool[] {
           amount: next.amount,
           interest: next.interest,
           currency: next.currency,
-          channel: next.channel,
+          ...((next.channel) === undefined ? {} : { channel: next.channel }),
           cash_adjusted: cashResult.adjusted,
           cash_delta: cashResult.adjusted ? cashResult.cashDelta : 0,
         });
-        saveState(state);
+        await saveInvestor(snapshot);
 
         const cashNote = formatCashApplyNote(cashResult);
         return ok(
@@ -1930,26 +2264,45 @@ export function createPortfolioTools(): AgentTool[] {
       const p = raw as ChannelIds & { id: string; adjust_cash?: boolean };
       try {
         if (!p.id?.trim()) return fail('id is required.');
-        const state = resolveInvestorFromChannel(p);
+        const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
         const existing = findDepositById(getDeposits(state), p.id);
         if (existing == null) {
           return fail(`Deposit id "${p.id.trim()}" not found.`);
         }
         const today = new Date().toISOString().slice(0, 10);
         const adjustCash = p.adjust_cash !== false;
-        const cashResult = applyCashDelta(
-          getCashes(state),
-          existing.amount,
-          today,
-          adjustCash,
-          existing.channel,
-          existing.currency,
-          { createIfMissing: true },
-        );
-        if (cashResult.adjusted) {
-          setCashes(state, cashResult.cashes);
+        let cashResult: CashApplyResult;
+        if (isBooksEnabled()) {
+          const posted = await booksRemoveDeposit(state, {
+            id: existing.id,
+            valueDate: today,
+            adjustCash,
+          });
+          cashResult = {
+            cashes: posted.cashes,
+            cash: findCashForSlot(posted.cashes, existing.channel, existing.currency),
+            cashDelta: adjustCash ? existing.amount : 0,
+            adjusted: adjustCash,
+            note: adjustCash
+              ? `Cash +${existing.amount.toFixed(2)} ${existing.currency} (books remove_deposit)`
+              : 'Cash ledger not adjusted (adjust_cash=false).',
+          };
+        } else {
+          cashResult = applyCashDelta(
+            getCashes(state),
+            existing.amount,
+            today,
+            adjustCash,
+            existing.channel,
+            existing.currency,
+            { createIfMissing: true },
+          );
+          if (cashResult.adjusted) {
+            setCashes(state, cashResult.cashes);
+          }
+          removeDeposit(state, existing.id);
         }
-        removeDeposit(state, existing.id);
         state.log.push({
           ts: today,
           action: 'deposit_removed',
@@ -1957,11 +2310,11 @@ export function createPortfolioTools(): AgentTool[] {
           amount: existing.amount,
           interest: existing.interest,
           currency: existing.currency,
-          channel: existing.channel,
+          ...((existing.channel) === undefined ? {} : { channel: existing.channel }),
           cash_adjusted: cashResult.adjusted,
           cash_delta: cashResult.adjusted ? cashResult.cashDelta : 0,
         });
-        saveState(state);
+        await saveInvestor(snapshot);
         const cashNote = formatCashApplyNote(cashResult);
         return ok(
           `Removed deposit ${existing.id} (principal ${existing.amount.toFixed(2)} ${existing.currency}).` +
@@ -2007,7 +2360,8 @@ export function createPortfolioTools(): AgentTool[] {
         if (!p.confirm) {
           return fail('Set confirm=true to clear fixed deposits. Confirm with the user first.');
         }
-        const state = resolveInvestorFromChannel(p);
+        const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
         const before = getDeposits(state);
         if (before.length === 0) {
           return fail('No fixed deposits recorded. Nothing to clear.');
@@ -2029,10 +2383,10 @@ export function createPortfolioTools(): AgentTool[] {
           state.log.push({
             ts: new Date().toISOString().slice(0, 10),
             action: 'deposits_cleared',
-            channel: ch,
+            ...((ch) === undefined ? {} : { channel: ch }),
             count: targets.length,
           });
-          saveState(state);
+          await saveInvestor(snapshot);
           const remaining = getDeposits(state);
           return ok(
             `Cleared ${targets.length} deposit(s) for channel "${key || '(unassigned)'}". ` +
@@ -2049,7 +2403,7 @@ export function createPortfolioTools(): AgentTool[] {
           action: 'deposits_cleared',
           count: before.length,
         });
-        saveState(state);
+        await saveInvestor(snapshot);
         return ok(
           `Cleared all fixed deposits (${before.length}).`,
           { cleared: before },
@@ -2068,7 +2422,7 @@ export function createPortfolioTools(): AgentTool[] {
       'Debits from_channel and credits to_channel for the same currency in one step. ' +
       'Net free cash in that currency is unchanged. Fails if source insufficient or missing. ' +
       'Use for bank→broker wires (e.g. dbs USD → ibkr USD). ' +
-      'NOT for FX conversion. NOT for absolute screenshot balances (use set_cash). ' +
+      'NOT for FX conversion. NOT for absolute balance overwrites (use post_adjustment / post_opening_balance). ' +
       'If funds are still locked in a fixed deposit, call mature_deposit first. ' +
       'Pass telegram_user_id or slack_user_id from the message context.',
     parameters: Type.Object({
@@ -2103,17 +2457,45 @@ export function createPortfolioTools(): AgentTool[] {
         if (p.from_channel == null || p.to_channel == null) {
           return fail('from_channel and to_channel are required.');
         }
-        const state = resolveInvestorFromChannel(p);
+        const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
         const today = new Date().toISOString().slice(0, 10);
         const fromCh = normalizeOptionalChannel(p.from_channel, 'from_channel');
         const toCh = normalizeOptionalChannel(p.to_channel, 'to_channel');
-        const result = transferCash(state, {
-          fromChannel: fromCh,
-          toChannel: toCh,
-          amount: p.amount,
-          currency: p.currency,
-          updatedAt: today,
-        });
+        let result: {
+          from: CashBalance;
+          to: CashBalance;
+          cashes: CashBalance[];
+        };
+        let booksRequestId: string | undefined;
+        if (isBooksEnabled()) {
+          const posted = await booksTransferCash(state, {
+            fromChannel: fromCh,
+            toChannel: toCh,
+            amount: p.amount,
+            currency: p.currency,
+            valueDate: today,
+          });
+          const cashes = posted.cashes;
+          const ccy = p.currency.trim().toUpperCase();
+          const from = findCashForSlot(cashes, fromCh, ccy);
+          const to = findCashForSlot(cashes, toCh, ccy);
+          if (from == null || to == null) {
+            throw new Error(
+              'transfer_cash: books post succeeded but projected cash slots missing.',
+            );
+          }
+          result = { from, to, cashes };
+          booksRequestId = posted.requestId;
+        } else {
+          result = transferCash(state, {
+            fromChannel: fromCh,
+            toChannel: toCh,
+            amount: p.amount,
+            currency: p.currency,
+            updatedAt: today,
+          });
+        }
         state.log.push({
           ts: today,
           action: 'cash_transferred',
@@ -2121,8 +2503,9 @@ export function createPortfolioTools(): AgentTool[] {
           currency: p.currency.trim().toUpperCase(),
           from_channel: fromCh ?? '',
           to_channel: toCh ?? '',
+          ...(booksRequestId != null ? { books_request_id: booksRequestId } : {}),
         });
-        saveState(state);
+        await saveInvestor(snapshot);
         const cashLive = await totalCashLive(result.cashes, reportingCurrencyOf(state));
         return ok(
           `Transferred ${p.amount.toFixed(2)} ${p.currency.trim().toUpperCase()}: ` +
@@ -2139,6 +2522,7 @@ export function createPortfolioTools(): AgentTool[] {
             to: result.to,
             cashes: result.cashes,
             total_cash: cashLive.total,
+            ...(booksRequestId != null ? { books_request_id: booksRequestId } : {}),
           },
         );
       } catch (e) {
@@ -2179,30 +2563,67 @@ export function createPortfolioTools(): AgentTool[] {
       };
       try {
         if (!p.id?.trim()) return fail('id is required.');
-        const state = resolveInvestorFromChannel(p);
+        const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
         const today = new Date().toISOString().slice(0, 10);
         const before = findDepositById(getDeposits(state), p.id);
         if (before == null) {
           return fail(`Deposit id "${p.id.trim()}" not found.`);
         }
-        const result = matureDeposit(state, {
-          id: p.id,
-          amount: p.amount,
-          updatedAt: today,
-          adjustCash: p.adjust_cash !== false,
-        });
+        let result: {
+          deposit: FixedDeposit | null;
+          unlocked: number;
+          removed: boolean;
+          cash: CashBalance | null;
+          cashes: CashBalance[];
+          cashAdjusted: boolean;
+        };
+        let booksRequestId: string | undefined;
+        if (isBooksEnabled()) {
+          const posted = await booksMatureDeposit(state, {
+            id: p.id,
+            amount: p.amount,
+            valueDate: today,
+            adjustCash: p.adjust_cash !== false,
+          });
+          const deposit =
+            posted.remaining > 0
+              ? findDepositById(posted.deposits, p.id)
+              : null;
+          result = {
+            deposit,
+            unlocked: posted.unlocked,
+            removed: posted.remaining === 0,
+            cash: findCashForSlot(
+              posted.cashes,
+              before.channel,
+              before.currency,
+            ),
+            cashes: posted.cashes,
+            cashAdjusted: p.adjust_cash !== false,
+          };
+          booksRequestId = posted.requestId;
+        } else {
+          result = matureDeposit(state, {
+            id: p.id,
+            amount: p.amount,
+            updatedAt: today,
+            adjustCash: p.adjust_cash !== false,
+          });
+        }
         state.log.push({
           ts: today,
           action: 'deposit_matured',
           deposit_id: p.id.trim(),
           amount: result.unlocked,
           currency: before.currency,
-          channel: before.channel,
+          ...((before.channel) === undefined ? {} : { channel: before.channel }),
           remaining_principal: result.deposit?.amount ?? 0,
           removed: result.removed,
           cash_adjusted: result.cashAdjusted,
+          ...(booksRequestId != null ? { books_request_id: booksRequestId } : {}),
         });
-        saveState(state);
+        await saveInvestor(snapshot);
         return ok(
           `Matured ${result.unlocked.toFixed(2)} ${before.currency} from deposit ${before.id}` +
             formatChannelTag(before.channel) +
@@ -2221,6 +2642,7 @@ export function createPortfolioTools(): AgentTool[] {
             cash: result.cash,
             cashes: result.cashes,
             deposits: getDeposits(state),
+            ...(booksRequestId != null ? { books_request_id: booksRequestId } : {}),
           },
         );
       } catch (e) {
@@ -2235,7 +2657,8 @@ export function createPortfolioTools(): AgentTool[] {
     getPortfolioTool,
     updateHolding,
     clearPortfolio,
-    setCashTool,
+    postOpeningBalanceTool,
+    postAdjustmentTool,
     clearCashTool,
     transferCashTool,
     matureDepositTool,
@@ -2243,10 +2666,85 @@ export function createPortfolioTools(): AgentTool[] {
     updateDepositTool,
     removeDepositTool,
     clearDepositsTool,
+    createListJournalEntriesTool(),
   ];
 }
 
-/** Read-only portfolio tool for analysis peers (e.g. Investment Expert). */
+/** Mutation tools only (no get_portfolio / list_journal_entries). Bookkeeper-only. */
+export function createPortfolioWriteTools(): AgentTool[] {
+  return createPortfolioTools().filter(
+    (t) => t.name !== 'get_portfolio' && t.name !== 'list_journal_entries',
+  );
+}
+
+/** Read tools only — safe for analysis peers. */
+export function createPortfolioReadTools(): AgentTool[] {
+  return [createGetPortfolioTool(), createListJournalEntriesTool()];
+}
+
+/** Journal list (read). Safe for non-bookkeeper agents. */
+export function createListJournalEntriesTool(): AgentTool {
+  return {
+    name: 'list_journal_entries',
+    label: 'List Journal Entries',
+    description:
+      'List recent books-of-record journal entries (double-entry) for the household. ' +
+      'Requires INVAGE_BOOKS_DATABASE_URL. Use for reconcile / audit. ' +
+      'Pass telegram_user_id or slack_user_id from the message context.',
+    parameters: Type.Object({
+      ...channelIdParams,
+      limit: Type.Optional(
+        Type.Number({
+          description: 'Max entries to return (default 20, max 100).',
+        }),
+      ),
+    }),
+    async execute(_id, raw) {
+      const p = raw as ChannelIds & { limit?: number };
+      try {
+        if (!isBooksEnabled()) {
+          return fail(
+            'Books of record not configured (set INVAGE_BOOKS_DATABASE_URL).',
+          );
+        }
+        const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
+        let limit = 20;
+        if (p.limit != null) {
+          if (typeof p.limit !== 'number' || !Number.isFinite(p.limit) || p.limit <= 0) {
+            return fail('limit must be a positive finite number.');
+          }
+          limit = Math.min(100, Math.floor(p.limit));
+        }
+        const entries = await booksListJournals(state, limit);
+        const lines = entries.map((e) => {
+          const legs = e.lines
+            .map(
+              (l) =>
+                `  ${l.amount >= 0 ? '+' : ''}${l.amount.toFixed(2)} ${l.currency} ` +
+                `${l.kind}${l.channel ? `@${l.channel}` : ''}${l.external_key ? `:${l.external_key}` : ''}`,
+            )
+            .join('\n');
+          return (
+            `${e.value_date} ${e.entry_type} (${e.request_id})\n` +
+            (e.memo ? `  memo: ${e.memo}\n` : '') +
+            legs
+          );
+        });
+        return ok(
+          entries.length === 0
+            ? 'No journal entries.'
+            : `Journal entries (${entries.length}):\n\n${lines.join('\n\n')}`,
+          { entries, count: entries.length },
+        );
+      } catch (e) {
+        return failFrom(e);
+      }
+    },
+  };
+}
+
+/** Read-only portfolio tool for analysis peers (e.g. InvestmentAdvisor). */
 export function createGetPortfolioTool(): AgentTool {
   return {
     name: 'get_portfolio',
@@ -2259,7 +2757,8 @@ export function createGetPortfolioTool(): AgentTool {
     async execute(_id, raw) {
       const p = raw as ChannelIds;
       try {
-        const state = resolveInvestorFromChannel(p);
+        const snapshot = await resolveInvestorFromChannel(p);
+        const { state } = snapshot;
         const portfolio = getPortfolio(state);
         const cashes = getCashes(state);
         const deposits = getDeposits(state);

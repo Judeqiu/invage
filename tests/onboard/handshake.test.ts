@@ -1,3 +1,4 @@
+import { useTestDatabase } from '../helpers/database.js';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { existsSync, rmSync, readdirSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
@@ -11,10 +12,13 @@ import {
   tokensFilePath,
 } from '../../src/onboard/token-store.js';
 
+const testDatabase = await useTestDatabase();
+
 const USERS_DIR = join(resolveDataRoot(), 'users');
 const DRIVE_DIR = join(resolveDataRoot(), 'drive');
 
-function wipeState() {
+async function wipeState() {
+  await testDatabase.clearUsers();
   const path = tokensFilePath();
   if (existsSync(path)) rmSync(path, { force: true });
   for (const dir of [USERS_DIR, DRIVE_DIR]) {
@@ -84,17 +88,17 @@ describe('handleBind — happy path', () => {
     expect(result.reply).toMatch(/Hi \*Alex Chen\*/);
     expect(result.reply).toContain(result.slug!);
 
-    const investor = resolveUserBySlackUser('U0ALEX123');
+    const investor = await resolveUserBySlackUser('U0ALEX123');
     expect(investor).not.toBeNull();
     expect(investor!.profile.display_name).toBe('Alex Chen');
     expect(investor!.profile.contact_email).toBe('alex@example.com');
     expect(investor!.user.slack_user_ids).toContain('U0ALEX123');
-    expect(investor!.portfolio ?? {}).toEqual({});
+    expect(investor).toMatchObject({ portfolio: {} });
 
     const drivePath = join(DRIVE_DIR, result.slug!);
     expect(existsSync(drivePath)).toBe(true);
 
-    const state = loadState(result.slug!);
+    const { state } = await loadState(result.slug!);
     expect(state.log.some((e) => e.action === 'qr_onboard_bound')).toBe(true);
   });
 
@@ -128,7 +132,7 @@ describe('handleBind — web channel', () => {
     const drivePath = join(DRIVE_DIR, result.slug!);
     expect(existsSync(drivePath)).toBe(true);
 
-    const state = loadState(result.slug!);
+    const { state } = await loadState(result.slug!);
     expect(state.profile.display_name).toBe('Web Investor');
     expect(state.profile.contact_email).toBe('web@example.com');
     expect(state.log.some((e) => e.action === 'qr_onboard_bound')).toBe(true);
