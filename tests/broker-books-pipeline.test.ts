@@ -42,12 +42,12 @@ describe('IBKR Flex → BrokerStatement → portfolio → books journal', () => 
     const apply = async (xml: string, beforeSave?: () => void) => {
       const parsed = parseFlexQueryXml(xml);
       const statement = mapFlexDocToStatement(parsed, 'ibkr');
-      return applyBrokerStatement(await loadInvestor(slug), 'ibkr', statement, Buffer.from(xml), beforeSave);
+      return applyBrokerStatement(await loadInvestor(userId), 'ibkr', statement, Buffer.from(xml), beforeSave);
     };
 
     const first = flex('20261002', 10, 300, 1000);
     await apply(first);
-    let snapshot = await loadInvestor(slug);
+    let snapshot = await loadInvestor(userId);
     expect(getCashes(snapshot.state)).toEqual(expect.arrayContaining([
       expect.objectContaining({ channel: 'ibkr', currency: 'SGD', amount: 1000 }),
     ]));
@@ -57,17 +57,17 @@ describe('IBKR Flex → BrokerStatement → portfolio → books journal', () => 
     expect(await booksListJournals(snapshot.state, 20)).toHaveLength(2);
 
     await apply(first);
-    expect(await booksListJournals((await loadInvestor(slug)).state, 20)).toHaveLength(2);
+    expect(await booksListJournals((await loadInvestor(userId)).state, 20)).toHaveLength(2);
 
     const changed = flex('20261003', 12, 360, 1100);
     await expect(apply(changed, () => { throw new Error('simulated state save failure'); }))
       .rejects.toThrow(/simulated state save failure/);
-    snapshot = await loadInvestor(slug);
+    snapshot = await loadInvestor(userId);
     expect(getCashes(snapshot.state).find(row => row.channel === 'ibkr')?.amount).toBe(1000);
     expect(await booksListJournals(snapshot.state, 20)).toHaveLength(5);
 
     await apply(changed);
-    snapshot = await loadInvestor(slug);
+    snapshot = await loadInvestor(userId);
     expect(getCashes(snapshot.state).find(row => row.channel === 'ibkr')?.amount).toBe(1100);
     expect(await booksListJournals(snapshot.state, 20)).toHaveLength(5);
     const rows = await withHouseholdTx(userId, client => client.query(
@@ -76,7 +76,7 @@ describe('IBKR Flex → BrokerStatement → portfolio → books journal', () => 
     expect(rows.rows.every(row => String(row.external_ref).startsWith('broker:ibkr:U123:'))).toBe(true);
 
     await expect(apply(first)).rejects.toThrow(/older than the current ibkr position date 2026-10-03/);
-    expect(getCashes((await loadInvestor(slug)).state).find(row => row.channel === 'ibkr')?.amount).toBe(1100);
+    expect(getCashes((await loadInvestor(userId)).state).find(row => row.channel === 'ibkr')?.amount).toBe(1100);
   });
 
   it('replays option evidence through jsonb without duplicating money or history records', async () => {
@@ -97,10 +97,10 @@ describe('IBKR Flex → BrokerStatement → portfolio → books journal', () => 
       settlement: 'physical', currency: 'USD', source: 'ibkr_flex' }];
     const syncId = randomUUID();
     const apply = async (statement = doc, id = syncId, raw = 'first archive') =>
-      applyBrokerStatement(await loadInvestor(slug), 'ibkr', statement, Buffer.from(raw),
+      applyBrokerStatement(await loadInvestor(userId), 'ibkr', statement, Buffer.from(raw),
         undefined, undefined, { syncId: id });
     await apply();
-    const before = (await loadInvestor(slug)).state;
+    const before = (await loadInvestor(userId)).state;
     const journals = await booksListJournals(before, 100);
     // Each replay reloads PostgreSQL jsonb, changes wire bytes, and reorders
     // fields. Financial evidence is identical despite transport differences.
@@ -109,7 +109,7 @@ describe('IBKR Flex → BrokerStatement → portfolio → books journal', () => 
         ? Object.fromEntries(Object.entries(value).reverse()) : value));
     await apply(reordered, syncId, 'retry archive');
     await apply(reordered, randomUUID(), 'new fetch archive');
-    const after = (await loadInvestor(slug)).state;
+    const after = (await loadInvestor(userId)).state;
     expect(getPortfolio(after)).toEqual(getPortfolio(before));
     expect(getCashes(after)).toEqual(getCashes(before));
     expect(after.option_executions).toEqual(before.option_executions);
@@ -122,14 +122,14 @@ describe('IBKR Flex → BrokerStatement → portfolio → books journal', () => 
     conflict.option_events![0].contracts = '2';
     conflict.cash[0].amount = 9999;
     await expect(apply(conflict)).rejects.toThrow(/differing fields: contracts/);
-    expect((await loadInvestor(slug)).state).toEqual(after);
+    expect((await loadInvestor(userId)).state).toEqual(after);
     expect(await booksListJournals(after, 100)).toEqual(journals);
 
     const changedObservation = structuredClone(doc);
     changedObservation.skipped = [{ kind: 'position', symbol: 'AAPL', reason: 'unavailable' }];
     changedObservation.cash[0].amount = 9999;
     await expect(apply(changedObservation)).rejects.toThrow(/observation conflict/);
-    expect((await loadInvestor(slug)).state).toEqual(after);
+    expect((await loadInvestor(userId)).state).toEqual(after);
     expect(await booksListJournals(after, 100)).toEqual(journals);
   });
 });
