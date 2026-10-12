@@ -78,4 +78,58 @@ describe('IBKR Flex → BrokerStatement → portfolio → books journal', () => 
     await expect(apply(first)).rejects.toThrow(/older than the current ibkr position date 2026-10-03/);
     expect(getCashes((await loadInvestor(slug)).state).find(row => row.channel === 'ibkr')?.amount).toBe(1100);
   });
+
+  it('replays option evidence through jsonb without duplicating money or history records', async () => {
+    const { applyBrokerStatement } = await import('../src/brokers/apply-statement.js');
+    const { loadInvestor } = await import('../src/state/investor-store.js');
+    const { booksListJournals } = await import('../src/books/index.js');
+    const { getPortfolio, getCashes } = await import('../src/state/portfolio-state.js');
+    const { mapFlexDocToStatement } = await import('../src/ibkr/flex-map.js');
+    const { parseFlexQueryXml } = await import('../src/ibkr/flex-parse.js');
+    const doc = mapFlexDocToStatement(parseFlexQueryXml(flex('20261004', 12, 360, 1100)), 'ibkr');
+    doc.option_executions = [{ channel: 'ibkr', account_id: 'U123', execution_id: 'fill-1',
+      contract_id: 'option-1', executed_at: '2026-10-02T09:30:00', underlying: 'AAPL',
+      right: 'put', expiry: '2026-10-03', strike: '150', multiplier: '100', contracts: '1',
+      side: 'sell', effect: 'open', currency: 'USD', gross_premium: '300', commission: '-1' }];
+    doc.option_events = [{ id: 'assignment-1', broker_id: 'ibkr', channel: 'ibkr', account_id: 'U123',
+      contract_id: 'option-1', underlying: 'AAPL', right: 'put', expiry: '2026-10-03',
+      strike: '150', multiplier: '100', contracts: '1', date: '2026-10-03', kind: 'assignment',
+      settlement: 'physical', currency: 'USD', source: 'ibkr_flex' }];
+    const syncId = randomUUID();
+    const apply = async (statement = doc, id = syncId, raw = 'first archive') =>
+      applyBrokerStatement(await loadInvestor(slug), 'ibkr', statement, Buffer.from(raw),
+        undefined, undefined, { syncId: id });
+    await apply();
+    const before = (await loadInvestor(slug)).state;
+    const journals = await booksListJournals(before, 100);
+    // Each replay reloads PostgreSQL jsonb, changes wire bytes, and reorders
+    // fields. Financial evidence is identical despite transport differences.
+    const reordered = JSON.parse(JSON.stringify(doc, (_key, value) =>
+      value && typeof value === 'object' && !Array.isArray(value)
+        ? Object.fromEntries(Object.entries(value).reverse()) : value));
+    await apply(reordered, syncId, 'retry archive');
+    await apply(reordered, randomUUID(), 'new fetch archive');
+    const after = (await loadInvestor(slug)).state;
+    expect(getPortfolio(after)).toEqual(getPortfolio(before));
+    expect(getCashes(after)).toEqual(getCashes(before));
+    expect(after.option_executions).toEqual(before.option_executions);
+    expect(after.option_events).toEqual(before.option_events);
+    expect(await booksListJournals(after, 100)).toEqual(journals);
+    expect(after.option_observations?.filter(row => row.id === syncId)).toHaveLength(1);
+    expect(after.option_observations).toHaveLength(before.option_observations!.length + 1);
+
+    const conflict = structuredClone(doc);
+    conflict.option_events![0].contracts = '2';
+    conflict.cash[0].amount = 9999;
+    await expect(apply(conflict)).rejects.toThrow(/differing fields: contracts/);
+    expect((await loadInvestor(slug)).state).toEqual(after);
+    expect(await booksListJournals(after, 100)).toEqual(journals);
+
+    const changedObservation = structuredClone(doc);
+    changedObservation.skipped = [{ kind: 'position', symbol: 'AAPL', reason: 'unavailable' }];
+    changedObservation.cash[0].amount = 9999;
+    await expect(apply(changedObservation)).rejects.toThrow(/observation conflict/);
+    expect((await loadInvestor(slug)).state).toEqual(after);
+    expect(await booksListJournals(after, 100)).toEqual(journals);
+  });
 });

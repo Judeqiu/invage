@@ -26,6 +26,18 @@ function observe(s: InvestorState, date: string, present: boolean, skipped = fal
 }
 
 describe('option observation episodes', () => {
+  it('rejects changed option evidence under a reused sync ID without changing history', () => {
+    const s = state();
+    observe(s, '2026-10-01', true);
+    const before = structuredClone(s);
+    expect(() => observe(s, '2026-10-01', false)).toThrow(/observation conflict/);
+    expect(s).toEqual(before);
+    const persisted = s.option_observations![0];
+    s.option_observations = [Object.fromEntries(Object.entries(persisted).reverse()) as typeof persisted];
+    observe(s, '2026-10-01', true);
+    expect(s.option_observations).toHaveLength(1);
+  });
+
   it('calculates exact commission-inclusive P&L only for a fully matched close', () => {
     const s = state();
     observe(s, '2026-09-30', true);

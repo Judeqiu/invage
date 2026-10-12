@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import type { Holding, OptionSpec } from '../market/types.js';
 import { getPortfolio, type InvestorState } from '../state/portfolio-state.js';
 import type { BrokerSkip, BrokerStatement } from './statement.js';
@@ -122,8 +123,26 @@ export function appendOptionObservation(state: InvestorState, args: {
   syncId?: string;
 }): void {
   const { statement, brokerId, connectionId, channel } = args;
-  const history = state.option_observations ?? [];
+  const history = [...(state.option_observations ?? [])];
   const observedAt = args.observedAt ?? new Date().toISOString();
+  const id = args.syncId ?? randomUUID();
+  const incoming = optionObservationFromStatement({ statement, brokerId, connectionId, channel,
+    observedAt, rawDataId: args.rawDataId, syncId: id });
+  const previous = history.find(row => row.id === id);
+  if (previous) {
+    // Retry timestamps and archive paths may change; broker evidence must not.
+    // Object comparison survives jsonb field reordering on database reads.
+    const evidence = ({ observed_at, raw_data_id, ...row }: OptionObservation) => ({
+      ...row,
+      options: [...row.options].sort((a, b) => a.key.localeCompare(b.key)),
+      skipped_symbols: [...(row.skipped_symbols ?? [])].sort(),
+      skipped: row.skipped ?? [],
+    });
+    if (!isDeepStrictEqual(evidence(previous), evidence(incoming))) {
+      throw new Error(`Option observation conflict for sync ${id}`);
+    }
+    return;
+  }
   if (!history.some(row => row.channel === channel)) {
     const prior = priorOptions(state, channel);
     const previous = [...state.log].reverse().find(row =>
@@ -135,10 +154,7 @@ export function appendOptionObservation(state: InvestorState, args: {
       skipped_positions: 0, options: prior,
     });
   }
-  const id = args.syncId ?? randomUUID();
-  if (history.some(row => row.id === id)) return;
-  history.push(optionObservationFromStatement({ statement, brokerId, connectionId, channel,
-    observedAt, rawDataId: args.rawDataId, syncId: id }));
+  history.push(incoming);
   state.option_observations = history;
 }
 

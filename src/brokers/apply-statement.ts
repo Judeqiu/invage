@@ -179,18 +179,23 @@ export async function applyBrokerStatement(
   const existing = getPortfolio(state);
   const removed = removedKeys.filter((k) => !stamped.some((l) => l.mapKey === k)).length;
 
+  // Prepare observation history on a copy, so replay conflicts fail before
+  // ledger writes and a failed books transaction leaves the snapshot untouched.
+  const observedState = { ...state };
+  appendOptionObservation(observedState, {
+    statement: doc, brokerId: connection?.brokerId ?? connectorId,
+    connectionId: connectorId, channel,
+    syncId: observation?.syncId, observedAt: observation?.observedAt,
+    rawDataId: observation?.rawDataId,
+  });
+
   if (isBooksEnabled()) {
     const fingerprint = createHash('sha256').update(_raw ?? JSON.stringify(doc)).digest('hex');
     await booksApplyBrokerSnapshot(state, channel, doc, stamped,
       `broker:${connectorId}:${doc.account_id}:${today}:${fingerprint}`);
   }
 
-  appendOptionObservation(state, {
-    statement: doc, brokerId: connection?.brokerId ?? connectorId,
-    connectionId: connectorId, channel,
-    syncId: observation?.syncId, observedAt: observation?.observedAt,
-    rawDataId: observation?.rawDataId,
-  });
+  state.option_observations = observedState.option_observations;
   setPortfolio(state, next);
   setCashes(state, replaceChannelCash(getCashes(state), doc.cash, channel, today));
   writeConnectionMetrics(state, connectorId, doc);
