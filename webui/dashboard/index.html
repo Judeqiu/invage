@@ -86,9 +86,11 @@
           <div class="option-ledger-filters history-filters">
             <label>Contract <input id="timelineSearch" type="search" placeholder="Ticker, strike, expiry" /></label>
             <label>Right <select id="timelineRight"><option value="">All rights</option><option value="put">Put</option><option value="call">Call</option></select></label>
+            <button type="button" class="chip-btn" id="timelineExpand">Expand all</button>
+            <button type="button" class="chip-btn" id="timelineCollapse">Collapse all</button>
             <button type="button" class="chip-btn" id="timelineRefresh">Refresh timeline</button>
           </div>
-          <p class="option-freshness">A dashed lead-in before the first recorded point means earlier history is unavailable. Solid bars show broker observations; dashed extensions show time remaining to expiry. Dots show recorded opens and closes. Roll arrows retain the broker evidence level; possible links are dashed.</p>
+          <p class="option-freshness">Expand a stock to see its individual contracts and roll arrows. A dashed lead-in before the first recorded point means earlier history is unavailable. Solid bars show broker observations; dashed extensions show time remaining to expiry. Dots show recorded opens and closes. Roll arrows retain the broker evidence level; possible links are dashed.</p>
           <p id="timelineStatus" class="option-freshness" role="status" aria-live="polite"></p>
           <div id="timelineChart"></div>
           <div id="timelineDetail"></div>

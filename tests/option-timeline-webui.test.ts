@@ -79,7 +79,7 @@ it.skipIf(!existsSync(executable))('renders the configured default, filters, key
     if (url.pathname === '/api/domain/invage/dashboard') return json({ empty: true, displayName: 'Test', productProfile: 'consultant', dashboardConfig: { optionView: 'timeline' } });
     if (url.pathname.endsWith('/option-history')) {
       queries.push(url.search);
-      return json({ episodes: url.searchParams.get('offset') === '100' ? [{ ...episode, id: 'put', account_id: 'B', contract: { ...c, right: 'put' }, executions: [episode.executions[1]] }] : [episode, openEpisode],
+      return json({ episodes: url.searchParams.get('offset') === '100' ? [{ ...episode, id: 'put', account_id: 'B', contract: { ...c, right: 'put' }, executions: [episode.executions[1]] }, { ...episode, id: 'msft', contract: { ...c, underlying: 'MSFT' } }] : [episode, openEpisode],
         connections: [], gaps: [], history_started: true, next_offset: url.searchParams.get('offset') === '100' ? null : 100 });
     }
     if (url.pathname.endsWith('/option-relationships')) return failRolls ? json({ message: 'Archive temporarily unavailable' }, 503) : json({ groups, gaps: [], next_offset: null });
@@ -95,8 +95,30 @@ it.skipIf(!existsSync(executable))('renders the configured default, filters, key
     await page.setViewport({ width: 1180, height: 950 });
     await page.goto(`http://127.0.0.1:${(server.address() as { port: number }).port}/dashboard/index.html`);
     await page.waitForSelector('.option-timeline');
-    await page.waitForFunction(() => document.getElementById('timelineStatus')!.textContent!.includes('3 contract tracks'));
+    await page.waitForFunction(() => document.getElementById('timelineStatus')!.textContent!.includes('4 contract tracks'));
     expect(await page.$eval('#optionTimelinePanel', e => e.classList.contains('hidden'))).toBe(false);
+    expect(await page.$$('[data-timeline-group]')).toHaveLength(2);
+    expect(await page.$$('[data-timeline-row]')).toHaveLength(0);
+    expect(await page.$$('.timeline-roll')).toHaveLength(0);
+    expect(await page.$eval('[data-timeline-group="AMD"]', e => e.getAttribute('aria-expanded'))).toBe('false');
+    const collapsedHeight = await page.$eval('.option-timeline', e => Number(e.getAttribute('height')));
+    const collapsedTicks = await page.$$eval('.timeline-tick', es => es.map(e => e.textContent));
+    await page.screenshot({ path: '/tmp/option-timeline-collapsed.png', fullPage: true });
+    await page.click('[data-timeline-group="AMD"]');
+    expect(await page.$$('[data-timeline-row]')).toHaveLength(3);
+    expect(await page.$eval('[data-timeline-group="AMD"]', e => e.getAttribute('aria-expanded'))).toBe('true');
+    expect(await page.$eval('[data-timeline-group="MSFT"]', e => e.getAttribute('aria-expanded'))).toBe('false');
+    expect(await page.$eval('.option-timeline', e => Number(e.getAttribute('height')))).toBeGreaterThan(collapsedHeight);
+    expect(await page.$$eval('.timeline-tick', es => es.map(e => e.textContent))).toEqual(collapsedTicks);
+    await page.$eval('[data-timeline-group="AMD"]', e => (e as SVGElement).focus()); await page.keyboard.press(' ');
+    expect(await page.$$('[data-timeline-row]')).toHaveLength(0);
+    expect(await page.$$('.timeline-roll')).toHaveLength(0);
+    expect(await page.$eval('.option-timeline', e => Number(e.getAttribute('height')))).toBe(collapsedHeight);
+    await page.keyboard.press('Enter');
+    expect(await page.$$('[data-timeline-row]')).toHaveLength(3);
+    await page.click('#timelineExpand');
+    expect(await page.$$('[data-timeline-row]')).toHaveLength(4);
+    expect(await page.$eval('#timelineExpand', e => (e as HTMLButtonElement).disabled)).toBe(true);
     expect(await page.$$eval('.timeline-roll.possible', es => es.length)).toBe(1);
     expect(await page.$$('.timeline-unknown-start')).toHaveLength(1);
     expect(await page.$eval('.timeline-unknown-start line', e => Number(e.getAttribute('x2')) - Number(e.getAttribute('x1')))).toBeGreaterThan(40);
@@ -110,6 +132,11 @@ it.skipIf(!existsSync(executable))('renders the configured default, filters, key
     await page.type('#timelineSearch', 'MISSING'); expect(await page.$eval('#timelineChart', e => e.textContent)).toContain('No option records');
     await page.$eval('#timelineSearch', e => { (e as HTMLInputElement).value = ''; e.dispatchEvent(new Event('input')); });
     await page.select('#timelineRight', '');
+    expect(await page.$$eval('[data-timeline-group]', es => es.every(e => e.getAttribute('aria-expanded') === 'true'))).toBe(true);
+    await page.click('#timelineCollapse');
+    expect(await page.$$('[data-timeline-row]')).toHaveLength(0);
+    expect(await page.$eval('#timelineCollapse', e => (e as HTMLButtonElement).disabled)).toBe(true);
+    await page.click('#timelineExpand');
     await page.screenshot({ path: '/tmp/option-timeline-desktop.png', fullPage: true });
     for (const width of [320, 375, 768]) {
       await page.setViewport({ width, height: 900 });

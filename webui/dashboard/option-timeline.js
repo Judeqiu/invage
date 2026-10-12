@@ -80,12 +80,25 @@
     const search = document.getElementById('timelineSearch'), right = document.getElementById('timelineRight');
     let data = { episodes: [], groups: [], gaps: [] }, request = 0, loadedKey = '', pendingKey = '', limited = false;
     let current = { tracks: [], links: [] };
+    const expandedStocks = new Set();
+    let stockGroups = [];
     const label = t => `${t.contract.underlying} ${t.side} ${t.contract.right} ${t.contract.strike} · ${t.contract.expiry}`;
     function render() {
+      const scroll = chart.querySelector('.timeline-scroll');
+      const scrollLeft = scroll?.scrollLeft || 0, scrollTop = scroll?.scrollTop || 0;
       const context = getContext();
       current = buildTracks(data.episodes, data.groups, context);
       const q = search.value.trim().toUpperCase();
       current.tracks = current.tracks.filter(t => (!right.value || t.contract.right === right.value) && (!q || label(t).toUpperCase().includes(q)));
+      const byStock = new Map();
+      current.tracks.forEach((t, index) => {
+        const stock = t.contract.underlying.trim().toUpperCase();
+        if (!byStock.has(stock)) byStock.set(stock, { stock, tracks: [] });
+        byStock.get(stock).tracks.push({ t, index });
+      });
+      stockGroups = [...byStock.values()];
+      document.getElementById('timelineExpand').disabled = !stockGroups.some(g => !expandedStocks.has(g.stock));
+      document.getElementById('timelineCollapse').disabled = !stockGroups.some(g => expandedStocks.has(g.stock));
       if (!current.tracks.length) {
         chart.innerHTML = '<div class="metric-card empty">No option records match this timeline. Broker syncs and imported fills provide the history.</div>';
         return;
@@ -95,13 +108,34 @@
       const firstDate = Math.min(...dates), lastDate = Math.max(...dates);
       const leadInRoom = rows.some(t => t.unknownStart) ? (lastDate - firstDate) * 0.09 : 0;
       const start = firstDate - Math.max(3 * 86400000, leadInRoom), end = lastDate + 3 * 86400000;
-      const left = 290, width = 1080, plot = width - left - 36, rowHeight = 68, height = 80 + rows.length * rowHeight;
+      const layout = stockGroups.flatMap(group => [
+        { group }, ...(expandedStocks.has(group.stock) ? group.tracks.map(row => ({ ...row })) : []),
+      ]);
+      const left = 290, width = 1080, plot = width - left - 36, rowHeight = 68, height = 80 + layout.length * rowHeight;
       const x = d => left + (stamp(d) - start) / (end - start) * plot;
       const y = i => 87 + i * rowHeight;
       const ticks = Array.from({ length: 7 }, (_, i) => new Date(start + i * (end - start) / 6).toISOString().slice(0, 10));
       const grid = ticks.map(d => `<line class="timeline-grid" x1="${x(d)}" x2="${x(d)}" y1="50" y2="${height}"/><text class="timeline-tick" x="${x(d)}" y="37" text-anchor="middle">${d}</text>`).join('');
-      const lanes = rows.map((t, i) => {
-        const cy = y(i), c = t.contract;
+      const trackY = new Map();
+      const lanes = layout.map((row, slot) => {
+        const cy = y(slot);
+        if (row.group) {
+          const { stock, tracks } = row.group, expanded = expandedStocks.has(stock);
+          const contracts = tracks.map(row => row.t);
+          const groupDates = contracts.flatMap(t => [t.contract.expiry, ...t.events.map(e => e.date), ...t.spans.flatMap(s => [s.from, s.to])]).filter(d => Number.isFinite(stamp(d))).sort();
+          const accounts = new Set(contracts.map(t => JSON.stringify([t.channel, t.account]))).size;
+          const markers = contracts.flatMap(t => t.events).map(e => `<circle class="timeline-event ${esc(e.kind)}" cx="${x(e.date)}" cy="${cy + (e.kind === 'open' ? -3 : e.kind === 'close' ? 3 : 0)}" r="3"><title>${esc(`${stock} · ${e.label}`)}</title></circle>`).join('');
+          const expiries = [...new Set(contracts.map(t => t.contract.expiry))].map(d => `<path class="timeline-expiry" d="M ${x(d)} ${cy - 5} l 5 5 -5 5 -5 -5 Z"><title>Contract expiry ${esc(d)}</title></path>`).join('');
+          return `<g data-timeline-group="${esc(stock)}" tabindex="0" role="button" aria-expanded="${expanded}" aria-label="${esc(stock)}. ${tracks.length} contract tracks. ${expanded ? 'Collapse' : 'Expand'} stock">
+            <rect class="timeline-group-lane" x="0" y="${cy - 25}" width="${width}" height="${rowHeight - 2}"/>
+            <text class="timeline-group-label" x="12" y="${cy - 6}">${expanded ? '▾' : '▸'} ${esc(stock)} · ${tracks.length} contract${tracks.length === 1 ? '' : 's'}</text>
+            <text class="timeline-sub" x="12" y="${cy + 14}">${accounts} account${accounts === 1 ? '' : 's'} · ${expanded ? 'Click to collapse' : 'Click to expand'}</text>
+            <line class="timeline-group-range" x1="${x(groupDates[0])}" x2="${x(groupDates.at(-1))}" y1="${cy}" y2="${cy}"><title>${esc(`${stock} activity and expiry range: ${groupDates[0]} to ${groupDates.at(-1)}. Summary of separate contracts, not a continuous holding.`)}</title></line>
+            ${expanded ? '' : markers + expiries}
+          </g>`;
+        }
+        const { t, index: i } = row, c = t.contract;
+        trackY.set(t.key, cy);
         const spans = t.spans.map(s => `<line class="timeline-span${s.projected ? ' projected' : ''}" x1="${x(s.from)}" x2="${x(s.to)}" y1="${cy}" y2="${cy}"><title>${esc(`${s.projected ? 'Remaining time to expiry' : 'Observed position'}: ${s.from} to ${s.to}`)}</title></line>`).join('');
         const leadX = t.unknownStart ? Math.max(left, x(t.unknownStart) - 56) : 0;
         const leadIn = t.unknownStart ? `<g class="timeline-unknown-start"><title>Earlier history unavailable; opening date is unknown before ${esc(t.unknownStart)}</title>
@@ -110,21 +144,22 @@
         const events = [...t.events].sort((a, b) => Number(a.kind !== 'absent') - Number(b.kind !== 'absent')).map(e => `<circle class="timeline-event ${esc(e.kind)}" cx="${x(e.date)}" cy="${cy}" r="5"><title>${esc(e.label)}</title></circle>`).join('');
         return `<g data-timeline-row="${i}" tabindex="0" role="button" aria-label="${esc(label(t))}. Show evidence">
           <rect class="timeline-lane" x="0" y="${cy - 25}" width="${width}" height="${rowHeight - 2}"/>
-          <text class="timeline-label" x="12" y="${cy - 6}">${esc(`${c.underlying} · ${t.side} ${c.right} ${c.strike}`)}</text>
-          <text class="timeline-sub" x="12" y="${cy + 14}">${esc(`${t.channel}${t.account ? ` / ${t.account}` : ''} · expiry ${c.expiry}`)}</text>
+          <text class="timeline-label" x="28" y="${cy - 6}">${esc(`${c.underlying} · ${t.side} ${c.right} ${c.strike}`)}</text>
+          <text class="timeline-sub" x="28" y="${cy + 14}">${esc(`${t.channel}${t.account ? ` / ${t.account}` : ''} · expiry ${c.expiry}`)}</text>
           ${leadIn}${spans}${events}<path class="timeline-expiry" d="M ${x(c.expiry)} ${cy - 6} l 6 6 -6 6 -6 -6 Z"><title>Contract expiry ${esc(c.expiry)}; not confirmation of expiration</title></path>
         </g>`;
       }).join('');
       const links = current.links.map(l => {
-        const a = rows.findIndex(t => t.key === l.from), b = rows.findIndex(t => t.key === l.to);
-        if (a < 0 || b < 0) return '';
-        const x1 = x(l.date), x2 = x(l.through), y1 = y(a) + 8, y2 = y(b) - 8;
+        if (!trackY.has(l.from) || !trackY.has(l.to)) return '';
+        const x1 = x(l.date), x2 = x(l.through), y1 = trackY.get(l.from) + 8, y2 = trackY.get(l.to) - 8;
         return `<path class="timeline-roll ${['possible', 'review'].includes(l.evidence) ? 'possible' : ''}" d="M ${x1} ${y1} C ${x1 + 24} ${y1}, ${x2 + 24} ${y2}, ${x2} ${y2}" marker-end="url(#timelineArrow)"><title>${esc(`${l.evidence} roll relationship: ${l.reason}`)}</title></path>`;
       }).join('');
       chart.innerHTML = `<div class="timeline-legend"><span class="timeline-open-key">● Open</span><span class="timeline-close-key">● Close</span><span>◇ Expiry date</span><span>○ First absent / unverified effect</span><span>↳ Roll relationship</span><span>⋯ Earlier history unavailable</span></div>
-        <div class="timeline-scroll" tabindex="0" role="region" aria-label="Option timeline; scroll horizontally to explore dates"><svg class="option-timeline" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img" aria-label="Option activity through ${context.asOf}">
+        <div class="timeline-scroll" tabindex="0" role="region" aria-label="Option timeline; scroll horizontally to explore dates"><svg class="option-timeline" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="group" aria-label="Option activity through ${context.asOf}">
         <defs><marker id="timelineArrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="currentColor"/></marker></defs>${grid}${lanes}${links}
         <line class="timeline-today" x1="${x(context.asOf)}" x2="${x(context.asOf)}" y1="48" y2="${height}"/><text class="timeline-tick" x="${x(context.asOf)}" y="17" text-anchor="middle">${context.replay ? 'As of' : 'Today'} ${context.asOf}</text></svg></div>`;
+      const updatedScroll = chart.querySelector('.timeline-scroll');
+      updatedScroll.scrollLeft = scrollLeft; updatedScroll.scrollTop = scrollTop;
     }
     async function pages(endpoint, field, params, id) {
       const out = [], gaps = []; let offset = 0;
@@ -171,8 +206,20 @@
         <ul>${t.events.map(e => `<li>${esc(e.date)} · ${esc(e.label)}</li>`).join('')}</ul>
         ${links.map(l => `<p><strong>${esc(l.evidence)} roll relationship</strong> · ${esc(l.date)}: ${esc(l.reason)}</p>`).join('')}</div>`;
     }
-    chart.addEventListener('click', e => showEvidence(e.target));
-    chart.addEventListener('keydown', e => { if (['Enter', ' '].includes(e.key) && e.target.closest('[data-timeline-row]')) { e.preventDefault(); showEvidence(e.target); } });
+    function activate(target) {
+      const group = target.closest('[data-timeline-group]');
+      if (!group) { showEvidence(target); return; }
+      const stock = group.dataset.timelineGroup;
+      if (expandedStocks.has(stock)) expandedStocks.delete(stock); else expandedStocks.add(stock);
+      detail.innerHTML = ''; render();
+      [...chart.querySelectorAll('[data-timeline-group]')].find(g => g.dataset.timelineGroup === stock)?.focus({ preventScroll: true });
+    }
+    chart.addEventListener('click', e => activate(e.target));
+    chart.addEventListener('keydown', e => {
+      if (['Enter', ' '].includes(e.key) && e.target.closest('[data-timeline-row], [data-timeline-group]')) { e.preventDefault(); activate(e.target); }
+    });
+    document.getElementById('timelineExpand').addEventListener('click', () => { stockGroups.forEach(g => expandedStocks.add(g.stock)); render(); });
+    document.getElementById('timelineCollapse').addEventListener('click', () => { stockGroups.forEach(g => expandedStocks.delete(g.stock)); detail.innerHTML = ''; render(); });
     search.addEventListener('input', () => { detail.innerHTML = ''; render(); });
     right.addEventListener('change', () => { detail.innerHTML = ''; render(); });
     document.getElementById('timelineRefresh').addEventListener('click', () => load(true));

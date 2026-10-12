@@ -258,3 +258,9 @@ footer { text-align: center; font-size: 0.72rem; color: var(--muted-foreground);
 
 .timeline-unknown-start line { stroke: #8b97aa; stroke-width: 4; stroke-dasharray: 4 4; }
 .timeline-unknown-start path { fill: none; stroke: #8b97aa; stroke-width: 1.5; }
+
+[data-timeline-group] { cursor: pointer; }
+.timeline-group-lane { fill: #f3f6fc; }
+[data-timeline-group]:hover .timeline-group-lane, [data-timeline-group]:focus .timeline-group-lane { fill: #e8eefb; }
+.timeline-group-label { fill: #263347; font-size: 14px; font-weight: 700; }
+.timeline-group-range { stroke: #c7d5e9; stroke-width: 5; stroke-linecap: round; }
