@@ -229,9 +229,9 @@ footer { text-align: center; font-size: 0.72rem; color: var(--muted-foreground);
 }
 .roll-legs .chip-btn { margin-top: 0.5rem; font-size: 0.7rem; }
 
-/* Section 03 time view: fixed date scale inside a keyboard-scrollable container. */
+/* Section 03 time view: responsive date scale with a readable minimum width. */
 #optionTimelinePanel { min-width: 0; }
-.timeline-scroll { max-width: 100%; overflow: auto; border: 1px solid var(--border, #dbe2ea); border-radius: 12px; background: var(--card, #fff); }
+.timeline-scroll { width: 100%; max-width: 100%; overflow: auto; border: 1px solid var(--border, #dbe2ea); border-radius: 12px; background: var(--card, #fff); }
 .option-timeline { display: block; color: #6558cf; font-family: inherit; }
 .timeline-grid { stroke: #dbe2ea; stroke-dasharray: 2 4; }
 .timeline-lane { fill: transparent; }
@@ -255,6 +255,14 @@ footer { text-align: center; font-size: 0.72rem; color: var(--muted-foreground);
 .timeline-close-key { color: #de7454; }
 .timeline-detail { margin-top: 16px; padding: 20px; }
 .timeline-detail li { margin: 7px 0; overflow-wrap: anywhere; }
+.timeline-tooltip { position: fixed; z-index: 1000; box-sizing: border-box; width: 350px; max-width: calc(100vw - 16px); max-height: calc(100vh - 16px); overflow: auto; padding: 14px 16px; border: 1px solid #cbd5e1; border-radius: 10px; background: #fff; color: #263347; box-shadow: 0 8px 28px #26334724; font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
+.timeline-tooltip[hidden] { display: none; }
+.timeline-tooltip strong { font-size: 13px; }
+.timeline-tooltip p { margin: 6px 0; }
+.timeline-tooltip dl { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 5px 12px; margin: 10px 0; }
+.timeline-tooltip dt { color: #66758a; }
+.timeline-tooltip dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+.timeline-tooltip-source { color: #66758a; font-size: 11px; }
 
 .timeline-unknown-start line { stroke: #8b97aa; stroke-width: 4; stroke-dasharray: 4 4; }
 .timeline-unknown-start path { fill: none; stroke: #8b97aa; stroke-width: 1.5; }

@@ -11,8 +11,8 @@ const c = { underlying: 'AMD', right: 'call', side: 'short', expiry: '2026-11-20
 const episode = {
   id: 'one', broker_id: 'ibkr', channel: 'ibkr', account_id: 'A', contract: c, status: 'closed_by_fills',
   first_seen: '2026-09-01', last_seen_open: '2026-09-29', first_seen_absent: '2026-10-01',
-  observations: [{ as_of: '2026-09-01' }, { as_of: '2026-09-29' }], events: [],
-  executions: [{ execution_id: 'open', executed_at: '2026-08-28T10:00:00', effect: 'open', side: 'sell', contracts: 2 },
+  observations: [{ as_of: '2026-09-01', avg_price: 500, mark: 300, units: 2 }, { as_of: '2026-09-29', avg_price: 500, mark: 200, units: 2 }], events: [],
+  executions: [{ execution_id: 'open', executed_at: '2026-08-28T10:00:00', effect: 'open', side: 'sell', contracts: 2, multiplier: '100', gross_premium: '600', commission: '-1.25', currency: 'USD' },
     { execution_id: 'close', executed_at: '2026-10-01T10:00:00', effect: 'close', side: 'buy', contracts: 2 }],
 };
 const replacement = { ...c, expiry: '2027-01-15', strike: 220 };
@@ -23,6 +23,20 @@ const groups = [{ relationships: [relationship] }];
 const openEpisode = { ...episode, id: 'active', contract: replacement, status: 'open', first_seen: '2026-10-01', last_seen_open: '2026-10-12', first_seen_absent: null,
   observations: [{ as_of: '2026-10-01' }, { as_of: '2026-10-12' }], executions: [{ execution_id: 'new-open', executed_at: '2026-10-01T10:00:00', effect: 'open', side: 'sell', contracts: 2 }] };
 const context = { asOf: '2026-10-12', channel: '', replay: false, positions: [], tradeDetails: {}, brokerAsOf: {} };
+
+it('uses dated observations for hover prices and excludes later prices and fills in replay', () => {
+  const window: any = {}; runInNewContext(script, { window });
+  const live = window.buildOptionTimelineTracks([episode], [], context).tracks[0];
+  expect(live.quote).toMatchObject({ asOf: '2026-09-29', averageCost: 500, mark: 200, units: 2, currency: 'USD' });
+  expect(live.events.find((e: any) => e.id === 'fill:open').fill.gross_premium).toBe('600');
+  const replay = window.buildOptionTimelineTracks([episode], [], { ...context, replay: true, asOf: '2026-09-15' }).tracks[0];
+  expect(replay.quote).toMatchObject({ asOf: '2026-09-01', mark: 300 });
+  expect(replay.events.some((e: any) => e.kind === 'close')).toBe(false);
+  const before = window.buildOptionTimelineTracks([episode], [], { ...context, replay: true, asOf: '2026-08-29' }).tracks[0];
+  expect(before.quote).toBeUndefined();
+  const missing = window.buildOptionTimelineTracks([], [], { ...context, positions: [{ instrument: 'option', ticker: 'fallback', channel: 'tiger', option: c, avgCost: 0, units: 1, brokerMark: 0 }], brokerAsOf: { tiger: '2026-10-12' } }).tracks[0];
+  expect(missing.quote).toMatchObject({ averageCost: 0, mark: 0 });
+});
 
 it('merges legacy Tiger positions with normalized history and groups fallback contracts by stock', () => {
   const window: any = {}; runInNewContext(script, { window });
@@ -126,6 +140,18 @@ it.skipIf(!existsSync(executable))('renders the configured default, filters, key
     expect(await page.$$('[data-timeline-row]')).toHaveLength(0);
     expect(await page.$$('.timeline-roll')).toHaveLength(0);
     expect(await page.$eval('[data-timeline-group="AMD"]', e => e.getAttribute('aria-expanded'))).toBe('false');
+    const requestsBeforeResize = queries.length;
+    for (const width of [1800, 1400]) {
+      await page.setViewport({ width, height: 950 });
+      await page.waitForFunction(() => Number(document.querySelector('.option-timeline')!.getAttribute('width')) === document.querySelector('.timeline-scroll')!.clientWidth);
+      expect(await page.$eval('.timeline-group-lane', e => Number(e.getAttribute('width')))).toBe(await page.$eval('.timeline-scroll', e => e.clientWidth));
+    }
+    await page.$eval('#timelineChart', e => { (e as HTMLElement).style.width = '90%'; });
+    await page.waitForFunction(() => Number(document.querySelector('.option-timeline')!.getAttribute('width')) === document.querySelector('.timeline-scroll')!.clientWidth);
+    expect(queries).toHaveLength(requestsBeforeResize);
+    await page.$eval('#timelineChart', e => { (e as HTMLElement).style.width = ''; });
+    await page.setViewport({ width: 1180, height: 950 });
+    await page.waitForFunction(() => Number(document.querySelector('.option-timeline')!.getAttribute('width')) === Math.max(1080, document.querySelector('.timeline-scroll')!.clientWidth));
     const collapsedHeight = await page.$eval('.option-timeline', e => Number(e.getAttribute('height')));
     const collapsedTicks = await page.$$eval('.timeline-tick', es => es.map(e => e.textContent));
     await page.screenshot({ path: '/tmp/option-timeline-collapsed.png', fullPage: true });
@@ -135,10 +161,24 @@ it.skipIf(!existsSync(executable))('renders the configured default, filters, key
     expect(await page.$eval('[data-timeline-group="MSFT"]', e => e.getAttribute('aria-expanded'))).toBe('false');
     expect(await page.$eval('.option-timeline', e => Number(e.getAttribute('height')))).toBeGreaterThan(collapsedHeight);
     expect(await page.$$eval('.timeline-tick', es => es.map(e => e.textContent))).toEqual(collapsedTicks);
+    await page.hover('[data-timeline-row="0"] .timeline-event.open');
+    const hoverText = await page.$eval('#optionTimelineTooltip', e => e.textContent);
+    expect(hoverText).toContain('Sell to open / unit');
+    expect(hoverText).toContain('USD 3.00');
+    expect(hoverText).toContain('USD 500.00');
+    expect(hoverText).toContain('USD 200.00');
+    expect(hoverText).toContain('2026-09-29');
+    expect(hoverText).toContain('Recorded prices; live bid/ask unavailable.');
+    await page.screenshot({ path: '/tmp/option-timeline-hover.png', fullPage: true });
+    await page.keyboard.press('Escape');
+    expect(await page.$eval('#optionTimelineTooltip', e => (e as HTMLElement).hidden)).toBe(true);
     await page.$eval('[data-timeline-group="AMD"]', e => (e as SVGElement).focus()); await page.keyboard.press(' ');
     expect(await page.$$('[data-timeline-row]')).toHaveLength(0);
     expect(await page.$$('.timeline-roll')).toHaveLength(0);
     expect(await page.$eval('.option-timeline', e => Number(e.getAttribute('height')))).toBe(collapsedHeight);
+    await page.hover('[data-timeline-price-track="0"][data-timeline-event="fill:open"]');
+    expect(await page.$eval('#optionTimelineTooltip', e => e.textContent)).toContain('USD 3.00');
+    await page.mouse.move(0, 0);
     await page.keyboard.press('Enter');
     expect(await page.$$('[data-timeline-row]')).toHaveLength(3);
     await page.click('#timelineExpand');
@@ -166,6 +206,12 @@ it.skipIf(!existsSync(executable))('renders the configured default, filters, key
     for (const width of [320, 375, 768]) {
       await page.setViewport({ width, height: 900 });
       expect(await page.$eval('#optionTimelinePanel', e => e.scrollWidth <= e.clientWidth)).toBe(true);
+      await page.waitForFunction(() => Number(document.querySelector('.option-timeline')!.getAttribute('width')) === 1080);
+      await page.$eval('[data-timeline-row="0"]', e => (e as SVGElement).focus());
+      const bounds = await page.$eval('#optionTimelineTooltip', e => { const r = e.getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom }; });
+      expect(bounds.left).toBeGreaterThanOrEqual(0); expect(bounds.right).toBeLessThanOrEqual(width);
+      expect(bounds.top).toBeGreaterThanOrEqual(0); expect(bounds.bottom).toBeLessThanOrEqual(900);
+      await page.keyboard.press('Escape');
     }
     await page.setViewport({ width: 375, height: 900 });
     await page.screenshot({ path: '/tmp/option-timeline-mobile.png', fullPage: true });

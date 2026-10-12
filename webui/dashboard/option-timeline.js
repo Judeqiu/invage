@@ -3,6 +3,7 @@
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const day = value => String(value || '').slice(0, 10);
   const stamp = value => Date.parse(`${day(value)}T00:00:00Z`);
+  const number = value => value == null || value === '' || !Number.isFinite(Number(value)) ? null : Number(value);
   // Saved positions/replays can predate sync normalization. Verify the encoded
   // contract before using its stock root, and leave contradictory codes separate.
   function stockSymbol(c) {
@@ -24,8 +25,8 @@
       if (!tracks.has(key)) tracks.set(key, { key, channel, account, contract: c, side, events: [], spans: [], notes: [] });
       return tracks.get(key);
     }
-    function event(t, id, date, kind, label) {
-      if (visible(date) && !t.events.some(e => e.id === id)) t.events.push({ id, date: day(date), kind, label });
+    function event(t, id, date, kind, label, fill) {
+      if (visible(date) && !t.events.some(e => e.id === id)) t.events.push({ id, date: day(date), kind, label, ...(fill ? { fill } : {}) });
     }
     for (const row of episodes) {
       if (context.channel && row.channel !== context.channel) continue;
@@ -33,6 +34,12 @@
       const t = track(row.channel, row.account_id, row.contract, row.contract.side);
       const observations = row.observations.filter(o => visible(o.as_of));
       if (observations.length) {
+        const latest = [...observations].sort((a, b) => a.as_of.localeCompare(b.as_of) || String(a.observed_at || '').localeCompare(String(b.observed_at || ''))).at(-1);
+        if (!t.quote || latest.as_of >= t.quote.asOf) t.quote = {
+          asOf: latest.as_of, averageCost: number(latest.avg_price), mark: number(latest.mark),
+          units: number(latest.units), currency: row.contract.currency,
+          source: latest.source === 'prior_books' ? 'Saved position' : 'Broker position mark',
+        };
         const dates = observations.map(o => o.as_of).sort();
         t.spans.push({ from: dates[0], to: dates.at(-1), projected: false });
         const stillObserved = !visible(row.first_seen_absent);
@@ -44,7 +51,7 @@
         : `${row.status.replaceAll('_', ' ')} · last observed ${row.last_seen_open}`);
       for (const fill of row.executions || []) {
         event(t, `fill:${fill.execution_id}`, fill.executed_at, fill.effect,
-          `${fill.side.toUpperCase()} to ${fill.effect} · ${fill.contracts} contracts · ${fill.executed_at}`);
+          `${fill.side.toUpperCase()} to ${fill.effect} · ${fill.contracts} contracts · ${fill.executed_at}`, fill);
       }
       for (const e of row.events || []) event(t, `event:${e.id}`, e.date, 'terminal', `${e.kind.replaceAll('_', ' ')} · ${e.contracts} contracts · ${e.date}`);
       if (visible(row.first_seen_absent)) event(t, `absent:${row.id}`, row.first_seen_absent, 'absent', 'First observed absent; this alone does not establish a close');
@@ -63,11 +70,21 @@
       // Match only within the selected channel; do not attach an unknown account to another account's history.
       const candidates = [...tracks.values()].filter(t => t.channel === p.channel &&
         contractKey('', '', t.contract, t.side) === contractKey('', '', p.option, p.option.side));
-      if (candidates.length === 1 && candidates[0].spans.length) continue;
+      const observed = context.replay ? context.asOf : context.brokerAsOf[p.channel];
+      const positionQuote = observed && visible(observed) ? {
+        asOf: observed, averageCost: number(p.avgCost ?? p.avg_price),
+        mark: number(context.replay ? p.price : p.brokerMark ?? p.option.mark),
+        units: number(p.units), currency: p.currency,
+        source: context.replay ? 'Saved valuation' : 'Broker position mark',
+      } : null;
+      if (candidates.length === 1 && candidates[0].spans.length) {
+        if (positionQuote && (!candidates[0].quote || observed >= candidates[0].quote.asOf)) candidates[0].quote = positionQuote;
+        continue;
+      }
       const c = { ...p.option, currency: p.currency };
       const t = track(p.channel, '', c, c.side);
       const detail = context.tradeDetails[p.ticker];
-      const observed = context.replay ? context.asOf : context.brokerAsOf[p.channel];
+      if (positionQuote) t.quote = positionQuote;
       if (observed && visible(observed)) {
         t.spans.push({ from: detail?.openedFrom && detail.openedFrom <= observed ? detail.openedFrom : observed, to: observed, projected: false });
         if (c.expiry > observed) t.spans.push({ from: observed, to: c.expiry, projected: true });
@@ -93,8 +110,18 @@
     let current = { tracks: [], links: [] };
     const expandedStocks = new Set();
     let stockGroups = [];
+    let renderedWidth = 0;
+    const availableWidth = () => Math.max(1080, chart.clientWidth - 2);
+    const tooltip = document.createElement('div');
+    tooltip.id = 'optionTimelineTooltip'; tooltip.className = 'timeline-tooltip';
+    tooltip.setAttribute('role', 'tooltip'); tooltip.hidden = true; document.body.appendChild(tooltip);
+    let tooltipTarget = null;
+    function hideTooltip() {
+      tooltip.hidden = true; tooltipTarget?.removeAttribute('aria-describedby'); tooltipTarget = null;
+    }
     const label = t => `${t.contract.underlying} ${t.side} ${t.contract.right} ${t.contract.strike} · ${t.contract.expiry}`;
     function render() {
+      hideTooltip();
       const scroll = chart.querySelector('.timeline-scroll');
       const scrollLeft = scroll?.scrollLeft || 0, scrollTop = scroll?.scrollTop || 0;
       const context = getContext();
@@ -122,7 +149,8 @@
       const layout = stockGroups.flatMap(group => [
         { group }, ...(expandedStocks.has(group.stock) ? group.tracks.map(row => ({ ...row })) : []),
       ]);
-      const left = 290, width = 1080, plot = width - left - 36, rowHeight = 68, height = 80 + layout.length * rowHeight;
+      const left = 290, width = availableWidth(), plot = width - left - 36, rowHeight = 68, height = 80 + layout.length * rowHeight;
+      renderedWidth = width;
       const x = d => left + (stamp(d) - start) / (end - start) * plot;
       const y = i => 87 + i * rowHeight;
       const ticks = Array.from({ length: 7 }, (_, i) => new Date(start + i * (end - start) / 6).toISOString().slice(0, 10));
@@ -135,7 +163,7 @@
           const contracts = tracks.map(row => row.t);
           const groupDates = contracts.flatMap(t => [t.contract.expiry, ...t.events.map(e => e.date), ...t.spans.flatMap(s => [s.from, s.to])]).filter(d => Number.isFinite(stamp(d))).sort();
           const accounts = new Set(contracts.map(t => JSON.stringify([t.channel, t.account]))).size;
-          const markers = contracts.flatMap(t => t.events).map(e => `<circle class="timeline-event ${esc(e.kind)}" cx="${x(e.date)}" cy="${cy + (e.kind === 'open' ? -3 : e.kind === 'close' ? 3 : 0)}" r="3"><title>${esc(`${stock} · ${e.label}`)}</title></circle>`).join('');
+          const markers = tracks.flatMap(({ t, index }) => t.events.map(e => `<circle class="timeline-event ${esc(e.kind)}" data-timeline-price-track="${index}" data-timeline-event="${esc(e.id)}" tabindex="0" aria-label="${esc(`${label(t)}. ${e.label}`)}" cx="${x(e.date)}" cy="${cy + (e.kind === 'open' ? -3 : e.kind === 'close' ? 3 : 0)}" r="3"/>`)).join('');
           const expiries = [...new Set(contracts.map(t => t.contract.expiry))].map(d => `<path class="timeline-expiry" d="M ${x(d)} ${cy - 5} l 5 5 -5 5 -5 -5 Z"><title>Contract expiry ${esc(d)}</title></path>`).join('');
           return `<g data-timeline-group="${esc(stock)}" tabindex="0" role="button" aria-expanded="${expanded}" aria-label="${esc(stock)}. ${tracks.length} contract tracks. ${expanded ? 'Collapse' : 'Expand'} stock">
             <rect class="timeline-group-lane" x="0" y="${cy - 25}" width="${width}" height="${rowHeight - 2}"/>
@@ -152,7 +180,7 @@
         const leadIn = t.unknownStart ? `<g class="timeline-unknown-start"><title>Earlier history unavailable; opening date is unknown before ${esc(t.unknownStart)}</title>
           <line x1="${leadX}" x2="${x(t.unknownStart)}" y1="${cy}" y2="${cy}"/>
           <path d="M ${leadX + 5} ${cy - 4} L ${leadX} ${cy} L ${leadX + 5} ${cy + 4}"/></g>` : '';
-        const events = [...t.events].sort((a, b) => Number(a.kind !== 'absent') - Number(b.kind !== 'absent')).map(e => `<circle class="timeline-event ${esc(e.kind)}" cx="${x(e.date)}" cy="${cy}" r="5"><title>${esc(e.label)}</title></circle>`).join('');
+        const events = [...t.events].sort((a, b) => Number(a.kind !== 'absent') - Number(b.kind !== 'absent')).map(e => `<circle class="timeline-event ${esc(e.kind)}" data-timeline-event="${esc(e.id)}" cx="${x(e.date)}" cy="${cy}" r="5"/>`).join('');
         return `<g data-timeline-row="${i}" tabindex="0" role="button" aria-label="${esc(label(t))}. Show evidence">
           <rect class="timeline-lane" x="0" y="${cy - 25}" width="${width}" height="${rowHeight - 2}"/>
           <text class="timeline-label" x="28" y="${cy - 6}">${esc(`${c.underlying} · ${t.side} ${c.right} ${c.strike}`)}</text>
@@ -217,6 +245,48 @@
         <ul>${t.events.map(e => `<li>${esc(e.date)} · ${esc(e.label)}</li>`).join('')}</ul>
         ${links.map(l => `<p><strong>${esc(l.evidence)} roll relationship</strong> · ${esc(l.date)}: ${esc(l.reason)}</p>`).join('')}</div>`;
     }
+    function showTooltip(target, pointer) {
+      const node = target.closest('[data-timeline-price-track], [data-timeline-row]');
+      if (!node) { hideTooltip(); return; }
+      const t = current.tracks[Number(node.dataset.timelinePriceTrack ?? node.dataset.timelineRow)];
+      if (!t) return;
+      if (tooltipTarget !== target || tooltip.hidden) {
+        hideTooltip(); tooltipTarget = target; target.setAttribute('aria-describedby', tooltip.id);
+        const hoveredEvent = target.closest('[data-timeline-event]');
+        const selected = t.events.find(e => e.id === hoveredEvent?.dataset.timelineEvent);
+        const fill = selected?.fill || [...t.events].filter(e => e.fill).sort((a, b) => b.fill.executed_at.localeCompare(a.fill.executed_at))[0]?.fill;
+        const money = (value, currency, digits = 2) => number(value) == null ? 'Unavailable'
+          : `${currency || 'Currency unknown'} ${Number(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: digits })}`;
+        const pairs = [];
+        const multiplier = number(t.contract.multiplier);
+        if (fill) {
+          const quantity = number(fill.contracts), size = number(fill.multiplier) ?? multiplier, gross = number(fill.gross_premium);
+          const unitPrice = gross != null && quantity > 0 && size > 0 ? Math.abs(gross) / quantity / size : null;
+          pairs.push([`${fill.side === 'sell' ? 'Sell' : 'Buy'} to ${fill.effect} / unit`, money(unitPrice, fill.currency, 4)],
+            ['Fill time', fill.executed_at.replace('T', ' ')], ['Gross premium', money(gross == null ? null : Math.abs(gross), fill.currency)],
+            ['Commission cash effect', money(fill.commission, fill.currency)]);
+        }
+        if (t.quote) {
+          const q = t.quote;
+          pairs.push(['Average entry / unit', money(q.averageCost != null && multiplier > 0 ? q.averageCost / multiplier : null, q.currency, 4)],
+            ['Mark / unit', money(q.mark != null && multiplier > 0 ? q.mark / multiplier : null, q.currency, 4)],
+            ['Average entry / contract', money(q.averageCost, q.currency)], ['Mark / contract', money(q.mark, q.currency)],
+            ['Observed quantity', q.units ?? 'Unavailable']);
+        }
+        tooltip.innerHTML = `<strong>${esc(label(t))}</strong><p>${esc(t.channel)}${t.account ? ` / ${esc(t.account)}` : ''}</p>
+          ${selected ? `<p>${esc(selected.label)}</p>` : ''}
+          ${pairs.length ? `<dl>${pairs.map(([name, value]) => `<dt>${esc(name)}</dt><dd>${esc(value)}</dd>`).join('')}</dl>` : '<p>Price data unavailable for this contract.</p>'}
+          <p class="timeline-tooltip-source">${esc(t.quote ? `${t.quote.source} · ${t.quote.asOf}` : 'Recorded trade evidence')}. Recorded prices; live bid/ask unavailable.</p>`;
+        tooltip.hidden = false;
+      }
+      const rect = target.getBoundingClientRect();
+      const anchorX = pointer?.clientX ?? rect.left + Math.min(rect.width, 290) / 2;
+      const anchorY = pointer?.clientY ?? rect.bottom;
+      const gap = 12, edge = 8, box = tooltip.getBoundingClientRect();
+      const left = Math.max(edge, Math.min(anchorX + gap, window.innerWidth - box.width - edge));
+      const top = anchorY + gap + box.height <= window.innerHeight - edge ? anchorY + gap : Math.max(edge, anchorY - box.height - gap);
+      tooltip.style.left = `${left}px`; tooltip.style.top = `${top}px`;
+    }
     function activate(target) {
       const group = target.closest('[data-timeline-group]');
       if (!group) { showEvidence(target); return; }
@@ -226,6 +296,13 @@
       [...chart.querySelectorAll('[data-timeline-group]')].find(g => g.dataset.timelineGroup === stock)?.focus({ preventScroll: true });
     }
     chart.addEventListener('click', e => activate(e.target));
+    chart.addEventListener('pointermove', e => { if (e.pointerType !== 'touch') showTooltip(e.target, e); });
+    chart.addEventListener('pointerleave', e => { if (!tooltip.contains(e.relatedTarget)) hideTooltip(); });
+    tooltip.addEventListener('pointerleave', hideTooltip);
+    chart.addEventListener('focusin', e => showTooltip(e.target));
+    chart.addEventListener('focusout', hideTooltip);
+    window.addEventListener('scroll', hideTooltip, true);
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') hideTooltip(); });
     chart.addEventListener('keydown', e => {
       if (['Enter', ' '].includes(e.key) && e.target.closest('[data-timeline-row], [data-timeline-group]')) { e.preventDefault(); activate(e.target); }
     });
@@ -234,6 +311,10 @@
     search.addEventListener('input', () => { detail.innerHTML = ''; render(); });
     right.addEventListener('change', () => { detail.innerHTML = ''; render(); });
     document.getElementById('timelineRefresh').addEventListener('click', () => load(true));
+    const resizeObserver = new ResizeObserver(() => {
+      if (chart.clientWidth > 0 && current.tracks.length && availableWidth() !== renderedWidth) render();
+    });
+    resizeObserver.observe(chart);
     return { load };
   };
   // Pure evidence transformation is also available to fixture-based browser tests.
