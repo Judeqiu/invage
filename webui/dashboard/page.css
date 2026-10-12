@@ -255,3 +255,6 @@ footer { text-align: center; font-size: 0.72rem; color: var(--muted-foreground);
 .timeline-close-key { color: #de7454; }
 .timeline-detail { margin-top: 16px; padding: 20px; }
 .timeline-detail li { margin: 7px 0; overflow-wrap: anywhere; }
+
+.timeline-unknown-start line { stroke: #8b97aa; stroke-width: 4; stroke-dasharray: 4 4; }
+.timeline-unknown-start path { fill: none; stroke: #8b97aa; stroke-width: 1.5; }

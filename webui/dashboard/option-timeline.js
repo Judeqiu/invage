@@ -66,6 +66,12 @@
       }
       t.notes.push(context.replay ? 'Saved valuation position; not broker confirmation' : observed ? `Position as of ${observed}` : 'Opening date and broker position date unavailable');
     }
+    for (const t of tracks.values()) {
+      const recorded = [...t.events.map(e => e.date), ...t.spans.filter(s => !s.projected).map(s => s.from)].sort();
+      const first = recorded[0];
+      // This is an evidence boundary, not an estimated opening date or holding period.
+      t.unknownStart = first && !t.events.some(e => e.kind === 'open' && e.date <= first) ? first : null;
+    }
     return { tracks: [...tracks.values()].sort((a, b) => a.contract.underlying.localeCompare(b.contract.underlying) || a.channel.localeCompare(b.channel) || a.contract.expiry.localeCompare(b.contract.expiry)), links };
   }
 
@@ -86,7 +92,9 @@
       }
       const rows = current.tracks;
       const dates = [context.asOf, ...rows.flatMap(t => [t.contract.expiry, ...t.events.map(e => e.date), ...t.spans.flatMap(s => [s.from, s.to])])].map(stamp).filter(Number.isFinite);
-      const start = Math.min(...dates) - 3 * 86400000, end = Math.max(...dates) + 3 * 86400000;
+      const firstDate = Math.min(...dates), lastDate = Math.max(...dates);
+      const leadInRoom = rows.some(t => t.unknownStart) ? (lastDate - firstDate) * 0.09 : 0;
+      const start = firstDate - Math.max(3 * 86400000, leadInRoom), end = lastDate + 3 * 86400000;
       const left = 290, width = 1080, plot = width - left - 36, rowHeight = 68, height = 80 + rows.length * rowHeight;
       const x = d => left + (stamp(d) - start) / (end - start) * plot;
       const y = i => 87 + i * rowHeight;
@@ -95,12 +103,16 @@
       const lanes = rows.map((t, i) => {
         const cy = y(i), c = t.contract;
         const spans = t.spans.map(s => `<line class="timeline-span${s.projected ? ' projected' : ''}" x1="${x(s.from)}" x2="${x(s.to)}" y1="${cy}" y2="${cy}"><title>${esc(`${s.projected ? 'Remaining time to expiry' : 'Observed position'}: ${s.from} to ${s.to}`)}</title></line>`).join('');
+        const leadX = t.unknownStart ? Math.max(left, x(t.unknownStart) - 56) : 0;
+        const leadIn = t.unknownStart ? `<g class="timeline-unknown-start"><title>Earlier history unavailable; opening date is unknown before ${esc(t.unknownStart)}</title>
+          <line x1="${leadX}" x2="${x(t.unknownStart)}" y1="${cy}" y2="${cy}"/>
+          <path d="M ${leadX + 5} ${cy - 4} L ${leadX} ${cy} L ${leadX + 5} ${cy + 4}"/></g>` : '';
         const events = [...t.events].sort((a, b) => Number(a.kind !== 'absent') - Number(b.kind !== 'absent')).map(e => `<circle class="timeline-event ${esc(e.kind)}" cx="${x(e.date)}" cy="${cy}" r="5"><title>${esc(e.label)}</title></circle>`).join('');
         return `<g data-timeline-row="${i}" tabindex="0" role="button" aria-label="${esc(label(t))}. Show evidence">
           <rect class="timeline-lane" x="0" y="${cy - 25}" width="${width}" height="${rowHeight - 2}"/>
           <text class="timeline-label" x="12" y="${cy - 6}">${esc(`${c.underlying} · ${t.side} ${c.right} ${c.strike}`)}</text>
           <text class="timeline-sub" x="12" y="${cy + 14}">${esc(`${t.channel}${t.account ? ` / ${t.account}` : ''} · expiry ${c.expiry}`)}</text>
-          ${spans}${events}<path class="timeline-expiry" d="M ${x(c.expiry)} ${cy - 6} l 6 6 -6 6 -6 -6 Z"><title>Contract expiry ${esc(c.expiry)}; not confirmation of expiration</title></path>
+          ${leadIn}${spans}${events}<path class="timeline-expiry" d="M ${x(c.expiry)} ${cy - 6} l 6 6 -6 6 -6 -6 Z"><title>Contract expiry ${esc(c.expiry)}; not confirmation of expiration</title></path>
         </g>`;
       }).join('');
       const links = current.links.map(l => {
@@ -109,7 +121,7 @@
         const x1 = x(l.date), x2 = x(l.through), y1 = y(a) + 8, y2 = y(b) - 8;
         return `<path class="timeline-roll ${['possible', 'review'].includes(l.evidence) ? 'possible' : ''}" d="M ${x1} ${y1} C ${x1 + 24} ${y1}, ${x2 + 24} ${y2}, ${x2} ${y2}" marker-end="url(#timelineArrow)"><title>${esc(`${l.evidence} roll relationship: ${l.reason}`)}</title></path>`;
       }).join('');
-      chart.innerHTML = `<div class="timeline-legend"><span class="timeline-open-key">● Open</span><span class="timeline-close-key">● Close</span><span>◇ Expiry date</span><span>○ First absent / unverified effect</span><span>↳ Roll relationship</span></div>
+      chart.innerHTML = `<div class="timeline-legend"><span class="timeline-open-key">● Open</span><span class="timeline-close-key">● Close</span><span>◇ Expiry date</span><span>○ First absent / unverified effect</span><span>↳ Roll relationship</span><span>⋯ Earlier history unavailable</span></div>
         <div class="timeline-scroll" tabindex="0" role="region" aria-label="Option timeline; scroll horizontally to explore dates"><svg class="option-timeline" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img" aria-label="Option activity through ${context.asOf}">
         <defs><marker id="timelineArrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="currentColor"/></marker></defs>${grid}${lanes}${links}
         <line class="timeline-today" x1="${x(context.asOf)}" x2="${x(context.asOf)}" y1="48" y2="${height}"/><text class="timeline-tick" x="${x(context.asOf)}" y="17" text-anchor="middle">${context.replay ? 'As of' : 'Today'} ${context.asOf}</text></svg></div>`;
@@ -155,6 +167,7 @@
       const links = current.links.filter(l => l.from === t.key || l.to === t.key);
       detail.innerHTML = `<div class="metric-card timeline-detail"><h3>${esc(label(t))}</h3><p>${esc(t.channel)}${t.account ? ` / ${esc(t.account)}` : ''}</p>
         <p>${esc([...new Set(t.notes)].join(' · ') || 'Archive trade evidence; current position status is not confirmed.')}</p>
+        ${t.unknownStart ? '<p><strong>Earlier history unavailable.</strong> The dashed lead-in indicates missing opening records; its length does not represent a known holding period.</p>' : ''}
         <ul>${t.events.map(e => `<li>${esc(e.date)} · ${esc(e.label)}</li>`).join('')}</ul>
         ${links.map(l => `<p><strong>${esc(l.evidence)} roll relationship</strong> · ${esc(l.date)}: ${esc(l.reason)}</p>`).join('')}</div>`;
     }

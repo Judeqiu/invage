@@ -43,6 +43,19 @@ it('keeps account tracks separate, preserves evidence, and excludes future activ
   expect(missing.tracks[0].notes.join()).toContain('unavailable');
 });
 
+it('marks missing opening history without inventing an opening date or changing recorded events', () => {
+  const window: any = {}; runInNewContext(script, { window });
+  const archiveOnly = window.buildOptionTimelineTracks([], groups, context);
+  expect(archiveOnly.tracks.find((t: any) => t.contract.strike === 200).unknownStart).toBe('2026-10-01');
+  expect(archiveOnly.tracks.find((t: any) => t.contract.strike === 220).unknownStart).toBeNull();
+  const observedOnly = { ...episode, executions: [episode.executions[1]] };
+  const missing = window.buildOptionTimelineTracks([observedOnly], [], context).tracks[0];
+  expect(missing.unknownStart).toBe('2026-09-01');
+  expect(missing.events.some((e: any) => e.kind === 'open')).toBe(false);
+  const complete = window.buildOptionTimelineTracks([episode], [], context).tracks[0];
+  expect(complete.unknownStart).toBeNull();
+});
+
 it('reads saved management configuration on each use and defaults to the existing table', () => {
   expect(readDashboardConfig().optionView).toBe('open');
   const dir = join(process.env.UTARUS_DATA_ROOT!, 'config', 'agent-config');
@@ -66,7 +79,7 @@ it.skipIf(!existsSync(executable))('renders the configured default, filters, key
     if (url.pathname === '/api/domain/invage/dashboard') return json({ empty: true, displayName: 'Test', productProfile: 'consultant', dashboardConfig: { optionView: 'timeline' } });
     if (url.pathname.endsWith('/option-history')) {
       queries.push(url.search);
-      return json({ episodes: url.searchParams.get('offset') === '100' ? [{ ...episode, id: 'put', account_id: 'B', contract: { ...c, right: 'put' } }] : [episode, openEpisode],
+      return json({ episodes: url.searchParams.get('offset') === '100' ? [{ ...episode, id: 'put', account_id: 'B', contract: { ...c, right: 'put' }, executions: [episode.executions[1]] }] : [episode, openEpisode],
         connections: [], gaps: [], history_started: true, next_offset: url.searchParams.get('offset') === '100' ? null : 100 });
     }
     if (url.pathname.endsWith('/option-relationships')) return failRolls ? json({ message: 'Archive temporarily unavailable' }, 503) : json({ groups, gaps: [], next_offset: null });
@@ -85,11 +98,15 @@ it.skipIf(!existsSync(executable))('renders the configured default, filters, key
     await page.waitForFunction(() => document.getElementById('timelineStatus')!.textContent!.includes('3 contract tracks'));
     expect(await page.$eval('#optionTimelinePanel', e => e.classList.contains('hidden'))).toBe(false);
     expect(await page.$$eval('.timeline-roll.possible', es => es.length)).toBe(1);
+    expect(await page.$$('.timeline-unknown-start')).toHaveLength(1);
+    expect(await page.$eval('.timeline-unknown-start line', e => Number(e.getAttribute('x2')) - Number(e.getAttribute('x1')))).toBeGreaterThan(40);
     expect(queries.some(q => q.includes('offset=100'))).toBe(true);
     await page.$eval('[data-timeline-row="0"]', e => (e as SVGElement).focus()); await page.keyboard.press('Enter');
     expect(await page.$eval('#timelineDetail', e => e.textContent)).toContain('<script>bad()</script>');
     expect(await page.$$('#timelineDetail script')).toHaveLength(0);
     await page.select('#timelineRight', 'put'); expect(await page.$$('[data-timeline-row]')).toHaveLength(1);
+    await page.$eval('[data-timeline-row="0"]', e => (e as SVGElement).focus()); await page.keyboard.press('Enter');
+    expect(await page.$eval('#timelineDetail', e => e.textContent)).toContain('Earlier history unavailable.');
     await page.type('#timelineSearch', 'MISSING'); expect(await page.$eval('#timelineChart', e => e.textContent)).toContain('No option records');
     await page.$eval('#timelineSearch', e => { (e as HTMLInputElement).value = ''; e.dispatchEvent(new Event('input')); });
     await page.select('#timelineRight', '');
