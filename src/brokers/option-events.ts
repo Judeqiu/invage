@@ -1,4 +1,5 @@
 import { decimal, validDate } from './option-executions.js';
+import { canonicalOptionUnderlying } from './option-symbol.js';
 
 /** An explicit broker lifecycle record. Position disappearance is never an event. */
 export interface OptionLifecycleEvent {
@@ -54,8 +55,9 @@ export function assertOptionLifecycleEvent(raw: unknown): OptionLifecycleEvent {
   for (const value of [event.proceeds, event.fees, event.broker_realized_pl]) if (value !== undefined) decimal(value);
   // PostgreSQL jsonb does not preserve insertion order. Normalize every read
   // and import before comparing overlapping broker events.
+  const underlying = canonicalOptionUnderlying(event.underlying, { ...event, strike: Number(event.strike) });
   return Object.fromEntries([...allowed].filter(key => event[key as keyof OptionLifecycleEvent] !== undefined)
-    .map(key => [key, event[key as keyof OptionLifecycleEvent]])) as unknown as OptionLifecycleEvent;
+    .map(key => [key, key === 'underlying' ? underlying : event[key as keyof OptionLifecycleEvent]])) as unknown as OptionLifecycleEvent;
 }
 
 export function mergeOptionLifecycleEvents(existing: unknown, incoming: unknown): OptionLifecycleEvent[] {

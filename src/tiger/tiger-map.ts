@@ -1,5 +1,6 @@
 import type { BrokerCashSleeve, BrokerSkip, BrokerStatement } from '../brokers/statement.js';
 import { yahooSymbolFromBroker } from '../brokers/yahoo-symbol.js';
+import { canonicalOptionUnderlying } from '../brokers/option-symbol.js';
 import type { Holding } from '../market/types.js';
 import {
   assertHolding,
@@ -142,15 +143,16 @@ function mapOnePosition(
   if (multiplier == null || !(multiplier > 0)) {
     return { skip: skipPos(symbol || undefined, 'option missing multiplier') };
   }
-  const underlying = String(
+  const rawUnderlying = String(
     pick(item, 'underlyingSymbol', 'underlying_symbol') ?? item.identifier ?? '',
   ).trim().toUpperCase();
-  if (!underlying || underlying === String(symbol).toUpperCase() && !pick(item, 'underlyingSymbol', 'underlying_symbol') && !item.identifier) {
+  if (!rawUnderlying || rawUnderlying === String(symbol).toUpperCase() && !pick(item, 'underlyingSymbol', 'underlying_symbol') && !item.identifier) {
     if (!pick(item, 'underlyingSymbol', 'underlying_symbol') && item.identifier == null) {
       return { skip: skipPos(symbol || undefined, 'option missing underlying') };
     }
   }
-  if (!underlying) return { skip: skipPos(symbol || undefined, 'option missing underlying') };
+  if (!rawUnderlying) return { skip: skipPos(symbol || undefined, 'option missing underlying') };
+  const underlying = canonicalOptionUnderlying(rawUnderlying, { right, strike, expiry });
   const latest = parseNum(item.latestPrice ?? item.latest_price);
   if (latest == null) return { skip: skipPos(symbol || undefined, 'option missing mark') };
   const mark = latest * multiplier;

@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { SaxesParser } from 'saxes';
 import { addDecimals, decimal, validDate } from './option-executions.js';
+import { canonicalOptionUnderlying } from './option-symbol.js';
 
 export interface RollContract {
   underlying: string; right: 'put' | 'call'; expiry: string; strike: string;
@@ -73,8 +74,10 @@ function contract(underlying: unknown, right: unknown, expiry: unknown, strike: 
   const r = String(right).toUpperCase();
   if (!['P', 'PUT', 'C', 'CALL'].includes(r)) throw new Error('Invalid option right');
   const ccy = text(currency); if (!/^[A-Z]{3,4}$/.test(ccy)) throw new Error('Invalid currency');
-  return { underlying: text(underlying), right: r === 'P' || r === 'PUT' ? 'put' : 'call',
+  const result: RollContract = { underlying: text(underlying), right: r === 'P' || r === 'PUT' ? 'put' : 'call',
     expiry: ymd(expiry), strike: positive(strike), multiplier: positive(multiplier), currency: ccy };
+  return { ...result, underlying: canonicalOptionUnderlying(result.underlying,
+    { ...result, strike: Number(result.strike) }) };
 }
 export function rollContractKey(c: RollContract): string { return JSON.stringify(c); }
 function identity(value: unknown): string { return createHash('sha256').update(JSON.stringify(value)).digest('hex').slice(0, 24); }

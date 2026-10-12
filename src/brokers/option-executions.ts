@@ -1,3 +1,5 @@
+import { canonicalOptionUnderlying } from './option-symbol.js';
+
 /** Execution history is independent of current holding snapshots. Money is exact decimal text. */
 export interface OptionExecution {
   channel: string;
@@ -64,7 +66,8 @@ export function assertOptionExecution(raw: unknown): OptionExecution {
   const nonzero = /[1-9]/.test(e.gross_premium);
   if (nonzero && (e.gross_premium.startsWith('-') !== (e.side === 'buy'))) throw new Error('Execution proceeds sign disagrees with buy/sell');
   // Canonical property order makes duplicate comparison independent of object key order.
-  return Object.fromEntries(fields.map(key => [key, r[key]])) as unknown as OptionExecution;
+  const underlying = canonicalOptionUnderlying(e.underlying, { ...e, strike: Number(e.strike) });
+  return Object.fromEntries(fields.map(key => [key, key === 'underlying' ? underlying : r[key]])) as unknown as OptionExecution;
 }
 
 export function mergeOptionExecutions(existing: unknown, incoming: unknown): OptionExecution[] {

@@ -18,7 +18,7 @@ export interface ParsedOptionCode {
   strike: number;
 }
 
-const OPTION_CODE_RE = /^([A-Z][A-Z0-9]*?)(\d{6})([CP])(\d{5,8})$/;
+const OPTION_CODE_RE = /^([A-Z][A-Z0-9.]*?)(\d{6})([CP])(\d{5,8})$/;
 
 export function looksLikeOptionCode(symbol: string): boolean {
   return OPTION_CODE_RE.test(symbol.trim().toUpperCase());

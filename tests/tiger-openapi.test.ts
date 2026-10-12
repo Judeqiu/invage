@@ -138,6 +138,23 @@ function bundle(over: Partial<TigerRawBundle> = {}): TigerRawBundle {
 }
 
 describe('Tiger position mapping', () => {
+  it('normalizes full OCC identifiers before constructing position keys', () => {
+    const raw = structuredClone(bundle());
+    const row = (raw.positions.OPT.data as { items: Record<string, unknown>[] }).items[0];
+    row.underlyingSymbol = 'AAPL  260116P00230000';
+    const stmt = mapTigerBundleToStatement(raw, 'tiger');
+    expect(stmt.lots[1].ticker).toBe('AAPL-P-230-20260116-S');
+    expect(stmt.lots[1].holding.option?.underlying).toBe('AAPL');
+  });
+
+  it.each(['AAPL260116C00230000', 'AAPL260117P00230000', 'AAPL260116P00240000'])(
+    'rejects conflicting option identity %s instead of importing the wrong stock', code => {
+      const raw = structuredClone(bundle());
+      const row = (raw.positions.OPT.data as { items: Record<string, unknown>[] }).items[0];
+      row.underlyingSymbol = code;
+      expect(() => mapTigerBundleToStatement(raw, 'tiger')).toThrow(/disagrees/);
+    });
+
   it('reads flat data.items and imports short OPT', () => {
     const stmt = mapTigerBundleToStatement(bundle(), 'tiger');
     expect(stmt.account_id).toBe('1234567');

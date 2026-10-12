@@ -48,6 +48,7 @@ describe('canonicalOptionUnderlying', () => {
   it('removes a matching OCC code from the underlying name', () => {
     expect(canonicalOptionUnderlying('AMD 261016P00230000', expected)).toBe('AMD');
     expect(canonicalOptionUnderlying('AMD', expected)).toBe('AMD');
+    expect(canonicalOptionUnderlying('BRK.B 261016P00230000', expected)).toBe('BRK.B');
   });
   it('rejects an embedded contract code that contradicts the structured fields', () => {
     expect(() => canonicalOptionUnderlying('AMD 261016C00230000', expected)).toThrow(/disagrees/);

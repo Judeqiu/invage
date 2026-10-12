@@ -2,6 +2,7 @@ import { saveInvestor, type InvestorSnapshot } from '../state/investor-store.js'
 import { mergeOptionExecutions } from './option-executions.js';
 import { mergeOptionLifecycleEvents } from './option-events.js';
 import { appendOptionObservation } from './option-history.js';
+import { normalizeBrokerOptionLot } from './statement.js';
 import { createHash } from 'node:crypto';
 /**
  * Channel snapshot apply — writes only public books types
@@ -155,6 +156,8 @@ export async function applyBrokerStatement(
   }
   const channel = connection?.channel ?? getBrokerConnector(connectorId).channel;
   assertStatementNotOlder(state, connectorId, channel, doc.as_of);
+  // All adapters and custom parsers pass through this before any books writes.
+  doc = { ...doc, lots: doc.lots.map(normalizeBrokerOptionLot) };
   // Validate all incoming history before ledger writes or snapshot mutation.
   const executions = doc.option_executions === undefined ? undefined : mergeOptionExecutions(
     state.option_executions === undefined ? [] : state.option_executions,

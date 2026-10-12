@@ -7,7 +7,8 @@
 import type { Holding } from '../market/types.js';
 import { mergeOptionExecutions, type OptionExecution } from './option-executions.js';
 import { mergeOptionLifecycleEvents, type OptionLifecycleEvent } from './option-events.js';
-import { assertHolding, HOLDING_KEY_CHANNEL_SEP } from '../market/position-value.js';
+import { assertHolding, buildOptionKey, HOLDING_KEY_CHANNEL_SEP } from '../market/position-value.js';
+import { canonicalOptionUnderlying } from './option-symbol.js';
 import {
   assertBrokerConnectionMetrics,
   type BrokerConnectionMetrics,
@@ -39,6 +40,17 @@ export interface BrokerLot {
   ticker: string;
   currency: string;
   holding: Holding;
+}
+
+/** Shared sync boundary: positions use a verified stock symbol, never an option code. */
+export function normalizeBrokerOptionLot(lot: BrokerLot): BrokerLot {
+  const option = lot.holding.option;
+  if (lot.holding.instrument !== 'option' || !option) return lot;
+  const underlying = canonicalOptionUnderlying(option.underlying, option);
+  if (underlying === option.underlying) return lot;
+  const normalized = { ...option, underlying };
+  return { ...lot, ticker: buildOptionKey(normalized),
+    holding: { ...lot.holding, option: normalized } };
 }
 
 export interface BrokerStatement {
@@ -154,7 +166,7 @@ function assertLot(raw: unknown, i: number): BrokerLot {
   }
   const holding = r.holding as Holding;
   assertHolding(ticker, holding);
-  return { ticker, currency: r.currency.trim().toUpperCase(), holding };
+  return normalizeBrokerOptionLot({ ticker, currency: r.currency.trim().toUpperCase(), holding });
 }
 
 function assertSkip(raw: unknown, i: number): BrokerSkip {

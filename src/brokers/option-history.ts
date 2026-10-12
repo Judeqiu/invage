@@ -5,6 +5,7 @@ import { getPortfolio, type InvestorState } from '../state/portfolio-state.js';
 import type { BrokerSkip, BrokerStatement } from './statement.js';
 import { addDecimals, type OptionExecution } from './option-executions.js';
 import type { OptionLifecycleEvent } from './option-events.js';
+import { canonicalOptionUnderlying } from './option-symbol.js';
 
 export interface ObservedOption {
   key: string;
@@ -65,15 +66,26 @@ export interface OptionEpisode {
 /** Contract identity is independent of broker quantity and cost changes. */
 export function optionContractKey(option: OptionSpec): string {
   return JSON.stringify([
-    option.underlying.trim().toUpperCase(), option.right, option.side,
+    canonicalOptionUnderlying(option.underlying, option), option.right, option.side,
     option.strike, option.expiry, option.multiplier, option.settlement,
   ]);
+}
+
+function normalizeObservation(row: OptionObservation): OptionObservation {
+  const options = row.options.map(option => ({ ...option,
+    underlying: canonicalOptionUnderlying(option.underlying, option),
+    key: optionContractKey(option),
+  }));
+  if (new Set(options.map(option => option.key)).size !== options.length) {
+    throw new Error(`Duplicate option contracts in observation ${row.id}`);
+  }
+  return { ...row, options };
 }
 
 function observedOption(holding: Holding, currency: string): ObservedOption {
   const option = holding.option!;
   return {
-    key: optionContractKey(option), underlying: option.underlying,
+    key: optionContractKey(option), underlying: canonicalOptionUnderlying(option.underlying, option),
     right: option.right, side: option.side, strike: option.strike,
     expiry: option.expiry, multiplier: option.multiplier,
     settlement: option.settlement, units: holding.units,
@@ -123,7 +135,10 @@ export function appendOptionObservation(state: InvestorState, args: {
   syncId?: string;
 }): void {
   const { statement, brokerId, connectionId, channel } = args;
-  const history = [...(state.option_observations ?? [])];
+  // Upgrade this account's retained evidence with the next successful sync.
+  // Preserve sync IDs, dates, quantities and broker-native contract IDs.
+  const history = (state.option_observations ?? []).map(row =>
+    row.channel === channel && row.account_id === statement.account_id ? normalizeObservation(row) : row);
   const observedAt = args.observedAt ?? new Date().toISOString();
   const id = args.syncId ?? randomUUID();
   const incoming = optionObservationFromStatement({ statement, brokerId, connectionId, channel,
@@ -141,6 +156,7 @@ export function appendOptionObservation(state: InvestorState, args: {
     if (!isDeepStrictEqual(evidence(previous), evidence(incoming))) {
       throw new Error(`Option observation conflict for sync ${id}`);
     }
+    state.option_observations = history;
     return;
   }
   if (!history.some(row => row.channel === channel)) {
@@ -171,7 +187,7 @@ function matchingExecutions(state: InvestorState, episode: OptionEpisode, episod
   const previousAbsence = previousAbsenceFor(episode, episodes);
   return (state.option_executions ?? []).filter(row =>
     row.channel === episode.channel && row.account_id === episode.account_id &&
-    row.underlying.toUpperCase() === c.underlying.toUpperCase() && row.right === c.right &&
+    canonicalOptionUnderlying(row.underlying, { ...row, strike: Number(row.strike) }) === c.underlying && row.right === c.right &&
     row.expiry === c.expiry && Number(row.strike) === c.strike &&
     Number(row.multiplier) === c.multiplier &&
     (!c.broker_contract_id || row.contract_id === c.broker_contract_id) &&
@@ -185,7 +201,7 @@ function matchingEvents(state: InvestorState, episode: OptionEpisode, episodes: 
   const previousAbsence = previousAbsenceFor(episode, episodes);
   return (state.option_events ?? []).filter(row =>
     row.channel === episode.channel && row.account_id === episode.account_id &&
-    row.underlying.toUpperCase() === c.underlying.toUpperCase() && row.right === c.right &&
+    canonicalOptionUnderlying(row.underlying, { ...row, strike: Number(row.strike) }) === c.underlying && row.right === c.right &&
     row.expiry === c.expiry && Number(row.strike) === c.strike &&
     Number(row.multiplier) === c.multiplier &&
     (!c.broker_contract_id || !row.contract_id || row.contract_id === c.broker_contract_id) &&
@@ -298,7 +314,7 @@ function skipCouldBeContract(run: OptionObservation, option: ObservedOption): bo
 
 /** Build episodes from observations. Partial responses can add presence, never prove absence. */
 export function buildOptionEpisodes(state: InvestorState, now = new Date()): OptionEpisode[] {
-  const observations = [...(state.option_observations ?? [])]
+  const observations = (state.option_observations ?? []).map(normalizeObservation)
     // A newly fetched statement can describe an older position date. Build the
     // position timeline from statement dates, using fetch order only to resolve
     // repeated observations of the same day.
