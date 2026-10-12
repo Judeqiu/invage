@@ -52,7 +52,10 @@ export function assertOptionLifecycleEvent(raw: unknown): OptionLifecycleEvent {
     if (value.startsWith('-') || !/[1-9]/.test(value)) throw new Error('Option lifecycle event contract terms must be positive');
   }
   for (const value of [event.proceeds, event.fees, event.broker_realized_pl]) if (value !== undefined) decimal(value);
-  return event;
+  // PostgreSQL jsonb does not preserve insertion order. Normalize every read
+  // and import before comparing overlapping broker events.
+  return Object.fromEntries([...allowed].filter(key => event[key as keyof OptionLifecycleEvent] !== undefined)
+    .map(key => [key, event[key as keyof OptionLifecycleEvent]])) as unknown as OptionLifecycleEvent;
 }
 
 export function mergeOptionLifecycleEvents(existing: unknown, incoming: unknown): OptionLifecycleEvent[] {
@@ -62,7 +65,11 @@ export function mergeOptionLifecycleEvents(existing: unknown, incoming: unknown)
     const event = assertOptionLifecycleEvent(raw);
     const key = JSON.stringify([event.channel, event.account_id, event.id]);
     const previous = byId.get(key);
-    if (previous && JSON.stringify(previous) !== JSON.stringify(event)) throw new Error(`Option lifecycle event conflict: ${key}`);
+    if (previous && JSON.stringify(previous) !== JSON.stringify(event)) {
+      const fields = [...new Set([...Object.keys(previous), ...Object.keys(event)])]
+        .filter(field => previous[field as keyof OptionLifecycleEvent] !== event[field as keyof OptionLifecycleEvent]);
+      throw new Error(`Option lifecycle event conflict: ${key}; differing fields: ${fields.join(', ')}`);
+    }
     byId.set(key, event);
   }
   return [...byId.values()].sort((a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id));

@@ -35,6 +35,27 @@ function xml(rows: string): string {
 }
 
 describe('broker-confirmed option lifecycle', () => {
+  it('deduplicates Tiger assignments after a database round trip reorders fields', () => {
+    const assignment: OptionLifecycleEvent = { ...base, id: 'order:44908314604735488',
+      broker_id: 'tiger', channel: 'tiger', account_id: '50551474', source: 'tiger_api',
+      underlying: 'MBLY', strike: '15', expiry: '2027-02-19', kind: 'assignment',
+      settlement: 'physical', broker_realized_pl: '664.233' };
+    const persisted = JSON.parse(JSON.stringify(Object.fromEntries(Object.entries(assignment).reverse())));
+    expect(mergeOptionLifecycleEvents([persisted], [assignment])).toEqual([assignment]);
+    expect(mergeOptionLifecycleEvents([assignment], [persisted])).toEqual([assignment]);
+    expect(() => mergeOptionLifecycleEvents([persisted], [{ ...assignment, contracts: '2' }]))
+      .toThrow(/differing fields: contracts$/);
+    expect(() => mergeOptionLifecycleEvents([persisted], [{ ...assignment, broker_realized_pl: '0' }]))
+      .toThrow(/differing fields: broker_realized_pl$/);
+    expect(mergeOptionLifecycleEvents([persisted], [{ ...assignment, account_id: 'another-account' }])).toHaveLength(2);
+  });
+
+  it('treats omitted optional fields consistently while rejecting newly conflicting evidence', () => {
+    expect(mergeOptionLifecycleEvents([base], [{ ...base, fees: undefined }])).toEqual([base]);
+    expect(() => mergeOptionLifecycleEvents([base], [{ ...base, fees: '-1' }]))
+      .toThrow(/differing fields: fees$/);
+  });
+
   it('parses option events, skips underlying delivery rows, and exposes malformed event rows', () => {
     const attrs = 'accountId="U1" assetCategory="OPT" tradeID="e1" conid="123" underlyingSymbol="AAPL" putCall="P" strike="150" expiry="20261009" multiplier="100" date="20261009" transactionType="Expiration" quantity="-1" currency="USD" proceeds="0" realizedPnl="298.50"';
     const result = parseFlexOptionEvents(xml(`<OptionEAE ${attrs}/><OptionEAE assetCategory="STK" transactionType="Buy"/><OptionEAE assetCategory="OPT" symbol="AAPL  261009P00150000"/>`));
