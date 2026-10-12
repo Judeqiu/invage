@@ -3,12 +3,23 @@
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const day = value => String(value || '').slice(0, 10);
   const stamp = value => Date.parse(`${day(value)}T00:00:00Z`);
-  const contractKey = (channel, account, c, side) => JSON.stringify([channel, account, c.underlying?.toUpperCase(), c.right, side, Number(c.strike), c.expiry, Number(c.multiplier)]);
+  // Saved positions/replays can predate sync normalization. Verify the encoded
+  // contract before using its stock root, and leave contradictory codes separate.
+  function stockSymbol(c) {
+    const raw = String(c.underlying || '').trim().toUpperCase();
+    const encoded = raw.replace(/\s+/g, '').match(/^([A-Z][A-Z0-9.]*?)(\d{6})([CP])(\d{5,8})$/);
+    if (!encoded) return raw;
+    const expiry = `20${encoded[2].slice(0, 2)}-${encoded[2].slice(2, 4)}-${encoded[2].slice(4, 6)}`;
+    return expiry === c.expiry && Number.isFinite(stamp(expiry)) && new Date(stamp(expiry)).toISOString().slice(0, 10) === expiry &&
+      encoded[3] === (c.right === 'put' ? 'P' : 'C') && Number(encoded[4]) / 1000 === Number(c.strike) ? encoded[1] : raw;
+  }
+  const contractKey = (channel, account, c, side) => JSON.stringify([channel, account, stockSymbol(c), c.right, side, Number(c.strike), c.expiry, Number(c.multiplier)]);
 
   function buildTracks(episodes, groups, context) {
     const tracks = new Map(), links = [];
     const visible = date => date && day(date) <= context.asOf;
     function track(channel, account, c, side) {
+      c = { ...c, underlying: stockSymbol(c) };
       const key = contractKey(channel, account, c, side);
       if (!tracks.has(key)) tracks.set(key, { key, channel, account, contract: c, side, events: [], spans: [], notes: [] });
       return tracks.get(key);

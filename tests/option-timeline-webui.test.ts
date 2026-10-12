@@ -24,6 +24,31 @@ const openEpisode = { ...episode, id: 'active', contract: replacement, status: '
   observations: [{ as_of: '2026-10-01' }, { as_of: '2026-10-12' }], executions: [{ execution_id: 'new-open', executed_at: '2026-10-01T10:00:00', effect: 'open', side: 'sell', contracts: 2 }] };
 const context = { asOf: '2026-10-12', channel: '', replay: false, positions: [], tradeDetails: {}, brokerAsOf: {} };
 
+it('merges legacy Tiger positions with normalized history and groups fallback contracts by stock', () => {
+  const window: any = {}; runInNewContext(script, { window });
+  const tiger = { ...openEpisode, channel: 'tiger', account_id: 'T' };
+  const legacy = { ...replacement, underlying: 'AMD   270115C00220000' };
+  const position = { instrument: 'option', ticker: 'legacy-key', channel: 'tiger', option: legacy };
+  const inputs = { ...context, positions: [position], brokerAsOf: { tiger: '2026-10-12' } };
+  const before = JSON.stringify(inputs);
+  const matched = window.buildOptionTimelineTracks([tiger], [], inputs);
+  expect(matched.tracks).toHaveLength(1);
+  expect(matched.tracks[0]).toMatchObject({ account: 'T', contract: { underlying: 'AMD' } });
+  expect(JSON.stringify(inputs)).toBe(before);
+  const differentStrike = { ...position, ticker: 'second', option: { ...legacy, strike: 230, underlying: 'AMD270115C230000' } };
+  const fallback = window.buildOptionTimelineTracks([], [], { ...inputs, positions: [position, differentStrike] });
+  expect(fallback.tracks).toHaveLength(2);
+  expect(fallback.tracks.map((t: any) => t.contract.underlying)).toEqual(['AMD', 'AMD']);
+  expect(fallback.tracks.map((t: any) => t.contract.strike)).toEqual([220, 230]);
+  const replay = window.buildOptionTimelineTracks([], [], { ...inputs, replay: true });
+  expect(replay.tracks[0].contract.underlying).toBe('AMD');
+  const separateAccounts = window.buildOptionTimelineTracks([tiger, { ...tiger, account_id: 'T2' }], [], context);
+  expect(separateAccounts.tracks).toHaveLength(2);
+  const mismatch = window.buildOptionTimelineTracks([], [], { ...inputs,
+    positions: [{ ...position, option: { ...legacy, strike: 999 } }] });
+  expect(mismatch.tracks[0].contract.underlying).toBe(legacy.underlying);
+});
+
 it('keeps account tracks separate, preserves evidence, and excludes future activity in replay', () => {
   const window: any = {}; runInNewContext(script, { window });
   const live = window.buildOptionTimelineTracks([episode, { ...episode, account_id: 'B' }], groups, context);
