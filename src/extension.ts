@@ -34,6 +34,7 @@ import {
   householdGaps,
   type HouseholdInvestorState,
 } from './state/household-state.js';
+import { dashboardConfig } from './webapp/dashboard-config.js';
 import { createInvageWebUi } from './webapp/invage-webui.js';
 import { helpFirstAndAsyncTasks } from './agents/help-first.js';
 import { productDisplayName, productHostLabel } from './product-name.js';
@@ -163,6 +164,7 @@ export const invageExtension: DomainExtension = {
   },
 
   purpose: INVAGE_PURPOSE,
+  managementConfig: dashboardConfig,
 
   tools: () => createInvageTools(),
 

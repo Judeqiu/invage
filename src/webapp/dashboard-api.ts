@@ -3,6 +3,7 @@
  * Mounted by DomainExtension.webUi at /api/domain/invage (auth: user).
  */
 
+import { readDashboardConfig } from './dashboard-config.js';
 import { Router, type Request, type Response } from 'express';
 import { loadSessionState, targetUserId, type AuthUser } from 'utarus';
 import { loadDashboardForSlug } from './dashboard-data.js';
@@ -236,7 +237,8 @@ export function createDashboardApiRouter(): Router {
       }
       const slug = await targetUserId(req, user);
       const payload = await loadDashboardForSlug(slug);
-      res.json(payload);
+      res.setHeader('Cache-Control', 'private, no-store');
+      res.json({ ...payload, dashboardConfig: readDashboardConfig() });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       const status = /not found|does not exist|Admin must specify/i.test(message) ? 400 : 500;

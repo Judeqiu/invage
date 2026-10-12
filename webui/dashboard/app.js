@@ -89,6 +89,7 @@ let riskRightFilter = 'all';
 let riskShowAll = false;
 let highlightedUnderlying = null;
 let optionTab = 'open';
+let optionDefaultApplied = false;
 let optionHistory = { episodes: [], connections: [], next_offset: null, total: 0, history_started: false, gaps: [] };
 let optionHistoryError = '';
 let optionHistoryRequest = 0;
@@ -306,6 +307,9 @@ function setOptionTab(tab) {
   optionTab = tab;
   const showHistory = tab === 'history';
   const showRolls = tab === 'rolls';
+  document.getElementById('optionTimelineTab').classList.toggle('on', tab === 'timeline');
+  document.getElementById('optionTimelineTab').setAttribute('aria-pressed', String(tab === 'timeline'));
+  document.getElementById('optionTimelinePanel').classList.toggle('hidden', tab !== 'timeline');
   el.optionOpenTab.classList.toggle('on', tab === 'open');
   el.optionHistoryTab.classList.toggle('on', showHistory);
   el.optionOpenTab.setAttribute('aria-pressed', String(tab === 'open'));
@@ -319,6 +323,7 @@ function setOptionTab(tab) {
   el.optionOpenEmpty.classList.toggle('hidden', tab !== 'open' || hasOpen);
   if (el.openOptionsBlock) el.openOptionsBlock.classList.toggle('hidden', tab !== 'open' || !hasOpen);
   if (showRolls) followRollContext();
+  if (tab === 'timeline') void optionTimeline.load();
 }
 
 function followHistoryBroker(channel) {
@@ -456,6 +461,16 @@ async function loadOptionHistory(more = false) {
   }
   renderOptionHistory();
 }
+
+const optionTimeline = window.createOptionTimeline(() => ({
+  channel: ['all', MERGED_CHANNEL_VIEW].includes(selectedChannel) ? '' : selectedChannel,
+  asOf: selectedDate === 'live' ? new Date().toISOString().slice(0, 10) : selectedDate,
+  replay: selectedDate !== 'live',
+  positions: payload?.model ? buildView(selectedDate, selectedChannel).positions : [],
+  tradeDetails: selectedDate === 'live' ? payload?.optionTradeDetails || {} : {},
+  brokerAsOf: payload?.brokerAsOf || {},
+}));
+document.getElementById('optionTimelineTab').addEventListener('click', () => setOptionTab('timeline'));
 
 el.optionOpenTab?.addEventListener('click', () => setOptionTab('open'));
 el.optionHistoryTab?.addEventListener('click', () => {
@@ -2807,6 +2822,10 @@ async function load() {
       throw new Error(body.message || body.error || `HTTP ${res.status}`);
     }
     payload = body;
+    if (!optionDefaultApplied) {
+      optionTab = body.dashboardConfig?.optionView || 'open';
+      optionDefaultApplied = true;
+    }
     if (body.empty || !body.model) {
       renderEmpty(body);
     } else {
@@ -2814,6 +2833,7 @@ async function load() {
     }
     await loadOptionHistory();
     if (optionTab === 'rolls') await loadRollRelationships();
+    if (optionTab === 'timeline') await optionTimeline.load(true);
     if (selectedChannel !== MERGED_CHANNEL_VIEW) followHistoryBroker(selectedChannel);
     el.status.textContent = `Last refresh ${new Date().toLocaleTimeString()}`;
   } catch (e) {

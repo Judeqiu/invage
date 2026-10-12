@@ -228,3 +228,30 @@ footer { text-align: center; font-size: 0.72rem; color: var(--muted-foreground);
   .roll-filters input, .roll-filters select { min-width: 0; max-width: 100%; }
 }
 .roll-legs .chip-btn { margin-top: 0.5rem; font-size: 0.7rem; }
+
+/* Section 03 time view: fixed date scale inside a keyboard-scrollable container. */
+#optionTimelinePanel { min-width: 0; }
+.timeline-scroll { max-width: 100%; overflow: auto; border: 1px solid var(--border, #dbe2ea); border-radius: 12px; background: var(--card, #fff); }
+.option-timeline { display: block; color: #6558cf; font-family: inherit; }
+.timeline-grid { stroke: #dbe2ea; stroke-dasharray: 2 4; }
+.timeline-lane { fill: transparent; }
+[data-timeline-row] { cursor: pointer; }
+[data-timeline-row]:hover .timeline-lane, [data-timeline-row]:focus .timeline-lane { fill: #eef2ff; }
+.timeline-label { fill: #263347; font-size: 13px; font-weight: 600; }
+.timeline-sub, .timeline-tick { fill: #66758a; font-size: 11px; }
+.timeline-span { stroke: #8da7ce; stroke-width: 8; stroke-linecap: round; }
+.timeline-span.projected { stroke: #b6c4da; stroke-width: 3; stroke-dasharray: 6 5; }
+.timeline-event { stroke: white; stroke-width: 2; fill: #76849a; }
+.timeline-event.open { fill: #159578; }
+.timeline-event.close { fill: #de7454; }
+.timeline-event.terminal { fill: #8e65c7; }
+.timeline-event.absent, .timeline-event.unknown { fill: white; stroke: #76849a; }
+.timeline-expiry { fill: white; stroke: #6d7991; stroke-width: 1.5; }
+.timeline-roll { fill: none; stroke: #6558cf; stroke-width: 2; }
+.timeline-roll.possible { stroke-dasharray: 4 4; }
+.timeline-today { stroke: #3768bd; stroke-width: 1.5; stroke-dasharray: 3 3; pointer-events: none; }
+.timeline-legend { display: flex; flex-wrap: wrap; gap: 10px 18px; margin: 14px 0; font-size: 12px; color: #66758a; }
+.timeline-open-key { color: #159578; }
+.timeline-close-key { color: #de7454; }
+.timeline-detail { margin-top: 16px; padding: 20px; }
+.timeline-detail li { margin: 7px 0; overflow-wrap: anywhere; }
