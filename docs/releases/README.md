@@ -4,6 +4,7 @@ Operator deploy runbooks (not marketing changelogs).
 
 | Version | Date | Utarus pin | Summary |
 |---------|------|------------|---------|
+| [v0.3.19](./v0.3.19.md) | 2026-10-12 | `v4.2.8` | Responsive option timeline and dated price hover cards |
 | [v0.3.18](./v0.3.18.md) | 2026-10-12 | `v4.2.8` | Normalize legacy position fallbacks in timeline stock groups |
 | [v0.3.17](./v0.3.17.md) | 2026-10-12 | `v4.2.8` | Consistent stock symbols across broker option imports and retained history |
 | [v0.3.16](./v0.3.16.md) | 2026-10-12 | `v4.2.8` | Collapsible stock summaries and unknown-history lead-ins in the option timeline |
