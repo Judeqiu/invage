@@ -324,8 +324,11 @@ function channelBadgeHtml(channel) {
 }
 
 function setOptionTab(tab) {
-  tab = ['open', 'history', 'rolls'].includes(tab) ? tab : 'open';
+  tab = ['open', 'timeline', 'history', 'rolls'].includes(tab) ? tab : 'open';
   optionTab = tab;
+  document.getElementById('optionTimelineTab').classList.toggle('on', tab === 'timeline');
+  document.getElementById('optionTimelineTab').setAttribute('aria-pressed', String(tab === 'timeline'));
+  document.getElementById('optionTimelinePanel').classList.toggle('hidden', tab !== 'timeline');
   const showHistory = tab === 'history';
   const showRolls = tab === 'rolls';
   el.optionOpenTab.classList.toggle('on', tab === 'open');
@@ -341,6 +344,7 @@ function setOptionTab(tab) {
   el.optionOpenEmpty.classList.toggle('hidden', tab !== 'open' || hasOpen);
   if (el.openOptionsBlock) el.openOptionsBlock.classList.toggle('hidden', tab !== 'open' || !hasOpen);
   if (showRolls) followRollContext();
+  if (tab === 'timeline') void optionTimeline.load();
 }
 
 function followHistoryBroker(channel) {
@@ -480,6 +484,16 @@ async function loadOptionHistory(more = false) {
 }
 
 
+
+const optionTimeline = window.createOptionTimeline(() => ({
+  channel: ['all', MERGED_CHANNEL_VIEW].includes(selectedChannel) ? '' : selectedChannel,
+  asOf: selectedDate === 'live' ? new Date().toISOString().slice(0, 10) : selectedDate,
+  replay: selectedDate !== 'live',
+  positions: payload?.model ? buildView(selectedDate, selectedChannel).positions : [],
+  tradeDetails: selectedDate === 'live' ? payload?.optionTradeDetails || {} : {},
+  brokerAsOf: payload?.brokerAsOf || {},
+}));
+document.getElementById('optionTimelineTab').addEventListener('click', () => setOptionTab('timeline'));
 
 el.optionOpenTab?.addEventListener('click', () => setOptionTab('open'));
 el.optionHistoryTab?.addEventListener('click', () => {
@@ -2812,6 +2826,7 @@ async function load() {
       initDashboard();
     }
     await loadOptionHistory();
+    if (optionTab === 'timeline') await optionTimeline.load(true);
     if (optionTab === 'rolls') await loadRollRelationships();
     if (selectedChannel !== MERGED_CHANNEL_VIEW) followHistoryBroker(selectedChannel);
     el.status.textContent = `Last refresh ${new Date().toLocaleTimeString()}`;

@@ -1,4 +1,4 @@
-import { readAgentConfig, saveAgentConfig, type AgentConfigDefinition } from 'utarus';
+import { readAgentConfig, type AgentConfigDefinition } from 'utarus';
 
 export const dashboardConfig: AgentConfigDefinition = {
   id: 'invage-dashboard',
@@ -11,6 +11,7 @@ export const dashboardConfig: AgentConfigDefinition = {
     id: 'option_view', type: 'select', label: 'Option positions default view', default: 'open',
     options: [
       { value: 'open', label: 'Open positions table' },
+      { value: 'timeline', label: 'Timeline — opens, closes and rolls' },
       { value: 'history', label: 'Position history' },
       { value: 'rolls', label: 'Roll relationships' },
     ],
@@ -18,13 +19,6 @@ export const dashboardConfig: AgentConfigDefinition = {
 };
 
 export function readDashboardConfig() {
-  // Accept the retired stored value only during migration; Management offers the new views.
-  const legacy: AgentConfigDefinition = { ...dashboardConfig, fields: dashboardConfig.fields.map(field =>
-    field.id === 'option_view' && field.type === 'select' ? { ...field, options: [...field.options, { value: 'timeline', label: 'Retired Timeline' }] } : field) };
-  const config = readAgentConfig(legacy);
-  if (config.option_view === 'timeline') {
-    config.option_view = 'open';
-    saveAgentConfig(dashboardConfig, config);
-  }
+  const config = readAgentConfig(dashboardConfig);
   return { optionView: config.option_view, showTotalPremium: config.show_total_premium };
 }

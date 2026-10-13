@@ -13,7 +13,7 @@ it('reads saved management configuration on each use and defaults to the existin
   mkdirSync(dir, { recursive: true });
   try {
     writeFileSync(file, JSON.stringify({ option_view: 'timeline', show_total_premium: false }));
-    expect(readDashboardConfig().optionView).toBe('open');
+    expect(readDashboardConfig().optionView).toBe('timeline');
     expect(readDashboardConfig().showTotalPremium).toBe(false);
     writeFileSync(file, JSON.stringify({ option_view: 'rolls' }));
     expect(readDashboardConfig().optionView).toBe('rolls');
@@ -22,7 +22,7 @@ it('reads saved management configuration on each use and defaults to the existin
 });
 
 const executable = process.env.CHROME_BINARY || '/usr/bin/chromium';
-it.skipIf(!existsSync(executable))('migrates a saved Timeline preference to Open and keeps it on refresh', async () => {
+it.skipIf(!existsSync(executable))('opens on Open even with a saved Timeline preference and preserves manual selection on refresh', async () => {
   const root = resolve('webui');
   const server = createServer((req, res) => {
     const url = new URL(req.url!, 'http://localhost');
@@ -41,11 +41,17 @@ it.skipIf(!existsSync(executable))('migrates a saved Timeline preference to Open
     await page.goto(`http://127.0.0.1:${(server.address() as { port: number }).port}/dashboard/index.html`);
     await page.waitForFunction(() => document.querySelector('.status-line')!.textContent!.includes('Last refresh'));
     expect(await page.$eval('#optionOpenTab', e => e.getAttribute('aria-pressed'))).toBe('true');
-    expect(await page.$('#optionTimelineTab')).toBeNull();
+    expect(await page.$('#optionTimelineTab')).not.toBeNull();
     expect(await page.$('#autoRefresh')).toBeNull();
     await page.click('#refreshBtn');
     await page.waitForFunction(() => !(document.getElementById('refreshBtn') as HTMLButtonElement).disabled);
     expect(await page.$eval('#optionOpenTab', e => e.getAttribute('aria-pressed'))).toBe('true');
+    await page.click('#optionTimelineTab');
+    await page.click('#refreshBtn');
+    await page.waitForFunction(() => !(document.getElementById('refreshBtn') as HTMLButtonElement).disabled);
+    expect(await page.$eval('#optionTimelineTab', e => e.getAttribute('aria-pressed'))).toBe('true');
+    await page.click('#optionOpenTab');
+    expect(await page.$eval('#optionTimelinePanel', e => e.classList.contains('hidden'))).toBe(true);
     expect(errors).toEqual([]);
   } finally { await browser.close(); await new Promise<void>(r => server.close(() => r())); }
 });
