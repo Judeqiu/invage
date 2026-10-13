@@ -423,7 +423,9 @@ try {
   assert.equal(await page.$('#premiumEngine .monthly-values'), null, 'old unlabelled result list removed');
   assert(!/Trade coverage/.test(dashText), 'coverage is a compact note, not a separate card');
   assert(/P&L \(USD\)/.test(await page.$eval('.pnl-card svg', node => node.textContent)), 'chart labels its value axis');
-  assert.equal(await page.$eval('#expiryTable .risk-row td:nth-child(9)', node => node.textContent.trim()), '$900.00Latest roll · Before fees', 'radar uses latest roll cash, not opening basis');
+  assert.match(await page.$eval('#expiryTable th:nth-child(9)', node => node.innerText), /Premium\s+Opening \/ latest roll credit\s+Before fees/i, 'premium header explains the shared basis');
+  assert(await page.$$eval('#expiryTable .risk-row td:nth-child(9), #openOptions .option-ledger-row td:nth-child(8)', cells => cells.every(cell => !/Before fees/i.test(cell.textContent))), 'premium rows do not repeat the shared fee basis');
+  assert.equal(await page.$eval('#expiryTable .risk-row td:nth-child(9)', node => node.textContent.trim()), '$900.00Latest roll', 'radar uses latest roll cash, not opening basis');
   assert(/Partial history/.test(await page.$eval('#kpiRow', node => node.textContent)), 'merged premium does not silently omit moomoo');
   assert(/Partial history/.test(await page.$eval('#totalPremiumMeta', node => node.textContent)), 'total does not silently omit unsupported brokers');
   await page.click('#channelPills [data-channel="ibkr"]');
@@ -555,7 +557,7 @@ try {
   assert.equal(optionCells[1], '-1', 'short position is signed');
   assert(optionCells[2].includes('09-Sep-2026'), 'opening date uses requested format');
   assert.equal(optionCells[4], '$150.00', 'Current Spot uses the current underlying quote');
-  assert.equal(optionCells[7], '$500.00Before fees', 'STO credit comes from matched fills');
+  assert.equal(optionCells[7], '$500.00', 'STO credit comes from matched fills');
   assert.equal(optionCells[8], '$500.00', 'open cost basis remains distinct');
   assert.equal(optionCells[9], '$200.00', 'broker mark per contract wins over live option price');
   assert.equal(optionCells[10], '-$200.00', 'market value uses broker mark');
@@ -618,7 +620,7 @@ try {
   await page.waitForSelector('#channelPills [data-channel="ibkr"]');
   await page.click('#channelPills [data-channel="ibkr"]');
   const grossCells = await page.$$eval('#openOptions .option-ledger-row td', cells => cells.map(cell => cell.textContent.trim()));
-  assert.equal(grossCells[7], '$500.00Before fees', 'gross proceeds cannot masquerade as net credit');
+  assert.equal(grossCells[7], '$500.00', 'gross proceeds cannot masquerade as net credit');
   assert(grossCells[2].includes('09-Sep-2026'), 'opening date survives unavailable fees');
   assert(/Before fees/.test(await page.$eval('#kpiRow', node => node.textContent)), 'premium stays available before fees across all brokers');
   assert.equal(await page.$eval('#totalPremiumValue', node => node.textContent), '$654.00', 'total uses recorded premium before fees when fees are missing');

@@ -204,7 +204,7 @@ function entrySpotHtml(trade, ccy) {
 function openingPremiumHtml(trade, ccy, roll = false) {
   const value = roll && trade?.rollDate ? trade.rollPremium : trade?.stoGrossPremium;
   return value == null ? '<span title="Matching opening fills or latest roll credit are unavailable">—</span>'
-    : `${fmtPrettyMoney(value, trade.currency || ccy, 2)}<small class="entry-basis">${roll ? trade.rollDate ? 'Latest roll · ' : 'Opening STO · ' : ''}Before fees</small>`;
+    : `${fmtPrettyMoney(value, trade.currency || ccy, 2)}${roll ? `<small class="entry-basis">${trade.rollDate ? 'Latest roll' : 'Opening STO'}</small>` : ''}`;
 }
 
 function unverifiedOptionChannels(view) {
@@ -1820,7 +1820,7 @@ function renderExpiryRisk(view, asOf) {
           <label class="risk-search">Search contracts <input id="riskSearch" type="search" placeholder="Ticker, strike, expiry" value="${escapeHtml(riskSearch)}" /></label>
           <div class="risk-legend"><span title="High risk. Review your potential assignment and cash requirements.">${riskPill('danger', 'Act Now >60%')}</span><span title="Moderate risk. Review whether you are comfortable with the potential assignment.">${riskPill('warning', 'Caution 45–60%')}</span><span title="Lower risk based on the current probability.">${riskPill('ok', 'Comfortable')}</span><span>${radar.length} of ${shorts.length} flagged</span></div>
         </div>${radar.length === 0 ? `<div class="risk-empty-note">No contracts are currently scored above 30%. All open contracts remain available in Section 03. ${missing ? `${missing} could not be scored from the available quote and mark.` : 'All scored contracts are below the threshold.'}</div>` : ''}<div class="table-scroll"><table class="report risk-table">
-        <thead><tr>${head.map((h) => `<th>${escapeHtml(h)}</th>`).join('')}</tr></thead>
+        <thead><tr>${head.map((h) => `<th scope="col">${escapeHtml(h)}${h === 'Premium' ? '<small class="premium-column-basis">Opening / latest roll credit<br>Before fees</small>' : ''}</th>`).join('')}</tr></thead>
         <tbody>${filtered.length ? filtered.map(({ p, spot, days, estimate, exposure: assigned }) => {
             const o = p.option;
             const probability = estimate.probability == null ? null : estimate.probability * 100;
