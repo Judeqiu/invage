@@ -1986,11 +1986,15 @@ function renderPremiumEngine(view) {
   const ccy = reportingCcyCode(view);
   el.premiumHead.innerHTML = sectionHead('Section 02', 'Premium and recorded P&L',
     'Track premium collected and profit or loss (P&L) by calendar month. Historical trades are included where available; otherwise the charts build over time as Velovest records new trades.');
-  const rows = entries => [...entries].sort(([a], [b]) => a.localeCompare(b)).map(([label, value]) => ({ label, value: value ?? 0, display: value == null ? 'Unknown' : fmtPrettyMoney(value, ccy) }));
+  const rows = (entries, byAmount = false) => [...entries].sort(([a, av], [b, bv]) => {
+    if (!byAmount) return a.localeCompare(b);
+    if (av == null || bv == null) return av == null && bv == null ? a.localeCompare(b) : av == null ? 1 : -1;
+    return bv - av || a.localeCompare(b);
+  }).map(([label, value]) => ({ label, value: value ?? 0, display: value == null ? 'Unknown' : fmtPrettyMoney(value, ccy) }));
   const premiumHelp = 'Money received from selling options, minus money paid to buy options, grouped by the stock each option is based on. Includes recorded opening, closing and protective option trades, before brokerage fees. This is cash flow, not profit; missing history can make it incomplete.';
   const plHelp = 'Profit or loss from completed option trades, grouped by the month they ended. It is calculated from matched opening and closing trades, or reported directly by the broker. Partial subtotals exclude records that cannot be calculated. Fee treatment is shown for each month. Open positions and stock profit or loss are not included. Expand a month to see which stocks and brokers contribute.';
   el.premiumEngine.innerHTML = cssBarCard('Net Option Premium by Month', rows(data.byMonth), 'Before fees · recorded trades') +
-    cssBarCard('Net Option Premium by Underlying', rows(data.byUnderlying), 'Before fees · includes recorded option purchases and sales', { id: 'underlyingPremiumCard', limit: 5, help: premiumHelp }) +
+    cssBarCard('Net Option Premium by Underlying', rows(data.byUnderlying, true), 'Before fees · includes recorded option purchases and sales', { id: 'underlyingPremiumCard', limit: 5, help: premiumHelp }) +
     monthlyLineCard('Recorded P&L by Month', data, ccy, plHelp);
 }
 

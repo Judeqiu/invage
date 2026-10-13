@@ -1,6 +1,6 @@
 # Velovest underlying premium card
 
-The Net Option Premium by Underlying card keeps its Before fees note and explanation button inside the card footer. The first five underlying rows remain visible in their existing order. When more rows exist, Show more expands them and Show fewer collapses them. Cards with five or fewer rows have no empty expand control. Bar scaling uses the entire data set and does not change on expansion; calculations and broker filters are unchanged.
+The Net Option Premium by Underlying card keeps its Before fees note and explanation button inside the card footer. Underlying rows are ordered by displayed net premium amount, highest first; unknown amounts appear last and equal amounts use ticker order. The first five remain visible. When more rows exist, Show more expands them and Show fewer collapses them. Cards with five or fewer rows have no empty expand control. Bar scaling uses the entire data set and does not change on expansion; calculations and broker filters are unchanged.
 
 Target `victorconsultant` on `lextokprod02`, `/opt/victorconsultant`, services `victorconsultant` and `victorconsultant-drive`. Keep Utarus v4.2.13, account mode and database configuration. No SQL or configuration migration is required.
 
