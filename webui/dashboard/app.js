@@ -651,6 +651,8 @@ document.addEventListener('click', event => {
   }
   const button = event.target.closest('[data-roll-contract]');
   if (!button) return;
+  clearTimeout(rollSearchTimer);
+  rollEl.evidence.value = ''; rollEl.from.value = ''; rollEl.to.value = '';
   const channel = button.dataset.rollChannel;
   if (!Array.from(rollEl.broker.options).some(o => o.value === channel)) {
     const option = document.createElement('option'); option.value = channel; option.textContent = channel; rollEl.broker.append(option);

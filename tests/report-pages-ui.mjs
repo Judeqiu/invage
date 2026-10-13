@@ -228,6 +228,17 @@ const files = new Map([
   ['/report.css', 'webui/report.css'],
 ]);
 
+const rollQueries = [];
+const rollOld = { underlying: 'AAPL', right: 'put', strike: '140', expiry: '2026-09-18', currency: 'USD' };
+const rollReplacement = { ...rollOld, strike: '160', expiry: '2026-10-16' };
+const rollGroup = {
+  id: 'aapl-roll', underlying: 'AAPL', broker_id: 'ibkr', channel: 'ibkr', account_id: 'U1',
+  latest: rollReplacement, latest_quantity: '1', last_at: '2026-09-16T10:00:00',
+  relationships: [{ id: 'aapl-transition', channel: 'ibkr', side: 'short', evidence: 'execution',
+    old: rollOld, replacement: rollReplacement, replacement_effect: 'open', closed_quantity: '1', opened_quantity: '1',
+    at: '2026-09-16T10:00:00', through: '2026-09-16T10:00:00', cash: '900', cash_basis: 'gross',
+    reason: 'Matched retained executions', clock: 'Broker clock', orders: [], closing_fills: [], opening_fills: [], sources: [] }],
+};
 const discussionRequests = [];
 let discussionFailure = false;
 let cachedSnapshot = null;
@@ -283,6 +294,17 @@ const server = createServer(async (req, res) => {
     if (url === '/api/domain/invage/option-open-close') {
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify({ underlying: 'AAPL', date: '2026-09-09', adjusted_close: 150.25 }));
+      return;
+    }
+    if (url === '/api/domain/invage/option-relationships') {
+      const params = new URL(req.url, 'http://localhost').searchParams;
+      rollQueries.push(params);
+      const excluded = params.get('evidence') && params.get('evidence') !== 'execution' ||
+        params.get('from') > '2026-09-16' || params.get('to') && params.get('to') < '2026-09-16';
+      const groups = excluded ? [] : [rollGroup];
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ groups, total: groups.length, next_offset: null, coverage: [], gaps: [],
+        connections: [{ channel: 'ibkr', broker_id: 'ibkr', account_id: 'U1', label: 'IBKR' }] }));
       return;
     }
     if (url === '/api/domain/invage/option-history') {
@@ -595,6 +617,26 @@ try {
   assert(ledgerLayout.scrolled && ledgerLayout.headerPinned && ledgerLayout.cornerPinned, 'header stays pinned during vertical and horizontal scrolling');
   assert(ledgerLayout.headerAboveContract, 'frozen contract cells cannot cover the header');
   assert(optionCells[3].includes('$150.25') && optionCells[3].includes('Adj. close'), 'Entry Spot explicitly identifies adjusted-close fallback');
+  await page.click('#optionRollsTab');
+  await page.waitForSelector('#rollGroups .roll-folder');
+  await page.select('#rollEvidence', 'review');
+  await page.$eval('#rollFrom', node => { node.value = '2027-01-01'; node.dispatchEvent(new Event('change')); });
+  await page.$eval('#rollTo', node => { node.value = '2027-12-31'; node.dispatchEvent(new Event('change')); });
+  await page.waitForFunction(() => document.getElementById('rollStatus').textContent.startsWith('0 contract groups'));
+  await page.click('#optionOpenTab');
+  await page.click('#openOptions [data-roll-contract="AAPL"]');
+  await page.waitForFunction(() => !document.getElementById('rollStatus').textContent.includes('Reading archived'));
+  assert(await page.$eval('#optionRollsPanel', node => !node.classList.contains('hidden')), 'contract button opens Rolls');
+  assert.equal(await page.$eval('#rollEvidence', node => node.value), '', 'contract button resets stale evidence filter');
+  assert.equal(await page.$eval('#rollFrom', node => node.value), '', 'contract button resets stale start date');
+  assert.equal(await page.$eval('#rollTo', node => node.value), '', 'contract button resets stale end date');
+  assert(await page.$eval('#rollGroups .roll-folder', node => node.open), 'selected contract group opens automatically');
+  assert(await page.$eval('#rollGroups .roll-node', node => node.open), 'selected contract transition opens automatically');
+  const contractQuery = rollQueries.at(-1);
+  assert.equal(contractQuery.get('q'), 'AAPL');
+  assert.equal(contractQuery.get('channel'), 'ibkr');
+  assert(!contractQuery.has('evidence') && !contractQuery.has('from') && !contractQuery.has('to'), 'contract request excludes stale restrictions');
+  await page.click('#optionOpenTab');
   await page.click('#openOptions [data-option-right="call"]');
   assert(!(await page.$('#openOptions .option-ledger-row')), 'right filter removes put row');
   await page.click('#openOptions [data-option-right="all"]');
