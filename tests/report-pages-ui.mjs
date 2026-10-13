@@ -580,6 +580,12 @@ try {
   payload.optionTradeDetails['AAPL  260918P00140000'] = savedTrade;
   payload.premiumJournal.daily = savedDaily;
 
+  payload.equityPrices = { AAPL: 151.23 };
+  await page.goto(`http://127.0.0.1:${port}/dashboard/`);
+  await page.waitForSelector('#openOptions .option-ledger-row');
+  await page.click('#channelPills [data-channel="ibkr"]');
+  assert.equal(await page.$eval('#openOptions .option-ledger-row td:nth-child(5)', cell => cell.textContent.trim()), '$151.23', 'Current Spot updates from the refreshed share quote without contract scaling');
+
   payload.equityPrices = {};
   await page.goto(`http://127.0.0.1:${port}/dashboard/`);
   await page.waitForFunction(() => document.getElementById('expiryTable')?.textContent?.includes('could not be scored'));

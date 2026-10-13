@@ -4,7 +4,7 @@
  */
 
 import type { Holding } from './types.js';
-import { equityQuoteSymbols } from './position-value.js';
+import { portfolioQuoteSymbols } from './portfolio-quote-symbols.js';
 import { fetchPrices } from './fetch-prices.js';
 import {
   applyOptionMarks,
@@ -23,7 +23,7 @@ export interface ResolvedPortfolioMarket {
 export async function resolvePortfolioMarket(
   portfolio: Record<string, Holding>,
 ): Promise<ResolvedPortfolioMarket> {
-  const symbols = equityQuoteSymbols(portfolio);
+  const symbols = portfolioQuoteSymbols(portfolio);
   const [equityPrices, optionMarks] = await Promise.all([
     symbols.length > 0
       ? fetchPrices(symbols)

@@ -12,7 +12,6 @@ import { readBrokerAccountModel } from '../brokers/accounts.js';
 import { latestSuccessfulBrokerSyncRun } from '../brokers/sync-history.js';
 import type { BrokerConnectionMetrics } from '../state/portfolio-state.js';
 import {
-  equityQuoteSymbols,
   fetchFxRates,
   fetchHistoricalCloses,
   fetchPrices,
@@ -45,6 +44,7 @@ import { openOptionTradeDetails, attachLatestRollPremium, type OpenOptionTradeDe
 import { buildRecordedOptionAnalytics } from './option-analytics.js';
 import { optionRelationshipsForState } from './option-relationships-data.js';
 import { canonicalOptionUnderlying } from '../brokers/option-symbol.js';
+import { portfolioQuoteSymbols } from '../market/portfolio-quote-symbols.js';
 
 export const BENCHMARK_TICKER = 'SPY';
 
@@ -176,7 +176,7 @@ async function resolveMarketResilient(
       severity: 'warning',
     });
     try {
-      const symbols = equityQuoteSymbols(portfolio);
+      const symbols = portfolioQuoteSymbols(portfolio);
       const prices =
         symbols.length > 0 ? await fetchPrices(symbols) : ({} as Record<string, number>);
       return {
@@ -366,6 +366,9 @@ export async function loadDashboardForSlug(
       const stored = portfolio[position.ticker];
       if (position.instrument === 'option' && stored?.option) {
         position.brokerMark = stored.option.mark;
+        try {
+          position.option = { ...stored.option, underlying: canonicalOptionUnderlying(stored.option.underlying, stored.option) };
+        } catch { /* Keep malformed contracts visible; their spot remains unavailable. */ }
       }
       if (stored?.currency) position.currency = stored.currency;
     }
