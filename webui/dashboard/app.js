@@ -1889,34 +1889,94 @@ function recordedMonthlyData(view, date) {
   const channels = selectedTradeChannels(view);
   const fills = (analytics?.executions || []).filter(r => channels.includes(r.channel) && r.executed_at.slice(0, 10) <= date);
   const profits = (analytics?.profits || []).filter(r => channels.includes(r.channel) && r.date <= date);
-  const byMonth = new Map(), byUnderlying = new Map();
-  const sum = (map, key, value) => map.set(key, value == null || map.get(key) === null ? null : (map.get(key) || 0) + value);
-  for (const row of fills) {
-    const value = tradeAmount(view, row, row.gross_premium);
-    sum(byMonth, row.executed_at.slice(0, 7), value);
-    sum(byUnderlying, row.underlying, value);
-  }
-  const net = profits.every(r => r.net != null);
-  const realized = new Map();
-  for (const row of profits) sum(realized, row.date.slice(0, 7), tradeAmount(view, row, net ? row.net : row.gross));
   const gaps = (analytics?.gaps || []).filter(g => channels.includes(g.channel) && g.date <= date);
-  for (const gap of gaps) realized.set(gap.date.slice(0, 7), null);
-  return { byMonth, byUnderlying, realized, net, gaps, fills, profits };
+  const byMonth = new Map(), byUnderlying = new Map(), monthly = new Map(), realized = new Map();
+  const sum = (map, key, value) => map.set(key, value == null || map.get(key) === null ? null : (map.get(key) || 0) + value);
+  const monthFor = month => {
+    if (!monthly.has(month)) monthly.set(month, { rows: [], gaps: [], count: 0, excluded: 0, value: null, basis: null, contributions: new Map() });
+    return monthly.get(month);
+  };
+  for (const row of fills) {
+    sum(byMonth, row.executed_at.slice(0, 7), tradeAmount(view, row, row.gross_premium));
+    sum(byUnderlying, row.underlying, tradeAmount(view, row, row.gross_premium));
+    monthFor(row.executed_at.slice(0, 7));
+  }
+  for (const row of profits) monthFor(row.date.slice(0, 7)).rows.push(row);
+  for (const gap of gaps) monthFor(gap.date.slice(0, 7)).gaps.push(gap);
+  // Keep empty calendar months as gaps rather than joining nonadjacent results.
+  const keys = [...monthly.keys()].sort();
+  if (keys.length) {
+    const cursor = new Date(keys[0] + '-01T00:00:00Z');
+    while (cursor.toISOString().slice(0, 7) <= keys[keys.length - 1]) {
+      monthFor(cursor.toISOString().slice(0, 7));
+      cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+    }
+  }
+  for (const [month, stats] of monthly) {
+    stats.basis = stats.rows.length ? stats.rows.every(row => row.net != null) ? 'net'
+      : stats.rows.every(row => row.gross != null) ? 'gross' : 'mixed' : null;
+    for (const row of stats.rows) {
+      const amount = stats.basis === 'net' ? row.net : stats.basis === 'gross' ? row.gross : row.gross ?? row.net;
+      const value = tradeAmount(view, row, amount);
+      if (value == null) { stats.excluded++; continue; }
+      stats.value = (stats.value ?? 0) + value;
+      stats.count++;
+      const broker = { ibkr: 'IBKR', tiger: 'Tiger', moomoo: 'MooMoo', webull: 'Webull' }[row.channel.split('-')[0]] || row.channel;
+      const name = `${row.underlying || 'Unspecified stock'} · ${broker}`;
+      const contribution = stats.contributions.get(name) || { value: 0, count: 0 };
+      contribution.value += value; contribution.count++;
+      stats.contributions.set(name, contribution);
+    }
+    stats.excluded += stats.gaps.length;
+    stats.partial = stats.excluded > 0 || stats.basis === 'mixed';
+    realized.set(month, stats.value);
+  }
+  return { byMonth, byUnderlying, realized, monthly, gaps, fills, profits };
 }
 
-function monthlyLineCard(title, values, ccy, help) {
-  const entries = [...values].sort(([a], [b]) => a.localeCompare(b));
-  const available = entries.filter(([, n]) => n != null && Number.isFinite(n));
-  const max = Math.max(1, ...available.map(([, n]) => Math.abs(n)));
-  const x = i => 35 + i * 530 / Math.max(1, entries.length - 1);
-  const y = n => 95 - n / max * 65;
-  const segments = []; let current = [];
-  entries.forEach(([month, n], i) => { if (n == null) { if (current.length) segments.push(current); current = []; }
-    else current.push(`${x(i)},${y(n)}`); });
-  if (current.length) segments.push(current);
-  return `<div class="metric-card"><div class="metric-head"><h3>${escapeHtml(title)}</h3><button class="help-dot" type="button" data-help="${escapeHtml(help)}">?</button></div>
-    ${available.length ? `<svg class="monthly-line" viewBox="0 0 600 190" role="img" aria-label="${escapeHtml(title)}"><line x1="30" y1="95" x2="570" y2="95" stroke="currentColor" opacity=".2" />${segments.map(points => `<polyline points="${points.join(' ')}" fill="none" stroke="var(--brand)" stroke-width="2" />`).join('')}${entries.map(([month, n], i) => n == null ? '' : `<circle cx="${x(i)}" cy="${y(n)}" r="4" fill="var(--brand)"><title>${escapeHtml(month)}: ${escapeHtml(fmtPrettyMoney(n, ccy))}</title></circle>`).join('')}</svg>` : '<p class="empty">No verified realized P&amp;L is available yet.</p>'}
-    <ul class="monthly-values">${entries.map(([month, n]) => `<li><span>${escapeHtml(month)}</span><strong>${n == null ? 'Unknown' : fmtPrettyMoney(n, ccy)}</strong></li>`).join('')}</ul></div>`;
+function monthLabel(month) {
+  const [year, number] = month.split('-');
+  return `${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][Number(number) - 1]} ${year}`;
+}
+
+function monthlyLineCard(title, data, ccy, help) {
+  const entries = [...data.monthly].sort(([a], [b]) => a.localeCompare(b));
+  const available = entries.filter(([, stats]) => stats.value != null);
+  const max = Math.max(1, ...available.map(([, stats]) => Math.abs(stats.value)));
+  const x = i => 95 + i * 610 / Math.max(1, entries.length - 1);
+  const y = n => 130 - n / max * 90;
+  const lines = entries.slice(1).map(([, stats], index) => {
+    const previous = entries[index][1];
+    if (stats.value == null || previous.value == null) return '';
+    return `<line x1="${x(index)}" y1="${y(previous.value)}" x2="${x(index + 1)}" y2="${y(stats.value)}" stroke="var(--brand)" stroke-width="2"${stats.partial || previous.partial ? ' stroke-dasharray="5 5"' : ''} />`;
+  }).join('');
+  const feeLabel = basis => basis === 'net' ? 'After reported fees' : basis === 'gross' ? 'Before fees' : 'Fees partly included';
+  const excluded = entries.reduce((n, [, stats]) => n + stats.excluded, 0);
+  const gapReasons = new Map();
+  for (const gap of data.gaps) {
+    const reason = gap.reason.includes('opening fills') ? 'Earlier opening trades are missing, so we cannot work out the profit or loss on these closes.'
+      : gap.reason.includes('Physical delivery') ? 'Shares were assigned or exercised, but the broker did not report the option profit or loss.'
+      : gap.reason.includes('side') ? 'The records do not establish which option position ended.'
+      : 'The payment when the option ended is missing.';
+    gapReasons.set(reason, (gapReasons.get(reason) || 0) + 1);
+  }
+  const missingCurrency = excluded - data.gaps.length;
+  if (missingCurrency) gapReasons.set('Currency conversion or a usable profit/loss amount is missing.', missingCurrency);
+  const rows = entries.map(([month, stats]) => `<tr data-pnl-month="${escapeHtml(month)}">
+    <td>${escapeHtml(monthLabel(month))}</td>
+    <td class="num ${stats.value == null ? '' : plClass(stats.value)}">${stats.value == null ? 'Not available' : fmtPrettyMoney(stats.value, ccy)}${stats.value != null && stats.partial ? '<small class="pnl-partial">Partial subtotal</small>' : ''}</td>
+    <td>${stats.value == null ? stats.excluded ? 'Missing trade history' : 'No completed result recorded' : feeLabel(stats.basis)}</td>
+    <td>${stats.count ? `<details class="pnl-month-detail"><summary>${stats.count} trade result${stats.count === 1 ? '' : 's'}${stats.excluded ? ` · ${stats.excluded} excluded` : ''}</summary><ul>${[...stats.contributions].sort(([, a], [, b]) => a.value - b.value).map(([name, row]) => `<li><span>${escapeHtml(name)}</span><strong>${fmtPrettyMoney(row.value, ccy)}</strong></li>`).join('')}</ul><p>Option profit/loss only. Stock gains and losses are separate.</p></details>` : stats.excluded ? `${stats.excluded} record${stats.excluded === 1 ? '' : 's'} cannot yet be calculated` : 'No completed trades recorded'}</td>
+  </tr>`).join('');
+  const ticks = entries.map(([month], i) => i === 0 || i === entries.length - 1 || i % Math.max(1, Math.ceil(entries.length / 6)) === 0
+    ? `<text class="pnl-axis" x="${x(i)}" y="247" text-anchor="middle">${escapeHtml(monthLabel(month))}</text>` : '').join('');
+  return `<div class="metric-card pnl-card"><div class="metric-head"><h3>${escapeHtml(title)}</h3><button class="help-dot" type="button" aria-label="Explain monthly profit and loss" data-help="${escapeHtml(help)}">?</button></div>
+    <p class="pnl-caption">Profit or loss from recorded completed option trades, shown in the month they ended. This is not your full account profit or loss.</p>
+    ${available.length ? `<div class="pnl-chart-scroll"><svg class="monthly-line" viewBox="0 0 760 270" role="img" aria-label="Monthly option profit and loss in ${escapeHtml(ccy || 'reporting currency')}. Values and partial months are listed in the table below."><text class="pnl-axis" x="12" y="18">P&amp;L (${escapeHtml(ccy || 'reporting currency')})</text>${[-max, 0, max].map(value => `<line x1="90" y1="${y(value)}" x2="720" y2="${y(value)}" stroke="currentColor" opacity="${value === 0 ? '.4' : '.12'}" /><text class="pnl-axis" x="80" y="${y(value) + 4}" text-anchor="end">${escapeHtml(fmtPrettyMoney(value, ccy, 0))}</text>`).join('')}${lines}${entries.map(([month, stats], i) => stats.value == null ? `<text class="pnl-missing" x="${x(i)}" y="225" text-anchor="middle">—</text>` : `<circle class="${stats.partial ? 'pnl-point-partial' : 'pnl-point'}" cx="${x(i)}" cy="${y(stats.value)}" r="5"><title>${escapeHtml(monthLabel(month))}: ${escapeHtml(fmtPrettyMoney(stats.value, ccy))}${stats.partial ? ' · Partial subtotal' : ''} · ${feeLabel(stats.basis)}</title></circle>`).join('')}${ticks}</svg></div><p class="pnl-scroll-hint">Swipe the chart to see all months.</p><p class="pnl-legend"><span>● Recorded result</span><span>○ Partial subtotal</span><span>— No result available</span><span>Dashed line: partial results</span></p>` : '<p class="empty">No completed option results can be calculated yet. Open positions are shown in Section 03.</p>'}
+    ${entries.length ? `<div class="table-scroll"><table class="report pnl-table"><thead><tr><th>Month</th><th>Recorded P&amp;L</th><th>Fees / availability</th><th>What is included</th></tr></thead><tbody>${rows}</tbody></table></div>` : ''}
+    <p class="pnl-coverage-note">${excluded ? `${excluded} trade records are excluded because their profit or loss cannot yet be calculated. Partial subtotals show only the results we can calculate.` : 'Based on imported option records. Missing history may mean some trades are not included.'} Fee treatment is shown for each month.</p>
+    ${gapReasons.size ? `<details class="pnl-coverage-details"><summary>Why some results are incomplete</summary><ul>${[...gapReasons].map(([reason, count]) => `<li>${count} records: ${escapeHtml(reason)}</li>`).join('')}</ul><p>Import the earlier broker trade history to help fill these gaps. Excluded records are not treated as zero.</p></details>` : ''}
+  </div>`;
 }
 
 function renderPremiumEngine(view) {
@@ -1929,11 +1989,10 @@ function renderPremiumEngine(view) {
     'Track premium collected and profit or loss (P&L) by calendar month. Historical trades are included where available; otherwise the charts build over time as Velovest records new trades.');
   const rows = entries => [...entries].sort(([a], [b]) => a.localeCompare(b)).map(([label, value]) => ({ label, value: value ?? 0, display: value == null ? 'Unknown' : fmtPrettyMoney(value, ccy) }));
   const premiumHelp = 'Money received from selling options, minus money paid to buy options, grouped by the stock each option is based on. Includes recorded opening, closing and protective option trades, before brokerage fees. This is cash flow, not profit; missing history can make it incomplete.';
-  const plHelp = 'Profit or loss from completed option trades, shown in the month they closed or ended. Opening trades are matched to closing trades in order, oldest first. Reported fees are included when available. Assigned or exercised options use profit or loss reported by the broker; incomplete records are shown as unknown.';
+  const plHelp = 'Profit or loss from completed option trades, grouped by the month they ended. It is calculated from matched opening and closing trades, or reported directly by the broker. Partial subtotals exclude records that cannot be calculated. Fee treatment is shown for each month. Open positions and stock profit or loss are not included. Expand a month to see which stocks and brokers contribute.';
   el.premiumEngine.innerHTML = cssBarCard('Net Option Premium by Month', rows(data.byMonth), 'Before fees · recorded trades') +
-    `<div><p class="chart-help"><button class="help-dot" type="button" data-help="${escapeHtml(premiumHelp)}">?</button> Before fees · includes recorded option purchases and sales</p>${cssBarCard('Net Option Premium by Underlying', rows(data.byUnderlying))}</div>` +
-    monthlyLineCard('Recorded P&L by Month', data.realized, ccy, plHelp) +
-    `<div class="metric-card"><h3>Trade coverage</h3><p>${data.fills.length} recorded option fills through ${optionDateLabel(date)}.</p><p>${data.net ? 'Realized P&L includes reported fill fees.' : 'Realized P&L is shown before fees where fees are missing; entries without a compatible basis remain unknown.'}</p>${data.gaps.length ? `<details><summary>${data.gaps.length} records need more evidence for realized P&L</summary><ul>${data.gaps.map(g => `<li>${escapeHtml(g.channel)} · ${optionDateLabel(g.date)}: ${escapeHtml(g.reason)}</li>`).join('')}</ul></details>` : ''}</div>`;
+    `<div><p class="chart-help"><button class="help-dot" type="button" aria-label="Explain option premium by stock" data-help="${escapeHtml(premiumHelp)}">?</button> Before fees · includes recorded option purchases and sales</p>${cssBarCard('Net Option Premium by Underlying', rows(data.byUnderlying))}</div>` +
+    monthlyLineCard('Recorded P&L by Month', data, ccy, plHelp);
 }
 
 function renderOpenOptions(view) {

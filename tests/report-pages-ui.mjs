@@ -37,7 +37,7 @@ const payload = {
     { channel: 'ibkr', account_id: 'U1', underlying: 'AAPL', executed_at: '2026-08-10T10:00:00', gross_premium: '-49', commission: null, currency: 'USD' },
     { channel: 'ibkr', account_id: 'U1', underlying: 'AAPL', executed_at: '2026-09-09T10:00:00', gross_premium: '201', commission: '-1', currency: 'USD' },
     { channel: 'ibkr', account_id: 'U1', underlying: 'AAPL', executed_at: '2026-09-16T10:00:00', gross_premium: '101', commission: null, currency: 'USD' },
-  ], profits: [{ channel: 'ibkr', date: '2026-08-10', currency: 'USD', gross: 352, net: null }], gaps: [] },
+  ], profits: [{ channel: 'ibkr', underlying: 'AAPL', date: '2026-08-10', currency: 'USD', gross: 352, net: null }], gaps: [] },
   optionTradeDetails: {
     'AAPL  260918P00140000': { openedFrom: '2026-09-09', openedTo: '2026-09-09', stoNetPremium: 499, stoGrossPremium: 500, entrySpot: { price: 150.25, date: '2026-09-09', basis: 'adjusted_close' }, currency: 'USD' },
     'AAPL  261016P00160000': { openedFrom: '2026-09-16', openedTo: '2026-09-16', stoNetPremium: 1699, stoGrossPremium: 1700, rollPremium: 900, rollDate: '2026-09-16', currency: 'USD' },
@@ -403,7 +403,10 @@ try {
   assert(/Prob\. ITM/i.test(dashText), 'risk probability column');
   assert(/Recorded P&L by Month/.test(dashText), 'realized monthly chart label');
   assert(/Known fees only/.test(dashText), 'unreported fees remain visible');
-  assert.equal(await page.$eval('#premiumEngine .monthly-values', node => node.textContent), '2026-08$352.00', 'P&L uses closing month, not expiry');
+  assert.equal(await page.$eval('[data-pnl-month="2026-08"] td:nth-child(2)', node => node.textContent), '$352.00', 'P&L uses closing month, not expiry');
+  assert.equal(await page.$('#premiumEngine .monthly-values'), null, 'old unlabelled result list removed');
+  assert(!/Trade coverage/.test(dashText), 'coverage is a compact note, not a separate card');
+  assert(/P&L \(USD\)/.test(await page.$eval('.pnl-card svg', node => node.textContent)), 'chart labels its value axis');
   assert.equal(await page.$eval('#expiryTable .risk-row td:nth-child(9)', node => node.textContent.trim()), '$900.00Latest roll · Before fees', 'radar uses latest roll cash, not opening basis');
   assert(/Partial history/.test(await page.$eval('#kpiRow', node => node.textContent)), 'merged premium does not silently omit moomoo');
   assert(/Partial history/.test(await page.$eval('#totalPremiumMeta', node => node.textContent)), 'total does not silently omit unsupported brokers');
@@ -598,6 +601,42 @@ try {
   assert(/No longer observed/.test(await page.$eval('#optionHistoryTable', node => node.textContent)), 'history survives an empty current portfolio');
   payload.empty = false;
   payload.model = savedModel;
+
+  const previousAnalytics = payload.optionAnalytics;
+  const previousGeneratedAt = payload.generatedAt;
+  payload.generatedAt = '2026-10-13T10:00:00.000Z';
+  payload.optionAnalytics = { executions: previousAnalytics.executions,
+    profits: Array.from({ length: 13 }, (_, i) => {
+      const date = new Date(Date.UTC(2025, 9 + i, 10)).toISOString().slice(0, 10);
+      const gross = (i % 3 - 1) * 1200 + (i + 1) * 120;
+      return { channel: 'ibkr', underlying: 'AMD', date, currency: 'USD', gross, net: gross - 3 };
+    }).filter(row => !row.date.startsWith('2026-06')),
+    gaps: [
+      { channel: 'ibkr', date: '2026-05-12', reason: 'Closing quantity has no complete matching opening fills' },
+      { channel: 'ibkr', date: '2026-06-12', reason: 'Closing quantity has no complete matching opening fills' },
+    ] };
+  payload.optionAnalytics.profits.find(row => row.date.startsWith('2026-09')).gross = null;
+  await page.goto(`http://127.0.0.1:${port}/dashboard/`);
+  await page.waitForSelector('[data-pnl-month="2026-05"]');
+  assert.match(await page.$eval('[data-pnl-month="2026-05"] td:nth-child(2)', node => node.textContent), /Partial subtotal/);
+  assert.match(await page.$eval('[data-pnl-month="2026-06"]', node => node.textContent), /Not available/);
+  assert.match(await page.$eval('[data-pnl-month="2026-09"] td:nth-child(2)', node => node.textContent), /\$/);
+  assert(await page.$('.pnl-card line[stroke-dasharray]'), 'partial results use dashed connections');
+  assert(await page.$('.pnl-card .pnl-point-partial'), 'partial results have hollow markers');
+  await page.click('[data-pnl-month="2026-05"] summary');
+  assert.match(await page.$eval('[data-pnl-month="2026-05"] details', node => node.textContent), /AMD · IBKR/);
+  await page.click('.pnl-coverage-details summary');
+  assert.match(await page.$eval('.pnl-coverage-details', node => node.textContent), /Earlier opening trades are missing/);
+  await page.$eval('.pnl-card', node => node.scrollIntoView());
+  await (await page.$('.pnl-card')).screenshot({ path: '/tmp/velovest-monthly-pnl-desktop.png' });
+  await page.setViewport({ width: 390, height: 844 });
+  assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'P&L chart and table do not widen the mobile page');
+  assert(await page.$$eval('.pnl-table td', cells => cells.every(cell => cell.getBoundingClientRect().right <= innerWidth)), 'all monthly explanations fit on mobile');
+  assert(await page.$eval('.pnl-card .table-scroll', node => getComputedStyle(node).maxHeight === 'none'), 'latest month is not clipped by a fixed-height table');
+  await (await page.$('.pnl-card')).screenshot({ path: '/tmp/velovest-monthly-pnl-mobile.png' });
+  await page.setViewport({ width: 1280, height: 900 });
+  payload.optionAnalytics = previousAnalytics;
+  payload.generatedAt = previousGeneratedAt;
 
   await page.goto(`http://127.0.0.1:${port}/positions/`);
   await page.waitForFunction(() => document.getElementById('hello')?.textContent?.includes('Shares you own'));

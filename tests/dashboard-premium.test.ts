@@ -82,7 +82,8 @@ it('buckets recorded cash flow and realized profit by trade month and excludes f
   });
   expect([...result.byMonth]).toEqual([['2026-08', 350], ['2026-09', 200]]);
   expect([...result.byUnderlying]).toEqual([['AMD', 550]]);
-  expect([...result.realized]).toEqual([['2026-08', 348]]);
+  expect(result.realized.get('2026-08')).toBe(348);
+  expect(result.realized.get('2026-09')).toBeNull();
 });
 
 it('shows zero recorded MTD flow in a month without trades while retaining the latest daily trade', () => {
@@ -91,4 +92,51 @@ it('shows zero recorded MTD flow in a month without trades while retaining the l
   expect(result.daily).toBe(900);
   expect(result.dailyDate).toBe('2026-10-10');
   expect(result.fees).toBe(0);
+});
+
+function monthlyResult(profits: unknown[], gaps: unknown[] = [], fxRates: unknown = undefined) {
+  const helper = source.slice(source.indexOf('function selectedTradeChannels('), source.indexOf('function recordedPremiumForView('));
+  const monthly = source.slice(source.indexOf('function recordedMonthlyData('), source.indexOf('function monthLabel('));
+  return runInNewContext(`${helper}\n${monthly}\nrecordedMonthlyData(view, date)`, {
+    payload: { optionAnalytics: { executions: [], profits, gaps } },
+    view: { channelView: 'ibkr', reportingCurrency: 'USD', fxRates }, date: '2026-10-13',
+    MERGED_CHANNEL_VIEW: 'merged', reportingCcyCode: (v: any) => v.reportingCurrency,
+  });
+}
+
+it('keeps calculable monthly results as partial subtotals when opening history is missing', () => {
+  const result = monthlyResult([
+    { channel: 'ibkr', underlying: 'AMD', date: '2026-05-10', currency: 'USD', gross: 100, net: 98 },
+    { channel: 'ibkr', underlying: 'AMD', date: '2026-05-11', currency: 'USD', gross: -40, net: null },
+    { channel: 'other', date: '2026-05-10', currency: 'USD', gross: 500, net: 499 },
+    { channel: 'ibkr', date: '2026-11-10', currency: 'USD', gross: 500, net: 499 },
+  ], [{ channel: 'ibkr', date: '2026-05-12', reason: 'Closing quantity has no complete matching opening fills' }]);
+  expect(result.realized.get('2026-05')).toBe(60);
+  expect(result.monthly.get('2026-05')).toMatchObject({ partial: true, excluded: 1, count: 2, basis: 'gross' });
+  expect(result.monthly.get('2026-05').contributions.get('AMD · IBKR').value).toBe(60);
+  expect(result.monthly.size).toBe(1);
+});
+
+it('retains broker-reported after-fee results, identifies mixed fees, and leaves empty months unavailable', () => {
+  const result = monthlyResult([
+    { channel: 'ibkr', date: '2026-05-10', currency: 'USD', gross: null, net: 15 },
+    { channel: 'ibkr', date: '2026-05-11', currency: 'USD', gross: 20, net: 18 },
+    { channel: 'ibkr', date: '2026-07-10', currency: 'USD', gross: null, net: 10 },
+    { channel: 'ibkr', date: '2026-07-11', currency: 'USD', gross: -5, net: null },
+  ]);
+  expect(result.realized.get('2026-05')).toBe(33);
+  expect(result.monthly.get('2026-05').basis).toBe('net');
+  expect(result.realized.get('2026-06')).toBeNull();
+  expect(result.realized.get('2026-07')).toBe(5);
+  expect(result.monthly.get('2026-07')).toMatchObject({ basis: 'mixed', partial: true });
+});
+
+it('excludes unconvertible profit without losing a known subtotal or treating missing records as zero', () => {
+  const result = monthlyResult([
+    { channel: 'ibkr', date: '2026-05-10', currency: 'USD', gross: 20, net: 18 },
+    { channel: 'ibkr', date: '2026-05-11', currency: 'EUR', gross: 100, net: 98 },
+  ], [{ channel: 'ibkr', date: '2026-04-10', reason: 'Closing quantity has no complete matching opening fills' }]);
+  expect(result.realized.get('2026-05')).toBe(18);
+  expect(result.monthly.get('2026-05')).toMatchObject({ count: 1, excluded: 1, partial: true });
+  expect(result.realized.get('2026-04')).toBeNull();
 });

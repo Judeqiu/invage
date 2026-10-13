@@ -295,3 +295,42 @@ footer { text-align: center; font-size: 0.72rem; color: var(--muted-foreground);
 [data-timeline-group]:hover .timeline-group-lane, [data-timeline-group]:focus .timeline-group-lane { fill: #e8eefb; }
 .timeline-group-label { fill: #263347; font-size: 14px; font-weight: 700; }
 .timeline-group-range { stroke: #c7d5e9; stroke-width: 5; stroke-linecap: round; }
+
+.pnl-card { grid-column: 1 / -1; min-width: 0; }
+.pnl-caption, .pnl-coverage-note, .pnl-legend { font-size: 0.8rem; line-height: 1.5; color: var(--muted-foreground); margin: 0.65rem 0; }
+.pnl-chart-scroll { overflow-x: auto; }
+.pnl-chart-scroll .monthly-line { min-width: 620px; max-height: 300px; }
+.pnl-axis { fill: currentColor; font-size: 11px; }
+.pnl-missing { fill: currentColor; font-size: 15px; }
+.pnl-point { fill: var(--brand); stroke: var(--brand); stroke-width: 2; }
+.pnl-point-partial { fill: var(--card); stroke: var(--brand); stroke-width: 2; }
+.pnl-legend { display: flex; flex-wrap: wrap; gap: 1rem; }
+.pnl-table { font-size: 0.8rem; }
+.pnl-table th, .pnl-table td { vertical-align: top; }
+.pnl-partial { display: block; font-size: 0.7rem; color: var(--muted-foreground); }
+.pnl-month-detail summary, .pnl-coverage-details summary { cursor: pointer; }
+.pnl-month-detail ul { list-style: none; min-width: 200px; margin: 0.7rem 0; }
+.pnl-month-detail li { display: flex; justify-content: space-between; gap: 1rem; margin: 0.4rem 0; }
+.pnl-month-detail p, .pnl-coverage-details { font-size: 0.8rem; line-height: 1.5; }
+.pnl-coverage-details { padding-top: 0.7rem; border-top: 1px solid var(--border); }
+.pnl-coverage-details ul { padding-left: 1.2rem; margin: 0.7rem 0; }
+
+.pnl-card .table-scroll { max-height: none; }
+.pnl-table { min-width: 620px; }
+.pnl-month-detail p { max-width: 26rem; white-space: normal; }
+.pnl-scroll-hint { display: none; }
+@media (max-width: 600px) {
+  .pnl-scroll-hint { display: block; font-size: 0.75rem; color: var(--muted-foreground); }
+  .pnl-card .table-scroll { overflow: visible; }
+  .pnl-card .pnl-table { min-width: 0; }
+  .pnl-table thead { display: none; }
+  .pnl-table tbody { display: block; }
+  .pnl-table tr { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); padding: 0.75rem 0; border-bottom: 1px solid var(--border); }
+  .pnl-card .pnl-table td { display: block; min-width: 0; white-space: normal; border: none; padding: 0.2rem 0; }
+  .pnl-table td:nth-child(2) { text-align: right; }
+  .pnl-table td:nth-child(3), .pnl-table td:nth-child(4) { grid-column: 1 / -1; }
+  .pnl-table td:nth-child(3) { color: var(--muted-foreground); font-size: 0.75rem; }
+  .pnl-month-detail ul { min-width: 0; }
+}
+
+.pnl-month-detail li span { overflow-wrap: anywhere; min-width: 0; }
