@@ -420,6 +420,7 @@ try {
   payload.dashboardConfig.showRecordedPnlByMonth = false;
   await page.reload();
   await page.waitForFunction(() => document.getElementById('totalPremiumCard').classList.contains('hidden'));
+  await page.waitForFunction(() => document.getElementById('premiumHead').textContent.includes('Option premium'));
   assert.equal(await page.$('#premiumEngine .pnl-card'), null, 'monthly P&L is hidden when disabled');
   assert(/Option premium/.test(await page.$eval('#premiumHead', node => node.textContent)), 'section heading reflects disabled P&L');
   assert(/Net Option Premium by Month/.test(await page.$eval('#premiumEngine', node => node.textContent)), 'premium charts remain visible');
@@ -536,11 +537,14 @@ try {
   const optionCells = await page.$$eval('#openOptions .option-ledger-row td', (cells) => cells.map((cell) => cell.textContent.trim()));
   assert.equal(optionCells[1], '-1', 'short position is signed');
   assert(optionCells[2].includes('09-Sep-2026'), 'opening date uses requested format');
-  assert.equal(optionCells[6], '$500.00Before fees', 'STO credit comes from matched fills');
-  assert.equal(optionCells[7], '$500.00', 'open cost basis remains distinct');
-  assert.equal(optionCells[8], '$200.00', 'broker mark per contract wins over live option price');
-  assert.equal(optionCells[9], '-$200.00', 'market value uses broker mark');
-  assert.equal(optionCells[10], '$300.00', 'P&L uses broker mark');
+  assert.equal(optionCells[4], '$150.00', 'Current Spot uses the current underlying quote');
+  assert.equal(optionCells[7], '$500.00Before fees', 'STO credit comes from matched fills');
+  assert.equal(optionCells[8], '$500.00', 'open cost basis remains distinct');
+  assert.equal(optionCells[9], '$200.00', 'broker mark per contract wins over live option price');
+  assert.equal(optionCells[10], '-$200.00', 'market value uses broker mark');
+  assert.equal(optionCells[11], '$300.00', 'P&L uses broker mark');
+  assert.equal(await page.$$eval('#openOptions .option-ledger th', cells => cells.length), 14, 'Current Spot column is restored');
+  assert(await page.$$eval('#openOptions .option-month-total', rows => rows.every(row => row.children.length === 14)), 'month totals align with columns');
   assert.equal(await page.$eval('#openOptions .option-ledger td:first-child', node => getComputedStyle(node).position), 'sticky', 'contract stays visible on horizontal scroll');
   assert(optionCells[3].includes('$150.25') && optionCells[3].includes('Adj. close'), 'Entry Spot explicitly identifies adjusted-close fallback');
   await page.click('#openOptions [data-option-right="call"]');
@@ -568,7 +572,7 @@ try {
   await page.waitForSelector('#channelPills [data-channel="ibkr"]');
   await page.click('#channelPills [data-channel="ibkr"]');
   const grossCells = await page.$$eval('#openOptions .option-ledger-row td', cells => cells.map(cell => cell.textContent.trim()));
-  assert.equal(grossCells[6], '$500.00Before fees', 'gross proceeds cannot masquerade as net credit');
+  assert.equal(grossCells[7], '$500.00Before fees', 'gross proceeds cannot masquerade as net credit');
   assert(grossCells[2].includes('09-Sep-2026'), 'opening date survives unavailable fees');
   assert(/Before fees/.test(await page.$eval('#kpiRow', node => node.textContent)), 'premium stays available before fees across all brokers');
   assert.equal(await page.$eval('#totalPremiumValue', node => node.textContent), '$654.00', 'total uses recorded premium before fees when fees are missing');
@@ -581,6 +585,7 @@ try {
   await page.waitForFunction(() => document.getElementById('expiryTable')?.textContent?.includes('could not be scored'));
   assert.equal(await page.$$eval('#expiryTable .risk-row', (rows) => rows.length), 0, 'unscored contracts are excluded from the radar');
   assert.equal(await page.$$eval('#openOptions .option-ledger-row', rows => rows.length), 2, 'unscored contracts remain in Section 03');
+  assert(await page.$$eval('#openOptions .option-ledger-row td:nth-child(5)', cells => cells.every(cell => cell.textContent.trim() === '—')), 'missing spot quotes display as unavailable');
   assert(/0 of 2 above 30%/.test(await page.$eval('#expiryTable', (node) => node.textContent)), 'radar count stays honest');
 
   payload.generatedAt = '2026-10-06T10:00:00.000Z';

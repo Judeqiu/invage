@@ -2040,7 +2040,8 @@ function renderOpenOptions(view) {
   }
   const months = [...groups.keys()].sort();
   const ccy = reportingCcyCode(view);
-  const columns = ['Financial instrument', 'Pos', 'Opened', 'Entry Spot', 'Assignment exposure', 'DTE', 'STO Credit · Before Fees', 'Open cost / contract', 'Mark / contract', 'Market value', 'Unrealized P&L', '% of max', 'Broker'];
+  const prices = view.isLive ? payload?.equityPrices || {} : {};
+  const columns = ['Financial instrument', 'Pos', 'Opened', 'Entry Spot', 'Current Spot', 'Assignment exposure', 'DTE', 'STO Credit · Before Fees', 'Open cost / contract', 'Mark / contract', 'Market value', 'Unrealized P&L', '% of max', 'Broker'];
   const details = (p) => {
     const o = p.option;
     const units = Number(p.units);
@@ -2079,7 +2080,7 @@ function renderOpenOptions(view) {
     body += `<tr class="option-month-total" data-month="${m}">
       <td><button type="button" class="option-month-toggle" data-option-month="${m}" aria-expanded="${!collapsedOptionMonths.has(m)}"><span aria-hidden="true">${collapsedOptionMonths.has(m) ? '▶' : '▼'}</span> TOTAL ${monthLabel} <span class="option-month-count">(${rows.length})</span></button></td>
       <td class="num">${sum('position')}</td>
-      <td></td><td></td>
+      <td></td><td></td><td></td>
       <td class="num">${totalMoney(sum('exposure'), 0)}</td>
       <td class="num">${Number.isFinite(earliest) ? `${earliest}d earliest` : '—'}</td>
       <td class="num">${totalCredit}</td>
@@ -2090,6 +2091,7 @@ function renderOpenOptions(view) {
     body += values.map(({ p, position, mark, marketValue, pl, exposure, dte, captured, trade }) => {
       const o = p.option;
       const rowMoney = (n, digits = 2) => fmtPrettyMoney(n, p.currency || ccy, digits);
+      const spot = prices[o.underlying];
       const label = `${optionUnderlyingLabel(o)} ${o.side === 'short' ? 'Short' : 'Long'} ${o.right === 'put' ? 'Put' : 'Call'} ${rowMoney(o.strike, Number.isInteger(o.strike) ? 0 : 2)} · ${optionDateLabel(o.expiry)} · ×${p.units}`;
       const opened = trade ? `${optionDateLabel(trade.openedFrom)}${trade.openedTo !== trade.openedFrom ? ` to ${optionDateLabel(trade.openedTo)}` : ''}` : '—';
       return `<tr class="option-ledger-row${highlightedUnderlying === o.underlying ? ' option-underlying-highlight' : ''}" data-option-underlying="${escapeHtml(o.underlying)}">
@@ -2097,6 +2099,7 @@ function renderOpenOptions(view) {
         <td class="num">${position}</td>
         <td class="option-opened">${opened}</td>
         <td class="num">${entrySpotHtml(trade, p.currency || ccy)}</td>
+        <td class="num">${Number.isFinite(spot) && spot > 0 ? rowMoney(spot) : '—'}</td>
         <td class="num">${exposure ? rowMoney(exposure, 0) : '—'}</td>
         <td class="num">${dte == null ? '—' : `${dte}d`}</td>
         <td class="num">${o.side === 'short' ? openingPremiumHtml(trade, p.currency || ccy) : '—'}</td>
@@ -2114,7 +2117,7 @@ function renderOpenOptions(view) {
     : 'The estimated price of one whole option contract saved in this snapshot. For a short option, this estimates the cost to buy it back; its position value is shown as negative.';
   el.openOptions.innerHTML = `${freshnessWarning}${filters}<div class="metric-card table-card option-ledger-card"><div class="table-scroll"><table class="report option-ledger">
     <thead><tr>${columns.map((h) => `<th>${escapeHtml(h)}${h === 'Mark / contract' ? `<button type="button" class="help-dot" data-help="${escapeHtml(markHelp)}" aria-label="What Mark means">?</button>` : ''}</th>`).join('')}</tr></thead>
-    <tbody>${body || `<tr><td colspan="13" class="empty">No open option positions match these filters.</td></tr>`}</tbody>
+    <tbody>${body || `<tr><td colspan="${columns.length}" class="empty">No open option positions match these filters.</td></tr>`}</tbody>
   </table></div></div>`;
 }
 
