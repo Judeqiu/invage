@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildOptionRelationships, groupOptionRelationships, parseRelationshipArchive,
+import { buildOptionRelationships, buildOptionVerticalSpreads, groupOptionRelationships, parseRelationshipArchive,
   type RollContract, type RollFill } from '../src/brokers/option-relationships.js';
 
 const source = { id: 'broker-sync/ibkr/history.xml', version: 'v1' };
@@ -11,6 +11,34 @@ function fill(id: string, c: RollContract, side: RollFill['side'], effect: RollF
     basis: 'net', terminal: false, source, ...extra };
 }
 const pair = () => [fill('close', old, 'buy', 'close'), fill('open', replacement, 'sell', 'open')];
+
+describe('authoritative vertical spreads', () => {
+  const legs = () => [fill('long', { ...old, strike: '350' }, 'buy', 'open', { cash: '-3509', gross_cash: '-3509', quantity: '1' }),
+    fill('short', { ...old, strike: '370' }, 'sell', 'open', { cash: '2429', gross_cash: '2429', quantity: '1' })];
+  it('combines opening debit and credit only for one shared order, keeping account and channel scope', () => {
+    const result = buildOptionVerticalSpreads('moomoo-second', 'A', [...legs(), ...legs()]);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ gross_cash: '-1080', quantity: '1', channel: 'moomoo-second', account_id: 'A' });
+    expect(buildOptionRelationships('moomoo', 'moomoo-second', 'A', legs())).toEqual([]);
+  });
+  it('rejects separate orders, unequal quantities, calendar spreads and closing legs', () => {
+    expect(buildOptionVerticalSpreads('x', 'A', legs().map(f => ({ ...f, parent: f.id })))).toEqual([]);
+    expect(buildOptionVerticalSpreads('x', 'A', [legs()[0], { ...legs()[1], quantity: '2' }])).toEqual([]);
+    expect(buildOptionVerticalSpreads('x', 'A', [legs()[0], { ...legs()[1], contract: replacement }])).toEqual([]);
+    expect(buildOptionVerticalSpreads('x', 'A', [legs()[0], { ...legs()[1], effect: 'close' }])).toEqual([]);
+    expect(() => buildOptionVerticalSpreads('x', 'B', legs())).toThrow(/account/);
+  });
+  it('never guesses missing premium or uses commission-inclusive cash as gross proceeds', () => {
+    const rows = legs(); delete rows[0].gross_cash;
+    expect(buildOptionVerticalSpreads('x', 'A', rows)[0].gross_cash).toBeNull();
+  });
+  it('enriches missing cash from overlapping archives without mutating cached evidence', () => {
+    const rows = legs();
+    const missing = rows.map(f => ({ ...f, cash: null, gross_cash: undefined }));
+    expect(buildOptionVerticalSpreads('x', 'A', [...missing, ...rows])[0].gross_cash).toBe('-1080');
+    expect(missing[0].cash).toBeNull();
+  });
+});
 
 describe('option relationships', () => {
   it('links explicit orders and deduplicates overlapping archives with exact cash', () => {

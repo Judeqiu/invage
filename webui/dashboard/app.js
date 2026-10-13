@@ -174,12 +174,13 @@ function recordedPremiumForView(view, date) {
   const observed = new Set(journal?.channels || []);
   const missing = channels.filter(ch => !observed.has(ch));
   const rows = (journal?.daily || []).filter(row => channels.includes(row.channel) && row.date <= date);
+  const conflictingRecords = (payload?.optionHistoryGaps || []).some(g => channels.includes(g.channel) && g.blocksTotals);
   const previousDay = new Date(`${date}T00:00:00Z`);
   previousDay.setUTCDate(previousDay.getUTCDate() - 1);
   const dailyFrom = previousDay.toISOString().slice(0, 10);
   const sum = (from, through) => {
     const selected = rows.filter(row => row.date >= from && row.date <= through);
-    if (!journal?.available || !rows.length) return null;
+    if (!journal?.available || !rows.length || conflictingRecords) return null;
     const amounts = selected.map(row => tradeAmount(view, row, row.gross_premium));
     return amounts.every(n => n != null) ? amounts.reduce((a, b) => a + b, 0) : null;
   };
@@ -187,12 +188,14 @@ function recordedPremiumForView(view, date) {
   const fees = fills.filter(row => row.executed_at.slice(0, 10) >= `${date.slice(0, 7)}-01`);
   const knownFees = fees.filter(row => row.commission != null).map(row => tradeAmount(view, row, -Number(row.commission)));
   const missingFees = fees.filter(row => row.commission == null).length;
+  const historyGaps = (payload?.optionHistoryGaps || []).filter(g => channels.includes(g.channel));
+  const dates = fills.map(row => row.executed_at.slice(0, 10)).sort();
   return { daily: sum(dailyFrom, date), dailyFrom, dailyDate: date,
     mtd: sum(`${date.slice(0, 7)}-01`, date), total: sum('', date), totalBasis: 'gross',
-    fees: fills.length && !fees.length ? 0 : fees.length && knownFees.length && knownFees.every(n => n != null) ? knownFees.reduce((a, b) => a + b, 0) : null,
-    missingFees, partial: missing.length > 0,
-    reason: missing.length ? `Recorded trades only · history unavailable for ${missing.map(ch => ch.toUpperCase()).join(', ')}` : 'Recorded option trades · before fees',
-    totalReason: 'No recorded option cash flow or currencies cannot be combined without FX' };
+    fees: conflictingRecords ? null : fills.length && !fees.length ? 0 : fees.length && knownFees.length && knownFees.every(n => n != null) ? knownFees.reduce((a, b) => a + b, 0) : null,
+    missingFees, partial: missing.length > 0 || historyGaps.length > 0, firstTrade: dates[0], lastTrade: dates.at(-1),
+    reason: missing.length || historyGaps.length ? 'Recorded trades only · incomplete history · before fees' : 'Recorded option trades · before fees',
+    totalReason: conflictingRecords ? 'Conflicting broker records need reconciliation' : 'No recorded option cash flow or currencies cannot be combined without FX' };
 }
 
 function entrySpotHtml(trade, ccy) {
@@ -202,9 +205,9 @@ function entrySpotHtml(trade, ccy) {
 }
 
 function openingPremiumHtml(trade, ccy, roll = false) {
-  const value = roll && trade?.rollDate ? trade.rollPremium : trade?.stoGrossPremium;
+  const value = roll && trade?.rollDate ? trade.rollPremium : trade?.stoGrossPremium ?? trade?.openingGrossPremium;
   return value == null ? '<span title="Matching opening fills or latest roll credit are unavailable">—</span>'
-    : `${fmtPrettyMoney(value, trade.currency || ccy, 2)}${roll ? `<small class="entry-basis">${trade.rollDate ? 'Latest roll' : 'Opening STO'}</small>` : ''}`;
+    : `${fmtPrettyMoney(value, trade.currency || ccy, 2)}${roll && trade.rollDate ? '<small class="entry-basis">Latest roll</small>' : ''}`;
 }
 
 function unverifiedOptionChannels(view) {
@@ -1589,7 +1592,7 @@ function renderOverview(view) {
     el.totalPremiumCard.classList.toggle('hidden', payload.dashboardConfig?.showTotalPremium === false);
     el.totalPremiumValue.textContent = premium.total == null ? '—' : fmtPrettyMoney(premium.total, repCcy, 2);
     el.totalPremiumMeta.textContent = premium.total == null ? premium.totalReason
-      : `${premium.totalBasis === 'gross' ? 'Before fees · open + closed' : 'Open + closed · net'} · retained fills through ${optionDateLabel(premiumDate)}${premium.partial ? ' · Partial history' : ''}`;
+      : `Before fees · buys + sells · ${premium.firstTrade ? optionDateLabel(premium.firstTrade) : 'Recorded history'} through ${premium.lastTrade ? optionDateLabel(premium.lastTrade) : optionDateLabel(premiumDate)}${premium.partial ? ' · Partial history' : ''}`;
   }
   const puts = (view.positions || []).filter(p => p.instrument === 'option' && p.option?.side === 'short' && p.option.right === 'put');
   const putAmounts = puts.map(p => tradeAmount(view, p, Number(p.option.strike) * Number(p.option.multiplier) * Number(p.units)));
@@ -1602,11 +1605,11 @@ function renderOverview(view) {
     el.kpiRow.innerHTML = [
       metricCardHtml('Net premium · Daily', premium.daily == null ? '—' : fmtPrettyMoney(premium.daily, repCcy, 0),
         premium.daily == null ? premium.reason : `${optionDateLabel(premium.dailyFrom)} – ${optionDateLabel(premium.dailyDate)} · Before fees${premium.partial ? ' · Partial history' : ''}`,
-        'Money received from opening short options, minus money paid to close them, from the calendar day before the dashboard date (T−1) through the dashboard date (T), inclusive. Older trades are excluded. Brokerage fees are shown separately; missing trades can make the amount incomplete.',
+        'Money received from selling options, minus money paid to buy options, including opening and closing trades for long and short options, from the calendar day before the dashboard date (T−1) through the dashboard date (T), inclusive. Older trades are excluded. Brokerage fees are shown separately; missing trades can make the amount incomplete.',
         premium.daily > 0 ? 'up' : premium.daily < 0 ? 'down' : ''),
       metricCardHtml('Net premium · MTD', premium.mtd == null ? '—' : fmtPrettyMoney(premium.mtd, repCcy, 0),
         `Before fees${premium.partial ? ' · Partial history' : ''}`,
-        'MTD means month to date. This is money received from opening short options, minus money paid to close them, from the start of the displayed month through the dashboard date. Brokerage fees are shown separately. Includes recorded trades only.',
+        'MTD means month to date. This is money received from selling options, minus money paid to buy options, including opening and closing trades for long and short options, from the start of the displayed month through the dashboard date. Brokerage fees are shown separately. Includes recorded trades only.',
         premium.mtd > 0 ? 'up' : premium.mtd < 0 ? 'down' : ''),
       metricCardHtml('Brokerage fees · MTD', premium.fees == null ? '—' : fmtPrettyMoney(premium.fees, repCcy, 2),
         premium.missingFees ? `Known fees only · ${premium.missingFees} fills with fees unreported` : 'Recorded option fill fees',
@@ -1894,6 +1897,7 @@ function recordedMonthlyData(view, date) {
   const fills = (analytics?.executions || []).filter(r => channels.includes(r.channel) && r.executed_at.slice(0, 10) <= date);
   const profits = (analytics?.profits || []).filter(r => channels.includes(r.channel) && r.date <= date);
   const gaps = (analytics?.gaps || []).filter(g => channels.includes(g.channel) && g.date <= date);
+  const conflictingChannels = new Set((payload?.optionHistoryGaps || []).filter(g => g.blocksTotals).map(g => g.channel));
   const byMonth = new Map(), byUnderlying = new Map(), monthly = new Map(), realized = new Map();
   const sum = (map, key, value) => map.set(key, value == null || map.get(key) === null ? null : (map.get(key) || 0) + value);
   const monthFor = month => {
@@ -1901,10 +1905,14 @@ function recordedMonthlyData(view, date) {
     return monthly.get(month);
   };
   for (const row of fills) {
-    sum(byMonth, row.executed_at.slice(0, 7), tradeAmount(view, row, row.gross_premium));
-    sum(byUnderlying, row.underlying, tradeAmount(view, row, row.gross_premium));
+    const amount = conflictingChannels.has(row.channel) ? null : tradeAmount(view, row, row.gross_premium);
+    sum(byMonth, row.executed_at.slice(0, 7), amount);
+    sum(byUnderlying, row.underlying, amount);
   }
-  for (const row of profits) monthFor(row.date.slice(0, 7)).rows.push(row);
+  for (const row of profits) {
+    if (conflictingChannels.has(row.channel)) gaps.push({ channel: row.channel, date: row.date, reason: 'Conflicting broker records need reconciliation' });
+    else monthFor(row.date.slice(0, 7)).rows.push(row);
+  }
   for (const gap of gaps) monthFor(gap.date.slice(0, 7)).gaps.push(gap);
   // Keep empty calendar months as gaps rather than joining nonadjacent results.
   const keys = [...monthly.keys()].sort();
@@ -2001,6 +2009,16 @@ function renderPremiumEngine(view) {
   el.premiumEngine.innerHTML = cssBarCard('Net Option Premium by Month', rows(data.byMonth), 'Before fees · recorded trades') +
     cssBarCard('Net Option Premium by Underlying', rows(data.byUnderlying, true), 'Before fees · includes recorded option purchases and sales', { id: 'underlyingPremiumCard', limit: 5, help: premiumHelp }) +
     (showRecordedPnlByMonth ? monthlyLineCard('Recorded P&L by Month', data, ccy, plHelp) : '');
+  const channels = selectedTradeChannels(view);
+  const historyGaps = (payload.optionHistoryGaps || []).filter(g => channels.includes(g.channel));
+  const fills = (payload.optionAnalytics?.executions || []).filter(r => channels.includes(r.channel) && r.executed_at.slice(0, 10) <= date);
+  const dates = fills.map(r => r.executed_at.slice(0, 10)).sort();
+  el.premiumEngine.innerHTML += `<div class="premium-history-breakdown"><p class="pnl-coverage-note">${dates.length ? `Recorded trades from ${escapeHtml(optionDateLabel(dates[0]))} to ${escapeHtml(optionDateLabel(dates.at(-1)))}. ` : ''}Premium includes all recorded option purchases and sales, before fees; it is cash flow, not profit.</p>` +
+    historyGaps.map(g => `<p class="pnl-coverage-note">Partial history · ${escapeHtml(g.channel.toUpperCase())}: ${escapeHtml(g.reason)}</p>`).join('') +
+    [...data.byMonth.keys()].sort().map(month => {
+      const records = fills.filter(r => r.executed_at.startsWith(month)).sort((a, b) => a.executed_at.localeCompare(b.executed_at));
+      return `<details class="premium-month-breakdown"><summary>${escapeHtml(month)} · Trade breakdown · ${data.byMonth.get(month) == null ? 'Unknown' : fmtPrettyMoney(data.byMonth.get(month), ccy)}</summary><div class="table-scroll"><table class="report"><thead><tr><th>Date</th><th>Contract</th><th>Action</th><th>Quantity</th><th>Premium before fees</th><th>Fees / rebates</th><th>Broker</th></tr></thead><tbody>${records.map(r => `<tr><td>${escapeHtml(r.executed_at.slice(0, 10))}</td><td>${escapeHtml(`${r.underlying} ${r.right} ${r.strike} · ${r.expiry}`)}</td><td>${escapeHtml(`${r.side} to ${r.effect}`)}</td><td>${escapeHtml(r.contracts)}</td><td>${historyGaps.some(g => g.channel === r.channel && g.blocksTotals) ? 'Unverified' : fmtPrettyMoney(Number(r.gross_premium), r.currency, 2)}</td><td>${historyGaps.some(g => g.channel === r.channel && g.blocksTotals) || r.commission == null ? 'Unknown' : fmtPrettyMoney(Number(r.commission), r.currency, 2)}</td><td>${escapeHtml(r.channel.toUpperCase())}</td></tr>`).join('')}</tbody></table></div></details>`;
+    }).join('') + '</div>';
 }
 
 function renderOpenOptions(view) {
@@ -2023,7 +2041,7 @@ function renderOpenOptions(view) {
     el.openOptionsHead.innerHTML = sectionHead(
       '',
       'Open options positions · broker view',
-      `View all open option positions, grouped by expiry month. Opening dates and STO credits are verified against recorded fills matching the remaining contracts. STO credits are standardised before fees across all brokers; brokerage fees are shown separately. Entry Spot uses the underlying price at execution where recorded, otherwise the opening-day adjusted close, labelled Adj. close. Missing or unreconciled data is shown as unknown. ${dates.length ? `Broker positions as of ${dates.join(' · ')}.` : 'Broker position date unavailable.'}`,
+      `View all open option positions, grouped by expiry month. Cash flow is the opening credit or debit, or the latest verified roll including its closing leg, before fees. Verified vertical spreads show their combined opening cash flow above their legs. Missing or unreconciled data is shown as unknown. Entry Spot uses the execution price where recorded, otherwise the opening-day adjusted close. ${dates.length ? `Broker positions as of ${dates.join(' · ')}.` : 'Broker position date unavailable.'}`,
     );
   }
   const opts = allOptions.filter((p) =>
@@ -2045,7 +2063,7 @@ function renderOpenOptions(view) {
   const months = [...groups.keys()].sort();
   const ccy = reportingCcyCode(view);
   const prices = view.isLive ? payload?.equityPrices || {} : {};
-  const columns = ['Financial instrument', 'Pos', 'Opened', 'Entry\nSpot', 'Current\nSpot', 'Assignment\nexposure', 'DTE', 'STO Credit ·\nBefore Fees', 'Open cost /\ncontract', 'Mark /\ncontract', 'Market\nvalue', 'Unrealized\nP&L', '% of max', 'Broker'];
+  const columns = ['Financial instrument', 'Pos', 'Opened', 'Entry\nSpot', 'Current\nSpot', 'Assignment\nexposure', 'DTE', 'Trade cash flow ·\nBefore Fees', 'Open cost /\ncontract', 'Mark /\ncontract', 'Market\nvalue', 'Unrealized\nP&L', '% of max', 'Broker'];
   const details = (p) => {
     const o = p.option;
     const units = Number(p.units);
@@ -2077,10 +2095,11 @@ function renderOpenOptions(view) {
       ? fmtPrettyMoney(n, currencies[0], digits) : '—';
     const monthLabel = new Date(`${m}-01T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' }).toUpperCase().replace(' ', " '");
     const earliest = Math.min(...values.map((x) => x.dte ?? Infinity));
-    const credits = values.filter(x => x.p.option.side === 'short');
+    const credits = values;
     const creditCurrencies = [...new Set(credits.map(x => x.trade?.currency))];
-    const totalCredit = credits.length && credits.every(x => x.trade?.stoGrossPremium != null) && creditCurrencies.length === 1
-      ? fmtPrettyMoney(credits.reduce((sum, x) => sum + x.trade.stoGrossPremium, 0), creditCurrencies[0], 2) : '—';
+    const cashFlow = trade => trade?.rollDate ? trade.rollPremium : trade?.stoGrossPremium ?? trade?.openingGrossPremium;
+    const totalCredit = credits.length && credits.every(x => cashFlow(x.trade) != null) && creditCurrencies.length === 1
+      ? fmtPrettyMoney(credits.reduce((sum, x) => sum + cashFlow(x.trade), 0), creditCurrencies[0], 2) : '—';
     body += `<tr class="option-month-total" data-month="${m}">
       <td><button type="button" class="option-month-toggle" data-option-month="${m}" aria-expanded="${!collapsedOptionMonths.has(m)}"><span aria-hidden="true">${collapsedOptionMonths.has(m) ? '▶' : '▼'}</span> TOTAL ${monthLabel} <span class="option-month-count">(${rows.length})</span></button></td>
       <td class="num">${sum('position')}</td>
@@ -2092,13 +2111,18 @@ function renderOpenOptions(view) {
       <td class="num ${plClass(sum('pl'))}">${totalMoney(sum('pl'))}</td><td></td><td></td>
     </tr>`;
     if (collapsedOptionMonths.has(m)) continue;
+    const shownSpreads = new Set();
     body += values.map(({ p, position, mark, marketValue, pl, exposure, dte, captured, trade }) => {
       const o = p.option;
       const rowMoney = (n, digits = 2) => fmtPrettyMoney(n, p.currency || ccy, digits);
       const spot = prices[o.underlying];
       const label = `${optionUnderlyingLabel(o)} ${o.side === 'short' ? 'Short' : 'Long'} ${o.right === 'put' ? 'Put' : 'Call'} ${rowMoney(o.strike, Number.isInteger(o.strike) ? 0 : 2)} · ${optionDateLabel(o.expiry)} · ×${p.units}`;
       const opened = trade ? `${optionDateLabel(trade.openedFrom)}${trade.openedTo !== trade.openedFrom ? ` to ${optionDateLabel(trade.openedTo)}` : ''}` : '—';
-      return `<tr class="option-ledger-row${highlightedUnderlying === o.underlying ? ' option-underlying-highlight' : ''}" data-option-underlying="${escapeHtml(o.underlying)}">
+      const spread = trade?.spread;
+      const spreadRow = spread && !shownSpreads.has(spread.id)
+        ? `<tr class="option-spread-summary"><td colspan="7">${escapeHtml(`${optionUnderlyingLabel(o)} ${spread.longStrike}/${spread.shortStrike} ${o.right} vertical spread · ${optionDateLabel(o.expiry)} · ×${spread.quantity}`)}</td><td class="num">${spread.grossPremium == null ? 'Unknown' : rowMoney(spread.grossPremium)}<small class="entry-basis">Combined opening ${spread.grossPremium < 0 ? 'debit' : 'credit'}</small></td><td colspan="6"></td></tr>` : '';
+      if (spread) shownSpreads.add(spread.id);
+      return spreadRow + `<tr class="option-ledger-row${highlightedUnderlying === o.underlying ? ' option-underlying-highlight' : ''}" data-option-underlying="${escapeHtml(o.underlying)}">
         <td class="option-instrument">${escapeHtml(label)}<br><button type="button" class="chip-btn" data-roll-contract="${escapeHtml(o.underlying)}" data-roll-channel="${escapeHtml(p.channel)}" data-roll-strike="${escapeHtml(o.strike)}" data-roll-expiry="${escapeHtml(o.expiry)}">Check roll relationships</button></td>
         <td class="num">${position}</td>
         <td class="option-opened">${opened}</td>
@@ -2106,7 +2130,7 @@ function renderOpenOptions(view) {
         <td class="num">${Number.isFinite(spot) && spot > 0 ? rowMoney(spot) : '—'}</td>
         <td class="num">${exposure ? rowMoney(exposure, 0) : '—'}</td>
         <td class="num">${dte == null ? '—' : `${dte}d`}</td>
-        <td class="num">${o.side === 'short' ? openingPremiumHtml(trade, p.currency || ccy) : '—'}</td>
+        <td class="num">${openingPremiumHtml(trade, p.currency || ccy, true)}</td>
         <td class="num">${rowMoney(Number(p.avgCost))}</td>
         <td class="num">${rowMoney(mark)}</td>
         <td class="num">${rowMoney(marketValue)}</td>

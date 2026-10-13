@@ -32,7 +32,7 @@ describe('Moomoo opening fills', () => {
     expect(journal.cumulative[0].net_premium).toBeNull();
     const detail = openOptionTradeDetails({ path: statement.lots[0].holding }, statement.option_executions);
     expect(detail.path).toEqual({ openedFrom: '2026-09-28', openedTo: '2026-09-28',
-      stoNetPremium: null, stoGrossPremium: 882, currency: 'USD' });
+      openingExecutionIds: ['a'], stoNetPremium: null, stoGrossPremium: 882, currency: 'USD' });
   });
   it('allocates only outstanding opening proceeds after partial buybacks and deduplicates overlapping syncs', () => {
     const a = fill('a', 'SELL_SHORT', '3');
@@ -73,8 +73,9 @@ describe('Moomoo fill pagination', () => {
       if (u.pathname.endsWith('/positions')) return Response.json({ s: 'ok', d: [{ ...(bundle().positions.d as Record<string, unknown>[])[0], contract_size: 100 }] });
       if (u.pathname.endsWith('/fills_history')) {
         queries.push(u.searchParams);
-        return Response.json(pages.shift());
+        return Response.json(pages.shift() ?? { s: 'ok', d: { order_fills: [], completed: true, page_flag: '' } });
       }
+      if (u.pathname.endsWith('/stock-basicinfo')) return Response.json({ ret_code: 0, data: { basic_list: bundle().option_basicinfo } });
       throw new Error(`Unexpected ${u.pathname}`);
     };
     return { fetchImpl, queries };
@@ -84,7 +85,8 @@ describe('Moomoo fill pagination', () => {
       { s: 'ok', d: { order_fills: [fill('b')], completed: true, page_flag: '' } }]);
     const raw = await fetchMooMooRawBundle(credentials, t);
     expect(raw.fills_history?.rows).toHaveLength(2);
-    expect(t.queries.map(q => q.get('page_flag'))).toEqual(['', 'next/+=']);
+    expect(t.queries.map(q => q.get('page_flag'))).toEqual(['', 'next/+=', '']);
+    expect(t.queries.map(q => q.get('trd_market'))).toEqual(['US', 'US', 'HK']);
     expect(t.queries[0].get('start')).toBe('946684800000000');
     expect(t.queries[0].get('end')).toBe(t.queries[1].get('end'));
   });
@@ -92,5 +94,49 @@ describe('Moomoo fill pagination', () => {
     const page = { s: 'ok', d: { order_fills: [], completed: false, page_flag: 'same' } };
     await expect(fetchMooMooRawBundle(credentials, transport([page, page]))).rejects.toThrow(/pagination did not advance/);
     await expect(fetchMooMooRawBundle(credentials, transport([{ s: 'ok', d: {} }]))).rejects.toThrow(/incomplete/);
+  });
+});
+
+describe('Moomoo complete execution history', () => {
+  const expired = 'US.PATH260828P15000';
+  it('imports closed contracts independently of current holdings, including adjusted sizes', () => {
+    const raw = bundle([
+      { ...fill('historical-open'), code: expired, price: '3.66', qty: '1' },
+      { ...fill('historical-close', 'BUY_BACK'), code: expired, price: '0.09', qty: '1' },
+    ]);
+    raw.positions.d = [];
+    raw.option_basicinfo = [{ code: expired, stock_type: 'DRVT', contract_size: 25, stock_owner: 'US.PATH' }];
+    const statement = mapMooMooBundleToStatement(raw, 'moomoo-second');
+    expect(statement.lots).toEqual([]);
+    expect(statement.option_executions).toHaveLength(2);
+    expect(statement.option_executions?.map(e => e.gross_premium).sort()).toEqual(['-2.25', '91.50']);
+    expect(statement.option_executions?.every(e => e.multiplier === '25' && e.channel === 'moomoo-second')).toBe(true);
+  });
+  it('refuses to silently drop historical fills or borrow a current contract multiplier', () => {
+    const raw = bundle([{ ...fill('old'), code: expired }]);
+    expect(() => mapMooMooBundleToStatement(raw, 'moomoo')).toThrow(/Historical contract metadata unavailable/);
+    raw.option_basicinfo!.push({ code: expired, stock_type: 'DRVT', contract_size: 100 }, { code: expired, stock_type: 'DRVT', contract_size: 100 });
+    expect(() => mapMooMooBundleToStatement(raw, 'moomoo')).toThrow(/Ambiguous/);
+  });
+  it('fetches closed-only history and requests exact metadata for historical option codes', async () => {
+    const credentials = { app_key: 'test', private_key: readFileSync('tests/fixtures/moomoo/ed25519-private.pem', 'utf8'), sign_alg: 'Ed25519' as const };
+    const requests: string[] = [];
+    const fetchImpl: typeof fetch = async (url, init) => {
+      const u = new URL(String(url)); requests.push(u.pathname);
+      if (u.pathname.endsWith('/authorized_trd_accs')) return Response.json({ s: 'ok', d: [{ account_id: 'A1' }] });
+      if (u.pathname.endsWith('/funds')) return Response.json(bundle().funds);
+      if (u.pathname.endsWith('/positions')) return Response.json({ s: 'ok', d: [] });
+      if (u.pathname.endsWith('/fills_history')) return Response.json({ s: 'ok', d: {
+        order_fills: u.searchParams.get('trd_market') === 'US' ? [{ ...fill('old'), code: expired }] : [], completed: true,
+      } });
+      if (u.pathname.endsWith('/stock-basicinfo')) {
+        expect(JSON.parse(String(init?.body)).code_list).toEqual([expired]);
+        return Response.json({ ret_code: 0, data: { basic_list: [{ code: expired, stock_type: 'DRVT', contract_size: 100 }] } });
+      }
+      throw new Error('Unexpected request');
+    };
+    const raw = await fetchMooMooRawBundle(credentials, { fetchImpl });
+    expect(mapMooMooBundleToStatement(raw, 'moomoo').option_executions).toHaveLength(1);
+    expect(requests.filter(p => p.endsWith('/fills_history'))).toHaveLength(2);
   });
 });

@@ -1,8 +1,9 @@
 import { listRawData, fetchRawData, type RawFile } from '../raw-data/store.js';
 import { readBrokerAccountModel } from '../brokers/accounts.js';
-import { buildOptionRelationships, groupOptionRelationships, parseRelationshipArchive,
+import { buildOptionRelationships, buildOptionVerticalSpreads, groupOptionRelationships, parseRelationshipArchive,
   type RollFill } from '../brokers/option-relationships.js';
 import type { InvestorState } from '../state/portfolio-state.js';
+import { addDecimals } from '../brokers/option-executions.js';
 
 const cache = new Map<string, RollFill[]>();
 const MAX_ARCHIVES = 500;
@@ -30,7 +31,8 @@ export function optionRelationshipsForState(state: InvestorState, filters: Relat
   }
   const connections = Object.values(readBrokerAccountModel(state).connections).filter(c => c.account_id &&
     ['ibkr', 'tiger', 'moomoo', 'webull'].includes(c.broker_id));
-  const groups = []; const gaps: Array<{ channel: string; source: string | null; reason: string }> = [];
+  const groups = []; const spreads = []; const historyGaps: Array<{ channel: string; reason: string; blocksTotals?: boolean }> = [];
+  const gaps: Array<{ channel: string; source: string | null; reason: string }> = [];
   const coverage: Array<{ channel: string; broker_id: string; account_id: string; label: string;
     archives: number; history_available: boolean; first_trade: string | null; last_trade: string | null }> = [];
   let archives = 0, bytes = 0;
@@ -61,16 +63,37 @@ export function optionRelationshipsForState(state: InvestorState, filters: Relat
     }
     if (fills.length > 250_000) throw new Error('Retained executions exceed the relationship scan limit');
     const trades = fills.filter(f => !f.terminal).map(f => f.at).sort();
+    const recorded = new Map((state.option_executions ?? []).filter(e => e.channel === conn.channel && e.account_id === conn.account_id).map(e => [e.execution_id, e]));
+    const missing = new Set(fills.filter(f => !f.terminal && (!filters.asOf || f.at.slice(0, 10) <= filters.asOf) && !recorded.has(f.id)).map(f => f.id));
+    if (missing.size) historyGaps.push({ channel: conn.channel, reason: `${missing.size} archived option fills are missing from imported history. Refresh the broker or import a complete execution statement with contract metadata.` });
+    const conflicts = new Set(fills.filter(f => {
+      const e = recorded.get(f.id);
+      if (!e || f.terminal || filters.asOf && f.at.slice(0, 10) > filters.asOf) return false;
+      const gross = f.gross_cash ?? (f.basis === 'gross' ? f.cash : null);
+      return e.side !== f.side || f.effect !== 'unknown' && e.effect !== f.effect ||
+        e.executed_at !== f.at || e.underlying !== f.contract.underlying || e.right !== f.contract.right ||
+        e.expiry !== f.contract.expiry || Number(e.strike) !== Number(f.contract.strike) ||
+        e.currency !== f.contract.currency || Number(e.contracts) !== Number(f.quantity) ||
+        gross != null && Number(e.multiplier) !== Number(f.contract.multiplier) ||
+        gross != null && !/^0(?:\.0+)?$/.test(addDecimals(e.gross_premium, gross.startsWith('-') ? gross.slice(1) : `-${gross}`));
+    }).map(f => f.id));
+    if (conflicts.size) {
+      historyGaps.push({ channel: conn.channel, blocksTotals: true, reason: `${conflicts.size} imported option fills disagree with archived broker records and need reconciliation.` });
+      reconciliationBlocked = true;
+    }
+    if (!selected.length || !trades.length || gaps.some(g => g.channel === conn.channel)) historyGaps.push({ channel: conn.channel, reason: 'Retained option history could not be fully verified.' });
     coverage.push({ channel: conn.channel, broker_id: conn.broker_id, account_id: conn.account_id!,
       label: conn.label || conn.broker_id.toUpperCase(), archives: selected.length, history_available: trades.length > 0,
       first_trade: trades[0] ?? null, last_trade: trades.at(-1) ?? null });
     if (!trades.length) gaps.push({ channel: conn.channel, source: null, reason: 'No usable option execution history in the retained archives' });
     if (reconciliationBlocked) {
+      historyGaps.push({ channel: conn.channel, blocksTotals: true, reason: 'Conflicting or corrected archive evidence needs reconciliation.' });
       gaps.push({ channel: conn.channel, source: null, reason: 'Relationships withheld until conflicting or corrected archive evidence is reconciled' });
       continue;
     }
     try {
       const all = buildOptionRelationships(conn.broker_id, conn.channel, conn.account_id!, fills);
+      spreads.push(...buildOptionVerticalSpreads(conn.channel, conn.account_id!, fills).filter(s => !filters.asOf || s.through.slice(0, 10) <= filters.asOf));
       // Never expose future trades in a snapshot replay. Group only the resulting visible links.
       const visible = all.filter(r => (!filters.asOf || r.through.slice(0, 10) <= filters.asOf) &&
         (!filters.from || r.at.slice(0, 10) >= filters.from) && (!filters.to || r.through.slice(0, 10) <= filters.to) &&
@@ -78,11 +101,12 @@ export function optionRelationshipsForState(state: InvestorState, filters: Relat
         (!filters.q || `${r.old.underlying} ${r.old.strike} ${r.old.expiry} ${r.replacement.strike} ${r.replacement.expiry}`.toUpperCase().includes(filters.q.toUpperCase())));
       groups.push(...groupOptionRelationships(visible, fills));
     } catch (error) {
+      historyGaps.push({ channel: conn.channel, blocksTotals: true, reason: 'Archived option executions could not be reconciled.' });
       gaps.push({ channel: conn.channel, source: null, reason: error instanceof Error ? error.message : 'Relationship reconciliation failed' });
     }
   }
   groups.sort((a, b) => b.last_at.localeCompare(a.last_at) || a.id.localeCompare(b.id));
-  return { groups, coverage, gaps, as_of: filters.asOf ?? null,
+  return { groups, spreads, historyGaps, coverage, gaps, as_of: filters.asOf ?? null,
     connections: connections.map(c => ({ channel: c.channel, broker_id: c.broker_id,
       account_id: c.account_id!, label: c.label || c.broker_id.toUpperCase() })) };
 }

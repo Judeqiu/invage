@@ -96,8 +96,9 @@ export async function moomooGet(args: {
 /** Trade positions omit contract size; obtain it from exact-code static metadata. */
 async function fetchOptionBasicInfo(
   positions: MooMooEnvelope, credentials: MooMooCredentials, fetchImpl: typeof fetch,
+  history: Record<string, unknown>[] = [],
 ): Promise<Record<string, unknown>[]> {
-  const codes = [...new Set((Array.isArray(positions.d) ? positions.d : []).flatMap(row => {
+  const codes = [...new Set([...(Array.isArray(positions.d) ? positions.d : []), ...history].flatMap(row => {
     if (!row || typeof row !== 'object') return [];
     const code = String(row.code ?? '').trim();
     const symbol = code.slice(code.indexOf('.') + 1);
@@ -153,14 +154,10 @@ async function getWithSkewRetry(args: {
 }
 
 /** Read all pages, rather than silently truncating at the default 50 fills / 90 days. */
-async function fetchFillHistory(positions: MooMooEnvelope, accId: string,
+async function fetchFillHistory(accId: string,
   credentials: MooMooCredentials, fetchImpl: typeof fetch): Promise<MooMooRawBundle['fills_history']> {
-  const markets = [...new Set((Array.isArray(positions.d) ? positions.d : []).flatMap(row => {
-    const code = String(row?.code ?? '');
-    const [market, symbol] = code.split('.');
-    return ['US', 'HK'].includes(market) && looksLikeOptionCode(symbol ?? '') ? [market] : [];
-  }))];
-  if (!markets.length) return undefined;
+  // Closed-only accounts must retain history too, even with no current options.
+  const markets = ['US', 'HK'];
   const start = '946684800000000'; // 2000-01-01, not the implicit 90-day window.
   const end = String(BigInt(Date.now()) * 1000n);
   const rows: Record<string, unknown>[] = [];
@@ -312,8 +309,8 @@ export async function fetchMooMooRawBundle(
     fetchImpl,
   });
   failIfError(positions, 'positions');
-  const option_basicinfo = await fetchOptionBasicInfo(positions, credentials, fetchImpl);
-  const fills_history = await fetchFillHistory(positions, acc_id, credentials, fetchImpl);
+  const fills_history = await fetchFillHistory(acc_id, credentials, fetchImpl);
+  const option_basicinfo = await fetchOptionBasicInfo(positions, credentials, fetchImpl, fills_history?.rows);
   return {
     schema: 'invage.moomoo.raw.v1',
     fetched_at: new Date().toISOString(),

@@ -2,6 +2,7 @@ import type { BrokerLot } from '../brokers/statement.js';
 import { assertOptionExecution, decimal, mergeOptionExecutions, type OptionExecution } from '../brokers/option-executions.js';
 import { BrokerParseError } from '../brokers/errors.js';
 import type { MooMooRawBundle } from './moomoo-types.js';
+import { looksLikeOptionCode, parseBrokerOptionCode, optionUnderlyingFromBroker } from '../brokers/option-symbol.js';
 
 function multiply(...values: string[]): string {
   let product = 1n;
@@ -29,8 +30,7 @@ function marketTime(raw: unknown, market: string): string {
   return `${part('year')}-${part('month')}-${part('day')}T${part('hour')}:${part('minute')}:${part('second')}`;
 }
 
-/** Backfill current contracts only: their exact metadata proves size and currency.
- * Closed contracts already imported remain in state through the merge-on-sync path.
+/** Import all retained option fills using exact-contract metadata, including closed contracts.
  * Cloud fills omit fees; null means unknown, never a zero commission.
  */
 export function mapMooMooExecutions(bundle: MooMooRawBundle, lots: BrokerLot[], channel: string): OptionExecution[] | undefined {
@@ -40,8 +40,9 @@ export function mapMooMooExecutions(bundle: MooMooRawBundle, lots: BrokerLot[], 
   const executions: OptionExecution[] = [];
   for (const row of bundle.fills_history.rows) {
     const code = String(row.code ?? '');
+    const [market, symbol] = code.split('.');
+    if (!looksLikeOptionCode(symbol ?? '')) continue;
     const lot = contracts.get(code);
-    if (!lot) continue;
     try {
       if (row.status !== 'OK') throw new Error('Changed or cancelled fills require reconciliation');
       const actions: Record<string, [OptionExecution['side'], OptionExecution['effect']]> = {
@@ -50,7 +51,22 @@ export function mapMooMooExecutions(bundle: MooMooRawBundle, lots: BrokerLot[], 
       };
       const action = actions[String(row.trd_side)];
       if (!action) throw new Error('Unknown option trading direction');
-      const option = lot.holding.option!;
+      const profiles = (bundle.option_basicinfo ?? []).filter(info => info.code === code && info.stock_type === 'DRVT');
+      if (profiles.length > 1) throw new Error('Ambiguous exact-contract metadata');
+      const info = profiles[0];
+      const parsed = parseBrokerOptionCode(symbol!);
+      if ('skip' in parsed) throw new Error(parsed.skip);
+      const size = info?.contract_size ?? info?.lot_size;
+      if (size != null && (!Number.isFinite(Number(size)) || Number(size) <= 0)) throw new Error('Invalid contract multiplier');
+      if (lot && size != null && Number(size) !== lot.holding.option!.multiplier) throw new Error('Contract multiplier disagrees with position');
+      const underlying = optionUnderlyingFromBroker({ market: market!, owner: info?.stock_owner == null ? undefined : String(info.stock_owner), optionRoot: parsed.root });
+      if (typeof underlying !== 'string') throw new Error(underlying.skip);
+      const option = lot?.holding.option ?? (size == null ? null : {
+        underlying, right: parsed.right, expiry: parsed.expiry, strike: parsed.strike, multiplier: Number(size),
+      });
+      if (!option) throw new Error('Historical contract metadata unavailable; import a broker statement with the exact contract size');
+      const currency = lot?.currency ?? (market === 'US' ? 'USD' : market === 'HK' ? 'HKD' : null);
+      if (!currency) throw new Error('Historical contract currency unavailable');
       const contracts = decimal(row.qty);
       const price = decimal(row.price);
       if (price.startsWith('-')) throw new Error('Fill price must not be negative');
@@ -59,7 +75,7 @@ export function mapMooMooExecutions(bundle: MooMooRawBundle, lots: BrokerLot[], 
         execution_id: row.deal_id, contract_id: code, executed_at: marketTime(row.create_time, code.split('.')[0]),
         underlying: option.underlying, right: option.right, expiry: option.expiry,
         strike: String(option.strike), multiplier: String(option.multiplier), contracts,
-        side: action[0], effect: action[1], currency: lot.currency,
+        side: action[0], effect: action[1], currency,
         gross_premium: action[0] === 'buy' ? `-${gross}` : gross, commission: null,
       }));
     } catch (error) {

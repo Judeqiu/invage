@@ -40,7 +40,7 @@ import type { OptionLiveMark } from '../market/fetch-option-marks.js';
 import { readProductProfile, type ProductProfileId } from '../agents/roster.js';
 import { productDisplayName } from '../product-name.js';
 import { buildExecutionJournal } from '../brokers/option-executions.js';
-import { openOptionTradeDetails, attachLatestRollPremium, type OpenOptionTradeDetail } from './option-dashboard-data.js';
+import { openOptionTradeDetails, attachLatestRollPremium, attachOpenVerticalSpreads, type OpenOptionTradeDetail } from './option-dashboard-data.js';
 import { buildRecordedOptionAnalytics } from './option-analytics.js';
 import { optionRelationshipsForState } from './option-relationships-data.js';
 import { canonicalOptionUnderlying } from '../brokers/option-symbol.js';
@@ -79,7 +79,7 @@ export interface DashboardPayload {
   brokerAsOf?: Record<string, string>;
   /** Opening fills matched to the current open lots; absent means unverified. */
   optionTradeDetails?: Record<string, OpenOptionTradeDetail>;
-  /** Recorded short-option cash flow, never inferred from position cost basis. */
+  /** Recorded option cash flow, including long legs, never inferred from position cost basis. */
   premiumJournal?: {
     available: boolean;
     daily: ReturnType<typeof buildExecutionJournal>['daily'];
@@ -87,6 +87,7 @@ export interface DashboardPayload {
   };
   /** Channels whose broker connector supplies option executions. */
   premiumSupportedChannels?: string[];
+  optionHistoryGaps?: Array<{ channel: string; reason: string; blocksTotals?: boolean }>;
   optionAnalytics?: ReturnType<typeof buildRecordedOptionAnalytics>;
   /** Env product profile — copy/section gates. Not a books field. */
   productProfile: ProductProfileId;
@@ -458,13 +459,19 @@ export async function loadDashboardForSlug(
 
   const journal = buildExecutionJournal(state.option_executions);
   const optionTradeDetails = openOptionTradeDetails(portfolio, state.option_executions, accountsByChannel, state.option_events);
+  let optionHistoryGaps: Array<{ channel: string; reason: string; blocksTotals?: boolean }> = [];
   try {
     const relationships = optionRelationshipsForState(state);
     attachLatestRollPremium(portfolio, optionTradeDetails, relationships.groups.flatMap(g => g.relationships), accountsByChannel);
+    attachOpenVerticalSpreads(portfolio, optionTradeDetails, relationships.spreads, accountsByChannel);
+    optionHistoryGaps = relationships.historyGaps;
   } catch {
     const issue: DashboardIssue = { code: 'roll_premium_unavailable', message: 'Latest roll credit could not be verified from retained trade records.', severity: 'warning' };
     model.live.issues = [...(model.live.issues ?? []), issue];
+    optionHistoryGaps = premiumSupportedChannels.map(channel => ({ channel, reason: 'Retained option history could not be verified.' }));
   }
+  const conflictingChannels = new Set(optionHistoryGaps.filter(g => g.blocksTotals).map(g => g.channel));
+  for (const key of Object.keys(optionTradeDetails)) if (conflictingChannels.has(portfolio[key].channel!)) delete optionTradeDetails[key];
   // Fetch one daily history series per underlying, rather than one request per contract.
   const entryDates = new Map<string, Set<string>>();
   for (const [key, detail] of Object.entries(optionTradeDetails)) {
@@ -502,6 +509,7 @@ export async function loadDashboardForSlug(
     premiumJournal: { available: journal.available, daily: journal.daily,
       channels: [...new Set(journal.executions.map(row => row.channel))] },
     premiumSupportedChannels,
+    optionHistoryGaps,
     ...productMeta(),
   };
   if (Object.keys(market.prices).length > 0) out.equityPrices = market.prices;

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { SaxesParser } from 'saxes';
 import { addDecimals, decimal, validDate } from './option-executions.js';
-import { canonicalOptionUnderlying } from './option-symbol.js';
+import { canonicalOptionUnderlying, optionUnderlyingFromBroker } from './option-symbol.js';
 
 export interface RollContract {
   underlying: string; right: 'put' | 'call'; expiry: string; strike: string;
@@ -63,10 +63,10 @@ function ymd(v: unknown): string {
   const date = text(v).replace(/^(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3');
   if (!validDate(date)) throw new Error('Invalid broker date'); return date;
 }
-function timestamp(v: unknown, micros = false): string {
+function timestamp(v: unknown, micros = false, timeZone = 'America/New_York'): string {
   const raw = typeof v === 'string' && !/^\d+$/.test(v) ? v : Number(micros ? BigInt(text(v)) / 1000n : text(v));
   const d = new Date(raw); if (!Number.isFinite(d.getTime())) throw new Error('Invalid fill timestamp');
-  const ps = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit',
+  const ps = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit',
     day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }).formatToParts(d);
   const p = (t: string) => ps.find(x => x.type === t)!.value;
   return `${p('year')}-${p('month')}-${p('day')}T${p('hour')}:${p('minute')}:${p('second')}`;
@@ -125,24 +125,30 @@ export function parseRelationshipArchive(broker: string, bytes: Buffer, account:
   if (broker === 'moomoo') {
     if (text(b.acc_id) !== account) throw new Error('Archive account mismatch');
     if (!b.fills_history) return fills;
-    const sizes = new Map((Array.isArray(b.option_basicinfo) ? rows(b.option_basicinfo) : [])
-      .map(r => [String(r.code), positive(r.contract_size)]));
+    const profiles = Array.isArray(b.option_basicinfo) ? rows(b.option_basicinfo) : [];
+    const sizes = new Map<string, string>();
+    for (const r of profiles) {
+      if (sizes.has(String(r.code))) throw new Error('Ambiguous contract metadata needs reconciliation');
+      sizes.set(String(r.code), positive(r.contract_size ?? r.lot_size));
+    }
     for (const r of rows(record(b.fills_history).rows)) {
-      const code = String(r.code); const m = code.match(/^US\.(.+?)(\d{6})([PC])(\d+)$/); if (!m) continue;
+      const code = String(r.code); const m = code.match(/^(US|HK)\.(.+?)(\d{6})([PC])(\d+)$/); if (!m) continue;
       if (r.status !== 'OK') throw new Error('Changed option fill needs reconciliation');
       const actions: Record<string, [RollFill['side'], RollFill['effect']]> = {
         BUY_BACK: ['buy', 'close'], SELL_SHORT: ['sell', 'open'], BUY: ['buy', 'open'], SELL: ['sell', 'close'],
       };
       const action = actions[String(r.trd_side)]; if (!action) throw new Error('Unknown fill direction');
-      // The code identifies US contracts, but historical contract sizes can be absent.
+      // Historical contract sizes can be absent.
       // Preserve linkage while withholding cash estimates unless size is explicitly reported.
       const size = sizes.get(code);
-      if (size && size !== '100') throw new Error('Nonstandard historical option size needs reconciliation');
-      const c = contract(m[1], m[3], `20${m[2]}`, multiply(m[4], '0.001'), '100', 'USD');
+      const profile = profiles.find(p => p.code === code);
+      const underlying = optionUnderlyingFromBroker({ market: m[1], optionRoot: m[2], owner: profile?.stock_owner == null ? undefined : String(profile.stock_owner) });
+      if (typeof underlying !== 'string') throw new Error(underlying.skip);
+      const c = contract(underlying, m[4], `20${m[3]}`, multiply(m[5], '0.001'), size ?? '100', m[1] === 'US' ? 'USD' : 'HKD');
       const quantity = positive(r.qty); const cash = multiply(positiveOrZero(r.price), quantity, c.multiplier);
       fills.push({ id: text(r.deal_id), order: text(r.order_id), parent: text(r.order_id), prefix: '',
-        account, contract: c, quantity, side: action[0], effect: action[1], at: timestamp(r.create_time, true),
-        clock: 'America/New_York', cash: size ? action[0] === 'buy' ? negate(cash) : cash : null,
+        account, contract: c, quantity, side: action[0], effect: action[1], at: timestamp(r.create_time, true, m[1] === 'US' ? 'America/New_York' : 'Asia/Hong_Kong'),
+        clock: m[1] === 'US' ? 'America/New_York' : 'Asia/Hong_Kong', cash: size ? action[0] === 'buy' ? negate(cash) : cash : null,
         basis: 'gross', terminal: false, source });
     }
   } else if (broker === 'tiger') {
@@ -317,6 +323,53 @@ export function buildOptionRelationships(broker: string, channel: string, accoun
     for (const p of candidates) if (candidates.filter(x => x.c.id === p.c.id || x.o.id === p.o.id).length === 1) make(leg([p.c]), leg([p.o]), 'possible', null);
   }
   return result.sort((a, b) => b.at.localeCompare(a.at) || a.id.localeCompare(b.id));
+}
+
+export interface OptionVerticalSpread {
+  id: string; channel: string; account_id: string; parent: string;
+  long: RollContract; short: RollContract; quantity: string;
+  at: string; through: string; gross_cash: string | null;
+  opening_fills: string[];
+}
+
+/** A vertical requires one authoritative parent, explicit opening effects and equal leg sizes. */
+export function buildOptionVerticalSpreads(channel: string, account: string, fills: RollFill[]): OptionVerticalSpread[] {
+  const unique = new Map<string, RollFill>();
+  for (const f of fills) {
+    if (f.account !== account) throw new Error('Spread account mismatch');
+    const prior = unique.get(f.id);
+    if (prior) {
+      const { source: ignored, cash: aCash, gross_cash: aGross, ...a } = prior;
+      const { source: alsoIgnored, cash: bCash, gross_cash: bGross, ...b } = f;
+      if (JSON.stringify(a) !== JSON.stringify(b) || aCash != null && bCash != null && normalize(aCash) !== normalize(bCash) ||
+        aGross != null && bGross != null && normalize(aGross) !== normalize(bGross)) throw new Error('Conflicting archived spread fills');
+      if (prior.cash == null && f.cash != null) prior.cash = f.cash;
+      if (prior.gross_cash == null && f.gross_cash != null) prior.gross_cash = f.gross_cash;
+    } else unique.set(f.id, { ...f });
+  }
+  const orders = new Map<string, RollFill[]>();
+  for (const f of unique.values()) if (f.parent && f.parent !== 'NONE_CLIENT_ORDER_ID' && !f.terminal) {
+    orders.set(f.parent, [...(orders.get(f.parent) ?? []), f]);
+  }
+  const out: OptionVerticalSpread[] = [];
+  for (const [parent, fs] of orders) {
+    if (fs.some(f => f.effect !== 'open')) continue;
+    const buys = fs.filter(f => f.side === 'buy'), sells = fs.filter(f => f.side === 'sell');
+    if (!buys.length || !sells.length || new Set(buys.map(f => rollContractKey(f.contract))).size !== 1 ||
+      new Set(sells.map(f => rollContractKey(f.contract))).size !== 1) continue;
+    const long = leg(buys), short = leg(sells);
+    if (long.quantity !== short.quantity || long.contract.underlying !== short.contract.underlying ||
+      long.contract.right !== short.contract.right || long.contract.expiry !== short.contract.expiry ||
+      long.contract.currency !== short.contract.currency || long.contract.multiplier !== short.contract.multiplier ||
+      long.contract.strike === short.contract.strike) continue;
+    const dates = fs.map(f => f.at).sort();
+    out.push({ id: identity([channel, account, parent, fs.map(f => f.id).sort()]), channel, account_id: account,
+      parent, long: long.contract, short: short.contract, quantity: long.quantity, at: dates[0], through: dates.at(-1)!,
+      opening_fills: fs.map(f => f.id),
+      gross_cash: fs.some(f => f.gross_cash == null && (f.basis !== 'gross' || f.cash == null)) ? null
+        : addDecimals(...fs.map(f => f.gross_cash ?? f.cash!)) });
+  }
+  return out;
 }
 
 /** Conservative single-path grouping. Ambiguous, resized, or intervened paths remain separate folders. */

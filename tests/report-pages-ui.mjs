@@ -435,7 +435,7 @@ try {
   assert(/Net asset value/i.test(dashText), 'NAV hero card');
   assert(/Open options positions · broker view/i.test(dashText), 'open options section');
   assert(/Assignment exposure/i.test(dashText), 'assignment exposure column');
-  assert(/STO Credit ·\s+Before Fees/i.test(dashText), 'STO credit column');
+  assert(/Trade cash flow ·\s+Before Fees/i.test(dashText), 'trade cash flow column');
   assert(/Opened/i.test(dashText), 'opening date column');
   assert(/% of max/i.test(dashText), 'premium capture column');
   assert(/Prob\. ITM/i.test(dashText), 'risk probability column');
@@ -579,7 +579,7 @@ try {
   assert.equal(optionCells[1], '-1', 'short position is signed');
   assert(optionCells[2].includes('09-Sep-2026'), 'opening date uses requested format');
   assert.equal(optionCells[4], '$150.00', 'Current Spot uses the current underlying quote');
-  assert.equal(optionCells[7], '$500.00', 'STO credit comes from matched fills');
+  assert.equal(optionCells[7], '$500.00', 'opening cash flow comes from matched fills');
   assert.equal(optionCells[8], '$500.00', 'open cost basis remains distinct');
   assert.equal(optionCells[9], '$200.00', 'broker mark per contract wins over live option price');
   assert.equal(optionCells[10], '-$200.00', 'market value uses broker mark');
@@ -667,6 +667,31 @@ try {
   assert(/Before fees/.test(await page.$eval('#kpiRow', node => node.textContent)), 'premium stays available before fees across all brokers');
   assert.equal(await page.$eval('#totalPremiumValue', node => node.textContent), '$654.00', 'total uses recorded premium before fees when fees are missing');
   assert.match(await page.$eval('#totalPremiumMeta', node => node.textContent), /Before fees/, 'gross total clearly states its basis');
+  assert(await page.$('#premiumEngine .premium-month-breakdown'), 'monthly premium has an execution breakdown');
+  payload.optionHistoryGaps = [{ channel: 'ibkr', reason: 'Earlier archived fills are missing from imported history.' }];
+  await page.goto(`http://127.0.0.1:${port}/dashboard/`);
+  await page.waitForSelector('#channelPills [data-channel="ibkr"]');
+  await page.click('#channelPills [data-channel="ibkr"]');
+  assert.match(await page.$eval('#totalPremiumMeta', node => node.textContent), /Partial history/, 'archive omissions mark totals partial even for a selected broker');
+  assert.match(await page.$eval('#premiumEngine', node => node.textContent), /Earlier archived fills/, 'monthly premium explains missing historical records');
+  delete payload.optionHistoryGaps;
+  const savedPositionsForSpread = payload.model.live.positions;
+  const spreadTemplate = savedPositionsForSpread.find(p => p.instrument === 'option' && p.channel === 'ibkr');
+  const spread = { id: 'verified-spread', grossPremium: -1080, quantity: 1, longStrike: 350, shortStrike: 370 };
+  const longKey = 'AVGO-long', shortKey = 'AVGO-short';
+  payload.model.live.positions = [...savedPositionsForSpread,
+    { ...spreadTemplate, ticker: longKey, avgCost: 3509, option: { ...spreadTemplate.option, underlying: 'AVGO', right: 'call', side: 'long', strike: 350 } },
+    { ...spreadTemplate, ticker: shortKey, avgCost: 2429, option: { ...spreadTemplate.option, underlying: 'AVGO', right: 'call', side: 'short', strike: 370 } }];
+  payload.optionTradeDetails[longKey] = { openedFrom: '2026-09-02', openedTo: '2026-09-02', openingGrossPremium: -3509, currency: 'USD', spread };
+  payload.optionTradeDetails[shortKey] = { openedFrom: '2026-09-02', openedTo: '2026-09-02', stoGrossPremium: 2429, currency: 'USD', spread };
+  await page.goto(`http://127.0.0.1:${port}/dashboard/`);
+  await page.waitForSelector('#channelPills [data-channel="ibkr"]');
+  await page.click('#channelPills [data-channel="ibkr"]');
+  assert.equal((await page.$$('#openOptions .option-spread-summary')).length, 1, 'verified spread has one combined summary');
+  assert.match(await page.$eval('#openOptions .option-spread-summary', node => node.textContent), /-\$1,080\.00.*Combined opening debit/s, 'spread shows its net debit before fees');
+  await (await page.$('#openOptions')).screenshot({ path: '/tmp/invage-verified-spread.png' });
+  payload.model.live.positions = savedPositionsForSpread;
+  delete payload.optionTradeDetails[longKey]; delete payload.optionTradeDetails[shortKey];
   payload.optionTradeDetails['AAPL  260918P00140000'] = savedTrade;
   payload.premiumJournal.daily = savedDaily;
 

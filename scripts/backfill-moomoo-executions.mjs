@@ -47,15 +47,19 @@ try {
   console.log(JSON.stringify({ user, apply: args.includes('--apply'), added,
     open_options: options.length, matched_options: verified.length,
     unknown_options: options.filter(([key]) => !details[key]).map(([key]) => key) }));
-  if (args.includes('--apply') && added > 0) {
+  if (args.includes('--apply')) {
     const stamp = new Date().toISOString().replaceAll(':', '-');
     const dir = join(resolveDataRoot(), 'drive', snapshot.state.user.id, 'moomoo-executions');
     mkdirSync(dir, { recursive: true, mode: 0o700 });
     writeFileSync(join(dir, `${stamp}-before.json`), JSON.stringify(snapshot.state.option_executions ?? []), { mode: 0o600, flag: 'wx' });
-    for (const { id, raw } of evidence) writeFileSync(join(dir, `${stamp}-${id}.json`), JSON.stringify(raw), { mode: 0o600, flag: 'wx' });
+    for (const { id, connection, raw } of evidence) {
+      const archive = join(resolveDataRoot(), 'drive', snapshot.state.user.id, 'broker-sync', connection.channel);
+      mkdirSync(archive, { recursive: true, mode: 0o700 });
+      writeFileSync(join(archive, `${stamp}-${id}-execution-backfill.json`), JSON.stringify(raw), { mode: 0o600, flag: 'wx' });
+    }
     snapshot.state.option_executions = merged;
     snapshot.state.log.push({ ts: new Date().toISOString().slice(0, 10), action: 'moomoo_execution_backfill',
-      reason: 'Operator requested historical opening fills to populate option dashboard dates and gross credits; fees remain unreported.',
+      reason: 'Operator requested complete historical option cash flow, including closed contracts and protective long legs; fees remain unreported.',
       execution_count: added });
     await saveInvestor(snapshot);
     console.log('Execution history saved; cash and holdings retained.');

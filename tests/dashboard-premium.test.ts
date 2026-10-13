@@ -34,6 +34,40 @@ it('sums before-fees opening credits and closing costs across months without cou
   expect(result.dailyDate).toBe('2026-09-16');
   expect(calculate(fills, {}, '2026-08-05').total).toBe(400);
 });
+
+it('withholds totals and monthly cash flow for conflicting broker evidence', () => {
+  const journal = buildExecutionJournal(fills);
+  const premium = runInNewContext(`${calculator}\nrecordedPremiumForView(view, date)`, {
+    payload: { premiumJournal: { ...journal, channels: ['ibkr'] }, optionAnalytics: { executions: fills },
+      optionHistoryGaps: [{ channel: 'ibkr', blocksTotals: true, reason: 'Conflicting broker evidence' }] },
+    view: { channelView: 'ibkr', reportingCurrency: 'USD' }, date: '2026-09-16',
+    MERGED_CHANNEL_VIEW: 'merged', reportingCcyCode: (v: any) => v.reportingCurrency,
+    optionDateLabel: (d: string) => d,
+  });
+  expect(premium.total).toBeNull(); expect(premium.mtd).toBeNull(); expect(premium.daily).toBeNull();
+  expect(premium.totalReason).toContain('reconciliation');
+  const helper = source.slice(source.indexOf('function selectedTradeChannels('), source.indexOf('function recordedPremiumForView('));
+  const monthly = source.slice(source.indexOf('function recordedMonthlyData('), source.indexOf('function monthLabel('));
+  const result = runInNewContext(`${helper}\n${monthly}\nrecordedMonthlyData(view, date)`, {
+    payload: { optionAnalytics: { executions: fills, profits: [{ channel: 'ibkr', date: '2026-08-10', currency: 'USD', net: 348 }] },
+      optionHistoryGaps: [{ channel: 'ibkr', blocksTotals: true }] },
+    view: { channelView: 'ibkr', reportingCurrency: 'USD' }, date: '2026-09-16',
+    MERGED_CHANNEL_VIEW: 'merged', reportingCcyCode: (v: any) => v.reportingCurrency,
+  });
+  expect(result.byMonth.get('2026-08')).toBeNull();
+  expect(result.realized.get('2026-08')).toBeNull();
+  expect(result.monthly.get('2026-08').excluded).toBe(1);
+});
+
+it('includes long opening debits and closing credits in the same cash-flow total as the monthly chart', () => {
+  const records = [
+    { ...execution, execution_id: 'short', gross_premium: '2429' },
+    { ...execution, execution_id: 'long', side: 'buy', effect: 'open', gross_premium: '-3509' },
+    { ...execution, execution_id: 'long-close', side: 'sell', effect: 'close', gross_premium: '400' },
+  ] as OptionExecution[];
+  expect(calculate(records).total).toBe(-680);
+  expect(buildExecutionJournal(records).cumulative[0].gross_premium).toBe('-680');
+});
 it('includes closed-only brokers in the merged total and respects a selected broker', () => {
   const records = [...fills, { ...execution, channel: 'tiger', execution_id: 'closed', gross_premium: '100' }];
   expect(calculate(records, { channelView: 'merged', channels: ['ibkr'] }).total).toBe(650);

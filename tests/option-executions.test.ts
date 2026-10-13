@@ -43,7 +43,7 @@ describe('option execution journal', () => {
     expect(() => parseFlexOptionExecutions(statement(trade('tradeID="2"')))).toThrow();
     expect(parseFlexOptionExecutions(statement(`<!-- ${trade()} -->`))).toEqual([]);
   });
-  it('separates currency totals and excludes long-option actions from short-option premium', () => {
+  it('separates currency totals and includes protective long-option purchases', () => {
     const rows = parseFlexOptionExecutions(statement(trade()))!;
     const journal = buildExecutionJournal([...rows,
       { ...rows[0], execution_id: '2', currency: 'HKD' },
@@ -51,7 +51,7 @@ describe('option execution journal', () => {
     ]);
     expect(journal.executions).toHaveLength(3);
     expect(journal.daily).toHaveLength(2);
-    expect(journal.cumulative.map(row => row.net_premium)).toEqual(['5138.76543211', '5138.76543211']);
+    expect(journal.cumulative.map(row => row.net_premium)).toEqual(['5037.53086422', '5138.76543211']);
   });
   it.each([
     ['commission', trade().replace('ibCommission="-1.23456789"', '')],

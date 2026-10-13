@@ -98,7 +98,6 @@ export function buildExecutionJournal(records: unknown) {
   const executions = mergeOptionExecutions([], records).map(row => ({ ...row, net_premium: row.commission === null ? null : addDecimals(row.gross_premium, row.commission) }));
   const groups = new Map<string, { channel: string; account_id: string; date: string; currency: string; gross_premium: string; net_premium: string | null }>();
   for (const row of executions) {
-    if (!((row.side === 'sell' && row.effect === 'open') || (row.side === 'buy' && row.effect === 'close'))) continue;
     const date = row.executed_at.slice(0, 10);
     const key = JSON.stringify([row.channel, row.account_id, date, row.currency]);
     const prior = groups.get(key);

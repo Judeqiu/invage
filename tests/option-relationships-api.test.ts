@@ -9,6 +9,7 @@ import { addBrokerAccount, addBrokerSource, readBrokerAccountModel } from '../sr
 import { optionRelationshipsForState } from '../src/webapp/option-relationships-data.js';
 import { createDashboardApiRouter } from '../src/webapp/dashboard-api.js';
 import { loadInvestor } from '../src/state/investor-store.js';
+import { parseRelationshipArchive } from '../src/brokers/option-relationships.js';
 
 vi.mock('../src/state/investor-store.js', () => ({ loadInvestor: vi.fn(), saveInvestor: vi.fn() }));
 const owner = '00000000-0000-4000-8000-000000000071';
@@ -61,6 +62,35 @@ it('shows empty and malformed archive coverage without inventing zero trading', 
   archive(owner); const channel = Object.values(readBrokerAccountModel(state).connections)[0].channel;
   writeFileSync(join(root, 'drive', owner, 'broker-sync', channel, 'bad.xml'), '<not-valid');
   const result = optionRelationshipsForState(state); expect(result.groups).toHaveLength(1); expect(result.gaps.some(g => g.source?.endsWith('bad.xml'))).toBe(true);
+});
+
+it('flags archived fills missing from normalized history without changing the user state', () => {
+  archive(owner);
+  const before = JSON.stringify(state);
+  const result = optionRelationshipsForState(state);
+  expect(result.historyGaps[0].reason).toContain('2 archived option fills');
+  expect(JSON.stringify(state)).toBe(before);
+  expect(optionRelationshipsForState(state, { asOf: '2026-09-30' }).historyGaps).toEqual([]);
+});
+
+it('compares exact gross cash despite different decimal scales and withholds conflicting roll evidence', () => {
+  archive(owner);
+  const channel = Object.values(readBrokerAccountModel(state).connections)[0].channel;
+  const path = join(root, 'drive', owner, 'broker-sync', channel, '20261001.xml');
+  const xml = readFileSync(path, 'utf8').replace('netCash="-10"', 'netCash="-10" proceeds="-10.00"')
+    .replace('netCash="30"', 'netCash="30" proceeds="30.00"');
+  writeFileSync(path, xml);
+  const fills = parseRelationshipArchive('ibkr', Buffer.from(xml), 'A', { id: 'archive', version: '1' });
+  state.option_executions = fills.map(f => ({ channel, account_id: 'A', execution_id: f.id, contract_id: f.id,
+    executed_at: f.at, underlying: f.contract.underlying, right: f.contract.right, expiry: f.contract.expiry,
+    strike: f.contract.strike, multiplier: f.contract.multiplier, contracts: f.quantity,
+    side: f.side, effect: f.effect as 'open' | 'close', currency: f.contract.currency,
+    gross_premium: f.gross_cash!.replace(/\.00$/, ''), commission: null }));
+  expect(optionRelationshipsForState(state).historyGaps).toEqual([]);
+  state.option_executions[0].gross_premium = '-11';
+  const conflicted = optionRelationshipsForState(state);
+  expect(conflicted.historyGaps.some(g => g.reason.includes('1 imported option fills disagree'))).toBe(true);
+  expect(conflicted.groups).toEqual([]);
 });
 it('withholds earlier relationships when a newer archive contains corrections needing reconciliation', () => {
   archive(owner); const channel = Object.values(readBrokerAccountModel(state).connections)[0].channel;
