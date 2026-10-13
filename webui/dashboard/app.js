@@ -2823,7 +2823,7 @@ async function load() {
     }
     payload = body;
     if (!optionDefaultApplied) {
-      optionTab = body.dashboardConfig?.optionView || 'open';
+      optionTab = 'open';
       optionDefaultApplied = true;
     }
     if (body.empty || !body.model) {

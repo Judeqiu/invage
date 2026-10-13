@@ -109,7 +109,7 @@ it('reads saved management configuration on each use and defaults to the existin
 });
 
 const executable = process.env.CHROME_BINARY || '/usr/bin/chromium';
-it.skipIf(!existsSync(executable))('renders the configured default, filters, keyboard evidence, paging, partial failures and mobile scroll', async () => {
+it.skipIf(!existsSync(executable))('defaults to Open and renders timeline filters, keyboard evidence, paging, partial failures and mobile scroll', async () => {
   const root = resolve('webui'); let failRolls = false;
   const queries: string[] = [];
   const server = createServer((req, res) => {
@@ -133,6 +133,10 @@ it.skipIf(!existsSync(executable))('renders the configured default, filters, key
     const page = await browser.newPage(); const errors: string[] = []; page.on('pageerror', e => errors.push(e.message));
     await page.setViewport({ width: 1180, height: 950 });
     await page.goto(`http://127.0.0.1:${(server.address() as { port: number }).port}/dashboard/index.html`);
+    await page.waitForFunction(() => document.querySelector('.status-line')!.textContent!.includes('Last refresh'));
+    expect(await page.$eval('#optionOpenTab', e => e.getAttribute('aria-pressed'))).toBe('true');
+    expect(await page.$eval('#optionTimelinePanel', e => e.classList.contains('hidden'))).toBe(true);
+    await page.click('#optionTimelineTab');
     await page.waitForSelector('.option-timeline');
     await page.waitForFunction(() => document.getElementById('timelineStatus')!.textContent!.includes('4 contract tracks'));
     expect(await page.$eval('#optionTimelinePanel', e => e.classList.contains('hidden'))).toBe(false);
