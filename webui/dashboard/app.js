@@ -273,7 +273,7 @@ function optionFinishItmProbability(position, spot, days) {
 function metricCardHtml(label, value, sub, help, valueClass) {
   const vcls = ['metric-value', valueClass || ''].filter(Boolean).join(' ');
   const helpBtn = help
-    ? `<button type="button" class="help-dot" title="${escapeHtml(help)}">?</button>`
+    ? `<button type="button" class="help-dot" aria-label="Explanation" data-help="${escapeHtml(help)}">?</button>`
     : '';
   return `<div class="metric-card">
     <div class="metric-head">
@@ -1598,21 +1598,21 @@ function renderOverview(view) {
     el.kpiRow.innerHTML = [
       metricCardHtml('Net premium · Daily', premium.daily == null ? '—' : fmtPrettyMoney(premium.daily, repCcy, 0),
         premium.dailyDate ? `${optionDateLabel(premium.dailyDate)} · Before fees${premium.partial ? ' · Partial history' : ''}` : premium.reason,
-        'Option cash flow on the most recent trading day with recorded trades: sell-to-open proceeds minus buy-to-close costs, before brokerage fees. Includes recorded trades only; missing history is not zero.',
+        'Money received from opening short options, minus money paid to close them, on the latest trading day with recorded trades. Brokerage fees are shown separately. This may differ from today, and missing trades can make the amount incomplete.',
         premium.daily > 0 ? 'up' : premium.daily < 0 ? 'down' : ''),
       metricCardHtml('Net premium · MTD', premium.mtd == null ? '—' : fmtPrettyMoney(premium.mtd, repCcy, 0),
         `Before fees${premium.partial ? ' · Partial history' : ''}`,
-        'Sell-to-open proceeds minus buy-to-close costs from the first of the selected month through the selected date, before brokerage fees. Limited to recorded trades.',
+        'MTD means month to date. This is money received from opening short options, minus money paid to close them, from the start of the displayed month through the dashboard date. Brokerage fees are shown separately. Includes recorded trades only.',
         premium.mtd > 0 ? 'up' : premium.mtd < 0 ? 'down' : ''),
       metricCardHtml('Brokerage fees · MTD', premium.fees == null ? '—' : fmtPrettyMoney(premium.fees, repCcy, 2),
         premium.missingFees ? `Known fees only · ${premium.missingFees} fills with fees unreported` : 'Recorded option fill fees',
-        'Reported brokerage fees for all recorded option fills in the selected month. Positive is a cost; negative is a rebate. Unreported fees are unknown, never zero.'),
+        'MTD means month to date. This totals the fees reported for recorded option trades in the displayed month. A positive amount is a cost; a negative amount is a refund or rebate. Fees that a broker has not reported are excluded, so the final cost may be higher.'),
       metricCardHtml('Cash available', view.cashAmount != null ? fmtPrettyMoney(view.cashAmount, cashCcy, 0) : '—',
         view.cashAmount != null ? 'Recorded cash · not deposits' : 'Cash not recorded',
-        'Recorded uninvested cash available in your broker snapshot, excluding fixed deposits. Settlement status depends on the broker field; this is not margin buying power.'),
+        'Cash shown in your latest broker snapshot, excluding fixed deposits. It does not include extra borrowing capacity. Whether you can use or withdraw it immediately depends on the broker and whether trades have settled.'),
       metricCardHtml('Max assignment obligation', assignmentObligation == null ? '—' : fmtPrettyMoney(assignmentObligation, cashCcy, 0),
         assignmentObligation == null ? (stalePuts ? 'Put positions need a fresh broker sync' : 'Put currency or FX unavailable') : 'Gross short-put obligation',
-        'Total cash needed to take delivery if every recorded short put is assigned: strike × contract multiplier × contracts. No spread or margin offsets are assumed. If this exceeds available cash, all assignments cannot be funded from that cash alone.'),
+        'Cash needed to buy the shares if all recorded short puts are assigned. For example, one put with a $100 strike covering 100 shares needs $10,000. The total does not subtract cash, premium received, or protection from other options. Compare it with your cash available.'),
     ].join('');
   }
 
@@ -1776,26 +1776,26 @@ function renderExpiryRisk(view, asOf) {
       'High-risk ITM exposure',
       radar.length && exposure != null ? fmtPrettyMoney(exposure, reportingCcyCode(view), 0) : '—',
       '',
-      'Capital involved if every contract in this high-risk list finished in the money and was assigned or called away. This is the theoretical ceiling for the filtered radar, not the expected outcome.',
+      'Total value of shares you could have to buy for short puts, or deliver for short calls, if every contract in this risk list is assigned. The list includes contracts with an estimated chance above 30% of finishing in the money (beyond the strike price). This is a possible exposure, not a forecast.',
     ),
     metricCardHtml(
       'Probability-weighted exposure',
       radar.length && weighted != null ? fmtPrettyMoney(weighted, reportingCcyCode(view), 0) : '—',
       '',
-      'Assignment capital weighted by each contract’s modeled probability of finishing in the money.',
+      'Each contract’s assignment value multiplied by its estimated chance of finishing in the money, then added together. For example, $10,000 at a 40% chance contributes $4,000. This is a model estimate, not the cash you will actually need.',
       radar.length ? 'down' : '',
     ),
     metricCardHtml(
       'Cash available',
       cash != null ? fmtPrettyMoney(cash, view.cashCurrency || reportingCcyCode(view), 0) : '—',
       '',
-      'Free cash in the account at the time of the broker pull. Margin capacity is separate from free cash.',
+      'Uninvested cash reported when the broker data was last fetched. It excludes extra borrowing capacity and may differ from your balance now.',
     ),
     metricCardHtml(
       'High-risk coverage',
       cover != null ? `${cover.toFixed(0)}%` : '—',
       '',
-      'Share of the high-risk bill that recorded free cash could cover. This is not a margin-requirement ratio.',
+      'How much of the assignment value in this risk list your recorded cash could cover. For example, $5,000 cash against $10,000 exposure gives 50% coverage. It does not tell you the broker’s margin requirement.',
       cover != null && cover < 100 ? 'down' : '',
     ),
   ].join('');
@@ -1914,7 +1914,7 @@ function monthlyLineCard(title, values, ccy, help) {
   entries.forEach(([month, n], i) => { if (n == null) { if (current.length) segments.push(current); current = []; }
     else current.push(`${x(i)},${y(n)}`); });
   if (current.length) segments.push(current);
-  return `<div class="metric-card"><div class="metric-head"><h3>${escapeHtml(title)}</h3><button class="help-dot" type="button" title="${escapeHtml(help)}">?</button></div>
+  return `<div class="metric-card"><div class="metric-head"><h3>${escapeHtml(title)}</h3><button class="help-dot" type="button" data-help="${escapeHtml(help)}">?</button></div>
     ${available.length ? `<svg class="monthly-line" viewBox="0 0 600 190" role="img" aria-label="${escapeHtml(title)}"><line x1="30" y1="95" x2="570" y2="95" stroke="currentColor" opacity=".2" />${segments.map(points => `<polyline points="${points.join(' ')}" fill="none" stroke="var(--brand)" stroke-width="2" />`).join('')}${entries.map(([month, n], i) => n == null ? '' : `<circle cx="${x(i)}" cy="${y(n)}" r="4" fill="var(--brand)"><title>${escapeHtml(month)}: ${escapeHtml(fmtPrettyMoney(n, ccy))}</title></circle>`).join('')}</svg>` : '<p class="empty">No verified realized P&amp;L is available yet.</p>'}
     <ul class="monthly-values">${entries.map(([month, n]) => `<li><span>${escapeHtml(month)}</span><strong>${n == null ? 'Unknown' : fmtPrettyMoney(n, ccy)}</strong></li>`).join('')}</ul></div>`;
 }
@@ -1928,10 +1928,10 @@ function renderPremiumEngine(view) {
   el.premiumHead.innerHTML = sectionHead('Section 02', 'Premium and recorded P&L',
     'Track premium collected and profit or loss (P&L) by calendar month. Historical trades are included where available; otherwise the charts build over time as Velovest records new trades.');
   const rows = entries => [...entries].sort(([a], [b]) => a.localeCompare(b)).map(([label, value]) => ({ label, value: value ?? 0, display: value == null ? 'Unknown' : fmtPrettyMoney(value, ccy) }));
-  const premiumHelp = 'Cumulative net option premiums across all recorded trades, grouped by underlying stock: option sale proceeds minus option purchase costs, including close and hedge trades where recorded. Before brokerage fees. Historical coverage may be incomplete.';
-  const plHelp = 'Recorded realized option profit and loss by closing or explicit lifecycle-event month, not expiry month. FIFO matching uses opening and closing fills. Physical delivery requires broker-reported option P&L. Missing history is not zero.';
+  const premiumHelp = 'Money received from selling options, minus money paid to buy options, grouped by the stock each option is based on. Includes recorded opening, closing and protective option trades, before brokerage fees. This is cash flow, not profit; missing history can make it incomplete.';
+  const plHelp = 'Profit or loss from completed option trades, shown in the month they closed or ended. Opening trades are matched to closing trades in order, oldest first. Reported fees are included when available. Assigned or exercised options use profit or loss reported by the broker; incomplete records are shown as unknown.';
   el.premiumEngine.innerHTML = cssBarCard('Net Option Premium by Month', rows(data.byMonth), 'Before fees · recorded trades') +
-    `<div><p class="chart-help"><button class="help-dot" type="button" title="${escapeHtml(premiumHelp)}">?</button> Before fees · includes recorded option purchases and sales</p>${cssBarCard('Net Option Premium by Underlying', rows(data.byUnderlying))}</div>` +
+    `<div><p class="chart-help"><button class="help-dot" type="button" data-help="${escapeHtml(premiumHelp)}">?</button> Before fees · includes recorded option purchases and sales</p>${cssBarCard('Net Option Premium by Underlying', rows(data.byUnderlying))}</div>` +
     monthlyLineCard('Recorded P&L by Month', data.realized, ccy, plHelp) +
     `<div class="metric-card"><h3>Trade coverage</h3><p>${data.fills.length} recorded option fills through ${optionDateLabel(date)}.</p><p>${data.net ? 'Realized P&L includes reported fill fees.' : 'Realized P&L is shown before fees where fees are missing; entries without a compatible basis remain unknown.'}</p>${data.gaps.length ? `<details><summary>${data.gaps.length} records need more evidence for realized P&L</summary><ul>${data.gaps.map(g => `<li>${escapeHtml(g.channel)} · ${optionDateLabel(g.date)}: ${escapeHtml(g.reason)}</li>`).join('')}</ul></details>` : ''}</div>`;
 }
@@ -2047,10 +2047,10 @@ function renderOpenOptions(view) {
     }).join('');
   }
   const markHelp = view.isLive
-    ? 'Broker snapshot mark per contract when available; otherwise the displayed position mark per contract. A short option’s market value is negative.'
-    : 'Captured position mark per contract. A short option’s market value is negative.';
+    ? 'The estimated price of one whole option contract in the broker snapshot. It includes the number of shares covered by that contract. For a short option, this estimates the cost to buy it back; its position value is shown as negative.'
+    : 'The estimated price of one whole option contract saved in this snapshot. For a short option, this estimates the cost to buy it back; its position value is shown as negative.';
   el.openOptions.innerHTML = `${freshnessWarning}${filters}<div class="metric-card table-card option-ledger-card"><div class="table-scroll"><table class="report option-ledger">
-    <thead><tr>${columns.map((h) => `<th>${escapeHtml(h)}${h === 'Mark / contract' ? `<button type="button" class="help-dot" title="${escapeHtml(markHelp)}" aria-label="What Mark means">?</button>` : ''}</th>`).join('')}</tr></thead>
+    <thead><tr>${columns.map((h) => `<th>${escapeHtml(h)}${h === 'Mark / contract' ? `<button type="button" class="help-dot" data-help="${escapeHtml(markHelp)}" aria-label="What Mark means">?</button>` : ''}</th>`).join('')}</tr></thead>
     <tbody>${body || `<tr><td colspan="13" class="empty">No open option positions match these filters.</td></tr>`}</tbody>
   </table></div></div>`;
 }

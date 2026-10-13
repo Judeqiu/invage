@@ -1,6 +1,69 @@
 const DASHBOARD_API = '/api/domain/invage/dashboard';
 const WATCHLIST_API = '/api/domain/invage/watchlist';
 
+// Delegation also covers help buttons inserted when dashboard cards redraw.
+(() => {
+  const bubble = document.createElement('div');
+  bubble.id = 'reportHelpTooltip';
+  bubble.className = 'report-help-tooltip';
+  bubble.setAttribute('role', 'tooltip');
+  bubble.hidden = true;
+  document.body.appendChild(bubble);
+  let trigger = null;
+  let closeTimer;
+  function hide() {
+    clearTimeout(closeTimer);
+    trigger?.removeAttribute('aria-describedby');
+    trigger = null;
+    bubble.hidden = true;
+  }
+  function show(button) {
+    if (!button?.dataset.help) return;
+    clearTimeout(closeTimer);
+    trigger?.removeAttribute('aria-describedby');
+    trigger = button;
+    if (!button.hasAttribute('aria-label')) button.setAttribute('aria-label', 'Explanation');
+    button.setAttribute('aria-describedby', bubble.id);
+    bubble.textContent = button.dataset.help;
+    bubble.hidden = false;
+    const anchor = button.getBoundingClientRect();
+    const box = bubble.getBoundingClientRect();
+    const left = Math.max(8, Math.min(anchor.left, window.innerWidth - box.width - 8));
+    const below = anchor.bottom + 8;
+    const top = below + box.height <= window.innerHeight - 8
+      ? below : Math.max(8, anchor.top - box.height - 8);
+    bubble.style.left = `${left}px`;
+    bubble.style.top = `${top}px`;
+  }
+  const buttonFor = event => event.target instanceof Element ? event.target.closest('.help-dot[data-help]') : null;
+  document.addEventListener('mouseover', event => {
+    if (bubble.contains(event.target)) clearTimeout(closeTimer);
+    else if (buttonFor(event)) show(buttonFor(event));
+  });
+  document.addEventListener('mouseout', event => {
+    if (!buttonFor(event) && !bubble.contains(event.target)) return;
+    if (trigger?.contains(event.relatedTarget) || bubble.contains(event.relatedTarget)) return;
+    closeTimer = setTimeout(hide, 150);
+  });
+  document.addEventListener('focusin', event => show(buttonFor(event)));
+  document.addEventListener('focusout', event => { if (buttonFor(event)) hide(); });
+  document.addEventListener('click', event => {
+    const button = buttonFor(event);
+    if (button) show(button);
+    else if (!bubble.contains(event.target)) hide();
+  });
+  document.addEventListener('keydown', event => { if (event.key === 'Escape') hide(); });
+  document.addEventListener('scroll', event => {
+    if (!trigger || bubble.contains(event.target)) return;
+    const box = trigger.getBoundingClientRect();
+    if (box.bottom < 0 || box.top > innerHeight) hide();
+    else show(trigger);
+  }, true);
+  window.addEventListener('resize', hide);
+  new MutationObserver(() => { if (trigger && !trigger.isConnected) hide(); })
+    .observe(document.body, { childList: true, subtree: true });
+})();
+
 function esc(s) {
   return String(s)
     .replace(/&/g, '&amp;')

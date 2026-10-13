@@ -358,6 +358,35 @@ try {
 
   await page.goto(`http://127.0.0.1:${port}/dashboard/`);
   await page.waitForFunction(() => document.getElementById('navValue')?.textContent?.includes('$'));
+  // Help must work on static and dynamically rendered cards, without clipping.
+  const helpButtons = await page.$$('.help-dot[data-help]');
+  assert(helpButtons.length >= 10, 'dashboard help buttons are available');
+  for (const button of helpButtons) {
+    await button.hover();
+    await page.waitForSelector('#reportHelpTooltip:not([hidden])');
+    assert.equal(await page.$eval('#reportHelpTooltip', node => node.textContent),
+      await button.evaluate(node => node.dataset.help));
+    assert.equal(await button.evaluate(node => node.getAttribute('aria-describedby')), 'reportHelpTooltip');
+    const fits = await page.$eval('#reportHelpTooltip', node => {
+      const b = node.getBoundingClientRect();
+      return b.left >= 0 && b.top >= 0 && b.right <= innerWidth && b.bottom <= innerHeight;
+    });
+    assert(fits, 'help bubble stays inside the viewport');
+    await page.keyboard.press('Escape');
+    assert(await page.$eval('#reportHelpTooltip', node => node.hidden));
+  }
+  await page.$eval('.help-dot[data-help]', node => node.focus());
+  await page.waitForSelector('#reportHelpTooltip:not([hidden])');
+  await page.screenshot({ path: '/tmp/velovest-help-tooltip.png' });
+  await page.keyboard.press('Escape');
+  await page.setViewport({ width: 375, height: 700 });
+  await page.click('.help-dot[data-help]');
+  await page.waitForSelector('#reportHelpTooltip:not([hidden])');
+  assert(await page.$eval('#reportHelpTooltip', node => node.getBoundingClientRect().right <= innerWidth));
+  await page.click('#heroDate');
+  assert(await page.$eval('#reportHelpTooltip', node => node.hidden));
+  await page.setViewport({ width: 1280, height: 900 });
+  await page.evaluate(() => window.scrollTo(0, 0));
   const dashText = await page.evaluate(() => document.body.innerText);
   assert(/Portfolio snapshot/i.test(dashText), 'dashboard h1');
   const heroLead = await page.$eval('#heroLead', node => node.textContent);
