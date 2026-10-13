@@ -54,25 +54,23 @@ function render(dash) {
     el.risks.innerHTML = emptyCard('No actions — the books have no positions to reconcile.');
     el.s2.innerHTML = '';
     el.conc.innerHTML = '';
-    el.s3.innerHTML = sectionHead('Section 03', 'Recommended actions');
-    el.actions.innerHTML = emptyCard('No actions — the books have no positions to reconcile.');
+    el.s3.innerHTML = '';
+    el.actions.innerHTML = '';
     el.s4.innerHTML = sectionHead(
       'Section 04',
       'Book statistics',
-      'Live inventory counts from this slice, not win rates or closed-trade edge.',
+      'Shows current portfolio holdings and position counts based on available records. These figures reflect existing positions, not historical win rates nor realized trading performance.',
     );
     el.edge.innerHTML = emptyCard('No lots to count.');
     el.s5.innerHTML = '';
-    el.emotion.innerHTML = consultant
-      ? emptyCard('No emotion tags are stored on these books.')
-      : '';
+    el.emotion.innerHTML = '';
     return;
   }
   const ccy = ccyOf(live);
   const when = dash.generatedAt ? dash.generatedAt.slice(0, 10) : '';
   el.eyebrow.textContent = `Books briefing · ${when}`;
-  const chNote = channel === 'all' ? 'all platforms' : channelLabel(channel);
-  el.summary.textContent = `${live.positionCount} lots, NAV ${money(live.totalValue, ccy)} · ${chNote}. Insights below are computed from that slice only.`;
+  const chNote = channel === 'all' ? 'All Platforms' : channelLabel(channel);
+  el.summary.textContent = `${live.positionCount} lots · NAV: ${money(live.totalValue, ccy)} · ${chNote}. All insights below are calculated using this portfolio data only.`;
   el.metrics.innerHTML =
     metricCard('NAV', money(live.totalValue, ccy), live.fxApplied ? `in ${ccy}` : null) +
     metricCard(
@@ -138,7 +136,7 @@ function render(dash) {
     el.s2.innerHTML = '';
     el.conc.innerHTML = '';
   } else {
-    el.s2.innerHTML = sectionHead('Section 02', 'Book patterns', 'Countable facts from this slice. Not psychology.');
+    el.s2.innerHTML = sectionHead('Section 02', 'Book patterns', 'Objective insights based on recorded portfolio data, not assumptions about investor behaviour or psychology.');
     el.conc.innerHTML = patterns
       .map(
         (t) => `<div class="metric-card"><div class="label-eyebrow">Pattern</div><div class="metric-value" style="font-size:1.15rem">${esc(t)}</div></div>`,
@@ -146,26 +144,8 @@ function render(dash) {
       .join('');
   }
 
-  el.s3.innerHTML = sectionHead('Section 03', 'Recommended actions');
-  const actions = [];
-  if (live.cashAmount == null) {
-    actions.push('Record free cash (channel + currency) so NAV is complete.');
-  }
-  if (issues.some((i) => i.code === 'missing_price')) {
-    actions.push('Missing live marks are priced at cost on the dashboard — check those tickers.');
-  }
-  for (const p of shorts) {
-    const r = shortMarkOverPremium(p);
-    if (r != null && r <= 0.1) {
-      actions.push(`${p.label} mark is ${(r * 100).toFixed(0)}% of premium received.`);
-    }
-  }
-  el.actions.innerHTML =
-    actions.length === 0
-      ? emptyCard('No books actions flagged from this slice.')
-      : `<div class="metric-card"><ol style="margin-left:1.1rem;display:grid;gap:0.75rem">${actions
-          .map((a, i) => `<li><span class="label-eyebrow" style="color:var(--brand)">${String(i + 1).padStart(2, '0')}</span> ${esc(a)}</li>`)
-          .join('')}</ol></div>`;
+  el.s3.innerHTML = '';
+  el.actions.innerHTML = '';
 
   const opts = live.positions.filter((p) => p.instrument === 'option' && p.option);
   const puts = opts.filter((p) => p.option.right === 'put').length;
@@ -178,7 +158,7 @@ function render(dash) {
   el.s4.innerHTML = sectionHead(
     'Section 04',
     'Book statistics',
-    'Live inventory counts from this slice, not win rates or closed-trade edge.',
+    'Shows current portfolio holdings and position counts based on available records. These figures reflect existing positions, not historical win rates nor realized trading performance.',
   );
   el.edge.innerHTML =
     metricCard('Equity lots', String(live.equityCount)) +
@@ -190,30 +170,8 @@ function render(dash) {
       opts.length ? `${leaps} expiry > 365d` : 'No option lots',
     );
 
-  if (live.optionCount === 0) {
-    el.s5.innerHTML = '';
-    el.emotion.innerHTML = consultant
-      ? emptyCard('No emotion tags are stored on these books.')
-      : '';
-  } else {
-    const byU = {};
-    for (const p of opts) {
-      const u = p.option.underlying || p.ticker;
-      if (!byU[u]) byU[u] = { prem: 0, pl: 0 };
-      if (p.option.side === 'short') byU[u].prem += Number(p.premiumAbsolute || 0);
-      byU[u].pl += Number(p.pl || 0);
-    }
-    const und = Object.entries(byU).sort((a, b) => b[1].prem - a[1].prem);
-    el.s5.innerHTML = sectionHead('Section 05', 'Premium and P&L by underlying');
-    el.emotion.innerHTML = `<div class="metric-card table-card"><div class="table-scroll"><table class="report">
-      <thead><tr><th>Underlying</th><th>Premium (short, open)</th><th>Open P&L</th></tr></thead>
-      <tbody>${und
-        .map(
-          ([u, v]) => `<tr><td>${esc(u)}</td><td class="num">${money(v.prem, ccy)}</td><td class="num ${toneClass(v.pl)}">${signedMoney(v.pl, ccy)}</td></tr>`,
-        )
-        .join('')}</tbody></table></div></div>
-      ${consultant ? emptyCard('No emotion tags are stored on these books.') : ''}`;
-  }
+  el.s5.innerHTML = '';
+  el.emotion.innerHTML = '';
 }
 
 async function load() {

@@ -9,8 +9,15 @@ const el = {
 let dash = null;
 let channel = 'all';
 let right = 'all';
+let ticker = 'all';
+let strategy = 'all';
 let journal = null;
 let view = null;
+
+function optionStrategy(p) {
+  if (p.option.side !== 'short') return p.option.right === 'put' ? 'Long put' : 'Long call';
+  return p.option.right === 'put' ? 'Short put' : 'Short call';
+}
 
 function optionRows(live) {
   return live.positions.filter((p) => p.instrument === 'option' && p.option);
@@ -19,6 +26,9 @@ function optionRows(live) {
 function setViewChrome() {
   const journalBtn = document.getElementById('journal-view');
   const posBtn = document.getElementById('positions-view');
+  document.getElementById('tradeDescription').textContent = view === 'positions'
+    ? 'Every open option contract across your recorded broker positions. Expand a contract to review its recorded premium, mark, and assignment obligation.'
+    : 'Individual option premiums and exact signed commissions. Times use the broker report’s clock. Totals cover imported executions only.';
   journalBtn.classList.toggle('on', view === 'journal');
   posBtn.classList.toggle('on', view === 'positions');
   const consultant = productProfileOf(dash) === 'consultant';
@@ -63,12 +73,17 @@ function render() {
   const all = optionRows(live);
   const channels = [...new Set(all.map((p) => p.channel))].sort();
   let rows = filterChannel(all, channel);
+  if (ticker !== 'all') rows = rows.filter(p => positionSymbol(p.option.underlying || p.ticker) === ticker);
+  if (strategy !== 'all') rows = rows.filter(p => optionStrategy(p) === strategy);
   if (right !== 'all') {
     rows = rows.filter((p) => p.option.right === right);
   }
   el.eyebrow.textContent = `Open lots · ${rows.length} option lots`;
   el.filters.innerHTML = `
-    <span class="label-eyebrow">Channel</span>
+    <span class="label-eyebrow">Strategy</span>
+    ${['all', ...new Set(all.map(optionStrategy))].map(v => `<button type="button" class="chip-btn${strategy === v ? ' on' : ''}" data-strategy="${esc(v)}">${esc(v === 'all' ? 'All strategies' : v)}</button>`).join('')}
+    <label class="label-eyebrow">Ticker <select id="tradeTicker"><option value="all">All tickers</option>${[...new Set(all.map(p => positionSymbol(p.option.underlying || p.ticker)))].sort().map(v => `<option value="${esc(v)}"${ticker === v ? ' selected' : ''}>${esc(v)}</option>`).join('')}</select></label>
+    <span class="label-eyebrow">Broker</span>
     ${channelButtons(channels, channel, 'data-tr-ch="1"')}
     <span class="label-eyebrow">Right</span>
     ${['all', 'put', 'call']
@@ -92,76 +107,33 @@ function render() {
       render();
     });
   });
-  const head = ['Ticker', 'Right', 'Side', 'Strike', 'Expiry', 'DTE', 'Contracts', 'Avg premium / contract', 'Mark / contract', 'P&L', 'Mark / premium received', 'If assigned', 'Channel'];
-  const prices = (dash && dash.equityPrices) || {};
-  const groups = {};
-  for (const p of rows) {
-    const m = p.option.expiry.slice(0, 7);
-    if (!groups[m]) groups[m] = [];
-    groups[m].push(p);
-  }
-  const months = Object.keys(groups).sort();
-  if (rows.length === 0) {
-    el.table.innerHTML = `<div class="metric-card table-card"><div class="table-scroll"><table class="report">
-      <thead><tr>${head.map((h) => `<th>${esc(h)}</th>`).join('')}</tr></thead>
-      <tbody><tr><td colspan="${head.length}" class="empty">No open option lots for this filter.</td></tr></tbody>
-    </table></div></div>`;
-    return;
-  }
-  el.table.innerHTML = months
-    .map((m) => {
-      const g = groups[m];
-      const prem = g.reduce((s, p) => s + (p.option.side === 'short' ? Number(p.premiumAbsolute || 0) : 0), 0);
-      const pl = g.reduce((s, p) => s + Number(p.pl || 0), 0);
-      const cash = g.reduce((s, p) => s + Number(p.contingentCashObligation || 0), 0);
-      const dtes = g.map((p) => dteDays(p.option.expiry));
-      const earliest = Math.min(...dtes);
-      const body = g
-        .map((p) => {
-          const o = p.option;
-          const days = dteDays(o.expiry);
-          const assigned = p.contingentCashObligation;
-          const itm = optionItmState(p, prices);
-          const rowClass =
-            itm === 'itm' || days <= 7 ? 'risk-danger' : days <= 21 ? 'risk-warning' : '';
-          const ratio = shortMarkOverPremium(p);
-          const ifAsg =
-            o.right === 'put'
-              ? assigned
-                ? money(assigned, ccy)
-                : '—'
-              : p.contingentShareObligation
-                ? `${p.contingentShareObligation} sh`
-                : '—';
-          return `<tr class="${rowClass}">
-            <td><strong>${esc(o.underlying || p.ticker)}</strong><div class="metric-sub">${esc(p.label)}</div></td>
-            <td>${esc(o.right)}</td>
-            <td>${esc(o.side)}</td>
-            <td class="num">${money(o.strike, ccy)}</td>
-            <td class="num">${esc(expiryLabel(o.expiry))}</td>
-            <td class="num">${days}d</td>
-            <td class="num">${p.units.toLocaleString()}</td>
-            <td class="num">${money(p.avgCost, ccy)}</td>
-            <td class="num">${money(p.price, ccy)}</td>
-            <td class="num ${toneClass(p.pl)}">${signedMoney(p.pl, ccy)}</td>
-            <td class="num">${formatMarkOverPremium(ratio)}</td>
-            <td class="num">${ifAsg}</td>
-            <td>${esc(p.channel === 'default' ? 'unassigned' : p.channel)}</td>
-          </tr>`;
-        })
-        .join('');
-      return `<div class="metric-card table-card" style="margin-bottom:1rem">
-        <div class="filters" style="padding:0.75rem 1.1rem;border-bottom:1px solid var(--border)">
-          <strong>${esc(m)}</strong>
-          <span class="metric-sub">${g.length} lots · earliest DTE ${earliest}d · premium ${money(prem, ccy)} · P/L ${signedMoney(pl, ccy)} · if-assigned ${money(cash, ccy)}</span>
-        </div>
-        <div class="table-scroll"><table class="report">
-          <thead><tr>${head.map((h) => `<th>${esc(h)}</th>`).join('')}</tr></thead>
-          <tbody>${body}</tbody>
-        </table></div>
-      </div>`;
-    })
-    .join('');
+  el.filters.querySelectorAll('[data-strategy]').forEach(btn => btn.addEventListener('click', () => {
+    strategy = btn.dataset.strategy;
+    render();
+  }));
+  document.getElementById('tradeTicker').addEventListener('change', event => {
+    ticker = event.target.value;
+    render();
+  });
+  const head = ['ID', 'Ticker', 'Strategy', 'Strike', 'Expiry', 'Contracts', 'Premium', 'Broker'];
+  rows.sort((a, b) => a.option.expiry.localeCompare(b.option.expiry) || a.ticker.localeCompare(b.ticker));
+  el.table.innerHTML = `<div class="metric-card table-card"><div class="table-scroll"><table class="report">
+    <thead><tr>${head.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>
+    ${rows.length ? rows.map(p => {
+      const o = p.option;
+      const u = positionSymbol(o.underlying || p.ticker);
+      const trade = dash.optionTradeDetails?.[p.ticker];
+      const premium = o.side === 'short' ? trade?.stoGrossPremium ?? p.premiumAbsolute : null;
+      return `<tr>
+        <td><details><summary>${esc(`${u}-${o.right === 'put' ? 'P' : 'C'}${o.strike}-${o.expiry}`)}</summary>
+          <div class="metric-sub">${esc(p.label)}<br>Recorded average premium / contract: ${money(p.avgCost, ccy)}<br>Mark / contract: ${money(p.price, ccy)}<br>Open P&amp;L: ${signedMoney(p.pl, ccy)}<br>If assigned: ${o.side !== 'short' ? '—' : o.right === 'put' ? (Number.isFinite(p.contingentCashObligation) ? money(p.contingentCashObligation, ccy) : '—') : `${p.contingentShareObligation ?? '—'} shares`}</div></details></td>
+        <td><strong>${esc(u)}</strong></td><td>${esc(optionStrategy(p))}</td>
+        <td class="num">${money(o.strike, p.currency || ccy)}</td><td>${esc(expiryLabel(o.expiry))}</td>
+        <td class="num">${p.units.toLocaleString()}</td>
+        <td class="num">${premium == null ? '—' : money(premium, trade?.currency || ccy)}<div class="metric-sub">${premium == null ? 'No short credit' : trade?.stoGrossPremium != null ? 'Recorded opening credit · before fees' : 'Recorded book premium'}</div></td>
+        <td>${esc(channelLabel(p.channel))}</td></tr>`;
+    }).join('') : `<tr><td colspan="8" class="empty">No open option lots for this filter.</td></tr>`}
+    </tbody></table></div></div>`;
 }
 
 async function load() {

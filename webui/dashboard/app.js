@@ -1756,11 +1756,11 @@ function renderExpiryRisk(view, asOf) {
       : Number.isFinite(callRate) ? callNative * callRate : NaN;
     return { p, spot, days, estimate, exposure };
   });
-  const radar = rows.filter((r) => r.estimate.probability > 0.3);
+  const radar = rows.filter((r) => r.estimate.probability > 0.3 || (typeof r.days === 'number' && r.days >= 0 && r.days <= 21 && optionItmState(r.p, prices) === 'itm'));
   const scoredExposure = radar.filter(r => Number.isFinite(r.exposure) && r.exposure > 0);
   const missing = rows.filter((r) => r.estimate.probability == null).length;
   const exposure = scoredExposure.length === radar.length ? scoredExposure.reduce((sum, r) => sum + r.exposure, 0) : null;
-  const weighted = scoredExposure.length === radar.length ? scoredExposure.reduce((sum, r) => sum + r.exposure * r.estimate.probability, 0) : null;
+  const weighted = scoredExposure.length === radar.length && radar.every(r => r.estimate.probability != null) ? scoredExposure.reduce((sum, r) => sum + r.exposure * r.estimate.probability, 0) : null;
   const cash = view.navComplete === false ? null : view.cashAmount;
   const cover = exposure > 0 && cash != null ? (cash / exposure) * 100 : null;
 
@@ -1768,7 +1768,7 @@ function renderExpiryRisk(view, asOf) {
     el.expiryLead.textContent =
       shorts.length === 0
         ? 'No short option lots in this view. Section 03 (holdings table) lists every open position.'
-        : `Monitor your options contracts approaching expiry and identify those with the highest assignment risk. Contracts with a probability of expiring in the money above 30% are prioritised by nearest expiry, followed by risk level. Discuss: start a chat to review a contract and its details. Click a ticker: highlight the same stock in Section 03.${missing ? ` ${missing} contracts could not be scored; view them in Section 03.` : ''}`;
+        : `Monitor your options contracts approaching expiry and identify those with the highest assignment risk. Contracts with a probability of expiring in the money above 30%, plus confirmed ITM contracts expiring within 21 days, are prioritised by nearest expiry, followed by risk level. Discuss: start a chat to review a contract and its details. Click a ticker: highlight the same stock in Section 03.${missing ? ` ${missing} contracts could not be scored; view them in Section 03.` : ''}`;
   }
 
   el.expiryRow.innerHTML = [
@@ -1776,7 +1776,7 @@ function renderExpiryRisk(view, asOf) {
       'High-risk ITM exposure',
       radar.length && exposure != null ? fmtPrettyMoney(exposure, reportingCcyCode(view), 0) : '—',
       '',
-      'Total value of shares you could have to buy for short puts, or deliver for short calls, if every contract in this risk list is assigned. The list includes contracts with an estimated chance above 30% of finishing in the money (beyond the strike price). This is a possible exposure, not a forecast.',
+      'Total value of shares you could have to buy for short puts, or deliver for short calls, if every contract in this risk list is assigned. The list includes contracts with an estimated chance above 30% of finishing in the money, and confirmed ITM contracts expiring within 21 days. This is a possible exposure, not a forecast.',
     ),
     metricCardHtml(
       'Probability-weighted exposure',
@@ -1816,7 +1816,7 @@ function renderExpiryRisk(view, asOf) {
             ${['all', 'put', 'call'].map((r) => chip('right', r, r === 'all' ? 'All' : r.toUpperCase(), riskRightFilter === r)).join('')}
           </div>
           <label class="risk-search">Search contracts <input id="riskSearch" type="search" placeholder="Ticker, strike, expiry" value="${escapeHtml(riskSearch)}" /></label>
-          <div class="risk-legend"><span title="High risk. Review your potential assignment and cash requirements.">${riskPill('danger', 'Act Now >60%')}</span><span title="Moderate risk. Review whether you are comfortable with the potential assignment.">${riskPill('warning', 'Caution 45–60%')}</span><span title="Lower risk based on the current probability.">${riskPill('ok', 'Comfortable')}</span><span>${radar.length} of ${shorts.length} above 30%</span></div>
+          <div class="risk-legend"><span title="High risk. Review your potential assignment and cash requirements.">${riskPill('danger', 'Act Now >60%')}</span><span title="Moderate risk. Review whether you are comfortable with the potential assignment.">${riskPill('warning', 'Caution 45–60%')}</span><span title="Lower risk based on the current probability.">${riskPill('ok', 'Comfortable')}</span><span>${radar.length} of ${shorts.length} flagged</span></div>
         </div>${radar.length === 0 ? `<div class="risk-empty-note">No contracts are currently scored above 30%. All open contracts remain available in Section 03. ${missing ? `${missing} could not be scored from the available quote and mark.` : 'All scored contracts are below the threshold.'}</div>` : ''}<div class="table-scroll"><table class="report risk-table">
         <thead><tr>${head.map((h) => `<th>${escapeHtml(h)}</th>`).join('')}</tr></thead>
         <tbody>${filtered.length ? filtered.map(({ p, spot, days, estimate, exposure: assigned }) => {
@@ -1843,8 +1843,8 @@ function renderExpiryRisk(view, asOf) {
               <td>${riskPill(tone, probability == null ? `— · ${status}` : `${probability.toFixed(1)}% · ${status}`)}</td>
               <td>${escapeHtml(p.channel === DEFAULT_CHANNEL ? 'Unassigned' : p.channel.toUpperCase())}</td>
             </tr>`;
-          }).join('') : '<tr><td colspan="12" class="empty">No contracts above 30% match these filters.</td></tr>'}</tbody></table></div>
-        <div class="risk-method">How Prob. ITM is calculated: Implied volatility is derived from each contract’s mark price and used in the Black–Scholes model to estimate the probability of expiring in the money: N(−d₂) for puts and N(d₂) for calls, assuming a zero risk-free interest rate and no dividend adjustment. Contracts cannot be scored when the underlying quote or a usable mark is missing, contract terms are incomplete, or the mark cannot produce a valid IV. Unscored contracts are excluded from this radar and its totals; they remain available in Section 03. Premium is the opening credit, or replacement STO minus old-contract BTC for the latest verified roll, before fees; it is not realized profit.</div>
+          }).join('') : '<tr><td colspan="12" class="empty">No flagged contracts match these filters.</td></tr>'}</tbody></table></div>
+        <div class="risk-method">How Prob. ITM is calculated: Implied volatility is derived from each contract’s mark price and used in the Black–Scholes model to estimate the probability of expiring in the money: N(−d₂) for puts and N(d₂) for calls, assuming a zero risk-free interest rate and no dividend adjustment. Contracts cannot be scored when the underlying quote or a usable mark is missing, contract terms are incomplete, or the mark cannot produce a valid IV. Confirmed ITM contracts expiring within 21 days remain in this radar even without a probability estimate. Their assignment exposure is included, while probability-weighted exposure stays unavailable. Other unscored contracts remain available in Section 03. Premium is the opening credit, or replacement STO minus old-contract BTC for the latest verified roll, before fees; it is not realized profit.</div>
       </div>`;
     }
   }
@@ -2971,7 +2971,30 @@ function paintLoadingStage() {
   });
 }
 
-async function load() {
+async function load(force = false) {
+  if (loading) return;
+  if (!force) {
+    try {
+      const cached = await cachedDashboard();
+      if (cached) {
+        payload = cached;
+        if (cached.empty || !cached.model) renderEmpty(cached);
+        else initDashboard();
+        el.loading.classList.add('hidden');
+        el.dashboard.setAttribute('aria-busy', 'false');
+        el.status.textContent = `Snapshot ${cached.generatedAt ? new Date(cached.generatedAt).toLocaleString() : 'loaded'} · Refresh to update prices`;
+        await loadOptionHistory(false);
+        return;
+      }
+    } catch (e) {
+      el.status.textContent = e instanceof Error ? e.message : String(e);
+      el.error.classList.remove('hidden');
+      loadUi.error.textContent = el.status.textContent;
+      el.loading.classList.add('hidden');
+      el.dashboard.setAttribute('aria-busy', 'false');
+      return;
+    }
+  }
   if (loading) return;
   loading = true;
   loadStartedAt = performance.now(); loadPosition = 0; loadCounts = {};
@@ -3023,7 +3046,7 @@ async function load() {
     loading = false;
   }
 }
-document.getElementById('dashboardRetry').addEventListener('click', () => void load());
+document.getElementById('dashboardRetry').addEventListener('click', () => void load(true));
 
 el.dateSelect.addEventListener('change', (e) => {
   selectedDate = e.target.value;
@@ -3107,3 +3130,5 @@ el.expiryTable?.addEventListener('input', event => {
     if (input && cursor != null) input.setSelectionRange(cursor, cursor);
   }, 150);
 });
+
+document.getElementById('dashboardRefresh').addEventListener('click', () => void load(true));

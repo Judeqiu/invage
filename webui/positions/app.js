@@ -38,11 +38,8 @@ function equityRows(live) {
 
 function render() {
   showError(el.error, '');
-  const consultant = productProfileOf(dash) === 'consultant';
   if (el.hello) {
-    el.hello.textContent = consultant
-      ? 'Shares you own, and what you owe.'
-      : 'Shares and funds you own.';
+    el.hello.textContent = 'Shares Owned & Assignment Obligations';
   }
   const raw = liveSlice(dash);
   bindFilters(raw);
@@ -81,7 +78,7 @@ function render() {
   el.section1.innerHTML = sectionHead(
     'Section 01',
     'Long stock & fund positions',
-    'Every equity and fund lot currently on the books. Options are on Trades. Channel filter uses recorded custody tags only.',
+    'Displays all equity and fund positions currently recorded in the portfolio. Options positions are listed separately.',
   );
   const head = ['Ticker', 'Instrument', 'Units', 'Avg cost', 'Total cost', 'Last', 'Market value', 'Unrealized P&L', 'Return', 'Channel'];
   el.table1.innerHTML = `
@@ -97,7 +94,7 @@ function render() {
                     .map((p) => {
                       const ret = p.cost !== 0 ? (p.pl / p.cost) * 100 : 0;
                       return `<tr>
-                        <td><strong>${esc(p.ticker)}</strong><div class="metric-sub">${esc(p.label || '')}</div></td>
+                        <td><strong>${esc(positionSymbol(p.ticker))}</strong><div class="metric-sub">${esc((p.label || '').replace(/@[^\s@]+/g, ''))}</div></td>
                         <td>${esc(p.instrument)}</td>
                         <td class="num">${p.units.toLocaleString()}</td>
                         <td class="num">${money(p.avgCost, ccy)}</td>
@@ -129,7 +126,7 @@ function renderObligations(live, ccy) {
   el.section2.innerHTML = sectionHead(
     'Section 02',
     'Assignment obligations',
-    'If assigned: short puts become a cash bill; short calls become share delivery. Coverage uses long equity vs short-call deliverable shares. Cells stay blank when a leg is missing — never shown as 0%.',
+    'Understand your potential obligations if short options are assigned. Short puts require cash to purchase shares at the strike price, while short calls require delivery of shares. Coverage compares shares held with shares required for short calls. A dash means no matching recorded share position or no short-call obligation is available to calculate coverage.',
   );
   const shorts = live.positions.filter((p) => p.instrument === 'option' && p.option && p.option.side === 'short');
   const cashIf = shorts
@@ -141,7 +138,7 @@ function renderObligations(live, ccy) {
   const coverVsCash =
     live.cashAmount != null && cashIf > 0 ? `${((live.cashAmount / cashIf) * 100).toFixed(0)}%` : '—';
   el.oblMetrics.innerHTML =
-    metricCard('Cash if all puts assigned', money(cashIf, ccy), 'Sum of contingentCashObligation') +
+    metricCard('Cash if all puts assigned', money(cashIf, ccy), 'Cash required at recorded put strikes') +
     metricCard('Shares callable', sharesCall.toLocaleString(), 'Short-call deliverable shares') +
     metricCard(
       'Coverage vs free cash',
@@ -157,13 +154,13 @@ function renderObligations(live, ccy) {
 
   const byU = {};
   for (const p of live.positions) {
-    if (p.instrument === 'equity') {
-      const u = p.ticker;
-      if (!byU[u]) byU[u] = { long: 0, putCash: 0, callD: 0 };
-      byU[u].long += p.units;
+    if ((p.instrument === 'equity' || p.instrument === 'fund') && p.units >= 0) {
+      const u = positionSymbol(p.ticker);
+      if (!byU[u]) byU[u] = { long: null, putCash: 0, callD: 0 };
+      byU[u].long = (byU[u].long ?? 0) + p.units;
     } else if (p.instrument === 'option' && p.option && p.option.side === 'short') {
-      const u = p.option.underlying || p.ticker;
-      if (!byU[u]) byU[u] = { long: 0, putCash: 0, callD: 0 };
+      const u = positionSymbol(p.option.underlying || p.ticker);
+      if (!byU[u]) byU[u] = { long: null, putCash: 0, callD: 0 };
       if (p.option.right === 'put') byU[u].putCash += Number(p.contingentCashObligation || 0);
       if (p.option.right === 'call') byU[u].callD += Number(p.contingentShareObligation || 0);
     }
@@ -183,7 +180,7 @@ function renderObligations(live, ccy) {
                   const cov = coverageForUnderlying(g.long, g.callD);
                   return `<tr>
                     <td><strong>${esc(u)}</strong></td>
-                    <td class="num">${g.long ? g.long.toLocaleString() : '—'}</td>
+                    <td class="num">${g.long != null ? g.long.toLocaleString() : '—'}</td>
                     <td class="num">${g.putCash ? money(g.putCash, ccy) : '—'}</td>
                     <td class="num">${g.callD ? g.callD.toLocaleString() : '—'}</td>
                     <td class="num">${cov ? cov.coveredShares.toLocaleString() : '—'}</td>

@@ -124,7 +124,19 @@ async function readJson(res) {
   return body;
 }
 
+function positionSymbol(ticker) {
+  return String(ticker || '').split('@')[0].trim().toUpperCase();
+}
+
+async function cachedDashboard() {
+  const res = await fetch('/api/domain/invage/dashboard-cache', { credentials: 'include' });
+  if (res.status === 404) return null;
+  return readJson(res);
+}
+
 async function loadDashboard() {
+  const cached = await cachedDashboard();
+  if (cached) return cached;
   const res = await fetch(DASHBOARD_API, { credentials: 'include' });
   return readJson(res);
 }
@@ -376,7 +388,7 @@ function cssBarCard(title, rows, caption, options = {}) {
 
 function coverageForUnderlying(longUnits, shortCallDeliverable) {
   if (!(typeof longUnits === 'number') || !(typeof shortCallDeliverable === 'number')) return null;
-  if (longUnits <= 0 || shortCallDeliverable <= 0) return null;
+  if (!Number.isFinite(longUnits) || !Number.isFinite(shortCallDeliverable) || longUnits < 0 || shortCallDeliverable <= 0) return null;
   return {
     coveragePct: Math.min(1, longUnits / shortCallDeliverable),
     uncoveredShares: Math.max(0, shortCallDeliverable - longUnits),

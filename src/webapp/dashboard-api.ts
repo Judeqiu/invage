@@ -3,6 +3,7 @@
  * Mounted by DomainExtension.webUi at /api/domain/invage (auth: user).
  */
 
+import { createHash } from 'node:crypto';
 import { readDashboardConfig } from './dashboard-config.js';
 import { Router, type Request, type Response } from 'express';
 import { loadSessionState, targetUserId, type AuthUser } from 'utarus';
@@ -25,6 +26,37 @@ import { saveInvestor } from '../state/investor-store.js';
 
 export function createDashboardApiRouter(): Router {
   const router = Router();
+  // Keep snapshots on the server, scoped to the login and selected user.
+  // A fresh login, a book edit/sync, expiry, or explicit refresh rebuilds them.
+  const snapshots = new Map<string, { revision: number; at: number; body: unknown }>();
+  async function snapshotContext(req: Request, slug: string) {
+    const session = req.cookies?.bindrive_session;
+    if (typeof session !== 'string' || !session) return null;
+    const key = createHash('sha256').update(session).update(':' + slug).digest('hex');
+    const { revision } = await loadInvestor(slug);
+    return { key, revision };
+  }
+  function readSnapshot(context: { key: string; revision: number } | null) {
+    if (!context) return null;
+    const entry = snapshots.get(context.key);
+    if (!entry) return null;
+    if (entry.revision !== context.revision || Date.now() - entry.at > 24 * 60 * 60 * 1000) {
+      snapshots.delete(context.key);
+      return null;
+    }
+    return entry.body;
+  }
+  router.get('/dashboard-cache', async (req: Request, res: Response) => {
+    res.setHeader('Cache-Control', 'private, no-store');
+    try {
+      const user = (req as Request & { user?: AuthUser }).user;
+      if (!user?.userId) { res.status(401).json({ error: 'unauthorized' }); return; }
+      const slug = await targetUserId(req, user);
+      res.json(readSnapshot(await snapshotContext(req, slug)));
+    } catch {
+      res.status(500).json({ error: 'dashboard_failed', message: 'Could not read the portfolio snapshot.' });
+    }
+  });
 
   router.get('/portfolio-settings', async (req: Request, res: Response) => {
     try {
@@ -242,6 +274,11 @@ export function createDashboardApiRouter(): Router {
       }
       const slug = await targetUserId(req, user);
       res.setHeader('Cache-Control', 'private, no-store');
+      const context = await snapshotContext(req, slug);
+      if (req.query.progress !== '1') {
+        const cached = readSnapshot(context);
+        if (cached) { res.json(cached); return; }
+      }
       streaming = req.query.progress === '1';
       if (streaming) {
         res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
@@ -255,6 +292,11 @@ export function createDashboardApiRouter(): Router {
       const payload = await loadDashboardForSlug(slug, undefined, undefined,
         streaming ? progress => send({ type: 'progress', ...progress }) : undefined);
       const body = { ...payload, dashboardConfig: readDashboardConfig() };
+      if (context) {
+        snapshots.delete(context.key);
+        if (snapshots.size >= 100) snapshots.delete(snapshots.keys().next().value!);
+        snapshots.set(context.key, { revision: context.revision, at: Date.now(), body });
+      }
       if (streaming) { send({ type: 'result', payload: body }); res.end(); }
       else res.json(body);
     } catch (e) {

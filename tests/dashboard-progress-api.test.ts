@@ -2,7 +2,8 @@ import { afterEach, expect, it, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createServer } from 'node:http';
-const { load } = vi.hoisted(() => ({ load: vi.fn() }));
+const { load, investor } = vi.hoisted(() => ({ load: vi.fn(), investor: vi.fn() }));
+vi.mock('../src/state/investor-store.js', () => ({ loadInvestor: investor }));
 vi.mock('../src/webapp/dashboard-data.js', () => ({ loadDashboardForSlug: load }));
 import { createDashboardApiRouter } from '../src/webapp/dashboard-api.js';
 const owner = '00000000-0000-4000-8000-000000000011';
@@ -10,6 +11,7 @@ const payload = { empty: true, model: null, displayName: 'Test' };
 function app(auth = true) {
   const app = express();
   if (auth) app.use((req, _res, next) => { Object.assign(req, { user: { userId: owner } }); next(); });
+  app.use((req, _res, next) => { Object.assign(req, { cookies: { bindrive_session: req.headers['x-test-session'] } }); next(); });
   app.use(createDashboardApiRouter());
   return app;
 }
@@ -60,4 +62,31 @@ it('ends a failed stream with an error rather than a success event or private in
   expect(response.text).toContain('"type":"error"');
   expect(response.text).not.toContain('"type":"result"');
   expect(response.text).not.toContain('private internal failure');
+});
+
+it('reuses only the same login and user snapshot and invalidates after recorded changes', async () => {
+  const server = app();
+  investor.mockResolvedValue({ revision: 1 });
+  load.mockResolvedValue(payload);
+  const get = (path: string, session = 'login-one') => request(server).get(path).set('x-test-session', session);
+  expect((await get('/dashboard-cache')).body).toBeNull();
+  await get('/dashboard');
+  expect((await get('/dashboard-cache')).body).toMatchObject(payload);
+  await get('/dashboard');
+  expect(load).toHaveBeenCalledTimes(1);
+  expect((await get('/dashboard-cache', 'login-two')).body).toBeNull();
+  await get('/dashboard', 'login-two');
+  expect(load).toHaveBeenCalledTimes(2);
+  investor.mockResolvedValue({ revision: 2 });
+  expect((await get('/dashboard-cache')).body).toBeNull();
+  await get('/dashboard');
+  expect(load).toHaveBeenCalledTimes(3);
+  load.mockImplementation(async (_slug, _prices, _benchmark, progress) => {
+    progress({ stage: 'records', completedStages: 0, totalStages: 6 });
+    return { ...payload, displayName: 'Refreshed' };
+  });
+  await get('/dashboard?progress=1');
+  expect(load).toHaveBeenCalledTimes(4);
+  expect((await get('/dashboard-cache')).body.displayName).toBe('Refreshed');
+  expect((await request(app(false)).get('/dashboard-cache')).status).toBe(401);
 });

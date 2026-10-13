@@ -213,6 +213,8 @@ const payload = {
 };
 
 const files = new Map([
+  ['/trades/', 'webui/trades/index.html'],
+  ['/trades/app.js', 'webui/trades/app.js'],
   ['/dashboard/', 'webui/dashboard/index.html'],
   ['/dashboard/index.html', 'webui/dashboard/index.html'],
   ['/dashboard/app.js', 'webui/dashboard/app.js'],
@@ -228,9 +230,23 @@ const files = new Map([
 
 const discussionRequests = [];
 let discussionFailure = false;
+let cachedSnapshot = null;
+let dashboardRequests = 0;
 const server = createServer(async (req, res) => {
   try {
     const url = req.url.split('?')[0];
+    if (url === '/api/domain/invage/dashboard-cache') {
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify(cachedSnapshot));
+      return;
+    }
+    if (url === '/api/domain/invage/trades') {
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ available: true, executions: [], daily: [], coverage: [] }));
+      return;
+    }
+    if (url === '/api/domain/invage/dashboard') dashboardRequests++;
+
     if (url === '/discussion-shell') {
       res.setHeader('Content-Type', 'text/html');
       res.end(`<iframe title="Dashboard" src="/dashboard/" style="width:100%;height:900px;border:0"></iframe><script>
@@ -509,6 +525,7 @@ try {
   assert(archivedDiscussion.includes('Broker positions as of 2026-08-31'), 'historical discussion uses archived broker date');
   assert(await page.$('#openOptions .option-month-total'), 'expiry month total row');
   assert(await page.$('#openOptions .option-ledger-row'), 'option contract row');
+  await page.waitForSelector('#dashboard:not(.hidden)');
   await page.click('#optionHistoryTab');
   await page.waitForFunction(() => document.getElementById('optionHistoryTable')?.textContent?.includes('MSFT'));
   assert(/WEBULL/.test(await page.$eval('#optionHistoryTable', node => node.textContent)), 'merged history includes Webull');
@@ -592,7 +609,7 @@ try {
   assert.equal(await page.$$eval('#expiryTable .risk-row', (rows) => rows.length), 0, 'unscored contracts are excluded from the radar');
   assert.equal(await page.$$eval('#openOptions .option-ledger-row', rows => rows.length), 2, 'unscored contracts remain in Section 03');
   assert(await page.$$eval('#openOptions .option-ledger-row td:nth-child(5)', cells => cells.every(cell => cell.textContent.trim() === '—')), 'missing spot quotes display as unavailable');
-  assert(/0 of 2 above 30%/.test(await page.$eval('#expiryTable', (node) => node.textContent)), 'radar count stays honest');
+  assert(/0 of 2 flagged/.test(await page.$eval('#expiryTable', (node) => node.textContent)), 'radar count stays honest');
 
   payload.generatedAt = '2026-10-06T10:00:00.000Z';
   payload.brokerAsOf.ibkr = '2026-09-22';
@@ -617,6 +634,7 @@ try {
   payload.empty = true;
   payload.model = null;
   await page.goto(`http://127.0.0.1:${port}/dashboard/`);
+  await page.waitForSelector('#dashboard:not(.hidden)');
   await page.click('#optionHistoryTab');
   await page.waitForFunction(() => document.getElementById('optionHistoryTable')?.textContent?.includes('MSFT'));
   assert(/No longer observed/.test(await page.$eval('#optionHistoryTable', node => node.textContent)), 'history survives an empty current portfolio');
@@ -684,9 +702,31 @@ try {
   payload.optionAnalytics = previousAnalytics;
   payload.generatedAt = previousGeneratedAt;
 
+  const beforeRisk = structuredClone(payload.model.live.positions);
+  const beforeRiskPrices = payload.equityPrices;
+  payload.generatedAt = '2026-10-13T12:00:00Z';
+  payload.equityPrices = { TSLA: 380, SLV: 50 };
+  const template = beforeRisk.find(p => p.option);
+  payload.model.live.positions = ['TSLA', 'SLV'].map((underlying, index) => ({ ...template,
+    ticker: underlying + '-test', units: index ? 3 : 1, price: 0,
+    option: { ...template.option, underlying, side: 'short', right: 'put', strike: index ? 55 : 390, expiry: '2026-10-16' } }));
+  await page.goto(`http://127.0.0.1:${port}/dashboard/`);
+  await page.waitForSelector('#loading.hidden');
+  await page.waitForSelector('#expiryTable .risk-row');
+  assert.equal(await page.$$eval('#expiryTable .risk-row', rows => rows.length), 2, 'confirmed near-expiry TSLA and SLV ITM puts remain without usable marks');
+  assert.match(await page.$eval('#expiryTable', node => node.textContent), /TSLA/);
+  assert.match(await page.$eval('#expiryTable', node => node.textContent), /SLV/);
+  payload.model.live.positions = beforeRisk;
+  payload.equityPrices = beforeRiskPrices;
+  payload.generatedAt = previousGeneratedAt;
+
+  payload.model.live.positions[0].ticker = 'AAPL@ibkr';
+  payload.model.live.positions.push({ ...payload.model.live.positions.find(p => p.option), ticker: 'AAPL-call', option: { ...payload.model.live.positions.find(p => p.option).option, underlying: 'AAPL', right: 'call', side: 'short' }, contingentShareObligation: 100 });
   await page.goto(`http://127.0.0.1:${port}/positions/`);
-  await page.waitForFunction(() => document.getElementById('hello')?.textContent?.includes('Shares you own'));
+  await page.waitForFunction(() => document.getElementById('hello')?.textContent?.includes('Shares Owned'));
   const posText = await page.evaluate(() => document.body.innerText);
+  assert(await page.$eval('#table2 tbody', node => /AAPL\s+100/.test(node.textContent)), 'broker suffix does not lose recorded shares');
+  assert(!await page.$eval('#table1 tbody', node => node.textContent.includes('@ibkr')), 'broker suffix hidden in stock ticker');
   assert(posText.includes('Assignment obligations'), posText.slice(0, 400));
   assert(!posText.includes('Watchlist'), 'watchlist removed from positions');
   assert(await page.$('#filters [data-channel="moomoo"]'), 'positions broker chips');
@@ -696,12 +736,36 @@ try {
   await page.goto(`http://127.0.0.1:${port}/insights/`);
   await page.waitForFunction(() => document.getElementById('hello')?.textContent?.includes('Where the book stands'));
   const ins = await page.evaluate(() => document.body.innerText);
+  assert(!ins.includes('Recommended actions') && !ins.includes('Premium and P&L by underlying'), 'unfinished Insights sections hidden');
   assert(ins.includes('Book statistics'), ins.slice(0, 500));
   assert(!ins.includes('Your personal edge'), ins.slice(0, 500));
   assert(!ins.includes('Hello, Demo'), 'no Hello H1');
   assert(await page.$('#filters [data-channel="ibkr"]'), 'insights broker chips');
   await page.click('#filters [data-channel="ibkr"]');
   await page.waitForFunction(() => /ibkr/i.test(document.getElementById('summary')?.textContent || ''));
+
+  cachedSnapshot = structuredClone(payload);
+  const beforeNavigation = dashboardRequests;
+  await page.goto(`http://127.0.0.1:${port}/dashboard/`);
+  await page.waitForFunction(() => document.getElementById('status')?.textContent?.includes('Snapshot'));
+  await page.goto(`http://127.0.0.1:${port}/positions/`);
+  await page.waitForSelector('#table2 tbody');
+  await page.goto(`http://127.0.0.1:${port}/dashboard/`);
+  await page.waitForFunction(() => document.getElementById('status')?.textContent?.includes('Snapshot'));
+  assert.equal(dashboardRequests, beforeNavigation, 'navigation reuses snapshot without valuation reloads');
+  await page.click('#dashboardRefresh');
+  await page.waitForFunction(() => document.getElementById('status')?.textContent?.includes('Loaded in'));
+  assert.equal(dashboardRequests, beforeNavigation + 1, 'explicit refresh fetches new valuation');
+
+  await page.goto(`http://127.0.0.1:${port}/trades/`);
+  await page.waitForSelector('#table tbody details');
+  assert.deepEqual(await page.$$eval('#table thead th', nodes => nodes.map(n => n.textContent)), ['ID', 'Ticker', 'Strategy', 'Strike', 'Expiry', 'Contracts', 'Premium', 'Broker']);
+  await page.select('#tradeTicker', 'AAPL');
+  await page.click('#table details summary');
+  assert.match(await page.$eval('#table details[open]', node => node.textContent), /Mark \/ contract/);
+  await page.setViewport({ width: 390, height: 844 });
+  assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'trades table scrolls within mobile page');
+  await page.screenshot({ path: '/tmp/invage-trades-feedback.png', fullPage: true });
 
   assert.deepEqual(errors, [], errors.join('\n'));
   console.log('Report pages browser regression passed');
