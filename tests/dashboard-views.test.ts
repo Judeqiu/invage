@@ -8,16 +8,19 @@ import { readDashboardConfig, dashboardConfig } from '../src/webapp/dashboard-co
 it('reads saved management configuration on each use and defaults to the existing table', () => {
   expect(readDashboardConfig().optionView).toBe('open');
   expect(readDashboardConfig().showTotalPremium).toBe(true);
+  expect(readDashboardConfig().showRecordedPnlByMonth).toBe(false);
   const dir = join(process.env.UTARUS_DATA_ROOT!, 'config', 'agent-config');
   const file = join(dir, dashboardConfig.id + '.json');
   mkdirSync(dir, { recursive: true });
   try {
-    writeFileSync(file, JSON.stringify({ option_view: 'timeline', show_total_premium: false }));
+    writeFileSync(file, JSON.stringify({ option_view: 'timeline', show_total_premium: false, show_recorded_pnl_by_month: true }));
     expect(readDashboardConfig().optionView).toBe('timeline');
     expect(readDashboardConfig().showTotalPremium).toBe(false);
+    expect(readDashboardConfig().showRecordedPnlByMonth).toBe(true);
     writeFileSync(file, JSON.stringify({ option_view: 'rolls' }));
     expect(readDashboardConfig().optionView).toBe('rolls');
     expect(readDashboardConfig().showTotalPremium).toBe(true);
+    expect(readDashboardConfig().showRecordedPnlByMonth).toBe(false);
   } finally { rmSync(file, { force: true }); }
 });
 

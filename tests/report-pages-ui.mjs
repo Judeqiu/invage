@@ -24,7 +24,7 @@ const payload = {
   connectionMetrics: { ibkr: { currency: 'USD', buying_power: 20000 } },
   brokerAsOf: { ibkr: '2026-09-16', moomoo: '2026-09-15' },
   premiumSupportedChannels: ['ibkr'],
-  dashboardConfig: { showTotalPremium: true },
+  dashboardConfig: { showTotalPremium: true, showRecordedPnlByMonth: true },
   premiumJournal: { available: true, channels: ['ibkr'], daily: [
     { channel: 'ibkr', account_id: 'U1', date: '2026-09-16', currency: 'USD', gross_premium: '101', net_premium: '100' },
     { channel: 'ibkr', account_id: 'U1', date: '2026-09-09', currency: 'USD', gross_premium: '201', net_premium: '200' },
@@ -417,11 +417,21 @@ try {
   assert.equal(metricBoxes[0].y, metricBoxes[1].y, 'premium sits beside NAV on desktop');
   assert(metricBoxes[1].x >= metricBoxes[0].right, 'hero cards do not overlap');
   payload.dashboardConfig.showTotalPremium = false;
+  payload.dashboardConfig.showRecordedPnlByMonth = false;
   await page.reload();
   await page.waitForFunction(() => document.getElementById('totalPremiumCard').classList.contains('hidden'));
+  assert.equal(await page.$('#premiumEngine .pnl-card'), null, 'monthly P&L is hidden when disabled');
+  assert(/Option premium/.test(await page.$eval('#premiumHead', node => node.textContent)), 'section heading reflects disabled P&L');
+  assert(/Net Option Premium by Month/.test(await page.$eval('#premiumEngine', node => node.textContent)), 'premium charts remain visible');
+  delete payload.dashboardConfig.showRecordedPnlByMonth;
+  await page.reload();
+  await page.waitForSelector('#premiumEngine .metric-card');
+  assert.equal(await page.$('#premiumEngine .pnl-card'), null, 'monthly P&L defaults to hidden without configuration');
   payload.dashboardConfig.showTotalPremium = true;
+  payload.dashboardConfig.showRecordedPnlByMonth = true;
   await page.reload();
   await page.waitForFunction(() => !document.getElementById('totalPremiumCard').classList.contains('hidden'));
+  await page.waitForSelector('#premiumEngine .pnl-card');
   assert(/\$101/.test(await page.$eval('#kpiRow', node => node.textContent)), 'IBKR daily premium uses recorded fills');
   assert(/\$302/.test(await page.$eval('#kpiRow', node => node.textContent)), 'IBKR MTD premium uses recorded fills');
   await page.click('#channelPills [data-channel="merged"]');

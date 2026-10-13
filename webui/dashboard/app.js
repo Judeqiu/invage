@@ -1984,8 +1984,9 @@ function renderPremiumEngine(view) {
   const date = view.isLive ? (payload.generatedAt || '').slice(0, 10) : view.label;
   const data = recordedMonthlyData(view, date);
   const ccy = reportingCcyCode(view);
-  el.premiumHead.innerHTML = sectionHead('Section 02', 'Premium and recorded P&L',
-    'Track premium collected and profit or loss (P&L) by calendar month. Historical trades are included where available; otherwise the charts build over time as Velovest records new trades.');
+  const showRecordedPnlByMonth = payload.dashboardConfig?.showRecordedPnlByMonth === true;
+  el.premiumHead.innerHTML = sectionHead('Section 02', showRecordedPnlByMonth ? 'Premium and recorded P&L' : 'Option premium',
+    `${showRecordedPnlByMonth ? 'Track premium collected and profit or loss (P&L) by calendar month.' : 'Track option premium collected by calendar month and underlying.'} Historical trades are included where available; otherwise the charts build over time as Velovest records new trades.`);
   const rows = (entries, byAmount = false) => [...entries].sort(([a, av], [b, bv]) => {
     if (!byAmount) return a.localeCompare(b);
     if (av == null || bv == null) return av == null && bv == null ? a.localeCompare(b) : av == null ? 1 : -1;
@@ -1995,7 +1996,7 @@ function renderPremiumEngine(view) {
   const plHelp = 'Profit or loss from completed option trades, grouped by the month they ended. It is calculated from matched opening and closing trades, or reported directly by the broker. Partial subtotals exclude records that cannot be calculated. Fee treatment is shown for each month. Open positions and stock profit or loss are not included. Expand a month to see which stocks and brokers contribute.';
   el.premiumEngine.innerHTML = cssBarCard('Net Option Premium by Month', rows(data.byMonth), 'Before fees · recorded trades') +
     cssBarCard('Net Option Premium by Underlying', rows(data.byUnderlying, true), 'Before fees · includes recorded option purchases and sales', { id: 'underlyingPremiumCard', limit: 5, help: premiumHelp }) +
-    monthlyLineCard('Recorded P&L by Month', data, ccy, plHelp);
+    (showRecordedPnlByMonth ? monthlyLineCard('Recorded P&L by Month', data, ccy, plHelp) : '');
 }
 
 function renderOpenOptions(view) {
