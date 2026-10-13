@@ -83,7 +83,7 @@ it('buckets recorded cash flow and realized profit by trade month and excludes f
   expect([...result.byMonth]).toEqual([['2026-08', 350], ['2026-09', 200]]);
   expect([...result.byUnderlying]).toEqual([['AMD', 550]]);
   expect(result.realized.get('2026-08')).toBe(348);
-  expect(result.realized.get('2026-09')).toBeNull();
+  expect(result.realized.has('2026-09')).toBe(false);
 });
 
 it('shows zero recorded MTD flow in a month without trades while retaining the latest daily trade', () => {

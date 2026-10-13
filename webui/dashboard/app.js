@@ -1899,7 +1899,6 @@ function recordedMonthlyData(view, date) {
   for (const row of fills) {
     sum(byMonth, row.executed_at.slice(0, 7), tradeAmount(view, row, row.gross_premium));
     sum(byUnderlying, row.underlying, tradeAmount(view, row, row.gross_premium));
-    monthFor(row.executed_at.slice(0, 7));
   }
   for (const row of profits) monthFor(row.date.slice(0, 7)).rows.push(row);
   for (const gap of gaps) monthFor(gap.date.slice(0, 7)).gaps.push(gap);
