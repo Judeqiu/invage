@@ -229,6 +229,11 @@ export function createDashboardApiRouter(): Router {
   });
 
   router.get('/dashboard', async (req: Request, res: Response) => {
+    let heartbeat: ReturnType<typeof setInterval> | undefined;
+    let streaming = false;
+    const send = (event: unknown) => {
+      if (!res.destroyed && !res.writableEnded) res.write(`data: ${JSON.stringify(event)}\n\n`);
+    };
     try {
       const user = (req as Request & { user: AuthUser }).user;
       if (!user?.userId) {
@@ -236,13 +241,31 @@ export function createDashboardApiRouter(): Router {
         return;
       }
       const slug = await targetUserId(req, user);
-      const payload = await loadDashboardForSlug(slug);
       res.setHeader('Cache-Control', 'private, no-store');
-      res.json({ ...payload, dashboardConfig: readDashboardConfig() });
+      streaming = req.query.progress === '1';
+      if (streaming) {
+        res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+        res.setHeader('X-Accel-Buffering', 'no');
+        res.flushHeaders();
+        heartbeat = setInterval(() => {
+          if (!res.destroyed && !res.writableEnded) res.write(': waiting\n\n');
+        }, 15000);
+        res.once('close', () => { clearInterval(heartbeat); });
+      }
+      const payload = await loadDashboardForSlug(slug, undefined, undefined,
+        streaming ? progress => send({ type: 'progress', ...progress }) : undefined);
+      const body = { ...payload, dashboardConfig: readDashboardConfig() };
+      if (streaming) { send({ type: 'result', payload: body }); res.end(); }
+      else res.json(body);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       const status = /not found|does not exist|Admin must specify/i.test(message) ? 400 : 500;
-      res.status(status).json({ error: 'dashboard_failed', message });
+      if (streaming) {
+        send({ type: 'error', error: 'dashboard_failed', message: 'The dashboard could not finish loading. Please retry.' });
+        res.end();
+      } else res.status(status).json({ error: 'dashboard_failed', message });
+    } finally {
+      clearInterval(heartbeat);
     }
   });
 

@@ -206,11 +206,30 @@ async function resolveMarketResilient(
  * Empty portfolio → empty:true.
  * Data problems → warnings + partial model (never invent market prices).
  */
+export interface DashboardLoadProgress {
+  stage: 'records' | 'market' | 'valuation' | 'broker' | 'entry-prices' | 'results';
+  completedStages: number;
+  totalStages: 6;
+  positions?: number;
+  tradeRecords?: number;
+  snapshots?: number;
+  processed?: number;
+  total?: number;
+}
+
 export async function loadDashboardForSlug(
   slug: string,
   priceOverride?: Record<string, number>,
   benchmarkOverride?: BenchmarkData | null,
+  onProgress?: (progress: DashboardLoadProgress) => void,
 ): Promise<DashboardPayload> {
+  let counts: Partial<DashboardLoadProgress> = {};
+  const progress = async (stage: DashboardLoadProgress['stage'], completedStages: number, extra: Partial<DashboardLoadProgress> = {}) => {
+    onProgress?.({ stage, completedStages, totalStages: 6, ...counts, ...extra });
+    // Let streamed updates reach the browser before the next CPU-heavy stage.
+    if (onProgress) await new Promise<void>(resolve => setImmediate(resolve));
+  };
+  await progress('records', 0);
   const warnings: DashboardIssue[] = [];
   const generatedAt = new Date().toISOString();
 
@@ -235,6 +254,7 @@ export async function loadDashboardForSlug(
       message: e instanceof Error ? e.message : String(e), severity: 'warning' });
   }
 
+  counts = { positions: tickers.length, tradeRecords: state.option_executions?.length ?? 0, snapshots: snapshots.length };
   if (tickers.length === 0 && deposits.length === 0 && cashes.length === 0 && snapshots.length === 0 && !(state.option_executions?.length)) {
     return {
       slug,
@@ -250,6 +270,7 @@ export async function loadDashboardForSlug(
     };
   }
 
+  await progress('market', 1);
   const market = await resolveMarketResilient(portfolio, priceOverride);
   warnings.push(...market.issues);
   // Options can exist without a share position. Fetch their underlyings as well
@@ -311,6 +332,7 @@ export async function loadDashboardForSlug(
     });
   }
 
+  await progress('valuation', 2);
   let live;
   try {
     live = buildLivePositions(
@@ -385,6 +407,7 @@ export async function loadDashboardForSlug(
     benchmark = null;
   }
 
+  await progress('broker', 3);
   let connectionMetrics: Record<string, BrokerConnectionMetrics> | undefined;
   let brokerAsOf: Record<string, string> | undefined;
   let premiumSupportedChannels: string[] = [];
@@ -446,6 +469,8 @@ export async function loadDashboardForSlug(
     const dates = entryDates.get(symbol) ?? new Set<string>();
     dates.add(detail.openedFrom); entryDates.set(symbol, dates);
   }
+  await progress('entry-prices', 4, { processed: 0, total: entryDates.size });
+  let processed = 0;
   await Promise.all([...entryDates].map(async ([symbol, dates]) => {
     try {
       const closes = await fetchHistoricalCloses(symbol, [...dates]);
@@ -455,7 +480,12 @@ export async function loadDashboardForSlug(
         if (price != null) detail.entrySpot = { price, date: detail.openedFrom, basis: 'adjusted_close' };
       }
     } catch { /* A missing historical quote remains unknown, never today's spot. */ }
+    finally {
+      processed++;
+      onProgress?.({ stage: 'entry-prices', completedStages: 4, totalStages: 6, ...counts, processed, total: entryDates.size });
+    }
   }));
+  await progress('results', 5);
   const out: DashboardPayload = {
     slug,
     displayName,

@@ -101,6 +101,15 @@ describe('loadDashboardForSlug', () => {
     expect(payload.productName).toBe('Wallet Street');
   });
 
+  it('reports actual stages and dataset counts without changing valuation', async () => {
+    const progress: Array<{ stage: string; completedStages: number; positions?: number; tradeRecords?: number; snapshots?: number }> = [];
+    const payload = await loadDashboardForSlug('00000000-0000-4000-8000-000000000011', { AAPL: 120 }, null, update => progress.push(update));
+    expect(progress.map(update => update.stage)).toEqual(['records', 'market', 'valuation', 'broker', 'entry-prices', 'results']);
+    expect(progress.map(update => update.completedStages)).toEqual([0, 1, 2, 3, 4, 5]);
+    expect(progress[1]).toMatchObject({ positions: 1, tradeRecords: 0, snapshots: 1 });
+    expect(payload.model?.live.totalValue).toBe(1200);
+  });
+
   it('builds live model with price override and snapshot history', async () => {
     const benchmark = {
       ticker: 'SPY',

@@ -1,0 +1,63 @@
+import { afterEach, expect, it, vi } from 'vitest';
+import express from 'express';
+import request from 'supertest';
+import { createServer } from 'node:http';
+const { load } = vi.hoisted(() => ({ load: vi.fn() }));
+vi.mock('../src/webapp/dashboard-data.js', () => ({ loadDashboardForSlug: load }));
+import { createDashboardApiRouter } from '../src/webapp/dashboard-api.js';
+const owner = '00000000-0000-4000-8000-000000000011';
+const payload = { empty: true, model: null, displayName: 'Test' };
+function app(auth = true) {
+  const app = express();
+  if (auth) app.use((req, _res, next) => { Object.assign(req, { user: { userId: owner } }); next(); });
+  app.use(createDashboardApiRouter());
+  return app;
+}
+afterEach(() => vi.resetAllMocks());
+it('keeps the JSON API compatible and rejects unauthenticated progress requests', async () => {
+  load.mockResolvedValue(payload);
+  const unauthorized = await request(app(false)).get('/dashboard?progress=1');
+  expect(unauthorized.status).toBe(401);
+  expect(load).not.toHaveBeenCalled();
+  const response = await request(app()).get('/dashboard');
+  expect(response.body).toMatchObject({ ...payload, dashboardConfig: { optionView: 'open' } });
+  expect(response.headers['cache-control']).toBe('private, no-store');
+  expect(load).toHaveBeenCalledWith(owner, undefined, undefined, undefined);
+});
+it('delivers actual progress before the result is available, scoped to the authenticated user', async () => {
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  load.mockImplementation(async (id, _prices, _benchmark, progress) => {
+    expect(id).toBe(owner);
+    progress({ stage: 'market', completedStages: 1, totalStages: 6, positions: 30, tradeRecords: 1577 });
+    await gate;
+    return payload;
+  });
+  const server = createServer(app());
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const response = await fetch(`http://127.0.0.1:${(server.address() as { port: number }).port}/dashboard?progress=1`);
+    expect(response.headers.get('content-type')).toContain('text/event-stream');
+    const reader = response.body!.getReader();
+    const first = await reader.read();
+    const text = new TextDecoder().decode(first.value);
+    expect(text).toContain('"type":"progress"');
+    expect(text).toContain('1577');
+    expect(text).not.toContain('"type":"result"');
+    release();
+    let rest = '';
+    while (true) { const next = await reader.read(); if (next.done) break; rest += new TextDecoder().decode(next.value); }
+    expect(rest).toContain('"type":"result"');
+    expect(rest).toContain('"optionView":"open"');
+  } finally { release(); server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); }
+});
+it('ends a failed stream with an error rather than a success event or private internal details', async () => {
+  load.mockImplementation(async (_id, _prices, _benchmark, progress) => {
+    progress({ stage: 'records', completedStages: 0, totalStages: 6 });
+    throw new Error('private internal failure');
+  });
+  const response = await request(app()).get('/dashboard?progress=1').buffer(true);
+  expect(response.text).toContain('"type":"error"');
+  expect(response.text).not.toContain('"type":"result"');
+  expect(response.text).not.toContain('private internal failure');
+});

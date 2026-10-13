@@ -1,5 +1,13 @@
 /* Dashboard-only chrome. Tokens come from ../report.css. */
-.loading { padding: 2rem 0; color: var(--muted-foreground); }
+ .loading { margin: 1rem 0; padding: 1.25rem; border: 1px solid var(--border); border-radius: 0.85rem; background: var(--card); color: var(--muted-foreground); }
+.load-heading { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.75rem; color: var(--foreground); }
+#loadElapsed, #loadStep, #loadInsights, #loadHint { font-size: 0.8rem; line-height: 1.5; }
+#loadStep, #loadInsights, #loadHint { margin-top: 0.5rem; }
+#loadHint { font-size: 0.75rem; }
+.load-progress { height: 8px; margin-top: 1rem; border-radius: 999px; background: var(--muted); overflow: hidden; }
+#loadProgressFill { height: 100%; width: 0; background: linear-gradient(90deg, var(--brand), #00b4ca); transition: width 200ms ease; }
+.load-progress.failed #loadProgressFill { background: var(--warning, #d98b18); }
+@media (prefers-reduced-motion: reduce) { #loadProgressFill { transition: none; } }
 .error-box { margin: 1rem 0; }
 .warnings-banner {
   display: none;

@@ -454,7 +454,7 @@ function showOptionHistoryDetail(id) {
   </div>`;
 }
 
-async function loadOptionHistory(more = false) {
+async function loadOptionHistory(more = false, signal) {
   const offset = more ? optionHistory.next_offset : 0;
   if (more && offset == null) return;
   const request = ++optionHistoryRequest;
@@ -466,7 +466,7 @@ async function loadOptionHistory(more = false) {
   if (el.historyTo.value) params.set('to', el.historyTo.value);
   if (el.historySearch.value.trim()) params.set('q', el.historySearch.value.trim());
   try {
-    const res = await fetch(`/api/domain/invage/option-history?${params}`, { credentials: 'include' });
+    const res = await fetch(`/api/domain/invage/option-history?${params}`, { credentials: 'include', signal });
     const body = await res.json();
     if (!res.ok) throw new Error(body.message || `HTTP ${res.status}`);
     if (request !== optionHistoryRequest) return;
@@ -2804,7 +2804,6 @@ function initDashboard() {
 
   initChannelSelect();
 
-  el.loading.classList.add('hidden');
   el.error.classList.add('hidden');
   el.dashboard.classList.remove('hidden');
 
@@ -2813,7 +2812,6 @@ function initDashboard() {
 
 function renderEmpty(body) {
   el.subtitle.textContent = `${body.displayName || body.slug} · empty portfolio`;
-  el.loading.classList.add('hidden');
   el.error.classList.add('hidden');
   el.dashboard.classList.remove('hidden');
   if (el.deskEyebrow) {
@@ -2864,44 +2862,164 @@ function renderEmpty(body) {
   setOptionTab(optionTab);
 }
 
+const loadStages = [
+  'Reading your portfolio records',
+  'Checking market prices and currencies',
+  'Preparing portfolio values and performance history',
+  'Reviewing broker balances and option trades',
+  'Checking opening-day stock prices',
+  'Calculating premiums and completed-trade results',
+  'Drawing your dashboard',
+  'Loading option history',
+];
+const loadUi = {
+  stage: document.getElementById('loadStage'),
+  elapsed: document.getElementById('loadElapsed'),
+  progress: document.getElementById('loadProgress'),
+  fill: document.getElementById('loadProgressFill'),
+  step: document.getElementById('loadStep'),
+  insights: document.getElementById('loadInsights'),
+  hint: document.getElementById('loadHint'),
+  error: document.getElementById('dashboardErrorMessage'),
+};
+let loadStartedAt = 0;
+let loadPosition = 0;
+let loadCounts = {};
+function loadDuration() {
+  const seconds = Math.floor((performance.now() - loadStartedAt) / 1000);
+  return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+}
+function loadingClock() {
+  loadUi.elapsed.textContent = `${loadDuration()} elapsed`;
+  if (!loadUi.progress.classList.contains('failed') && performance.now() - loadStartedAt >= 10000) {
+    loadUi.hint.textContent = 'Large histories and stock-price lookups can take longer. You can keep this page open.';
+  }
+}
+function updateLoading(step, info = {}) {
+  if (!Number.isInteger(step) || step < 0 || step > 7) return;
+  let fraction = 0;
+  if (step === 4 && Number.isInteger(info.total) && info.total > 0 && Number.isInteger(info.processed)) {
+    fraction = Math.max(0, Math.min(1, info.processed / info.total));
+  }
+  loadPosition = Math.max(loadPosition, step + fraction);
+  loadUi.progress.setAttribute('aria-valuenow', String(loadPosition));
+  loadUi.progress.setAttribute('aria-valuetext', `Step ${step + 1} of 8: ${loadStages[step]}`);
+  loadUi.fill.style.width = `${loadPosition / 8 * 100}%`;
+  if (loadUi.stage.textContent !== loadStages[step]) loadUi.stage.textContent = loadStages[step];
+  loadUi.step.textContent = `Step ${step + 1} of 8`;
+  for (const key of ['positions', 'tradeRecords', 'snapshots']) {
+    if (Number.isInteger(info[key]) && info[key] >= 0) loadCounts[key] = info[key];
+  }
+  const details = [];
+  if (loadCounts.positions != null) details.push(`${loadCounts.positions.toLocaleString()} positions`);
+  if (loadCounts.tradeRecords != null) details.push(`${loadCounts.tradeRecords.toLocaleString()} option trade records`);
+  if (loadCounts.snapshots != null) details.push(`${loadCounts.snapshots.toLocaleString()} saved snapshots`);
+  if (step === 4 && info.total > 0) details.push(`Opening prices checked for ${info.processed} of ${info.total} stocks`);
+  loadUi.insights.textContent = details.join(' · ') || 'Preparing your dashboard…';
+}
+async function fetchDashboardWithProgress(signal) {
+  const response = await fetch(`${API}?progress=1`, { credentials: 'include', signal, headers: { Accept: 'text/event-stream' } });
+  if (!response.ok) {
+    throw new Error(response.status === 401 ? 'Your session has ended. Sign in again, then retry.' : 'The dashboard could not load. Please retry.');
+  }
+  // Older hosts and fixtures can still return the existing JSON response.
+  if (!(response.headers.get('content-type') || '').includes('text/event-stream')) {
+    try { return await response.json(); } catch { throw new Error('The dashboard response was interrupted. Please retry.'); }
+  }
+  if (!response.body) throw new Error('No dashboard data was received. Please retry.');
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let parts = [], result = null;
+  const consume = line => {
+    if (!line.startsWith('data:')) return;
+    let event;
+    try { event = JSON.parse(line.slice(5)); } catch { throw new Error('The dashboard response was interrupted. Please retry.'); }
+    if (event.type === 'progress') updateLoading(event.completedStages, event);
+    else if (event.type === 'result') result = event.payload;
+    else if (event.type === 'error') throw new Error(event.message || 'The dashboard could not finish loading. Please retry.');
+  };
+  const consumeChunk = text => {
+    const lines = text.split('\n');
+    lines.forEach((part, i) => {
+      if (i === lines.length - 1) { if (part) parts.push(part); }
+      else { consume(parts.join('') + part); parts = []; }
+    });
+  };
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) { consumeChunk(decoder.decode()); if (parts.length) consume(parts.join('')); break; }
+      consumeChunk(decoder.decode(value, { stream: true }));
+    }
+  } finally { reader.releaseLock(); }
+  if (!result || typeof result !== 'object') throw new Error('Loading stopped before the dashboard was ready. Please retry.');
+  return result;
+}
+
+function paintLoadingStage() {
+  if (document.hidden) return new Promise(resolve => setTimeout(resolve, 0));
+  return new Promise(resolve => {
+    let first, second;
+    const fallback = setTimeout(() => { cancelAnimationFrame(first); cancelAnimationFrame(second); resolve(); }, 100);
+    first = requestAnimationFrame(() => {
+      second = requestAnimationFrame(() => { clearTimeout(fallback); resolve(); });
+    });
+  });
+}
+
 async function load() {
   if (loading) return;
   loading = true;
+  loadStartedAt = performance.now(); loadPosition = 0; loadCounts = {};
+  el.loading.classList.remove('hidden');
+  el.error.classList.add('hidden');
+  el.dashboard.setAttribute('aria-busy', 'true');
+  loadUi.progress.classList.remove('failed');
+  loadUi.hint.textContent = 'Progress advances as each step finishes.';
+  updateLoading(0); loadingClock();
+  const timer = setInterval(loadingClock, 1000);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 180000);
   el.status.className = 'status-line';
-  el.status.textContent = 'Fetching live prices…';
+  el.status.textContent = '';
   try {
-    const res = await fetch(API, { credentials: 'include' });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      throw new Error(body.message || body.error || `HTTP ${res.status}`);
-    }
+    const body = await fetchDashboardWithProgress(controller.signal);
     payload = body;
+    updateLoading(6, { positions: body.model?.live?.positions?.length, tradeRecords: body.optionAnalytics?.executions?.length, snapshots: body.model?.history?.length });
+    await paintLoadingStage();
     if (!optionDefaultApplied) {
       optionTab = 'open';
       optionDefaultApplied = true;
     }
-    if (body.empty || !body.model) {
-      renderEmpty(body);
-    } else {
-      initDashboard();
-    }
-    await loadOptionHistory();
+    if (body.empty || !body.model) renderEmpty(body);
+    else initDashboard();
+    updateLoading(7);
+    await loadOptionHistory(false, controller.signal);
     if (optionTab === 'timeline') await optionTimeline.load(true);
     if (optionTab === 'rolls') await loadRollRelationships();
     if (selectedChannel !== MERGED_CHANNEL_VIEW) followHistoryBroker(selectedChannel);
-    el.status.textContent = `Last refresh ${new Date().toLocaleTimeString()}`;
-  } catch (e) {
-    el.status.className = 'status-line error';
-    el.status.textContent = e instanceof Error ? e.message : String(e);
+    loadUi.progress.setAttribute('aria-valuenow', '8');
+    loadUi.progress.setAttribute('aria-valuetext', 'Dashboard ready');
+    loadUi.fill.style.width = '100%';
     el.loading.classList.add('hidden');
-    if (!payload) {
-      el.error.textContent = 'Could not load dashboard. Sign in and try again.';
-      el.error.classList.remove('hidden');
-    }
+    el.status.textContent = `Last refresh ${new Date().toLocaleTimeString()} · Loaded in ${loadDuration()}${optionHistoryError ? ' · Some option history is unavailable' : ''}`;
+  } catch (e) {
+    loadUi.progress.classList.add('failed');
+    loadUi.progress.setAttribute('aria-valuetext', 'Dashboard loading interrupted');
+    loadUi.stage.textContent = 'Dashboard loading interrupted';
+    loadUi.hint.textContent = 'You can retry loading below.';
+    el.status.className = 'status-line error';
+    el.status.textContent = 'The dashboard could not finish loading.';
+    loadUi.error.textContent = e?.name === 'AbortError' ? 'Loading took longer than expected. Please retry.' : e instanceof Error ? e.message : 'The dashboard could not load. Please retry.';
+    el.error.classList.remove('hidden');
   } finally {
+    clearInterval(timer); clearTimeout(timeout); controller.abort();
+    loadingClock();
+    el.dashboard.setAttribute('aria-busy', 'false');
     loading = false;
   }
 }
+document.getElementById('dashboardRetry').addEventListener('click', () => void load());
 
 el.dateSelect.addEventListener('change', (e) => {
   selectedDate = e.target.value;

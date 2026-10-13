@@ -15,11 +15,17 @@
   <div class="page">
   <div class="crumb label-eyebrow">Dashboard / Portfolio overview</div>
 
-  <div id="loading" class="loading">Loading portfolio data…</div>
-  <div id="error" class="error-box hidden">Failed to load data.</div>
+  <section id="loading" class="loading" aria-label="Dashboard loading">
+    <div class="load-heading"><strong id="loadStage" role="status">Reading your portfolio records</strong><span id="loadElapsed">0s elapsed</span></div>
+    <div id="loadProgress" class="load-progress" role="progressbar" aria-label="Dashboard loading steps" aria-valuemin="0" aria-valuemax="8" aria-valuenow="0"><div id="loadProgressFill"></div></div>
+    <p id="loadStep">Step 1 of 8</p>
+    <p id="loadInsights">Preparing your dashboard…</p>
+    <p id="loadHint">Progress advances as each step finishes.</p>
+  </section>
+  <div id="error" class="error-box hidden"><p id="dashboardErrorMessage">Failed to load data.</p><button id="dashboardRetry" type="button" class="chip-btn">Retry loading</button></div>
   <p class="status-line" id="status"></p>
 
-  <div id="dashboard" class="hidden">
+  <div id="dashboard" class="hidden" aria-busy="true">
       <div id="warningsBanner" class="warnings-banner" role="status"></div>
 
       <section class="hero-row" aria-label="Portfolio snapshot">
