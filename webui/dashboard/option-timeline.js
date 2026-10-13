@@ -16,6 +16,51 @@
   }
   const contractKey = (channel, account, c, side) => JSON.stringify([channel, account, stockSymbol(c), c.right, side, Number(c.strike), c.expiry, Number(c.multiplier)]);
 
+  // Keep related contracts in one block, with closing legs before replacements.
+  // Work only with supplied relationships; row proximity is not roll evidence.
+  function orderRollTracks(tracks, links) {
+    const byKey = new Map(tracks.map(t => [t.key, t]));
+    const rank = new Map(tracks.map((t, i) => [t.key, i]));
+    const neighbors = new Map(tracks.map(t => [t.key, new Set()]));
+    const outgoing = new Map(tracks.map(t => [t.key, new Set()]));
+    const incoming = new Map(tracks.map(t => [t.key, 0]));
+    for (const link of links) {
+      const from = byKey.get(link.from), to = byKey.get(link.to);
+      if (!from || !to || from === to || from.contract.underlying !== to.contract.underlying ||
+        from.channel !== to.channel || from.account !== to.account) continue;
+      if (outgoing.get(from.key).has(to.key)) continue;
+      neighbors.get(from.key).add(to.key); neighbors.get(to.key).add(from.key);
+      outgoing.get(from.key).add(to.key);
+      incoming.set(to.key, incoming.get(to.key) + 1);
+    }
+    const ordered = [], seen = new Set();
+    for (const track of tracks) {
+      if (seen.has(track.key)) continue;
+      const component = [], pending = [track.key];
+      seen.add(track.key);
+      while (pending.length) {
+        const key = pending.pop(); component.push(key);
+        for (const next of neighbors.get(key)) if (!seen.has(next)) {
+          seen.add(next); pending.push(next);
+        }
+      }
+      const remaining = new Set(component);
+      const ready = component.filter(key => incoming.get(key) === 0);
+      while (remaining.size) {
+        ready.sort((a, b) => rank.get(a) - rank.get(b));
+        // Reused contracts can form a cycle. Break ties in the original order.
+        const key = ready.shift() ?? [...remaining].sort((a, b) => rank.get(a) - rank.get(b))[0];
+        if (!remaining.delete(key)) continue;
+        ordered.push(byKey.get(key));
+        for (const next of outgoing.get(key)) {
+          incoming.set(next, incoming.get(next) - 1);
+          if (remaining.has(next) && incoming.get(next) === 0) ready.push(next);
+        }
+      }
+    }
+    return ordered;
+  }
+
   function buildTracks(episodes, groups, context) {
     const tracks = new Map(), links = [];
     const visible = date => date && day(date) <= context.asOf;
@@ -100,7 +145,8 @@
       // This is an evidence boundary, not an estimated opening date or holding period.
       t.unknownStart = first && !t.events.some(e => e.kind === 'open' && e.date <= first) ? first : null;
     }
-    return { tracks: [...tracks.values()].sort((a, b) => a.contract.underlying.localeCompare(b.contract.underlying) || a.channel.localeCompare(b.channel) || a.contract.expiry.localeCompare(b.contract.expiry)), links };
+    const sorted = [...tracks.values()].sort((a, b) => a.contract.underlying.localeCompare(b.contract.underlying) || a.channel.localeCompare(b.channel) || a.contract.expiry.localeCompare(b.contract.expiry));
+    return { tracks: orderRollTracks(sorted, links), links };
   }
 
   window.createOptionTimeline = function (getContext) {
@@ -190,8 +236,9 @@
       }).join('');
       const links = current.links.map(l => {
         if (!trackY.has(l.from) || !trackY.has(l.to)) return '';
-        const x1 = x(l.date), x2 = x(l.through), y1 = trackY.get(l.from) + 8, y2 = trackY.get(l.to) - 8;
-        return `<path class="timeline-roll ${['possible', 'review'].includes(l.evidence) ? 'possible' : ''}" d="M ${x1} ${y1} C ${x1 + 24} ${y1}, ${x2 + 24} ${y2}, ${x2} ${y2}" marker-end="url(#timelineArrow)"><title>${esc(`${l.evidence} roll relationship: ${l.reason}`)}</title></path>`;
+        const direction = Math.sign(trackY.get(l.to) - trackY.get(l.from));
+        const x1 = x(l.date), x2 = x(l.through), y1 = trackY.get(l.from) + direction * 8, y2 = trackY.get(l.to) - direction * 10;
+        return `<path class="timeline-roll ${['possible', 'review'].includes(l.evidence) ? 'possible' : ''}" d="M ${x1} ${y1} L ${x2} ${y2}" marker-end="url(#timelineArrow)"><title>${esc(`${l.evidence} roll relationship: ${l.reason}`)}</title></path>`;
       }).join('');
       chart.innerHTML = `<div class="timeline-legend"><span class="timeline-open-key">● Open</span><span class="timeline-close-key">● Close</span><span>◇ Expiry date</span><span>○ First absent / unverified effect</span><span>↳ Roll relationship</span><span>⋯ Earlier history unavailable</span></div>
         <div class="timeline-scroll" tabindex="0" role="region" aria-label="Option timeline; scroll horizontally to explore dates"><svg class="option-timeline" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="group" aria-label="Option activity through ${context.asOf}">

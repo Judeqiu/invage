@@ -24,6 +24,36 @@ const openEpisode = { ...episode, id: 'active', contract: replacement, status: '
   observations: [{ as_of: '2026-10-01' }, { as_of: '2026-10-12' }], executions: [{ execution_id: 'new-open', executed_at: '2026-10-01T10:00:00', effect: 'open', side: 'sell', contracts: 2 }] };
 const context = { asOf: '2026-10-12', channel: '', replay: false, positions: [], tradeDetails: {}, brokerAsOf: {} };
 
+it('keeps a roll chain adjacent in relationship order despite interleaved expiries and accounts', () => {
+  const window: any = {}; runInNewContext(script, { window });
+  const contracts = ['2026-03-20', '2026-08-21', '2026-04-17', '2026-11-20'].map((expiry, i) =>
+    ({ ...c, underlying: 'AMZN', right: 'put', expiry, strike: i === 1 ? 230 : 225 }));
+  const rolls = contracts.slice(1).map((replacement, i) => ({ ...relationship, id: `roll-${i}`,
+    old: contracts[i], replacement, at: `2026-02-0${i + 1}`, through: `2026-02-0${i + 1}` }));
+  const unrelated = { ...episode, contract: { ...contracts[0], expiry: '2026-06-18' } };
+  const otherAccount = { ...unrelated, account_id: 'B' };
+  const inputs = [{ relationships: [rolls[2], rolls[0], rolls[1], rolls[0]] }];
+  const before = JSON.stringify(inputs);
+  const result = window.buildOptionTimelineTracks([unrelated, otherAccount], inputs, context);
+  expect(result.tracks.map((t: any) => [t.account, t.contract.expiry])).toEqual([
+    ...contracts.map(contract => ['A', contract.expiry]), ['A', '2026-06-18'], ['B', '2026-06-18'],
+  ]);
+  expect(result.links).toHaveLength(4);
+  expect(result.links.every((l: any) => l.evidence === 'possible')).toBe(true);
+  expect(JSON.stringify(inputs)).toBe(before);
+});
+
+it('orders branching relationships before their replacement and handles reused-contract cycles', () => {
+  const window: any = {}; runInNewContext(script, { window });
+  const early = { ...c, expiry: '2026-03-20' }, later = { ...c, expiry: '2026-08-21' };
+  const roll = (id: string, old: typeof c, replacement: typeof c) => ({ ...relationship, id, old, replacement });
+  const branched = window.buildOptionTimelineTracks([], [{ relationships: [roll('one', later, early), roll('two', c, early)] }], context);
+  expect(branched.tracks.map((t: any) => t.contract.expiry)).toEqual([later.expiry, c.expiry, early.expiry]);
+  const cycle = window.buildOptionTimelineTracks([], [{ relationships: [roll('one', later, early), roll('two', early, later)] }], context);
+  expect(cycle.tracks.map((t: any) => t.contract.expiry)).toEqual([early.expiry, later.expiry]);
+  expect(new Set(cycle.tracks.map((t: any) => t.key)).size).toBe(2);
+});
+
 it('uses dated observations for hover prices and excludes later prices and fills in replay', () => {
   const window: any = {}; runInNewContext(script, { window });
   const live = window.buildOptionTimelineTracks([episode], [], context).tracks[0];
@@ -189,6 +219,11 @@ it.skipIf(!existsSync(executable))('defaults to Open and renders timeline filter
     expect(await page.$$('[data-timeline-row]')).toHaveLength(4);
     expect(await page.$eval('#timelineExpand', e => (e as HTMLButtonElement).disabled)).toBe(true);
     expect(await page.$$eval('.timeline-roll.possible', es => es.length)).toBe(1);
+    const connector = await page.$eval('.timeline-roll', e => e.getAttribute('d')!);
+    expect(connector).toMatch(/^M [\d.]+ [\d.]+ L [\d.]+ [\d.]+$/);
+    const points = connector.match(/[\d.]+/g)!.map(Number);
+    expect(points[0]).toBe(points[2]); // Same-day rolls have a vertical arrow.
+    expect(points[3] - points[1]).toBe(68 - 8 - 10); // Adjacent contract lanes.
     expect(await page.$$('.timeline-unknown-start')).toHaveLength(1);
     expect(await page.$eval('.timeline-unknown-start line', e => Number(e.getAttribute('x2')) - Number(e.getAttribute('x1')))).toBeGreaterThan(40);
     expect(queries.some(q => q.includes('offset=100'))).toBe(true);
