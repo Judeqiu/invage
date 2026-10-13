@@ -4,6 +4,7 @@ Operator deploy runbooks (not marketing changelogs).
 
 | Version | Date | Utarus pin | Summary |
 |---------|------|------------|---------|
+| [v0.3.21](./v0.3.21.md) | 2026-10-13 | `v4.2.8` | Adjacent option roll chains and straight timeline arrows |
 | [v0.3.20](./v0.3.20.md) | 2026-10-13 | `v4.2.8` | Section 03 starts on Open and retains selected tabs during refresh |
 | [v0.3.19](./v0.3.19.md) | 2026-10-12 | `v4.2.8` | Responsive option timeline and dated price hover cards |
 | [v0.3.18](./v0.3.18.md) | 2026-10-12 | `v4.2.8` | Normalize legacy position fallbacks in timeline stock groups |
