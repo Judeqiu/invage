@@ -174,27 +174,32 @@ function recordedPremiumForView(view, date) {
   const totalChannels = view.channelView === MERGED_CHANNEL_VIEW
     ? [...new Set([...channels, ...observed])] : channels;
   const currency = reportingCcyCode(view);
-  const convert = (row) => {
-    if (!currency || row.net_premium == null) return null;
-    if (row.currency === currency) return Number(row.net_premium);
+  const convert = (row, basis) => {
+    const amount = basis === 'gross' ? row.gross_premium : row.net_premium;
+    if (!currency || amount == null) return null;
+    if (row.currency === currency) return Number(amount);
     const rate = view.fxRates?.[row.currency];
-    return Number.isFinite(rate) && rate > 0 ? Number(row.net_premium) * rate : null;
+    return Number.isFinite(rate) && rate > 0 ? Number(amount) * rate : null;
   };
-  const summarize = (selectedChannels, from) => {
+  const summarize = (selectedChannels, from, allowBeforeFees = false) => {
     if (!journal?.available || !selectedChannels.length || selectedChannels.some(ch => !supported.has(ch) || !observed.has(ch))) {
       return { value: null, reason: 'Complete trade history unavailable for this view' };
     }
     const rows = (journal.daily || []).filter(row => selectedChannels.includes(row.channel) && row.date >= from && row.date <= date);
-    if (rows.some(row => row.net_premium == null)) return { value: null, reason: 'Broker fill fees are unavailable; net premium is unknown' };
-    if (rows.some(row => !Number.isFinite(convert(row)))) return { value: null, reason: 'Trade currencies cannot be combined without FX' };
-    return { value: rows.length ? rows.reduce((total, row) => total + convert(row), 0) : null,
+    const missingFees = rows.some(row => row.net_premium == null);
+    const basis = missingFees && allowBeforeFees ? 'gross' : 'net';
+    if (missingFees && (basis === 'net' || rows.some(row => row.gross_premium == null))) {
+      return { value: null, reason: 'Broker fill fees are unavailable; net premium is unknown' };
+    }
+    if (rows.some(row => !Number.isFinite(convert(row, basis)))) return { value: null, reason: 'Trade currencies cannot be combined without FX' };
+    return { value: rows.length ? rows.reduce((total, row) => total + convert(row, basis), 0) : null, basis,
       reason: `Recorded fills through ${optionDateLabel(date)} · broker report dates` };
   };
   const daily = summarize(channels, date);
   const mtd = summarize(channels, `${date.slice(0, 7)}-01`);
-  const total = summarize(totalChannels, '');
+  const total = summarize(totalChannels, '', true);
   return { daily: mtd.value == null ? null : daily.value, mtd: mtd.value, reason: mtd.reason,
-    total: total.value, totalReason: total.reason };
+    total: total.value, totalReason: total.reason, totalBasis: total.basis };
 }
 
 function unverifiedOptionChannels(view) {
@@ -1574,7 +1579,7 @@ function renderOverview(view) {
     el.totalPremiumCard.classList.toggle('hidden', payload.dashboardConfig?.showTotalPremium === false);
     el.totalPremiumValue.textContent = premium.total == null ? '—' : fmtPrettyMoney(premium.total, repCcy, 2);
     el.totalPremiumMeta.textContent = premium.total == null ? premium.totalReason
-      : `Open + closed · net retained fills through ${optionDateLabel(premiumDate)}`;
+      : `${premium.totalBasis === 'gross' ? 'Before fees · open + closed' : 'Open + closed · net'} · retained fills through ${optionDateLabel(premiumDate)}`;
   }
   const puts = (view.positions || []).filter(p => p.instrument === 'option' && p.option?.side === 'short' && p.option.right === 'put');
   const putAmounts = puts.map(p => {

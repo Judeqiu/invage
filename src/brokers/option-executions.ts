@@ -96,19 +96,19 @@ export function buildExecutionJournal(records: unknown) {
   if (records === undefined) return { available: false, executions: [], daily: [], cumulative: [] };
   const sumNet = (a: string | null, b: string | null): string | null => a === null || b === null ? null : addDecimals(a, b);
   const executions = mergeOptionExecutions([], records).map(row => ({ ...row, net_premium: row.commission === null ? null : addDecimals(row.gross_premium, row.commission) }));
-  const groups = new Map<string, { channel: string; account_id: string; date: string; currency: string; net_premium: string | null }>();
+  const groups = new Map<string, { channel: string; account_id: string; date: string; currency: string; gross_premium: string; net_premium: string | null }>();
   for (const row of executions) {
     if (!((row.side === 'sell' && row.effect === 'open') || (row.side === 'buy' && row.effect === 'close'))) continue;
     const date = row.executed_at.slice(0, 10);
     const key = JSON.stringify([row.channel, row.account_id, date, row.currency]);
     const prior = groups.get(key);
-    groups.set(key, { channel: row.channel, account_id: row.account_id, date, currency: row.currency, net_premium: prior ? sumNet(prior.net_premium, row.net_premium) : row.net_premium });
+    groups.set(key, { channel: row.channel, account_id: row.account_id, date, currency: row.currency, gross_premium: prior ? addDecimals(prior.gross_premium, row.gross_premium) : row.gross_premium, net_premium: prior ? sumNet(prior.net_premium, row.net_premium) : row.net_premium });
   }
-  const cumulative = new Map<string, { channel: string; account_id: string; currency: string; net_premium: string | null }>();
+  const cumulative = new Map<string, { channel: string; account_id: string; currency: string; gross_premium: string; net_premium: string | null }>();
   for (const row of groups.values()) {
     const key = JSON.stringify([row.channel, row.account_id, row.currency]);
     const prior = cumulative.get(key);
-    cumulative.set(key, { channel: row.channel, account_id: row.account_id, currency: row.currency, net_premium: prior ? sumNet(prior.net_premium, row.net_premium) : row.net_premium });
+    cumulative.set(key, { channel: row.channel, account_id: row.account_id, currency: row.currency, gross_premium: prior ? addDecimals(prior.gross_premium, row.gross_premium) : row.gross_premium, net_premium: prior ? sumNet(prior.net_premium, row.net_premium) : row.net_premium });
   }
   return { available: true, executions, daily: [...groups.values()], cumulative: [...cumulative.values()] };
 }

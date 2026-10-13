@@ -26,11 +26,11 @@ const payload = {
   premiumSupportedChannels: ['ibkr'],
   dashboardConfig: { showTotalPremium: true },
   premiumJournal: { available: true, channels: ['ibkr'], daily: [
-    { channel: 'ibkr', account_id: 'U1', date: '2026-09-16', currency: 'USD', net_premium: '100' },
-    { channel: 'ibkr', account_id: 'U1', date: '2026-09-09', currency: 'USD', net_premium: '200' },
-    { channel: 'ibkr', account_id: 'U1', date: '2026-08-09', currency: 'USD', net_premium: '400' },
-    { channel: 'ibkr', account_id: 'U1', date: '2026-08-10', currency: 'USD', net_premium: '-50' },
-    { channel: 'ibkr', account_id: 'U1', date: '2026-10-09', currency: 'USD', net_premium: '900' },
+    { channel: 'ibkr', account_id: 'U1', date: '2026-09-16', currency: 'USD', gross_premium: '101', net_premium: '100' },
+    { channel: 'ibkr', account_id: 'U1', date: '2026-09-09', currency: 'USD', gross_premium: '201', net_premium: '200' },
+    { channel: 'ibkr', account_id: 'U1', date: '2026-08-09', currency: 'USD', gross_premium: '401', net_premium: '400' },
+    { channel: 'ibkr', account_id: 'U1', date: '2026-08-10', currency: 'USD', gross_premium: '-49', net_premium: '-50' },
+    { channel: 'ibkr', account_id: 'U1', date: '2026-10-09', currency: 'USD', gross_premium: '901', net_premium: '900' },
   ] },
   optionTradeDetails: {
     'AAPL  260918P00140000': { openedFrom: '2026-09-09', openedTo: '2026-09-09', stoNetPremium: 499, currency: 'USD' },
@@ -521,7 +521,8 @@ try {
   assert.equal(grossCells[5], '$500.00 before fees', 'gross proceeds cannot masquerade as net credit');
   assert(grossCells[2].includes('09-Sep-2026'), 'opening date survives unavailable fees');
   assert(/Broker fill fees are unavailable/.test(await page.$eval('#kpiRow', node => node.textContent)), 'net premium remains unknown rather than zero');
-  assert.equal(await page.$eval('#totalPremiumValue', node => node.textContent), '—', 'total is unknown when fees are missing');
+  assert.equal(await page.$eval('#totalPremiumValue', node => node.textContent), '$654.00', 'total uses recorded premium before fees when fees are missing');
+  assert.match(await page.$eval('#totalPremiumMeta', node => node.textContent), /Before fees/, 'gross total clearly states its basis');
   payload.optionTradeDetails['AAPL  260918P00140000'] = savedTrade;
   payload.premiumJournal.daily = savedDaily;
 

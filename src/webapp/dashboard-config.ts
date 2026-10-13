@@ -6,7 +6,7 @@ export const dashboardConfig: AgentConfigDefinition = {
   description: 'Dashboard metrics and default option positions view.',
   fields: [{
     id: 'show_total_premium', type: 'boolean', label: 'Show total premium beside NAV', default: true,
-    description: 'Net recorded short-option premium across open and closed positions, after closing costs and fees.',
+    description: 'Recorded short-option premium across open and closed positions, after closing costs. Net when fees are complete; otherwise shown before fees.',
   }, {
     id: 'option_view', type: 'select', label: 'Option positions default view', default: 'open',
     options: [

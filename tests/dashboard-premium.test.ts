@@ -47,9 +47,22 @@ it('converts historical currencies and refuses to combine them without FX', () =
 it('keeps unknown historical fees distinct from verified current-month premium', () => {
   const records = fills.map((r, i) => i === 0 ? { ...r, commission: null } : r);
   const result = calculate(records);
-  expect(result.total).toBeNull();
-  expect(result.totalReason).toContain('fees are unavailable');
+  expect(result.total).toBe(550);
+  expect(result.totalBasis).toBe('gross');
+  expect(calculate().totalBasis).toBe('net');
   expect(result.mtd).toBe(199);
   expect(calculate([], { channelView: 'merged', channels: ['ibkr'] }).total).toBeNull();
   expect(calculate(fills, { channelView: 'merged', channels: ['ibkr', 'unsupported'] }).total).toBeNull();
+});
+
+it('uses one consistent before-fees basis when a closing fee is missing, without changing net KPIs', () => {
+  const records = fills.map((row, i) => i === 1 || i === 2 ? { ...row, commission: null } : row);
+  const result = calculate(records);
+  expect(result.total).toBe(550);
+  expect(result.totalBasis).toBe('gross');
+  expect(result.mtd).toBeNull();
+  expect(result.reason).toContain('fees are unavailable');
+  const journal = buildExecutionJournal(records);
+  expect(journal.daily.find(row => row.date === '2026-08-10')?.gross_premium).toBe('-50');
+  expect(journal.cumulative[0].gross_premium).toBe('1450');
 });
