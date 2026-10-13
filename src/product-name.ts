@@ -8,7 +8,7 @@ export function productDisplayName(): string {
   if (!n) {
     throw new Error('UTARUS_AGENT_NAME is required (product display name).');
   }
-  return n;
+  return n.toLowerCase() === 'victor consultant' ? 'Velovest' : n;
 }
 
 /** Compact @mention / host id: "Victor Consultant" → "VictorConsultant". */

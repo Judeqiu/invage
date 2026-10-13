@@ -69,7 +69,7 @@ describe('loadDashboardForSlug', () => {
         log: [{ ts: '2026-06-27', action: 'created' }],
       });
 
-    const drive = join(dataRoot, 'drive', 'alice');
+    const drive = join(dataRoot, 'drive', '00000000-0000-4000-8000-000000000011');
     mkdirSync(drive, { recursive: true });
     const snap = {
       date: '2026-07-01',
@@ -81,7 +81,7 @@ describe('loadDashboardForSlug', () => {
     };
     writeFileSync(join(drive, 'snapshot-2026-07-01.json'), JSON.stringify(snap), 'utf-8');
     writeFileSync(join(drive, 'snapshots.json'), JSON.stringify(['snapshot-2026-07-01.json']), 'utf-8');
-    const oldDrive = join(dataRoot, 'drive', 'dave');
+    const oldDrive = join(dataRoot, 'drive', '00000000-0000-4000-8000-000000000041');
     mkdirSync(oldDrive, { recursive: true });
     writeFileSync(join(oldDrive, 'snapshot-2026-07-01.json'), JSON.stringify(snap), 'utf-8');
     writeFileSync(join(oldDrive, 'snapshots.json'), JSON.stringify(['snapshot-2026-07-01.json']), 'utf-8');
@@ -92,7 +92,7 @@ describe('loadDashboardForSlug', () => {
   });
 
   it('returns empty payload when portfolio has no holdings', async () => {
-    const payload = await loadDashboardForSlug('bob');
+    const payload = await loadDashboardForSlug('00000000-0000-4000-8000-000000000021');
     expect(payload.empty).toBe(true);
     expect(payload.model).toBeNull();
     expect(payload.displayName).toBe('Bob');
@@ -108,7 +108,7 @@ describe('loadDashboardForSlug', () => {
       currentPrice: 550,
       closes: { '2026-07-01': 500 },
     };
-    const payload = await loadDashboardForSlug('alice', { AAPL: 120 }, benchmark);
+    const payload = await loadDashboardForSlug('00000000-0000-4000-8000-000000000011', { AAPL: 120 }, benchmark);
     expect(payload.empty).toBe(false);
     expect(payload.model).not.toBeNull();
     expect(payload.model!.live.totalValue).toBe(1200);
@@ -123,7 +123,7 @@ describe('loadDashboardForSlug', () => {
   });
 
   it('benchmark is null when there are no snapshots to anchor it', async () => {
-    const payload = await loadDashboardForSlug('carol', { MSFT: 250 });
+    const payload = await loadDashboardForSlug('00000000-0000-4000-8000-000000000031', { MSFT: 250 });
     expect(payload.empty).toBe(false);
     expect(payload.model!.live.totalValue).toBe(1250);
     expect(payload.model!.history).toHaveLength(0);
@@ -131,13 +131,13 @@ describe('loadDashboardForSlug', () => {
   });
 
   it('empty portfolio carries no benchmark', async () => {
-    const payload = await loadDashboardForSlug('bob');
+    const payload = await loadDashboardForSlug('00000000-0000-4000-8000-000000000021');
     expect(payload.empty).toBe(true);
     expect(payload.benchmark).toBeNull();
   });
 
   it('keeps saved dates available after the current portfolio becomes empty', async () => {
-    const payload = await loadDashboardForSlug('dave', {}, null);
+    const payload = await loadDashboardForSlug('00000000-0000-4000-8000-000000000041', {}, null);
     expect(payload.empty).toBe(false);
     expect(payload.model?.live.positions).toEqual([]);
     expect(payload.model?.history.map(row => row.date)).toEqual(['2026-07-01']);
@@ -147,7 +147,7 @@ describe('loadDashboardForSlug', () => {
     await createInvestorFixture({
       user: { id: '00000000-0000-4000-8000-000000000051', slug: 'closed-options',
         created_at: '2026-06-27', telegram_user_ids: [], auth_token: '00000000-0000-4000-8000-000000000052' },
-      profile: { display_name: 'Closed options' }, log: [],
+      profile: { display_name: 'Closed options', contact_email: 'closed@example.com' }, log: [],
       option_executions: [
         { channel: 'ibkr', account_id: 'U1', execution_id: 'open', contract_id: 'AMD-P',
           executed_at: '2026-08-01T10:00:00', underlying: 'AMD', right: 'put', expiry: '2026-09-18',
@@ -159,7 +159,7 @@ describe('loadDashboardForSlug', () => {
           currency: 'USD', gross_premium: '-50', commission: '-1' },
       ],
     });
-    const result = await loadDashboardForSlug('closed-options', {}, null);
+    const result = await loadDashboardForSlug('00000000-0000-4000-8000-000000000051', {}, null);
     expect(result.empty).toBe(false);
     expect(result.model?.live.positions).toEqual([]);
     expect(result.model?.live.reportingCurrency).toBe('USD');
@@ -167,7 +167,7 @@ describe('loadDashboardForSlug', () => {
   });
 
   it('loads at book cost with warnings when a price is missing (resilient)', async () => {
-    const payload = await loadDashboardForSlug('alice', {});
+    const payload = await loadDashboardForSlug('00000000-0000-4000-8000-000000000011', {});
     expect(payload.empty).toBe(false);
     expect(payload.model).not.toBeNull();
     expect(payload.model!.live.totalValue).toBe(1000); // AAPL 10×100 at cost
@@ -206,10 +206,10 @@ describe('createInvageWebUi', () => {
       .toContain('/settings/brokers');
   });
 
-  it('registers Positions, Book, Trades, Insights report pages', async () => {
+  it('registers report pages and hides Book from the main navigation', async () => {
     const webUi = createInvageWebUi();
     for (const id of ['positions', 'book', 'trades', 'insights']) {
-      expect(webUi.nav?.some((n) => n.id === id && n.path === `/${id}`)).toBe(true);
+      expect(webUi.nav?.some((n) => n.id === id && n.path === `/${id}`)).toBe(id !== 'book');
       const route = webUi.routes?.find((r) => r.path === `/${id}`);
       expect(route?.iframeSrc).toBe(`/domain-assets/invage/${id}/index.html`);
       expect(existsSync(join(invageWebUiStaticDir(), id, 'index.html'))).toBe(true);

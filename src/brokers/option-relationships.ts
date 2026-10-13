@@ -13,6 +13,7 @@ export interface RollFill {
   contract: RollContract; at: string; clock: string; quantity: string;
   side: 'buy' | 'sell'; effect: 'open' | 'close' | 'unknown';
   cash: string | null; basis: 'net' | 'gross'; terminal: boolean; source: RollSource;
+  gross_cash?: string;
   expected_quantity?: string;
 }
 export interface OptionRelationship {
@@ -22,6 +23,7 @@ export interface OptionRelationship {
   at: string; through: string; clock: string; side: 'short' | 'long';
   replacement_effect: RollFill['effect'] | 'mixed';
   cash: string | null; cash_basis: 'net' | 'gross' | 'unknown';
+  gross_cash?: string | null;
   closing_fills: string[]; opening_fills: string[]; orders: string[]; parent: string | null;
   sources: RollSource[];
 }
@@ -110,7 +112,8 @@ export function parseRelationshipArchive(broker: string, bytes: Buffer, account:
             contract: contract(r.underlyingSymbol, r.putCall, r.expiry, r.strike, r.multiplier, r.currency),
             at, clock: 'Broker-reported clock', quantity: positive(q.replace(/^-/, '')),
             side: side === 'BUY' ? 'buy' : 'sell', effect: effect === 'O' ? 'open' : 'close',
-            cash: num(r.netCash), basis: 'net', terminal, source });
+            cash: num(r.netCash), basis: 'net', terminal, source,
+            ...(r.proceeds !== undefined ? { gross_cash: num(r.proceeds) } : {}) });
         }
       }
       path.push(tag.name);
@@ -225,11 +228,13 @@ export function buildOptionRelationships(broker: string, channel: string, accoun
     if (f.account !== account) throw new Error('Relationship account mismatch');
     const { source, ...core } = f; const prior = unique.get(f.id);
     if (prior) {
-      const { source: ignored, cash: priorCash, ...priorCore } = prior;
-      const { cash, ...economic } = core;
-      if (JSON.stringify(economic) !== JSON.stringify(priorCore) || cash != null && priorCash != null && normalize(cash) !== normalize(priorCash)) throw new Error('Conflicting archived option fills');
+      const { source: ignored, cash: priorCash, gross_cash: priorGross, ...priorCore } = prior;
+      const { cash, gross_cash: gross, ...economic } = core;
+      if (JSON.stringify(economic) !== JSON.stringify(priorCore) || cash != null && priorCash != null && normalize(cash) !== normalize(priorCash) ||
+        gross != null && priorGross != null && normalize(gross) !== normalize(priorGross)) throw new Error('Conflicting archived option fills');
       // A later archive can supply previously missing contract-size/cash evidence.
       if (prior.cash == null && f.cash != null) prior.cash = f.cash;
+      if (prior.gross_cash == null && f.gross_cash != null) prior.gross_cash = f.gross_cash;
     }
     else unique.set(f.id, { ...f });
     const sources = provenance.get(f.id) ?? []; if (!sources.some(s => s.id === source.id && s.version === source.version)) sources.push(source);
@@ -267,6 +272,8 @@ export function buildOptionRelationships(broker: string, channel: string, accoun
       at, through, clock: all[0].clock, side: c.fills[0].side === 'buy' ? 'short' : 'long',
       replacement_effect: new Set(o.fills.map(f => f.effect)).size === 1 ? o.fills[0].effect : 'mixed',
       cash, cash_basis: cash == null ? 'unknown' : all.every(f => f.basis === 'net') ? 'net' : 'gross',
+      gross_cash: evidence === 'review' || evidence === 'possible' || all.some(f => f.gross_cash == null && (f.basis !== 'gross' || f.cash == null))
+        ? null : addDecimals(...all.map(f => f.gross_cash ?? f.cash!)),
       closing_fills: c.fills.map(f => f.id), opening_fills: o.fills.map(f => f.id),
       orders: [...new Set(all.map(f => f.order))], parent, sources });
     all.forEach(f => used.add(f.id));

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Holding } from '../src/market/types.js';
 import type { OptionExecution } from '../src/brokers/option-executions.js';
-import { openOptionTradeDetails } from '../src/webapp/option-dashboard-data.js';
+import { openOptionTradeDetails, attachLatestRollPremium } from '../src/webapp/option-dashboard-data.js';
 
 const holding: Holding = {
   instrument: 'option', channel: 'ibkr', units: 2, avg_price: 300,
@@ -24,7 +24,7 @@ describe('open option trade detail', () => {
       fill('2', '2026-09-29', 'buy', 'close', '1', '-100'),
       fill('3', '2026-10-01', 'sell', 'open', '1', '250')];
     expect(openOptionTradeDetails({ path: holding }, rows, { ibkr: 'U1' })).toEqual({ path: {
-      openedFrom: '2026-09-28', openedTo: '2026-10-01', stoNetPremium: 548, currency: 'USD',
+      openedFrom: '2026-09-28', openedTo: '2026-10-01', stoNetPremium: 548, stoGrossPremium: 550, currency: 'USD',
     } });
   });
 
@@ -38,4 +38,15 @@ describe('open option trade detail', () => {
     expect(openOptionTradeDetails({ path: coded }, [fill('1', '2026-09-28', 'sell', 'open', '2', '600')]).path)
       .toMatchObject({ openedFrom: '2026-09-28', stoNetPremium: 599 });
   });
+});
+
+it('uses only the latest verified roll before fees, preserving unknown candidate cash', () => {
+  const details = openOptionTradeDetails({ path: holding }, [fill('open', '2026-10-01', 'sell', 'open', '2', '600')]);
+  const replacement = { underlying: 'PATH', right: 'put', strike: '15', expiry: '2026-11-20', multiplier: '100', currency: 'USD' };
+  const relationship = { channel: 'ibkr', account_id: 'U1', side: 'short', replacement_effect: 'open', replacement,
+    evidence: 'order', opened_quantity: '2', through: '2026-10-01T10:30:00', gross_cash: '450' } as any;
+  attachLatestRollPremium({ path: holding }, details, [relationship], { ibkr: 'U1' });
+  expect(details.path.rollPremium).toBe(450);
+  attachLatestRollPremium({ path: holding }, details, [{ ...relationship, evidence: 'possible' }], { ibkr: 'U1' });
+  expect(details.path.rollPremium).toBeNull();
 });

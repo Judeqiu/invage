@@ -32,9 +32,15 @@ const payload = {
     { channel: 'ibkr', account_id: 'U1', date: '2026-08-10', currency: 'USD', gross_premium: '-49', net_premium: '-50' },
     { channel: 'ibkr', account_id: 'U1', date: '2026-10-09', currency: 'USD', gross_premium: '901', net_premium: '900' },
   ] },
+  optionAnalytics: { executions: [
+    { channel: 'ibkr', account_id: 'U1', underlying: 'AAPL', executed_at: '2026-08-09T10:00:00', gross_premium: '401', commission: '-1', currency: 'USD' },
+    { channel: 'ibkr', account_id: 'U1', underlying: 'AAPL', executed_at: '2026-08-10T10:00:00', gross_premium: '-49', commission: null, currency: 'USD' },
+    { channel: 'ibkr', account_id: 'U1', underlying: 'AAPL', executed_at: '2026-09-09T10:00:00', gross_premium: '201', commission: '-1', currency: 'USD' },
+    { channel: 'ibkr', account_id: 'U1', underlying: 'AAPL', executed_at: '2026-09-16T10:00:00', gross_premium: '101', commission: null, currency: 'USD' },
+  ], profits: [{ channel: 'ibkr', date: '2026-08-10', currency: 'USD', gross: 352, net: null }], gaps: [] },
   optionTradeDetails: {
-    'AAPL  260918P00140000': { openedFrom: '2026-09-09', openedTo: '2026-09-09', stoNetPremium: 499, currency: 'USD' },
-    'AAPL  261016P00160000': { openedFrom: '2026-09-16', openedTo: '2026-09-16', stoNetPremium: 1699, currency: 'USD' },
+    'AAPL  260918P00140000': { openedFrom: '2026-09-09', openedTo: '2026-09-09', stoNetPremium: 499, stoGrossPremium: 500, entrySpot: { price: 150.25, date: '2026-09-09', basis: 'adjusted_close' }, currency: 'USD' },
+    'AAPL  261016P00160000': { openedFrom: '2026-09-16', openedTo: '2026-09-16', stoNetPremium: 1699, stoGrossPremium: 1700, rollPremium: 900, rollDate: '2026-09-16', currency: 'USD' },
   },
   warnings: [],
   model: {
@@ -210,7 +216,6 @@ const files = new Map([
   ['/dashboard/', 'webui/dashboard/index.html'],
   ['/dashboard/index.html', 'webui/dashboard/index.html'],
   ['/dashboard/app.js', 'webui/dashboard/app.js'],
-  ['/dashboard/option-timeline.js', 'webui/dashboard/option-timeline.js'],
   ['/dashboard/page.css', 'webui/dashboard/page.css'],
   ['/positions/', 'webui/positions/index.html'],
   ['/positions/app.js', 'webui/positions/app.js'],
@@ -358,18 +363,23 @@ try {
   assert(/2 positions — 1 equity, 1 option, 0 fund/.test(heroLead), `hero position count includes open options: ${heroLead}`);
   assert(/Net premium\s*·\s*Daily/i.test(dashText), 'daily premium kpi');
   assert(/Net premium\s*·\s*MTD/i.test(dashText), 'MTD premium kpi');
-  assert(/Cash after all puts assigned/i.test(dashText), 'cash-after-assignment kpi');
+  assert(/Max assignment obligation/i.test(dashText), 'cash-after-assignment kpi');
   assert(/Net asset value/i.test(dashText), 'NAV hero card');
   assert(/Open options positions · broker view/i.test(dashText), 'open options section');
   assert(/Assignment exposure/i.test(dashText), 'assignment exposure column');
-  assert(/STO net credit/i.test(dashText), 'STO credit column');
+  assert(/STO Credit · Before Fees/i.test(dashText), 'STO credit column');
   assert(/Opened/i.test(dashText), 'opening date column');
   assert(/% of max/i.test(dashText), 'premium capture column');
   assert(/Prob\. ITM/i.test(dashText), 'risk probability column');
-  assert(/Complete trade history unavailable/.test(await page.$eval('#kpiRow', node => node.textContent)), 'merged premium does not silently omit moomoo');
-  assert(/Complete trade history unavailable/.test(await page.$eval('#totalPremiumMeta', node => node.textContent)), 'total does not silently omit unsupported brokers');
+  assert(/Recorded P&L by Month/.test(dashText), 'realized monthly chart label');
+  assert(/Known fees only/.test(dashText), 'unreported fees remain visible');
+  assert.equal(await page.$eval('#premiumEngine .monthly-values', node => node.textContent), '2026-08$352.00', 'P&L uses closing month, not expiry');
+  assert.equal(await page.$eval('#expiryTable .risk-row td:nth-child(9)', node => node.textContent.trim()), '$900.00Latest roll · Before fees', 'radar uses latest roll cash, not opening basis');
+  assert(/Partial history/.test(await page.$eval('#kpiRow', node => node.textContent)), 'merged premium does not silently omit moomoo');
+  assert(/Partial history/.test(await page.$eval('#totalPremiumMeta', node => node.textContent)), 'total does not silently omit unsupported brokers');
   await page.click('#channelPills [data-channel="ibkr"]');
-  assert.equal(await page.$eval('#totalPremiumValue', node => node.textContent), '$650.00', 'total includes older opens and closing debits, excludes future fills');
+  assert.equal(await page.$eval('#totalPremiumValue', node => node.textContent), '$654.00', 'total includes older opens and closing debits, excludes future fills');
+  await page.screenshot({ path: '/tmp/velovest-dashboard-desktop.png', fullPage: true });
   const metricBoxes = await page.$$eval('.hero-metrics .nav-card', nodes => nodes.map(n => { const b = n.getBoundingClientRect(); return { x: b.x, y: b.y, right: b.right }; }));
   assert.equal(metricBoxes[0].y, metricBoxes[1].y, 'premium sits beside NAV on desktop');
   assert(metricBoxes[1].x >= metricBoxes[0].right, 'hero cards do not overlap');
@@ -379,15 +389,16 @@ try {
   payload.dashboardConfig.showTotalPremium = true;
   await page.click('#refreshBtn');
   await page.waitForFunction(() => !document.getElementById('totalPremiumCard').classList.contains('hidden'));
-  assert(/\$100/.test(await page.$eval('#kpiRow', node => node.textContent)), 'IBKR daily premium uses recorded fills');
-  assert(/\$300/.test(await page.$eval('#kpiRow', node => node.textContent)), 'IBKR MTD premium uses recorded fills');
+  assert(/\$101/.test(await page.$eval('#kpiRow', node => node.textContent)), 'IBKR daily premium uses recorded fills');
+  assert(/\$302/.test(await page.$eval('#kpiRow', node => node.textContent)), 'IBKR MTD premium uses recorded fills');
   await page.click('#channelPills [data-channel="merged"]');
   assert(await page.$('#expiryTable .risk-row'), 'scored risk contract');
   assert(/\$16,000/.test(await page.$eval('#expiryRow', (node) => node.textContent)), 'radar exposure uses scored contracts');
-  await page.click('#expiryTable [data-risk-scope="all"]');
-  assert.equal(await page.$$eval('#expiryTable .risk-row', (rows) => rows.length), 2, 'all-open view includes lower-risk contracts');
-  await page.click('#expiryTable [data-risk-scope="high"]');
-  assert.equal(await page.$$eval('#expiryTable .risk-row', (rows) => rows.length), 1, 'radar view keeps only contracts above threshold');
+  assert.equal(await page.$$eval('#expiryTable .risk-row', (rows) => rows.length), 1, 'radar keeps only contracts above threshold');
+  await page.type('#riskSearch', 'TSLA');
+  await page.waitForFunction(() => !document.querySelector('#expiryTable .risk-row'));
+  await page.$eval('#riskSearch', input => { input.value = ''; input.dispatchEvent(new Event('input', { bubbles: true })); });
+  await page.waitForSelector('#expiryTable .risk-row');
   await page.click('#expiryTable [data-risk-right="call"]');
   assert(!(await page.$('#expiryTable .risk-row')), 'risk right filter hides puts');
   await page.click('#expiryTable [data-risk-right="all"]');
@@ -399,13 +410,11 @@ try {
   await discussionPage.goto(`http://127.0.0.1:${port}/discussion-shell`);
   const dashboardFrame = discussionPage.frames().find(frame => frame.url().endsWith('/dashboard/'));
   await dashboardFrame.waitForSelector('[data-option-discuss]');
-  await dashboardFrame.click('[data-risk-scope="all"]');
-  assert.equal(await dashboardFrame.$$eval('[data-option-discuss]', buttons => buttons.length), 2, 'each visible option has a discussion action');
+  assert.equal(await dashboardFrame.$$eval('[data-option-discuss]', buttons => buttons.length), 1, 'each visible option has a discussion action');
   const discussionButtons = await dashboardFrame.$$eval('[data-option-discuss]', buttons => buttons.map(button => ({
     label: button.getAttribute('aria-label'), prompt: button.dataset.optionDiscuss,
   })));
-  assert.notEqual(discussionButtons[0].prompt, discussionButtons[1].prompt, 'same underlying with different expiry gets distinct context');
-  assert(discussionButtons[0].label.includes('2026-09-18'), 'accessible action identifies exact contract');
+  assert(discussionButtons[0].label.includes('2026-10-16'), 'accessible action identifies exact contract');
   discussionFailure = true;
   await dashboardFrame.focus('[data-option-discuss]');
   await discussionPage.keyboard.press('Enter');
@@ -426,14 +435,14 @@ try {
   assert(discussionPage.url().endsWith('/discussion-shell'), 'discussion keeps dashboard shell in place');
   assert.equal(discussionPage.frames().length, 2, 'dashboard iframe stays mounted');
   const panelMessages = await discussionPage.evaluate(() => window.panelMessages);
-  assert(panelMessages.some(message => message.type === 'utarus:chat-panel:open' && message.title.includes('140 PUT')), 'panel gets exact contract header');
+  assert(panelMessages.some(message => message.type === 'utarus:chat-panel:open' && message.title.includes('160 PUT')), 'panel gets exact contract header');
   assert(panelMessages.some(message => message.type === 'utarus:chat-panel:error'), 'failed launch reports error to panel');
   assert(panelMessages.at(-1).conversationId === 'option-chat-123', 'panel opens created conversation');
   assert(await dashboardFrame.$eval('[data-option-discuss]', button => button.getAttribute('aria-expanded') === 'true'), 'selected discussion is highlighted');
   const discussion = discussionRequests.at(-1);
   assert.equal(discussion.conversationId, undefined, 'discussion starts a new focused chat');
-  assert(discussion.text.includes('AAPL  260918P00140000'), 'chat gets full contract identifier');
-  assert(discussion.text.includes('strike 140 USD') && discussion.text.includes('expiry 2026-09-18'), 'chat gets strike, currency and expiry');
+  assert(discussion.text.includes('AAPL  261016P00160000'), 'chat gets full contract identifier');
+  assert(discussion.text.includes('strike 160 USD') && discussion.text.includes('expiry 2026-10-16'), 'chat gets strike, currency and expiry');
   assert(discussion.text.includes('Broker/channel: ibkr') && discussion.text.includes('Quantity: 1 contracts. Multiplier: 100'), 'chat gets broker and position size');
   assert(discussion.text.includes('as of 2026-09-16') && discussion.text.includes('verify the current holding'), 'snapshot date and freshness preserved');
   assert.equal(discussionRequests.length, 2, 'one request per deliberate attempt');
@@ -467,7 +476,7 @@ try {
   assert(/WEBULL/.test(await page.$eval('#optionHistoryTable', node => node.textContent)), 'merged dashboard selection restores Webull history');
   assert(/No longer observed/.test(await page.$eval('#optionHistoryTable', node => node.textContent)), 'historical option status');
   await page.click('#optionHistoryTable [data-history-id]');
-  assert(/first observed absent 2026-08-24/.test(await page.$eval('#optionHistoryDetail', node => node.textContent)), 'history detail preserves absence date');
+  assert(/first observed absent 24-Aug-2026/.test(await page.$eval('#optionHistoryDetail', node => node.textContent)), 'history detail preserves absence date');
   assert(/Closed by fills/.test(await page.$eval('#optionHistoryTable', node => node.textContent)), 'matched status appears');
   assert(/\$297\.92/.test(await page.$eval('#optionHistoryTable', node => node.textContent)), 'matched trade P&L appears');
   await page.click('#optionHistoryTable [data-history-id="matched-option"]');
@@ -484,15 +493,13 @@ try {
   const optionCells = await page.$$eval('#openOptions .option-ledger-row td', (cells) => cells.map((cell) => cell.textContent.trim()));
   assert.equal(optionCells[1], '-1', 'short position is signed');
   assert(optionCells[2].includes('09-Sep-2026'), 'opening date uses requested format');
-  assert.equal(optionCells[5], '$499.00', 'STO credit comes from matched fills');
-  assert.equal(optionCells[6], '$500.00', 'open cost basis remains distinct');
-  assert.equal(optionCells[7], '$200.00', 'broker mark per contract wins over live option price');
-  assert.equal(optionCells[8], '-$200.00', 'market value uses broker mark');
-  assert.equal(optionCells[9], '$300.00', 'P&L uses broker mark');
+  assert.equal(optionCells[6], '$500.00Before fees', 'STO credit comes from matched fills');
+  assert.equal(optionCells[7], '$500.00', 'open cost basis remains distinct');
+  assert.equal(optionCells[8], '$200.00', 'broker mark per contract wins over live option price');
+  assert.equal(optionCells[9], '-$200.00', 'market value uses broker mark');
+  assert.equal(optionCells[10], '$300.00', 'P&L uses broker mark');
   assert.equal(await page.$eval('#openOptions .option-ledger td:first-child', node => getComputedStyle(node).position), 'sticky', 'contract stays visible on horizontal scroll');
-  await page.click('#openOptions [data-option-price]');
-  await page.waitForFunction(() => document.querySelector('#openOptions [data-option-price]')?.textContent?.includes('Adjusted close'));
-  assert(/150\.25/.test(await page.$eval('#openOptions [data-option-price]', node => node.textContent)), 'opening-day adjusted close is labelled');
+  assert(optionCells[3].includes('$150.25') && optionCells[3].includes('Adj. close'), 'Entry Spot explicitly identifies adjusted-close fallback');
   await page.click('#openOptions [data-option-right="call"]');
   assert(!(await page.$('#openOptions .option-ledger-row')), 'right filter removes put row');
   await page.click('#openOptions [data-option-right="all"]');
@@ -518,9 +525,9 @@ try {
   await page.waitForSelector('#channelPills [data-channel="ibkr"]');
   await page.click('#channelPills [data-channel="ibkr"]');
   const grossCells = await page.$$eval('#openOptions .option-ledger-row td', cells => cells.map(cell => cell.textContent.trim()));
-  assert.equal(grossCells[5], '$500.00 before fees', 'gross proceeds cannot masquerade as net credit');
+  assert.equal(grossCells[6], '$500.00Before fees', 'gross proceeds cannot masquerade as net credit');
   assert(grossCells[2].includes('09-Sep-2026'), 'opening date survives unavailable fees');
-  assert(/Broker fill fees are unavailable/.test(await page.$eval('#kpiRow', node => node.textContent)), 'net premium remains unknown rather than zero');
+  assert(/Before fees/.test(await page.$eval('#kpiRow', node => node.textContent)), 'premium stays available before fees across all brokers');
   assert.equal(await page.$eval('#totalPremiumValue', node => node.textContent), '$654.00', 'total uses recorded premium before fees when fees are missing');
   assert.match(await page.$eval('#totalPremiumMeta', node => node.textContent), /Before fees/, 'gross total clearly states its basis');
   payload.optionTradeDetails['AAPL  260918P00140000'] = savedTrade;
@@ -528,8 +535,9 @@ try {
 
   payload.equityPrices = {};
   await page.goto(`http://127.0.0.1:${port}/dashboard/`);
-  await page.waitForFunction(() => document.getElementById('expiryTable')?.textContent?.includes('No spot quote'));
-  assert.equal(await page.$$eval('#expiryTable .risk-row', (rows) => rows.length), 2, 'unscored open contracts remain visible');
+  await page.waitForFunction(() => document.getElementById('expiryTable')?.textContent?.includes('could not be scored'));
+  assert.equal(await page.$$eval('#expiryTable .risk-row', (rows) => rows.length), 0, 'unscored contracts are excluded from the radar');
+  assert.equal(await page.$$eval('#openOptions .option-ledger-row', rows => rows.length), 2, 'unscored contracts remain in Section 03');
   assert(/0 of 2 above 30%/.test(await page.$eval('#expiryTable', (node) => node.textContent)), 'radar count stays honest');
 
   payload.generatedAt = '2026-10-06T10:00:00.000Z';
@@ -544,7 +552,8 @@ try {
     optionCount: 0, equityCount: 0, fundCount: 0 } };
   await page.setViewport({ width: 390, height: 844 });
   await page.goto(`http://127.0.0.1:${port}/dashboard/`);
-  await page.waitForFunction(() => document.getElementById('totalPremiumValue')?.textContent === '$650.00');
+  await page.waitForFunction(() => document.getElementById('totalPremiumValue')?.textContent === '$654.00');
+  await page.screenshot({ path: '/tmp/velovest-dashboard-mobile.png', fullPage: true });
   const mobileBoxes = await page.$$eval('.hero-metrics .nav-card', nodes => nodes.map(n => {
     const b = n.getBoundingClientRect(); return { left: b.left, right: b.right, top: b.top, bottom: b.bottom };
   }));

@@ -4,7 +4,7 @@ import { expect, it } from 'vitest';
 import { buildExecutionJournal, type OptionExecution } from '../src/brokers/option-executions.js';
 
 const source = readFileSync('webui/dashboard/app.js', 'utf8');
-const calculator = source.slice(source.indexOf('function recordedPremiumForView('), source.indexOf('\nfunction unverifiedOptionChannels'));
+const calculator = source.slice(source.indexOf('function selectedTradeChannels('), source.indexOf('\nfunction unverifiedOptionChannels'));
 const execution: OptionExecution = {
   channel: 'ibkr', account_id: 'A', execution_id: '1', contract_id: 'AMD-P',
   executed_at: '2026-08-01T10:00:00', underlying: 'AMD', right: 'put',
@@ -19,50 +19,76 @@ const fills = [execution,
 function calculate(records = fills, view: Record<string, unknown> = {}, date = '2026-09-16') {
   const journal = buildExecutionJournal(records);
   return runInNewContext(`${calculator}\nrecordedPremiumForView(view, date)`, {
-    payload: { premiumJournal: { ...journal, channels: [...new Set(records.map(r => r.channel))] }, premiumSupportedChannels: ['ibkr', 'tiger'] },
+    payload: { premiumJournal: { ...journal, channels: [...new Set(records.map(r => r.channel))] }, optionAnalytics: { executions: records }, premiumSupportedChannels: ['ibkr', 'tiger'] },
     view: { channelView: 'ibkr', reportingCurrency: 'USD', ...view }, date,
     MERGED_CHANNEL_VIEW: 'merged', reportingCcyCode: (v: any) => v.reportingCurrency,
     optionDateLabel: (d: string) => d,
   });
 }
-it('sums net opening credits and closing costs across months without counting future fills', () => {
+it('sums before-fees opening credits and closing costs across months without counting future fills', () => {
   const result = calculate();
-  expect(result.total).toBe(547);
-  expect(result.mtd).toBe(199);
-  expect(result.daily).toBeNull();
-  expect(calculate(fills, {}, '2026-08-05').total).toBe(399);
+  expect(result.total).toBe(550);
+  expect(result.mtd).toBe(200);
+  expect(result.daily).toBe(200);
+  expect(result.dailyDate).toBe('2026-09-10');
+  expect(calculate(fills, {}, '2026-08-05').total).toBe(400);
 });
 it('includes closed-only brokers in the merged total and respects a selected broker', () => {
   const records = [...fills, { ...execution, channel: 'tiger', execution_id: 'closed', gross_premium: '100' }];
-  expect(calculate(records, { channelView: 'merged', channels: ['ibkr'] }).total).toBe(646);
-  expect(calculate(records).total).toBe(547);
+  expect(calculate(records, { channelView: 'merged', channels: ['ibkr'] }).total).toBe(650);
+  expect(calculate(records).total).toBe(550);
 });
 it('converts historical currencies and refuses to combine them without FX', () => {
   const records = [...fills, { ...execution, execution_id: 'foreign', currency: 'SGD', gross_premium: '101' }];
   expect(calculate(records).total).toBeNull();
   expect(calculate(records).totalReason).toContain('without FX');
-  expect(calculate(records, { fxApplied: true, fxRates: { SGD: 0.75 } }).total).toBe(622);
-  expect(calculate(records, { fxApplied: false, fxRates: { SGD: 0.75 } }).total).toBe(622);
+  expect(calculate(records, { fxApplied: true, fxRates: { SGD: 0.75 } }).total).toBe(625.75);
+  expect(calculate(records, { fxApplied: false, fxRates: { SGD: 0.75 } }).total).toBe(625.75);
 });
 it('keeps unknown historical fees distinct from verified current-month premium', () => {
   const records = fills.map((r, i) => i === 0 ? { ...r, commission: null } : r);
   const result = calculate(records);
   expect(result.total).toBe(550);
   expect(result.totalBasis).toBe('gross');
-  expect(calculate().totalBasis).toBe('net');
-  expect(result.mtd).toBe(199);
+  expect(calculate().totalBasis).toBe('gross');
+  expect(result.mtd).toBe(200);
   expect(calculate([], { channelView: 'merged', channels: ['ibkr'] }).total).toBeNull();
-  expect(calculate(fills, { channelView: 'merged', channels: ['ibkr', 'unsupported'] }).total).toBeNull();
+  expect(calculate(fills, { channelView: 'merged', channels: ['ibkr', 'unsupported'] }).total).toBe(550);
+  expect(calculate(fills, { channelView: 'merged', channels: ['ibkr', 'unsupported'] }).partial).toBe(true);
 });
 
-it('uses one consistent before-fees basis when a closing fee is missing, without changing net KPIs', () => {
+it('uses one consistent before-fees basis when a closing fee is missing, with fees separate from premium', () => {
   const records = fills.map((row, i) => i === 1 || i === 2 ? { ...row, commission: null } : row);
   const result = calculate(records);
   expect(result.total).toBe(550);
   expect(result.totalBasis).toBe('gross');
-  expect(result.mtd).toBeNull();
-  expect(result.reason).toContain('fees are unavailable');
+  expect(result.mtd).toBe(200);
+  expect(result.missingFees).toBe(1);
+  expect(result.reason).toContain('before fees');
   const journal = buildExecutionJournal(records);
   expect(journal.daily.find(row => row.date === '2026-08-10')?.gross_premium).toBe('-50');
   expect(journal.cumulative[0].gross_premium).toBe('1450');
+});
+
+it('buckets recorded cash flow and realized profit by trade month and excludes future evidence', () => {
+  const helper = source.slice(source.indexOf('function selectedTradeChannels('), source.indexOf('function recordedPremiumForView('));
+  const monthly = source.slice(source.indexOf('function recordedMonthlyData('), source.indexOf('function monthlyLineCard('));
+  const result = runInNewContext(`${helper}\n${monthly}\nrecordedMonthlyData(view, date)`, {
+    payload: { premiumJournal: { channels: ['ibkr'] }, optionAnalytics: { executions: fills,
+      profits: [{ channel: 'ibkr', date: '2026-08-10', currency: 'USD', gross: 350, net: 348 },
+        { channel: 'ibkr', date: '2026-10-10', currency: 'USD', gross: 900, net: 899 }], gaps: [] } },
+    view: { channelView: 'ibkr', reportingCurrency: 'USD' }, date: '2026-09-16',
+    MERGED_CHANNEL_VIEW: 'merged', reportingCcyCode: (v: any) => v.reportingCurrency,
+  });
+  expect([...result.byMonth]).toEqual([['2026-08', 350], ['2026-09', 200]]);
+  expect([...result.byUnderlying]).toEqual([['AMD', 550]]);
+  expect([...result.realized]).toEqual([['2026-08', 348]]);
+});
+
+it('shows zero recorded MTD flow in a month without trades while retaining the latest daily trade', () => {
+  const result = calculate(fills, {}, '2026-11-01');
+  expect(result.mtd).toBe(0);
+  expect(result.daily).toBe(900);
+  expect(result.dailyDate).toBe('2026-10-10');
+  expect(result.fees).toBe(0);
 });

@@ -18,6 +18,7 @@ import { readFlexEgressIpv4 } from '../brokers/egress.js';
 import { createBrokerConnectionsRouter } from './broker-api.js';
 import { createDashboardApiRouter } from './dashboard-api.js';
 import { createInvageChatQuestionLibrary, sampleInvageChatQuestionStarters } from './chat-questions.js';
+import { readDashboardConfig } from './dashboard-config.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -115,6 +116,7 @@ export function chatEmptyStateFor(profile: ProductProfileId): ChatEmptyState {
 }
 
 export function createInvageWebUi(): DomainWebUiExtension {
+  readDashboardConfig();
   readFlexEgressIpv4();
   const empty = chatEmptyStateFor(readProductProfile());
   return {
@@ -122,6 +124,9 @@ export function createInvageWebUi(): DomainWebUiExtension {
     productName: productDisplayName(),
     version: appVersion,
     defaultPath: '/dashboard',
+    navLabels: { chat: readProductProfile() === 'consultant' ? 'Velovest AI' : 'Chat' },
+    navOrder: { chat: 15, notifications: 16, notes: 17, tasks: 18, settings: 19 },
+    hiddenNav: ['workflows'],
     chatEmptyState: empty,
     chatQuestionLibrary: createInvageChatQuestionLibrary(),
     nav: [
@@ -138,13 +143,6 @@ export function createInvageWebUi(): DomainWebUiExtension {
         path: '/positions',
         icon: 'table',
         order: 11,
-      },
-      {
-        id: 'book',
-        label: 'Book',
-        path: '/book',
-        icon: 'notebook-pen',
-        order: 12,
       },
       {
         id: 'trades',

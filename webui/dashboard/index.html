@@ -33,7 +33,6 @@
             <button type="button" id="dateNext" aria-label="Next day">→</button>
             <button type="button" class="ghost" id="dateLatest">Latest</button>
             <button type="button" class="refresh" id="refreshBtn">Refresh</button>
-            <label class="auto-label"><input type="checkbox" id="autoRefresh" /> Auto 60s</label>
           </div>
           <div class="broker-pills" id="channelPills"></div>
         </div>
@@ -41,7 +40,7 @@
           <div class="metric-card nav-card">
             <div class="metric-head">
               <div class="label-eyebrow">Net asset value (NAV)</div>
-              <button type="button" class="help-dot" title="NAV = positions MTM + recorded free cash + fixed-deposit principal. Missing cash is not treated as zero.">?</button>
+              <button type="button" class="help-dot" title="Total marked value of recorded assets: cash plus owned stocks, long options and fixed deposits, minus the cost to close short options. Unknown cash or prices can make NAV incomplete.">?</button>
             </div>
             <div class="metric-value" id="navValue">—</div>
             <div class="metric-sub" id="navDelta"></div>
@@ -49,7 +48,7 @@
           <div class="metric-card nav-card hidden" id="totalPremiumCard">
             <div class="metric-head">
               <div class="label-eyebrow">Total premium</div>
-              <button type="button" class="help-dot" title="Recorded short-option premium: sell-to-open credits minus buy-to-close costs, including open and closed positions through the selected date. After fees when all fees are known; otherwise the entire total is shown before fees. Limited to retained broker trade history; this is cash flow, not profit.">?</button>
+              <button type="button" class="help-dot" title="Recorded short-option premium: sell-to-open credits minus buy-to-close costs, including open and closed positions through the selected date. Before fees across every broker; reported brokerage fees are displayed separately. Limited to retained broker trade history; this is cash flow, not profit.">?</button>
             </div>
             <div class="metric-value" id="totalPremiumValue">—</div>
             <div class="metric-sub" id="totalPremiumMeta"></div>
@@ -85,26 +84,12 @@
           </div>
           <div class="option-view-tabs" role="group" aria-label="Option position view">
             <button type="button" class="chip-btn on" id="optionOpenTab" aria-pressed="true">Open</button>
-            <button type="button" class="chip-btn" id="optionTimelineTab" aria-pressed="false">Timeline</button>
             <button type="button" class="chip-btn" id="optionHistoryTab" aria-pressed="false">History</button>
             <button type="button" class="chip-btn" id="optionRollsTab" aria-pressed="false">Rolls</button>
           </div>
         </div>
         <p id="optionFreshness" class="option-freshness"></p>
         <div id="optionOpenEmpty" class="metric-card empty hidden">No open option positions in this view.</div>
-        <div id="optionTimelinePanel" class="hidden">
-          <div class="option-ledger-filters history-filters">
-            <label>Contract <input id="timelineSearch" type="search" placeholder="Ticker, strike, expiry" /></label>
-            <label>Right <select id="timelineRight"><option value="">All rights</option><option value="put">Put</option><option value="call">Call</option></select></label>
-            <button type="button" class="chip-btn" id="timelineExpand">Expand all</button>
-            <button type="button" class="chip-btn" id="timelineCollapse">Collapse all</button>
-            <button type="button" class="chip-btn" id="timelineRefresh">Refresh timeline</button>
-          </div>
-          <p class="option-freshness">Expand a stock to see its individual contracts and roll arrows. Select a contract to highlight its roll chain; press Escape to clear the selection. A dashed lead-in before the first recorded point means earlier history is unavailable. Solid bars show broker observations; dashed extensions show time remaining to expiry. Dots show recorded opens and closes. Roll arrows retain the broker evidence level; possible links are dashed.</p>
-          <p id="timelineStatus" class="option-freshness" role="status" aria-live="polite"></p>
-          <div id="timelineChart"></div>
-          <div id="timelineDetail"></div>
-        </div>
         <div id="optionHistoryPanel" class="hidden">
           <div class="option-ledger-filters history-filters">
             <label>Broker <select id="historyBroker"><option value="">All brokers</option></select></label>
@@ -128,7 +113,7 @@
             <button type="button" class="chip-btn" id="rollExpand">Expand groups</button>
             <button type="button" class="chip-btn" id="rollCollapse">Collapse all</button>
           </div>
-          <p class="option-freshness">Expand a contract group to follow its roll history. Latest replacement is a trade record, not confirmation of a current position. Roll cash flow is not realized profit.</p>
+          <p class="option-freshness">Expand a contract group to view its roll history. The latest replacement shown is based on trade records and does not confirm that the position is still open. Cash received or paid during a roll is not the same as realized profit.</p>
           <p id="rollStatus" class="option-freshness" role="status" aria-live="polite"></p>
           <button type="button" class="chip-btn hidden" id="rollRetry">Retry</button>
           <div id="rollGroups"></div>
@@ -153,7 +138,6 @@
   </div>
   <footer>Live data · Yahoo Finance · Broker snapshots · Not financial advice</footer>
   <script src="../report.js"></script>
-  <script src="./option-timeline.js"></script>
   <script src="./app.js"></script>
 </body>
 </html>

@@ -93,6 +93,8 @@ describe('raw linkage readers', () => {
     const row = `<Trade accountId="A" assetCategory="OPT" levelOfDetail="EXECUTION" transactionType="ExchTrade" tradeID="1" ibOrderID="2" brokerageOrderID="p" ibExecID="a.b.02.01" dateTime="20261001;100000" underlyingSymbol="AMD" putCall="C" expiry="20261120" strike="200" multiplier="100" currency="USD" ibCommissionCurrency="USD" quantity="2" buySell="BUY" openCloseIndicator="C" netCash="-20.123"/>`;
     const xml = `<FlexStatement accountId="A"><Trades>${row}</Trades></FlexStatement>`;
     expect(parseRelationshipArchive('ibkr', Buffer.from(xml), 'A', source)[0]).toMatchObject({ prefix: 'a.b', parent: 'p', cash: '-20.123' });
+    expect(parseRelationshipArchive('ibkr', Buffer.from(xml.replace('netCash="-20.123"', 'netCash="-20.123" proceeds="-20"')), 'A', source)[0].gross_cash).toBe('-20');
+    expect(parseRelationshipArchive('ibkr', Buffer.from(xml), 'A', source)[0].gross_cash).toBeUndefined();
     expect(() => parseRelationshipArchive('ibkr', Buffer.from('<!DOCTYPE x>'+xml), 'A', source)).toThrow('Document');
     expect(() => parseRelationshipArchive('ibkr', Buffer.from(xml.replace('tradeID="1"', 'origTradeID="9" tradeID="1"')), 'A', source)).toThrow('correction');
   });

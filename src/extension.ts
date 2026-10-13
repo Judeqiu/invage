@@ -66,6 +66,10 @@ ${DIRECT_ROUTING_POLICY}
 
 ${PUBLIC_FINANCIAL_DATA_POLICY}
 
+## Response presentation
+
+Lead with a short, plain-language answer and prefer concise bullet points for findings and actions. Explain financial terms when needed. Keep essential uncertainty, data sources and material risks in the visible summary. For a longer supporting explanation in WebUI, put it after a level-two heading exactly named "Detailed explanation"; the chat renders that section behind an expandable control. Do not put the only answer or important risk information in that section. On Telegram and Slack, keep the explanation concise without relying on an expand control. Option cash flow and realized P&L are different: daily and MTD premium means recorded STO minus BTC before fees, with brokerage fees separately. Roll premium is the latest replacement STO minus old-contract BTC, not cumulative chain profit.
+
 ## Available specialists
 
 ${specialistTableMarkdown(profile)}

@@ -41,7 +41,10 @@ import type { OptionLiveMark } from '../market/fetch-option-marks.js';
 import { readProductProfile, type ProductProfileId } from '../agents/roster.js';
 import { productDisplayName } from '../product-name.js';
 import { buildExecutionJournal } from '../brokers/option-executions.js';
-import { openOptionTradeDetails, type OpenOptionTradeDetail } from './option-dashboard-data.js';
+import { openOptionTradeDetails, attachLatestRollPremium, type OpenOptionTradeDetail } from './option-dashboard-data.js';
+import { buildRecordedOptionAnalytics } from './option-analytics.js';
+import { optionRelationshipsForState } from './option-relationships-data.js';
+import { canonicalOptionUnderlying } from '../brokers/option-symbol.js';
 
 export const BENCHMARK_TICKER = 'SPY';
 
@@ -84,6 +87,7 @@ export interface DashboardPayload {
   };
   /** Channels whose broker connector supplies option executions. */
   premiumSupportedChannels?: string[];
+  optionAnalytics?: ReturnType<typeof buildRecordedOptionAnalytics>;
   /** Env product profile — copy/section gates. Not a books field. */
   productProfile: ProductProfileId;
   /** UTARUS_AGENT_NAME. */
@@ -427,6 +431,31 @@ export async function loadDashboardForSlug(
   }
 
   const journal = buildExecutionJournal(state.option_executions);
+  const optionTradeDetails = openOptionTradeDetails(portfolio, state.option_executions, accountsByChannel, state.option_events);
+  try {
+    const relationships = optionRelationshipsForState(state);
+    attachLatestRollPremium(portfolio, optionTradeDetails, relationships.groups.flatMap(g => g.relationships), accountsByChannel);
+  } catch {
+    const issue: DashboardIssue = { code: 'roll_premium_unavailable', message: 'Latest roll credit could not be verified from retained trade records.', severity: 'warning' };
+    model.live.issues = [...(model.live.issues ?? []), issue];
+  }
+  // Fetch one daily history series per underlying, rather than one request per contract.
+  const entryDates = new Map<string, Set<string>>();
+  for (const [key, detail] of Object.entries(optionTradeDetails)) {
+    const symbol = canonicalOptionUnderlying(portfolio[key].option!.underlying, portfolio[key].option!);
+    const dates = entryDates.get(symbol) ?? new Set<string>();
+    dates.add(detail.openedFrom); entryDates.set(symbol, dates);
+  }
+  await Promise.all([...entryDates].map(async ([symbol, dates]) => {
+    try {
+      const closes = await fetchHistoricalCloses(symbol, [...dates]);
+      for (const [key, detail] of Object.entries(optionTradeDetails)) {
+        if (canonicalOptionUnderlying(portfolio[key].option!.underlying, portfolio[key].option!) !== symbol) continue;
+        const price = closes[detail.openedFrom];
+        if (price != null) detail.entrySpot = { price, date: detail.openedFrom, basis: 'adjusted_close' };
+      }
+    } catch { /* A missing historical quote remains unknown, never today's spot. */ }
+  }));
   const out: DashboardPayload = {
     slug,
     displayName,
@@ -435,7 +464,8 @@ export async function loadDashboardForSlug(
     model,
     benchmark,
     warnings: model.live.issues,
-    optionTradeDetails: openOptionTradeDetails(portfolio, state.option_executions, accountsByChannel, state.option_events),
+    optionTradeDetails,
+    optionAnalytics: buildRecordedOptionAnalytics(state.option_executions, state.option_events),
     premiumJournal: { available: journal.available, daily: journal.daily,
       channels: [...new Set(journal.executions.map(row => row.channel))] },
     premiumSupportedChannels,
