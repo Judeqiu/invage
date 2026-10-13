@@ -1990,7 +1990,7 @@ function renderPremiumEngine(view) {
   const premiumHelp = 'Money received from selling options, minus money paid to buy options, grouped by the stock each option is based on. Includes recorded opening, closing and protective option trades, before brokerage fees. This is cash flow, not profit; missing history can make it incomplete.';
   const plHelp = 'Profit or loss from completed option trades, grouped by the month they ended. It is calculated from matched opening and closing trades, or reported directly by the broker. Partial subtotals exclude records that cannot be calculated. Fee treatment is shown for each month. Open positions and stock profit or loss are not included. Expand a month to see which stocks and brokers contribute.';
   el.premiumEngine.innerHTML = cssBarCard('Net Option Premium by Month', rows(data.byMonth), 'Before fees · recorded trades') +
-    `<div><p class="chart-help"><button class="help-dot" type="button" aria-label="Explain option premium by stock" data-help="${escapeHtml(premiumHelp)}">?</button> Before fees · includes recorded option purchases and sales</p>${cssBarCard('Net Option Premium by Underlying', rows(data.byUnderlying))}</div>` +
+    cssBarCard('Net Option Premium by Underlying', rows(data.byUnderlying), 'Before fees · includes recorded option purchases and sales', { id: 'underlyingPremiumCard', limit: 5, help: premiumHelp }) +
     monthlyLineCard('Recorded P&L by Month', data, ccy, plHelp);
 }
 

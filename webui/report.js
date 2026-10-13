@@ -353,23 +353,24 @@ function optionItmState(p, prices) {
   return 'unknown';
 }
 
-function cssBarCard(title, rows, caption) {
+function cssBarCard(title, rows, caption, options = {}) {
   if (!rows || rows.length === 0) return '';
   const max = Math.max(...rows.map((r) => Math.abs(r.value)));
-  const body = rows
-    .map((r) => {
-      const pct = max > 0 ? (Math.abs(r.value) / max) * 100 : 0;
-      const down = r.value < 0 ? ' down' : '';
-      return `<div class="bar-row">
-        <div class="bar-meta"><span>${esc(r.label)}</span><span class="num ${r.value < 0 ? 'down' : ''}">${esc(r.display)}</span></div>
-        <div class="bar-track"><div class="bar-fill${down}" style="width:${pct.toFixed(1)}%"></div></div>
-      </div>`;
-    })
-    .join('');
-  return `<div class="metric-card">
+  const renderRow = r => {
+    const pct = max > 0 ? (Math.abs(r.value) / max) * 100 : 0;
+    const down = r.value < 0 ? ' down' : '';
+    return `<div class="bar-row">
+      <div class="bar-meta"><span>${esc(r.label)}</span><span class="num ${r.value < 0 ? 'down' : ''}">${esc(r.display)}</span></div>
+      <div class="bar-track"><div class="bar-fill${down}" style="width:${pct.toFixed(1)}%"></div></div>
+    </div>`;
+  };
+  const limit = options.limit || rows.length;
+  const more = rows.slice(limit);
+  return `<div class="metric-card"${options.id ? ` id="${esc(options.id)}"` : ''}>
     <div class="label-eyebrow">${esc(title)}</div>
-    <div class="bar-list" style="margin-top:0.75rem">${body}</div>
-    ${caption ? `<div class="metric-sub" style="margin-top:0.6rem">${esc(caption)}</div>` : ''}
+    <div class="bar-list" style="margin-top:0.75rem">${rows.slice(0, limit).map(renderRow).join('')}</div>
+    ${more.length ? `<details class="bar-more"><summary><span class="bar-expand-label">Show ${more.length} more</span><span class="bar-collapse-label">Show fewer</span></summary><div class="bar-list">${more.map(renderRow).join('')}</div></details>` : ''}
+    ${caption ? `<div class="metric-sub bar-caption">${options.help ? `<button class="help-dot" type="button" aria-label="Explain option premium by stock" data-help="${esc(options.help)}">?</button> ` : ''}${esc(caption)}</div>` : ''}
   </div>`;
 }
 

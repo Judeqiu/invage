@@ -272,3 +272,10 @@ table.report td.num { font-variant-numeric: tabular-nums; font-family: var(--fon
 .metric-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem; }
 .broker-pills, .chip-row { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.85rem; }
 .group-row td { background: var(--muted); font-weight: 600; }
+
+.bar-caption { margin-top: 0.75rem; line-height: 1.5; }
+.bar-more { margin-top: 0.75rem; font-size: 0.8rem; }
+.bar-more summary { cursor: pointer; color: var(--brand); }
+.bar-more .bar-list { margin-top: 0.75rem; }
+.bar-more:not([open]) .bar-collapse-label, .bar-more[open] .bar-expand-label { display: none; }
+.bar-more:not([open]) > .bar-list { display: none; }
