@@ -154,6 +154,7 @@
     const search = document.getElementById('timelineSearch'), right = document.getElementById('timelineRight');
     let data = { episodes: [], groups: [], gaps: [] }, request = 0, loadedKey = '', pendingKey = '', limited = false;
     let current = { tracks: [], links: [] };
+    let selectedKey = null;
     const expandedStocks = new Set();
     let stockGroups = [];
     let renderedWidth = 0;
@@ -166,6 +167,42 @@
       tooltip.hidden = true; tooltipTarget?.removeAttribute('aria-describedby'); tooltipTarget = null;
     }
     const label = t => `${t.contract.underlying} ${t.side} ${t.contract.right} ${t.contract.strike} · ${t.contract.expiry}`;
+    function relatedKeys() {
+      const tracks = new Map(current.tracks.map(t => [t.key, t]));
+      if (!tracks.has(selectedKey)) return new Set();
+      const neighbors = new Map(current.tracks.map(t => [t.key, new Set()]));
+      for (const link of current.links) {
+        const from = tracks.get(link.from), to = tracks.get(link.to);
+        if (!from || !to || from.channel !== to.channel || from.account !== to.account) continue;
+        neighbors.get(link.from).add(link.to); neighbors.get(link.to).add(link.from);
+      }
+      const related = new Set([selectedKey]), queue = [selectedKey];
+      for (const key of queue) for (const next of neighbors.get(key)) if (!related.has(next)) {
+        related.add(next); queue.push(next);
+      }
+      return related;
+    }
+    function highlightSelection() {
+      const related = relatedKeys(), active = related.size > 0;
+      for (const node of chart.querySelectorAll('[data-timeline-row]')) {
+        const key = current.tracks[Number(node.dataset.timelineRow)].key;
+        node.classList.toggle('timeline-selected', active && key === selectedKey);
+        node.classList.toggle('timeline-related', active && key !== selectedKey && related.has(key));
+        node.classList.toggle('timeline-muted', active && !related.has(key));
+        node.setAttribute('aria-pressed', String(active && key === selectedKey));
+      }
+      for (const node of chart.querySelectorAll('.timeline-roll')) {
+        const highlighted = active && related.has(node.dataset.timelineFrom) && related.has(node.dataset.timelineTo);
+        node.classList.toggle('timeline-highlighted', highlighted);
+        node.classList.toggle('timeline-muted', active && !highlighted);
+      }
+      for (const node of chart.querySelectorAll('[data-timeline-group]')) {
+        node.classList.toggle('timeline-muted', active && !current.tracks.some(t => related.has(t.key) && t.contract.underlying === node.dataset.timelineGroup));
+      }
+    }
+    function clearSelection() {
+      selectedKey = null; detail.innerHTML = ''; highlightSelection();
+    }
     function render() {
       hideTooltip();
       const scroll = chart.querySelector('.timeline-scroll');
@@ -238,7 +275,7 @@
         if (!trackY.has(l.from) || !trackY.has(l.to)) return '';
         const direction = Math.sign(trackY.get(l.to) - trackY.get(l.from));
         const x1 = x(l.date), x2 = x(l.through), y1 = trackY.get(l.from) + direction * 8, y2 = trackY.get(l.to) - direction * 10;
-        return `<path class="timeline-roll ${['possible', 'review'].includes(l.evidence) ? 'possible' : ''}" d="M ${x1} ${y1} L ${x2} ${y2}" marker-end="url(#timelineArrow)"><title>${esc(`${l.evidence} roll relationship: ${l.reason}`)}</title></path>`;
+        return `<path class="timeline-roll ${['possible', 'review'].includes(l.evidence) ? 'possible' : ''}" data-timeline-from="${esc(l.from)}" data-timeline-to="${esc(l.to)}" d="M ${x1} ${y1} L ${x2} ${y2}" marker-end="url(#timelineArrow)"><title>${esc(`${l.evidence} roll relationship: ${l.reason}`)}</title></path>`;
       }).join('');
       chart.innerHTML = `<div class="timeline-legend"><span class="timeline-open-key">● Open</span><span class="timeline-close-key">● Close</span><span>◇ Expiry date</span><span>○ First absent / unverified effect</span><span>↳ Roll relationship</span><span>⋯ Earlier history unavailable</span></div>
         <div class="timeline-scroll" tabindex="0" role="region" aria-label="Option timeline; scroll horizontally to explore dates"><svg class="option-timeline" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="group" aria-label="Option activity through ${context.asOf}">
@@ -246,6 +283,7 @@
         <line class="timeline-today" x1="${x(context.asOf)}" x2="${x(context.asOf)}" y1="48" y2="${height}"/><text class="timeline-tick" x="${x(context.asOf)}" y="17" text-anchor="middle">${context.replay ? 'As of' : 'Today'} ${context.asOf}</text></svg></div>`;
       const updatedScroll = chart.querySelector('.timeline-scroll');
       updatedScroll.scrollLeft = scrollLeft; updatedScroll.scrollTop = scrollTop;
+      highlightSelection();
     }
     async function pages(endpoint, field, params, id) {
       const out = [], gaps = []; let offset = 0;
@@ -265,7 +303,7 @@
       const context = getContext(), key = JSON.stringify([context.channel, context.asOf, context.replay]);
       if (!force && pendingKey === key) return;
       if (!force && loadedKey === key) { render(); return; }
-      const id = ++request; pendingKey = key; status.textContent = 'Loading option timeline…'; detail.innerHTML = ''; chart.innerHTML = '';
+      const id = ++request; pendingKey = key; selectedKey = null; status.textContent = 'Loading option timeline…'; detail.innerHTML = ''; chart.innerHTML = '';
       const historyParams = new URLSearchParams({ status: 'all' });
       const rollParams = new URLSearchParams({ as_of: context.asOf });
       if (context.channel) { historyParams.set('channel', context.channel); rollParams.set('channel', context.channel); }
@@ -285,8 +323,11 @@
     function showEvidence(target) {
       const node = target.closest('[data-timeline-row]'); if (!node) return;
       const t = current.tracks[Number(node.dataset.timelineRow)];
+      selectedKey = t.key; highlightSelection();
+      const relatedCount = relatedKeys().size - 1;
       const links = current.links.filter(l => l.from === t.key || l.to === t.key);
       detail.innerHTML = `<div class="metric-card timeline-detail"><h3>${esc(label(t))}</h3><p>${esc(t.channel)}${t.account ? ` / ${esc(t.account)}` : ''}</p>
+        <p>${relatedCount ? `Highlighted ${relatedCount} related contract${relatedCount === 1 ? '' : 's'} in this roll chain. Dashed arrows remain possible or review relationships.` : 'No related contracts in the current view.'} <button type="button" class="chip-btn" data-timeline-clear>Clear selection</button></p>
         <p>${esc([...new Set(t.notes)].join(' · ') || 'Archive trade evidence; current position status is not confirmed.')}</p>
         ${t.unknownStart ? '<p><strong>Earlier history unavailable.</strong> The dashed lead-in indicates missing opening records; its length does not represent a known holding period.</p>' : ''}
         <ul>${t.events.map(e => `<li>${esc(e.date)} · ${esc(e.label)}</li>`).join('')}</ul>
@@ -339,7 +380,7 @@
       if (!group) { showEvidence(target); return; }
       const stock = group.dataset.timelineGroup;
       if (expandedStocks.has(stock)) expandedStocks.delete(stock); else expandedStocks.add(stock);
-      detail.innerHTML = ''; render();
+      clearSelection(); render();
       [...chart.querySelectorAll('[data-timeline-group]')].find(g => g.dataset.timelineGroup === stock)?.focus({ preventScroll: true });
     }
     chart.addEventListener('click', e => activate(e.target));
@@ -349,14 +390,15 @@
     chart.addEventListener('focusin', e => showTooltip(e.target));
     chart.addEventListener('focusout', hideTooltip);
     window.addEventListener('scroll', hideTooltip, true);
-    document.addEventListener('keydown', e => { if (e.key === 'Escape') hideTooltip(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') { hideTooltip(); clearSelection(); } });
+    detail.addEventListener('click', e => { if (e.target.closest('[data-timeline-clear]')) clearSelection(); });
     chart.addEventListener('keydown', e => {
       if (['Enter', ' '].includes(e.key) && e.target.closest('[data-timeline-row], [data-timeline-group]')) { e.preventDefault(); activate(e.target); }
     });
     document.getElementById('timelineExpand').addEventListener('click', () => { stockGroups.forEach(g => expandedStocks.add(g.stock)); render(); });
-    document.getElementById('timelineCollapse').addEventListener('click', () => { stockGroups.forEach(g => expandedStocks.delete(g.stock)); detail.innerHTML = ''; render(); });
-    search.addEventListener('input', () => { detail.innerHTML = ''; render(); });
-    right.addEventListener('change', () => { detail.innerHTML = ''; render(); });
+    document.getElementById('timelineCollapse').addEventListener('click', () => { stockGroups.forEach(g => expandedStocks.delete(g.stock)); clearSelection(); render(); });
+    search.addEventListener('input', () => { clearSelection(); render(); });
+    right.addEventListener('change', () => { clearSelection(); render(); });
     document.getElementById('timelineRefresh').addEventListener('click', () => load(true));
     const resizeObserver = new ResizeObserver(() => {
       if (chart.clientWidth > 0 && current.tracks.length && availableWidth() !== renderedWidth) render();

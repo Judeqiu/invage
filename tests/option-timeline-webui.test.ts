@@ -264,3 +264,60 @@ it.skipIf(!existsSync(executable))('defaults to Open and renders timeline filter
     expect(await page.$eval('#status', e => e.classList.contains('error'))).toBe(false);
   } finally { await browser.close(); await new Promise<void>(r => server.close(() => r())); }
 }, 30_000);
+
+it.skipIf(!existsSync(executable))('highlights the entire roll chain on selection and clears it without changing evidence', async () => {
+  const third = { ...replacement, strike: 240, expiry: '2027-03-19' };
+  const chain = [{ relationships: [relationship, { ...relationship, id: 'next-roll', old: replacement, replacement: third,
+    at: '2026-10-05', through: '2026-10-05', evidence: 'order' }] }];
+  const root = resolve('webui');
+  const server = createServer((req, res) => {
+    const url = new URL(req.url!, 'http://localhost');
+    res.setHeader('Content-Type', 'application/json');
+    if (url.pathname.endsWith('/option-history')) return res.end(JSON.stringify({ episodes: [episode, { ...episode, account_id: 'B' }], gaps: [], next_offset: null }));
+    if (url.pathname.endsWith('/option-relationships')) return res.end(JSON.stringify({ groups: chain, gaps: [], next_offset: null }));
+    if (url.pathname === '/') {
+      res.setHeader('Content-Type', 'text/html');
+      return res.end(`<meta charset="utf-8"><link rel="stylesheet" href="/dashboard/page.css"><input id="timelineSearch"><select id="timelineRight"><option value=""></option><option value="put">put</option></select>
+        <button id="timelineExpand">Expand</button><button id="timelineCollapse">Collapse</button><button id="timelineRefresh">Refresh</button>
+        <div id="timelineStatus"></div><div id="timelineChart"></div><div id="timelineDetail"></div><script src="/dashboard/option-timeline.js"></script>
+        <script>window.timeline = createOptionTimeline(() => (${JSON.stringify(context)})); timeline.load();</script>`);
+    }
+    const file = resolve(root, '.' + url.pathname);
+    if (!file.startsWith(root + '/') || !existsSync(file)) { res.statusCode = 404; return res.end(); }
+    res.setHeader('Content-Type', extname(file) === '.css' ? 'text/css' : 'text/javascript');
+    res.end(readFileSync(file));
+  });
+  await new Promise<void>(r => server.listen(0, '127.0.0.1', r));
+  const browser = await puppeteer.launch({ executablePath: executable, headless: true, args: ['--no-sandbox'] });
+  try {
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1400, height: 800 });
+    await page.goto(`http://127.0.0.1:${(server.address() as { port: number }).port}/`);
+    await page.waitForSelector('[data-timeline-group]'); await page.click('#timelineExpand');
+    await page.click('[data-timeline-row="1"]'); // Middle leg, highlighting both directions.
+    expect(await page.$$('.timeline-selected')).toHaveLength(1);
+    expect(await page.$$('.timeline-related')).toHaveLength(2);
+    expect(await page.$$('.timeline-roll.timeline-highlighted')).toHaveLength(2);
+    expect(await page.$$('.timeline-roll.possible.timeline-highlighted')).toHaveLength(1);
+    expect(await page.$eval('[data-timeline-row="3"]', e => getComputedStyle(e).opacity)).toBe('0.3');
+    expect(await page.$eval('[data-timeline-row="1"]', e => e.getAttribute('aria-pressed'))).toBe('true');
+    expect(await page.$eval('#timelineDetail', e => e.textContent)).toContain('Highlighted 2 related contracts');
+    await page.screenshot({ path: '/tmp/option-timeline-chain-highlight.png', fullPage: true });
+    await page.setViewport({ width: 1200, height: 800 });
+    await page.waitForFunction(() => Number(document.querySelector('.option-timeline')!.getAttribute('width')) === Math.max(1080, document.getElementById('timelineChart')!.clientWidth - 2), { timeout: 5000 });
+    expect(await page.$$('.timeline-related')).toHaveLength(2);
+    await page.keyboard.press('Escape');
+    expect(await page.$$('.timeline-selected, .timeline-related, .timeline-muted, .timeline-highlighted')).toHaveLength(0);
+    await page.$eval('[data-timeline-row="0"]', e => (e as SVGElement).focus()); await page.keyboard.press('Enter');
+    expect(await page.$$('.timeline-related')).toHaveLength(2);
+    await page.click('[data-timeline-clear]'); expect(await page.$$('.timeline-selected')).toHaveLength(0);
+    await page.click('[data-timeline-row="3"]'); // Identical contract in another account is separate.
+    expect(await page.$$('.timeline-related, .timeline-highlighted')).toHaveLength(0);
+    expect(await page.$eval('#timelineDetail', e => e.textContent)).toContain('No related contracts');
+    await page.type('#timelineSearch', '200');
+    expect(await page.$$('.timeline-selected, .timeline-muted')).toHaveLength(0);
+    await page.click('[data-timeline-row="0"]'); expect(await page.$$('.timeline-related')).toHaveLength(0);
+    await page.click('#timelineRefresh'); await page.waitForSelector('[data-timeline-row]');
+    expect(await page.$$('.timeline-selected, .timeline-muted')).toHaveLength(0);
+  } finally { await browser.close(); await new Promise<void>(r => server.close(() => r())); }
+}, 30_000);
