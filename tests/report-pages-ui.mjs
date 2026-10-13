@@ -216,6 +216,7 @@ const files = new Map([
   ['/dashboard/', 'webui/dashboard/index.html'],
   ['/dashboard/index.html', 'webui/dashboard/index.html'],
   ['/dashboard/app.js', 'webui/dashboard/app.js'],
+  ['/dashboard/option-timeline.js', 'webui/dashboard/option-timeline.js'],
   ['/dashboard/page.css', 'webui/dashboard/page.css'],
   ['/positions/', 'webui/positions/index.html'],
   ['/positions/app.js', 'webui/positions/app.js'],
@@ -384,10 +385,10 @@ try {
   assert.equal(metricBoxes[0].y, metricBoxes[1].y, 'premium sits beside NAV on desktop');
   assert(metricBoxes[1].x >= metricBoxes[0].right, 'hero cards do not overlap');
   payload.dashboardConfig.showTotalPremium = false;
-  await page.click('#refreshBtn');
+  await page.reload();
   await page.waitForFunction(() => document.getElementById('totalPremiumCard').classList.contains('hidden'));
   payload.dashboardConfig.showTotalPremium = true;
-  await page.click('#refreshBtn');
+  await page.reload();
   await page.waitForFunction(() => !document.getElementById('totalPremiumCard').classList.contains('hidden'));
   assert(/\$101/.test(await page.$eval('#kpiRow', node => node.textContent)), 'IBKR daily premium uses recorded fills');
   assert(/\$302/.test(await page.$eval('#kpiRow', node => node.textContent)), 'IBKR MTD premium uses recorded fills');

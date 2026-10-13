@@ -22,7 +22,7 @@ it('reads saved management configuration on each use and defaults to the existin
 });
 
 const executable = process.env.CHROME_BINARY || '/usr/bin/chromium';
-it.skipIf(!existsSync(executable))('opens on Open even with a saved Timeline preference and preserves manual selection on refresh', async () => {
+it.skipIf(!existsSync(executable))('opens on Open without date or refresh controls and allows switching to Timeline', async () => {
   const root = resolve('webui');
   const server = createServer((req, res) => {
     const url = new URL(req.url!, 'http://localhost');
@@ -43,12 +43,10 @@ it.skipIf(!existsSync(executable))('opens on Open even with a saved Timeline pre
     expect(await page.$eval('#optionOpenTab', e => e.getAttribute('aria-pressed'))).toBe('true');
     expect(await page.$('#optionTimelineTab')).not.toBeNull();
     expect(await page.$('#autoRefresh')).toBeNull();
-    await page.click('#refreshBtn');
-    await page.waitForFunction(() => !(document.getElementById('refreshBtn') as HTMLButtonElement).disabled);
-    expect(await page.$eval('#optionOpenTab', e => e.getAttribute('aria-pressed'))).toBe('true');
+    for (const id of ['dateInput', 'datePrev', 'dateNext', 'dateLatest', 'refreshBtn']) {
+      expect(await page.$('#' + id)).toBeNull();
+    }
     await page.click('#optionTimelineTab');
-    await page.click('#refreshBtn');
-    await page.waitForFunction(() => !(document.getElementById('refreshBtn') as HTMLButtonElement).disabled);
     expect(await page.$eval('#optionTimelineTab', e => e.getAttribute('aria-pressed'))).toBe('true');
     await page.click('#optionOpenTab');
     expect(await page.$eval('#optionTimelinePanel', e => e.classList.contains('hidden'))).toBe(true);

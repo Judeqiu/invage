@@ -65,7 +65,6 @@ const el = {
   historyMore: document.getElementById('historyMore'),
   statusBadge: document.getElementById('statusBadge'),
   status: document.getElementById('status'),
-  refreshBtn: document.getElementById('refreshBtn'),
   loading: document.getElementById('loading'),
   error: document.getElementById('error'),
   dashboard: document.getElementById('dashboard'),
@@ -1546,7 +1545,7 @@ function renderOverview(view) {
     const positionDates = view.isLive ? Object.entries(payload.brokerAsOf || {})
       .filter(([channel]) => view.channelView === MERGED_CHANNEL_VIEW || channel === view.channelView)
       .map(([channel, date]) => `${channel.toUpperCase()} ${optionDateLabel(date)}`) : [];
-    el.heroLead.textContent = `${n} ${n === 1 ? 'position' : 'positions'} — ${e} equity, ${o} option, ${f} fund. Pick a date to replay saved valuations.${archive}${view.isLive && positionDates.length ? ` Broker positions as of ${positionDates.join(' · ')}.` : ''}`;
+    el.heroLead.textContent = `${n} ${n === 1 ? 'position' : 'positions'} — ${e} equity, ${o} option, ${f} fund.${archive}${view.isLive && positionDates.length ? ` Broker positions as of ${positionDates.join(' · ')}.` : ''}`;
   }
   if (el.navValue) el.navValue.textContent = view.navComplete === false
     ? '—' : fmtPrettyMoney(view.totalValue, repCcy, 2);
@@ -2763,7 +2762,7 @@ function renderEmpty(body) {
   }
   if (el.heroLead) {
     el.heroLead.textContent =
-      body.message || 'No holdings or cash recorded yet. Add positions in chat, then refresh.';
+      body.message || 'No holdings or cash recorded yet. Add positions in chat, then reload the dashboard.';
   }
   if (el.navValue) el.navValue.textContent = '—';
   if (el.navDelta) el.navDelta.textContent = 'Empty books';
@@ -2806,7 +2805,6 @@ function renderEmpty(body) {
 async function load() {
   if (loading) return;
   loading = true;
-  el.refreshBtn.disabled = true;
   el.status.className = 'status-line';
   el.status.textContent = 'Fetching live prices…';
   try {
@@ -2840,7 +2838,6 @@ async function load() {
     }
   } finally {
     loading = false;
-    el.refreshBtn.disabled = false;
   }
 }
 
@@ -2909,7 +2906,6 @@ if (el.channelPills) {
     if (optionTab === 'history') followHistoryBroker(selectedChannel);
   });
 }
-el.refreshBtn.addEventListener('click', () => void load());
 
 void load();
 
