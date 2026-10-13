@@ -43,13 +43,18 @@
 .option-freshness-warning { margin: 0 0 0.9rem; padding: 0.75rem 1rem; border: 1px solid color-mix(in oklab, var(--warning) 45%, var(--border)); border-radius: 0.65rem; background: color-mix(in oklab, var(--warning) 12%, var(--card)); color: var(--foreground); font-size: 0.82rem; }
 .option-filter-group { display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem; }
 .option-filter-group .label-eyebrow { margin-right: 0.35rem; }
-.option-ledger { min-width: 1240px !important; }
+.option-ledger { min-width: 1100px !important; border-collapse: separate !important; border-spacing: 0; }
+.option-ledger th, .option-ledger td { padding-left: 0.55rem !important; padding-right: 0.55rem !important; }
+.option-ledger thead th { position: sticky; top: 0; z-index: 4; line-height: 1.4; letter-spacing: 0.06em; vertical-align: bottom; background: var(--card); box-shadow: 0 1px var(--border); }
+.option-column-title { display: inline-block; vertical-align: middle; }
+.option-column-label { display: block; white-space: nowrap; }
+.option-ledger-card .table-scroll { position: relative; isolation: isolate; }
 .option-ledger th:not(:first-child), .option-ledger td:not(:first-child) { text-align: right; }
 .option-ledger th:last-child, .option-ledger td:last-child { text-align: left; }
 .option-ledger th .help-dot { margin-left: 0.35rem; vertical-align: middle; }
 .option-ledger td { padding-top: 0.62rem; padding-bottom: 0.62rem; }
 .option-ledger .option-instrument { font-weight: 600; }
-.option-ledger th:first-child, .option-ledger td:first-child { position: sticky; left: 0; min-width: 300px; z-index: 3; background: var(--card); box-shadow: 1px 0 var(--border); }
+.option-ledger th:first-child, .option-ledger td:first-child { position: sticky; left: 0; min-width: 250px; max-width: 280px; white-space: normal; z-index: 3; background: var(--card); box-shadow: 1px 0 var(--border); }
 .option-ledger th:first-child { z-index: 5; }
 @media (max-width: 700px) {
   .option-ledger th:first-child, .option-ledger td:first-child { min-width: 210px; max-width: 210px; white-space: normal; }

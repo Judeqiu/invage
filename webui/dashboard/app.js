@@ -2043,7 +2043,7 @@ function renderOpenOptions(view) {
   const months = [...groups.keys()].sort();
   const ccy = reportingCcyCode(view);
   const prices = view.isLive ? payload?.equityPrices || {} : {};
-  const columns = ['Financial instrument', 'Pos', 'Opened', 'Entry Spot', 'Current Spot', 'Assignment exposure', 'DTE', 'STO Credit · Before Fees', 'Open cost / contract', 'Mark / contract', 'Market value', 'Unrealized P&L', '% of max', 'Broker'];
+  const columns = ['Financial instrument', 'Pos', 'Opened', 'Entry\nSpot', 'Current\nSpot', 'Assignment\nexposure', 'DTE', 'STO Credit ·\nBefore Fees', 'Open cost /\ncontract', 'Mark /\ncontract', 'Market\nvalue', 'Unrealized\nP&L', '% of max', 'Broker'];
   const details = (p) => {
     const o = p.option;
     const units = Number(p.units);
@@ -2118,7 +2118,7 @@ function renderOpenOptions(view) {
     ? 'The estimated price of one whole option contract in the broker snapshot. It includes the number of shares covered by that contract. For a short option, this estimates the cost to buy it back; its position value is shown as negative.'
     : 'The estimated price of one whole option contract saved in this snapshot. For a short option, this estimates the cost to buy it back; its position value is shown as negative.';
   el.openOptions.innerHTML = `${freshnessWarning}${filters}<div class="metric-card table-card option-ledger-card"><div class="table-scroll"><table class="report option-ledger">
-    <thead><tr>${columns.map((h) => `<th>${escapeHtml(h)}${h === 'Mark / contract' ? `<button type="button" class="help-dot" data-help="${escapeHtml(markHelp)}" aria-label="What Mark means">?</button>` : ''}</th>`).join('')}</tr></thead>
+    <thead><tr>${columns.map((h) => `<th scope="col"><span class="option-column-title">${h.split('\n').map(line => `<span class="option-column-label">${escapeHtml(line)}</span>`).join(' ')}</span>${h === 'Mark /\ncontract' ? `<button type="button" class="help-dot" data-help="${escapeHtml(markHelp)}" aria-label="What Mark means">?</button>` : ''}</th>`).join('')}</tr></thead>
     <tbody>${body || `<tr><td colspan="${columns.length}" class="empty">No open option positions match these filters.</td></tr>`}</tbody>
   </table></div></div>`;
 }

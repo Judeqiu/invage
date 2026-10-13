@@ -413,7 +413,7 @@ try {
   assert(/Net asset value/i.test(dashText), 'NAV hero card');
   assert(/Open options positions · broker view/i.test(dashText), 'open options section');
   assert(/Assignment exposure/i.test(dashText), 'assignment exposure column');
-  assert(/STO Credit · Before Fees/i.test(dashText), 'STO credit column');
+  assert(/STO Credit ·\s+Before Fees/i.test(dashText), 'STO credit column');
   assert(/Opened/i.test(dashText), 'opening date column');
   assert(/% of max/i.test(dashText), 'premium capture column');
   assert(/Prob\. ITM/i.test(dashText), 'risk probability column');
@@ -563,6 +563,35 @@ try {
   assert.equal(await page.$$eval('#openOptions .option-ledger th', cells => cells.length), 14, 'Current Spot column is restored');
   assert(await page.$$eval('#openOptions .option-month-total', rows => rows.every(row => row.children.length === 14)), 'month totals align with columns');
   assert.equal(await page.$eval('#openOptions .option-ledger td:first-child', node => getComputedStyle(node).position), 'sticky', 'contract stays visible on horizontal scroll');
+  const ledgerLayout = await page.$eval('#openOptions .table-scroll', async scroll => {
+    const header = scroll.querySelector('th:nth-child(8)');
+    const labels = header.querySelectorAll('.option-column-label');
+    const twoLines = labels.length === 2 && labels[1].getBoundingClientRect().top > labels[0].getBoundingClientRect().top;
+    const body = scroll.querySelector('tbody');
+    const originalBody = body.innerHTML;
+    const originalHeight = scroll.style.maxHeight;
+    body.innerHTML = originalBody.repeat(12);
+    scroll.style.maxHeight = '180px';
+    scroll.scrollTop = 100;
+    scroll.scrollLeft = 180;
+    await new Promise(resolve => requestAnimationFrame(resolve));
+    const top = scroll.getBoundingClientRect().top;
+    const result = {
+      twoLines,
+      scrolled: scroll.scrollTop > 0 && scroll.scrollLeft > 0,
+      headerPinned: Math.abs(header.getBoundingClientRect().top - top) < 2,
+      cornerPinned: Math.abs(scroll.querySelector('th').getBoundingClientRect().top - top) < 2,
+      headerAboveContract: Number(getComputedStyle(header).zIndex) > Number(getComputedStyle(body.querySelector('td')).zIndex),
+    };
+    body.innerHTML = originalBody;
+    scroll.style.maxHeight = originalHeight;
+    scroll.scrollTop = 0;
+    scroll.scrollLeft = 0;
+    return result;
+  });
+  assert(ledgerLayout.twoLines, 'long STO credit header uses two lines');
+  assert(ledgerLayout.scrolled && ledgerLayout.headerPinned && ledgerLayout.cornerPinned, 'header stays pinned during vertical and horizontal scrolling');
+  assert(ledgerLayout.headerAboveContract, 'frozen contract cells cannot cover the header');
   assert(optionCells[3].includes('$150.25') && optionCells[3].includes('Adj. close'), 'Entry Spot explicitly identifies adjusted-close fallback');
   await page.click('#openOptions [data-option-right="call"]');
   assert(!(await page.$('#openOptions .option-ledger-row')), 'right filter removes put row');
