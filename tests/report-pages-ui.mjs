@@ -24,9 +24,13 @@ const payload = {
   connectionMetrics: { ibkr: { currency: 'USD', buying_power: 20000 } },
   brokerAsOf: { ibkr: '2026-09-16', moomoo: '2026-09-15' },
   premiumSupportedChannels: ['ibkr'],
+  dashboardConfig: { showTotalPremium: true },
   premiumJournal: { available: true, channels: ['ibkr'], daily: [
     { channel: 'ibkr', account_id: 'U1', date: '2026-09-16', currency: 'USD', net_premium: '100' },
     { channel: 'ibkr', account_id: 'U1', date: '2026-09-09', currency: 'USD', net_premium: '200' },
+    { channel: 'ibkr', account_id: 'U1', date: '2026-08-09', currency: 'USD', net_premium: '400' },
+    { channel: 'ibkr', account_id: 'U1', date: '2026-08-10', currency: 'USD', net_premium: '-50' },
+    { channel: 'ibkr', account_id: 'U1', date: '2026-10-09', currency: 'USD', net_premium: '900' },
   ] },
   optionTradeDetails: {
     'AAPL  260918P00140000': { openedFrom: '2026-09-09', openedTo: '2026-09-09', stoNetPremium: 499, currency: 'USD' },
@@ -206,6 +210,7 @@ const files = new Map([
   ['/dashboard/', 'webui/dashboard/index.html'],
   ['/dashboard/index.html', 'webui/dashboard/index.html'],
   ['/dashboard/app.js', 'webui/dashboard/app.js'],
+  ['/dashboard/option-timeline.js', 'webui/dashboard/option-timeline.js'],
   ['/dashboard/page.css', 'webui/dashboard/page.css'],
   ['/positions/', 'webui/positions/index.html'],
   ['/positions/app.js', 'webui/positions/app.js'],
@@ -362,7 +367,18 @@ try {
   assert(/% of max/i.test(dashText), 'premium capture column');
   assert(/Prob\. ITM/i.test(dashText), 'risk probability column');
   assert(/Complete trade history unavailable/.test(await page.$eval('#kpiRow', node => node.textContent)), 'merged premium does not silently omit moomoo');
+  assert(/Complete trade history unavailable/.test(await page.$eval('#totalPremiumMeta', node => node.textContent)), 'total does not silently omit unsupported brokers');
   await page.click('#channelPills [data-channel="ibkr"]');
+  assert.equal(await page.$eval('#totalPremiumValue', node => node.textContent), '$650.00', 'total includes older opens and closing debits, excludes future fills');
+  const metricBoxes = await page.$$eval('.hero-metrics .nav-card', nodes => nodes.map(n => { const b = n.getBoundingClientRect(); return { x: b.x, y: b.y, right: b.right }; }));
+  assert.equal(metricBoxes[0].y, metricBoxes[1].y, 'premium sits beside NAV on desktop');
+  assert(metricBoxes[1].x >= metricBoxes[0].right, 'hero cards do not overlap');
+  payload.dashboardConfig.showTotalPremium = false;
+  await page.click('#refreshBtn');
+  await page.waitForFunction(() => document.getElementById('totalPremiumCard').classList.contains('hidden'));
+  payload.dashboardConfig.showTotalPremium = true;
+  await page.click('#refreshBtn');
+  await page.waitForFunction(() => !document.getElementById('totalPremiumCard').classList.contains('hidden'));
   assert(/\$100/.test(await page.$eval('#kpiRow', node => node.textContent)), 'IBKR daily premium uses recorded fills');
   assert(/\$300/.test(await page.$eval('#kpiRow', node => node.textContent)), 'IBKR MTD premium uses recorded fills');
   await page.click('#channelPills [data-channel="merged"]');
@@ -505,6 +521,7 @@ try {
   assert.equal(grossCells[5], '$500.00 before fees', 'gross proceeds cannot masquerade as net credit');
   assert(grossCells[2].includes('09-Sep-2026'), 'opening date survives unavailable fees');
   assert(/Broker fill fees are unavailable/.test(await page.$eval('#kpiRow', node => node.textContent)), 'net premium remains unknown rather than zero');
+  assert.equal(await page.$eval('#totalPremiumValue', node => node.textContent), '—', 'total is unknown when fees are missing');
   payload.optionTradeDetails['AAPL  260918P00140000'] = savedTrade;
   payload.premiumJournal.daily = savedDaily;
 
@@ -522,6 +539,17 @@ try {
   assert(/Put positions need a fresh broker sync/.test(await page.$eval('#kpiRow', node => node.textContent)), 'stale put positions do not produce a cash scenario');
 
   const savedModel = payload.model;
+  payload.model = { ...savedModel, live: { ...savedModel.live, positions: [], channels: [], byChannel: [],
+    optionCount: 0, equityCount: 0, fundCount: 0 } };
+  await page.setViewport({ width: 390, height: 844 });
+  await page.goto(`http://127.0.0.1:${port}/dashboard/`);
+  await page.waitForFunction(() => document.getElementById('totalPremiumValue')?.textContent === '$650.00');
+  const mobileBoxes = await page.$$eval('.hero-metrics .nav-card', nodes => nodes.map(n => {
+    const b = n.getBoundingClientRect(); return { left: b.left, right: b.right, top: b.top, bottom: b.bottom };
+  }));
+  assert(mobileBoxes.every(b => b.left >= 0 && b.right <= 390), 'NAV and total fit on mobile');
+  assert(mobileBoxes[1].top >= mobileBoxes[0].bottom, 'mobile hero cards stack without overlap');
+  await page.setViewport({ width: 1280, height: 900 });
   payload.empty = true;
   payload.model = null;
   await page.goto(`http://127.0.0.1:${port}/dashboard/`);

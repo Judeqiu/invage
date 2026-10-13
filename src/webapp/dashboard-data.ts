@@ -231,7 +231,7 @@ export async function loadDashboardForSlug(
       message: e instanceof Error ? e.message : String(e), severity: 'warning' });
   }
 
-  if (tickers.length === 0 && deposits.length === 0 && cashes.length === 0 && snapshots.length === 0) {
+  if (tickers.length === 0 && deposits.length === 0 && cashes.length === 0 && snapshots.length === 0 && !(state.option_executions?.length)) {
     return {
       slug,
       displayName,
@@ -283,6 +283,19 @@ export async function loadDashboardForSlug(
     const rep = reportingCurrency;
     const foreign = moneyCurrencies.filter((currency) => currency !== rep);
     const rates = foreign.length > 0 ? await fetchFxRates(foreign, rep) : {};
+    // Historical fills may use currencies no longer present in the current book.
+    // Missing historical FX must not invalidate otherwise complete NAV rates.
+    const historicalCurrencies = [...new Set((state.option_executions ?? []).map(row => row.currency))]
+      .filter(currency => currency !== rep && rates[currency] == null);
+    if (historicalCurrencies.length) {
+      try {
+        Object.assign(rates, await fetchFxRates(historicalCurrencies, rep));
+      } catch (error) {
+        warnings.push({ code: 'premium_fx_fetch_failed',
+          message: `${error instanceof Error ? error.message : String(error)} Historical option premium FX is unavailable.`,
+          severity: 'warning' });
+      }
+    }
     fx = { reportingCurrency: rep, fxRates: rates };
   } catch (e) {
     warnings.push({
@@ -341,6 +354,13 @@ export async function loadDashboardForSlug(
       resilient: true,
     });
     live.issues = [...warnings];
+  }
+
+  // An empty current book still has historical premium in the reporting currency.
+  if (live.positions.length === 0 && live.depositCount === 0) {
+    live.reportingCurrency = reportingCurrency;
+    live.fxRates = fx?.fxRates;
+    live.fxApplied = !!fx;
   }
 
   // Merge outer warnings into live issues

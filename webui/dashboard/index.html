@@ -37,13 +37,23 @@
           </div>
           <div class="broker-pills" id="channelPills"></div>
         </div>
-        <div class="metric-card nav-card">
-          <div class="metric-head">
-            <div class="label-eyebrow">Net asset value (NAV)</div>
-            <button type="button" class="help-dot" title="NAV = positions MTM + recorded free cash + fixed-deposit principal. Missing cash is not treated as zero.">?</button>
+        <div class="hero-metrics">
+          <div class="metric-card nav-card">
+            <div class="metric-head">
+              <div class="label-eyebrow">Net asset value (NAV)</div>
+              <button type="button" class="help-dot" title="NAV = positions MTM + recorded free cash + fixed-deposit principal. Missing cash is not treated as zero.">?</button>
+            </div>
+            <div class="metric-value" id="navValue">—</div>
+            <div class="metric-sub" id="navDelta"></div>
           </div>
-          <div class="metric-value" id="navValue">—</div>
-          <div class="metric-sub" id="navDelta"></div>
+          <div class="metric-card nav-card hidden" id="totalPremiumCard">
+            <div class="metric-head">
+              <div class="label-eyebrow">Total premium</div>
+              <button type="button" class="help-dot" title="Net recorded short-option premium: sell-to-open credits minus buy-to-close costs and fees, including open and closed positions through the selected date. Limited to retained broker trade history; this is cash flow, not profit.">?</button>
+            </div>
+            <div class="metric-value" id="totalPremiumValue">—</div>
+            <div class="metric-sub" id="totalPremiumMeta"></div>
+          </div>
         </div>
       </section>
 

@@ -32,6 +32,9 @@ const el = {
   heroLead: document.getElementById('heroLead'),
   navValue: document.getElementById('navValue'),
   navDelta: document.getElementById('navDelta'),
+  totalPremiumCard: document.getElementById('totalPremiumCard'),
+  totalPremiumValue: document.getElementById('totalPremiumValue'),
+  totalPremiumMeta: document.getElementById('totalPremiumMeta'),
   kpiRow: document.getElementById('kpiRow'),
   expiryRow: document.getElementById('expiryRow'),
   expiryLead: document.getElementById('expiryLead'),
@@ -167,23 +170,31 @@ function recordedPremiumForView(view, date) {
   const channels = view.channelView === MERGED_CHANNEL_VIEW
     ? (view.channels?.length ? view.channels : [...new Set((view.positions || []).map(p => p.channel))])
     : [view.channelView];
-  if (!journal?.available || !channels.length || channels.some(ch => !supported.has(ch) || !observed.has(ch))) {
-    return { daily: null, mtd: null, reason: 'Complete trade history unavailable for this view' };
-  }
-  const start = `${date.slice(0, 7)}-01`;
-  const rows = (journal.daily || []).filter(row => channels.includes(row.channel) && row.date >= start && row.date <= date);
+  // Include brokers with closed positions only in the lifetime merged total.
+  const totalChannels = view.channelView === MERGED_CHANNEL_VIEW
+    ? [...new Set([...channels, ...observed])] : channels;
   const currency = reportingCcyCode(view);
   const convert = (row) => {
     if (!currency || row.net_premium == null) return null;
     if (row.currency === currency) return Number(row.net_premium);
-    const rate = view.fxApplied ? view.fxRates?.[row.currency] : null;
+    const rate = view.fxRates?.[row.currency];
     return Number.isFinite(rate) && rate > 0 ? Number(row.net_premium) * rate : null;
   };
-  if (rows.some(row => row.net_premium == null)) return { daily: null, mtd: null, reason: 'Broker fill fees are unavailable; net premium is unknown' };
-  if (rows.some(row => convert(row) == null)) return { daily: null, mtd: null, reason: 'Trade currencies cannot be combined without FX' };
-  const sum = list => list.length ? list.reduce((total, row) => total + convert(row), 0) : null;
-  return { daily: sum(rows.filter(row => row.date === date)), mtd: sum(rows),
-    reason: `Recorded fills through ${optionDateLabel(date)} · broker report dates` };
+  const summarize = (selectedChannels, from) => {
+    if (!journal?.available || !selectedChannels.length || selectedChannels.some(ch => !supported.has(ch) || !observed.has(ch))) {
+      return { value: null, reason: 'Complete trade history unavailable for this view' };
+    }
+    const rows = (journal.daily || []).filter(row => selectedChannels.includes(row.channel) && row.date >= from && row.date <= date);
+    if (rows.some(row => row.net_premium == null)) return { value: null, reason: 'Broker fill fees are unavailable; net premium is unknown' };
+    if (rows.some(row => !Number.isFinite(convert(row)))) return { value: null, reason: 'Trade currencies cannot be combined without FX' };
+    return { value: rows.length ? rows.reduce((total, row) => total + convert(row), 0) : null,
+      reason: `Recorded fills through ${optionDateLabel(date)} · broker report dates` };
+  };
+  const daily = summarize(channels, date);
+  const mtd = summarize(channels, `${date.slice(0, 7)}-01`);
+  const total = summarize(totalChannels, '');
+  return { daily: mtd.value == null ? null : daily.value, mtd: mtd.value, reason: mtd.reason,
+    total: total.value, totalReason: total.reason };
 }
 
 function unverifiedOptionChannels(view) {
@@ -1559,6 +1570,12 @@ function renderOverview(view) {
   const cashCcy = view.cashCurrency || repCcy;
   const premiumDate = view.isLive ? (payload.generatedAt || '').slice(0, 10) : view.label;
   const premium = recordedPremiumForView(view, premiumDate);
+  if (el.totalPremiumCard) {
+    el.totalPremiumCard.classList.toggle('hidden', payload.dashboardConfig?.showTotalPremium === false);
+    el.totalPremiumValue.textContent = premium.total == null ? '—' : fmtPrettyMoney(premium.total, repCcy, 2);
+    el.totalPremiumMeta.textContent = premium.total == null ? premium.totalReason
+      : `Open + closed · net retained fills through ${optionDateLabel(premiumDate)}`;
+  }
   const puts = (view.positions || []).filter(p => p.instrument === 'option' && p.option?.side === 'short' && p.option.right === 'put');
   const putAmounts = puts.map(p => {
     if (!p.currency || !cashCcy) return null;
@@ -2775,6 +2792,7 @@ function renderEmpty(body) {
   }
   if (el.navValue) el.navValue.textContent = '—';
   if (el.navDelta) el.navDelta.textContent = 'Empty books';
+  if (el.totalPremiumCard) el.totalPremiumCard.classList.add('hidden');
   if (el.dateInput) {
     const today = new Date().toISOString().slice(0, 10);
     el.dateInput.value = today;

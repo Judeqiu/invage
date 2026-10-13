@@ -127,14 +127,17 @@ it('marks missing opening history without inventing an opening date or changing 
 
 it('reads saved management configuration on each use and defaults to the existing table', () => {
   expect(readDashboardConfig().optionView).toBe('open');
+  expect(readDashboardConfig().showTotalPremium).toBe(true);
   const dir = join(process.env.UTARUS_DATA_ROOT!, 'config', 'agent-config');
   const file = join(dir, dashboardConfig.id + '.json');
   mkdirSync(dir, { recursive: true });
   try {
-    writeFileSync(file, JSON.stringify({ option_view: 'timeline' }));
+    writeFileSync(file, JSON.stringify({ option_view: 'timeline', show_total_premium: false }));
     expect(readDashboardConfig().optionView).toBe('timeline');
+    expect(readDashboardConfig().showTotalPremium).toBe(false);
     writeFileSync(file, JSON.stringify({ option_view: 'rolls' }));
     expect(readDashboardConfig().optionView).toBe('rolls');
+    expect(readDashboardConfig().showTotalPremium).toBe(true);
   } finally { rmSync(file, { force: true }); }
 });
 

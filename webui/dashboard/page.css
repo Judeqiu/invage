@@ -277,3 +277,11 @@ footer { text-align: center; font-size: 0.72rem; color: var(--muted-foreground);
 [data-timeline-group]:hover .timeline-group-lane, [data-timeline-group]:focus .timeline-group-lane { fill: #e8eefb; }
 .timeline-group-label { fill: #263347; font-size: 14px; font-weight: 700; }
 .timeline-group-range { stroke: #c7d5e9; stroke-width: 5; stroke-linecap: round; }
+
+.hero-row .hero-copy { flex: 1 1 340px; min-width: 0; }
+.hero-metrics { display: flex; flex-wrap: wrap; gap: 0.75rem; }
+.hero-metrics .nav-card { flex: 1 1 220px; min-width: 0; max-width: 280px; }
+@media (max-width: 600px) {
+  .hero-metrics { width: 100%; }
+  .hero-metrics .nav-card { max-width: none; }
+}

@@ -143,6 +143,29 @@ describe('loadDashboardForSlug', () => {
     expect(payload.model?.history.map(row => row.date)).toEqual(['2026-07-01']);
   });
 
+  it('retains premium history after all positions have closed', async () => {
+    await createInvestorFixture({
+      user: { id: '00000000-0000-4000-8000-000000000051', slug: 'closed-options',
+        created_at: '2026-06-27', telegram_user_ids: [], auth_token: '00000000-0000-4000-8000-000000000052' },
+      profile: { display_name: 'Closed options' }, log: [],
+      option_executions: [
+        { channel: 'ibkr', account_id: 'U1', execution_id: 'open', contract_id: 'AMD-P',
+          executed_at: '2026-08-01T10:00:00', underlying: 'AMD', right: 'put', expiry: '2026-09-18',
+          strike: '100', multiplier: '100', contracts: '1', side: 'sell', effect: 'open',
+          currency: 'USD', gross_premium: '400', commission: '-1' },
+        { channel: 'ibkr', account_id: 'U1', execution_id: 'close', contract_id: 'AMD-P',
+          executed_at: '2026-08-10T10:00:00', underlying: 'AMD', right: 'put', expiry: '2026-09-18',
+          strike: '100', multiplier: '100', contracts: '1', side: 'buy', effect: 'close',
+          currency: 'USD', gross_premium: '-50', commission: '-1' },
+      ],
+    });
+    const result = await loadDashboardForSlug('closed-options', {}, null);
+    expect(result.empty).toBe(false);
+    expect(result.model?.live.positions).toEqual([]);
+    expect(result.model?.live.reportingCurrency).toBe('USD');
+    expect(result.premiumJournal?.daily.map(row => row.net_premium)).toEqual(['-51', '399']);
+  });
+
   it('loads at book cost with warnings when a price is missing (resilient)', async () => {
     const payload = await loadDashboardForSlug('alice', {});
     expect(payload.empty).toBe(false);

@@ -3,8 +3,11 @@ import { readAgentConfig, type AgentConfigDefinition } from 'utarus';
 export const dashboardConfig: AgentConfigDefinition = {
   id: 'invage-dashboard',
   title: 'Portfolio dashboard',
-  description: 'Default presentation of section 03. Users can switch views on the dashboard.',
+  description: 'Dashboard metrics and default option positions view.',
   fields: [{
+    id: 'show_total_premium', type: 'boolean', label: 'Show total premium beside NAV', default: true,
+    description: 'Net recorded short-option premium across open and closed positions, after closing costs and fees.',
+  }, {
     id: 'option_view', type: 'select', label: 'Option positions default view', default: 'open',
     options: [
       { value: 'open', label: 'Open positions table' },
@@ -16,5 +19,6 @@ export const dashboardConfig: AgentConfigDefinition = {
 };
 
 export function readDashboardConfig() {
-  return { optionView: readAgentConfig(dashboardConfig).option_view };
+  const config = readAgentConfig(dashboardConfig);
+  return { optionView: config.option_view, showTotalPremium: config.show_total_premium };
 }
