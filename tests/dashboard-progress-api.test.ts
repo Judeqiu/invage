@@ -90,3 +90,20 @@ it('reuses only the same login and user snapshot and invalidates after recorded 
   expect((await get('/dashboard-cache')).body.displayName).toBe('Refreshed');
   expect((await request(app(false)).get('/dashboard-cache')).status).toBe(401);
 });
+
+it('expires the login snapshot when the dashboard calendar day changes', async () => {
+  const now = vi.spyOn(Date, 'now');
+  // Override the entry timestamp without changing the system clock used by Supertest.
+  const yesterday = new Date();
+  yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+  yesterday.setUTCHours(23, 59, 59, 999);
+  now.mockReturnValue(yesterday.getTime());
+  investor.mockResolvedValue({ revision: 1 });
+  load.mockResolvedValue(payload);
+  const server = app();
+  try {
+    await request(server).get('/dashboard').set('x-test-session', 'day-boundary');
+    now.mockRestore();
+    expect((await request(server).get('/dashboard-cache').set('x-test-session', 'day-boundary')).body).toBeNull();
+  } finally { now.mockRestore(); }
+});

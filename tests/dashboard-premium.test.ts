@@ -29,8 +29,9 @@ it('sums before-fees opening credits and closing costs across months without cou
   const result = calculate();
   expect(result.total).toBe(550);
   expect(result.mtd).toBe(200);
-  expect(result.daily).toBe(200);
-  expect(result.dailyDate).toBe('2026-09-10');
+  expect(result.daily).toBe(0);
+  expect(result.dailyFrom).toBe('2026-09-15');
+  expect(result.dailyDate).toBe('2026-09-16');
   expect(calculate(fills, {}, '2026-08-05').total).toBe(400);
 });
 it('includes closed-only brokers in the merged total and respects a selected broker', () => {
@@ -86,11 +87,12 @@ it('buckets recorded cash flow and realized profit by trade month and excludes f
   expect(result.realized.has('2026-09')).toBe(false);
 });
 
-it('shows zero recorded MTD flow in a month without trades while retaining the latest daily trade', () => {
+it('shows zero daily and MTD flow without falling back to an older trade', () => {
   const result = calculate(fills, {}, '2026-11-01');
   expect(result.mtd).toBe(0);
-  expect(result.daily).toBe(900);
-  expect(result.dailyDate).toBe('2026-10-10');
+  expect(result.daily).toBe(0);
+  expect(result.dailyFrom).toBe('2026-10-31');
+  expect(result.dailyDate).toBe('2026-11-01');
   expect(result.fees).toBe(0);
 });
 
@@ -139,4 +141,32 @@ it('excludes unconvertible profit without losing a known subtotal or treating mi
   expect(result.realized.get('2026-05')).toBe(18);
   expect(result.monthly.get('2026-05')).toMatchObject({ count: 1, excluded: 1, partial: true });
   expect(result.realized.get('2026-04')).toBeNull();
+});
+
+it('includes only T-1 through T, summing opening and closing premiums and excluding older and future dates', () => {
+  const records = [
+    { ...execution, execution_id: 'old', executed_at: '2026-10-01T12:00:00', gross_premium: '1150' },
+    { ...execution, execution_id: 'before-window', executed_at: '2026-10-11T23:59:59', gross_premium: '500' },
+    { ...execution, execution_id: 'yesterday', executed_at: '2026-10-12T00:00:00', gross_premium: '15059' },
+    { ...execution, execution_id: 'today', executed_at: '2026-10-13T23:59:59', side: 'buy', effect: 'close', gross_premium: '-59' },
+    { ...execution, execution_id: 'future', executed_at: '2026-10-14T00:00:00', gross_premium: '900' },
+  ] as OptionExecution[];
+  const result = calculate(records, {}, '2026-10-13');
+  expect(result.daily).toBe(15000);
+  expect(result.dailyFrom).toBe('2026-10-12');
+  expect(result.dailyDate).toBe('2026-10-13');
+  expect(result.total).toBe(16650);
+  expect(calculate(records.slice(0, 2), {}, '2026-10-13').daily).toBe(0);
+});
+
+it('handles the T-1 boundary across a year change and preserves unavailable history and FX', () => {
+  const records = [
+    { ...execution, executed_at: '2026-12-30T23:59:59', gross_premium: '900' },
+    { ...execution, execution_id: 'last-year', executed_at: '2026-12-31T00:00:00', gross_premium: '100' },
+    { ...execution, execution_id: 'new-year', executed_at: '2027-01-01T10:00:00', gross_premium: '200' },
+  ];
+  expect(calculate(records, {}, '2027-01-01').daily).toBe(300);
+  expect(calculate(records, {}, '2027-01-01').mtd).toBe(200);
+  expect(calculate([], {}, '2027-01-01').daily).toBeNull();
+  expect(calculate(records.map(r => ({ ...r, currency: 'EUR' })), {}, '2027-01-01').daily).toBeNull();
 });

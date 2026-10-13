@@ -174,7 +174,9 @@ function recordedPremiumForView(view, date) {
   const observed = new Set(journal?.channels || []);
   const missing = channels.filter(ch => !observed.has(ch));
   const rows = (journal?.daily || []).filter(row => channels.includes(row.channel) && row.date <= date);
-  const lastDate = rows.map(row => row.date).sort().at(-1);
+  const previousDay = new Date(`${date}T00:00:00Z`);
+  previousDay.setUTCDate(previousDay.getUTCDate() - 1);
+  const dailyFrom = previousDay.toISOString().slice(0, 10);
   const sum = (from, through) => {
     const selected = rows.filter(row => row.date >= from && row.date <= through);
     if (!journal?.available || !rows.length) return null;
@@ -185,7 +187,7 @@ function recordedPremiumForView(view, date) {
   const fees = fills.filter(row => row.executed_at.slice(0, 10) >= `${date.slice(0, 7)}-01`);
   const knownFees = fees.filter(row => row.commission != null).map(row => tradeAmount(view, row, -Number(row.commission)));
   const missingFees = fees.filter(row => row.commission == null).length;
-  return { daily: lastDate ? sum(lastDate, lastDate) : null, dailyDate: lastDate,
+  return { daily: sum(dailyFrom, date), dailyFrom, dailyDate: date,
     mtd: sum(`${date.slice(0, 7)}-01`, date), total: sum('', date), totalBasis: 'gross',
     fees: fills.length && !fees.length ? 0 : fees.length && knownFees.length && knownFees.every(n => n != null) ? knownFees.reduce((a, b) => a + b, 0) : null,
     missingFees, partial: missing.length > 0,
@@ -1597,8 +1599,8 @@ function renderOverview(view) {
   if (el.kpiRow) {
     el.kpiRow.innerHTML = [
       metricCardHtml('Net premium · Daily', premium.daily == null ? '—' : fmtPrettyMoney(premium.daily, repCcy, 0),
-        premium.dailyDate ? `${optionDateLabel(premium.dailyDate)} · Before fees${premium.partial ? ' · Partial history' : ''}` : premium.reason,
-        'Money received from opening short options, minus money paid to close them, on the latest trading day with recorded trades. Brokerage fees are shown separately. This may differ from today, and missing trades can make the amount incomplete.',
+        premium.daily == null ? premium.reason : `${optionDateLabel(premium.dailyFrom)} – ${optionDateLabel(premium.dailyDate)} · Before fees${premium.partial ? ' · Partial history' : ''}`,
+        'Money received from opening short options, minus money paid to close them, from the calendar day before the dashboard date (T−1) through the dashboard date (T), inclusive. Older trades are excluded. Brokerage fees are shown separately; missing trades can make the amount incomplete.',
         premium.daily > 0 ? 'up' : premium.daily < 0 ? 'down' : ''),
       metricCardHtml('Net premium · MTD', premium.mtd == null ? '—' : fmtPrettyMoney(premium.mtd, repCcy, 0),
         `Before fees${premium.partial ? ' · Partial history' : ''}`,

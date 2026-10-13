@@ -702,6 +702,23 @@ try {
   payload.optionAnalytics = previousAnalytics;
   payload.generatedAt = previousGeneratedAt;
 
+  const dailyBeforeWindowCheck = payload.premiumJournal.daily;
+  payload.generatedAt = '2026-10-13T12:00:00Z';
+  payload.premiumJournal.daily = [
+    { channel: 'ibkr', date: '2026-10-01', currency: 'USD', gross_premium: '1150' },
+    { channel: 'ibkr', date: '2026-10-12', currency: 'USD', gross_premium: '15059' },
+  ];
+  await page.goto(`http://127.0.0.1:${port}/dashboard/`);
+  await page.waitForSelector('#dashboard:not(.hidden)');
+  assert.match(await page.$eval('#kpiRow > :first-child .metric-value', node => node.textContent), /15,059/, 'T-1 premium is shown');
+  assert.match(await page.$eval('#kpiRow > :first-child', node => node.textContent), /12-Oct-2026.*13-Oct-2026/, 'daily card names its actual window');
+  payload.premiumJournal.daily = payload.premiumJournal.daily.slice(0, 1);
+  await page.goto(`http://127.0.0.1:${port}/dashboard/`);
+  await page.waitForSelector('#dashboard:not(.hidden)');
+  assert.equal(await page.$eval('#kpiRow > :first-child .metric-value', node => node.textContent), '$0', 'October 1 premium cannot appear as daily on October 13');
+  payload.premiumJournal.daily = dailyBeforeWindowCheck;
+  payload.generatedAt = previousGeneratedAt;
+
   const beforeRisk = structuredClone(payload.model.live.positions);
   const beforeRiskPrices = payload.equityPrices;
   payload.generatedAt = '2026-10-13T12:00:00Z';
@@ -723,7 +740,7 @@ try {
   payload.model.live.positions[0].ticker = 'AAPL@ibkr';
   payload.model.live.positions.push({ ...payload.model.live.positions.find(p => p.option), ticker: 'AAPL-call', option: { ...payload.model.live.positions.find(p => p.option).option, underlying: 'AAPL', right: 'call', side: 'short' }, contingentShareObligation: 100 });
   await page.goto(`http://127.0.0.1:${port}/positions/`);
-  await page.waitForFunction(() => document.getElementById('hello')?.textContent?.includes('Shares Owned'));
+  await page.waitForSelector('#table2 tbody');
   const posText = await page.evaluate(() => document.body.innerText);
   assert(await page.$eval('#table2 tbody', node => /AAPL\s+100/.test(node.textContent)), 'broker suffix does not lose recorded shares');
   assert(!await page.$eval('#table1 tbody', node => node.textContent.includes('@ibkr')), 'broker suffix hidden in stock ticker');

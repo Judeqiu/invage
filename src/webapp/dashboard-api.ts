@@ -40,7 +40,9 @@ export function createDashboardApiRouter(): Router {
     if (!context) return null;
     const entry = snapshots.get(context.key);
     if (!entry) return null;
-    if (entry.revision !== context.revision || Date.now() - entry.at > 24 * 60 * 60 * 1000) {
+    const today = new Date().toISOString().slice(0, 10);
+    const snapshotDay = new Date(entry.at).toISOString().slice(0, 10);
+    if (entry.revision !== context.revision || snapshotDay !== today || Date.now() - entry.at > 24 * 60 * 60 * 1000) {
       snapshots.delete(context.key);
       return null;
     }
