@@ -294,6 +294,8 @@ export interface BrokerAccountConnection {
 }
 
 export interface InvestorState extends UserState {
+  /** Account-scoped executions, orders, explicit gaps and reusable history sync checkpoints. */
+  broker_history?: Record<string, import('../brokers/history.js').BrokerHistory>;
   /** Imported execution history, independent of the current holdings snapshot. */
   option_executions?: import('../brokers/option-executions.js').OptionExecution[];
   /** Explicit broker exercise, assignment, expiration, and cash settlement records. */

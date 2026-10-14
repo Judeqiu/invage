@@ -4,6 +4,7 @@ import { buildOptionRelationships, buildOptionVerticalSpreads, groupOptionRelati
   type RollFill } from '../brokers/option-relationships.js';
 import type { InvestorState } from '../state/portfolio-state.js';
 import { addDecimals } from '../brokers/option-executions.js';
+import { assertBrokerHistory,verifiedHistoryMultipliers } from '../brokers/history.js';
 
 const cache = new Map<string, RollFill[]>();
 const MAX_ARCHIVES = 500;
@@ -38,6 +39,14 @@ export function optionRelationshipsForState(state: InvestorState, filters: Relat
   let archives = 0, bytes = 0;
   for (const conn of connections) {
     if (filters.channel && conn.channel !== filters.channel) continue;
+    const retained = state.broker_history?.[conn.channel];
+    let verifiedMultipliers: Map<string,string> | undefined;
+    if (retained && retained.account_id === conn.account_id) {
+      const history = assertBrokerHistory(retained);
+      verifiedMultipliers = verifiedHistoryMultipliers(history);
+      for (const gap of history.sync.gaps) historyGaps.push({ channel:conn.channel, reason:gap.reason + (gap.reference ? ` (${gap.reference})` : '') });
+      if (!history.sync.full_history_synced && !history.sync.gaps.length) historyGaps.push({ channel:conn.channel, reason:'Full available broker history has not been synced.' });
+    }
     const selected = files.filter(f => (f.channel === conn.channel && f.source_kind === 'broker-sync' ||
       conn.channel === conn.broker_id && conn.broker_id === 'moomoo' && /^moomoo-executions\/[^/]+-moomoo\.json$/.test(f.id)) &&
       /\.(xml|json)$/.test(f.id) && !f.id.endsWith('-before.json'));
@@ -46,11 +55,11 @@ export function optionRelationshipsForState(state: InvestorState, filters: Relat
     const fills: RollFill[] = [];
     let reconciliationBlocked = false;
     for (const file of selected) {
-      const key = JSON.stringify([state.user.id, conn.channel, conn.account_id, file.id, file.version]);
+      const key = JSON.stringify([state.user.id, conn.channel, conn.account_id, file.id, file.version, [...(verifiedMultipliers ?? [])]]);
       try {
         let parsed = cache.get(key);
         if (!parsed) {
-          parsed = parseRelationshipArchive(conn.broker_id, readArchive(state.user.id, file), conn.account_id!, { id: file.id, version: file.version });
+          parsed = parseRelationshipArchive(conn.broker_id, readArchive(state.user.id, file), conn.account_id!, { id: file.id, version: file.version }, verifiedMultipliers);
           if (cache.size >= 128) cache.delete(cache.keys().next().value!);
           cache.set(key, parsed);
         }

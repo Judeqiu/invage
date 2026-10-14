@@ -13,6 +13,7 @@ import {
   type AdapterTransport,
   type BrokerRawPayload,
 } from './adapter.js';
+import { planBrokerHistorySync } from './history.js';
 import { applyBrokerStatement } from './apply-statement.js';
 import { runCsvTablesSpec } from './csv-tables.js';
 import { loadBrokerParserSpec } from './parser-store.js';
@@ -509,7 +510,9 @@ export async function syncBrokerConnection(
     let raw: BrokerRawPayload;
     let statement: BrokerStatement;
     try {
-      raw = await adapter.fetchRaw(conn.credentials, opts);
+      const previousHistory = state.broker_history?.[def.channel];
+      const accountId = conn.last_sync?.account_id ?? conn.credentials.acc_id ?? previousHistory?.account_id ?? '';
+      raw = await adapter.fetchRaw(conn.credentials, { ...opts, history: planBrokerHistorySync(previousHistory, accountId) });
       try {
         const spec = adapter.usesCsvTables ? loadBrokerParserSpec(slug, id) : null;
         // A saved parser is an explicit user configuration, not a recovery path

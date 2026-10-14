@@ -15,7 +15,8 @@ import {
 } from '../market/position-value.js';
 import type { BrokerConnectionMetrics } from '../state/portfolio-state.js';
 import { envelopeOk, type MooMooRawBundle } from './moomoo-types.js';
-import { mapMooMooExecutions } from './moomoo-executions.js';
+import { mapMooMooHistory, moomooContractMetadata } from './moomoo-history.js';
+import { optionExecutionsFromHistory } from '../brokers/history.js';
 
 export { looksLikeOptionCode } from '../brokers/option-symbol.js';
 
@@ -245,20 +246,18 @@ export function mapMooMooBundleToStatement(bundle: MooMooRawBundle, channel: str
   const rows = Array.isArray(bundle.positions.d) ? bundle.positions.d : [];
   const lots: BrokerStatement['lots'] = [];
   const seen = new Set<string>();
+  const contractMetadata = moomooContractMetadata(bundle);
   for (const row of rows) {
     if (row == null || typeof row !== 'object' || Array.isArray(row)) continue;
     const item = row as Record<string, unknown>;
-    const metadata = bundle.option_basicinfo?.filter(info =>
-      info.code === item.code && info.stock_type === 'DRVT');
-    // Ignore ambiguous/missing profiles. Never borrow another contract's size.
-    const info = metadata?.length === 1 ? metadata[0] : undefined;
+    const info = contractMetadata.get(String(item.code));
     const enriched = info ? {
       ...item,
-      contract_size: item.contract_size ?? info.contract_size,
-      lot_size: item.lot_size ?? info.lot_size,
-      stock_owner: ownerOf(item) ?? info.stock_owner,
+      contract_size: item.contract_size ?? info.multiplier,
+      stock_owner: ownerOf(item) ?? info.owner,
     } : item;
     const got = mapPosition(enriched, channel, seen);
+    if (got.skip?.reason === 'option missing multiplier') throw new BrokerParseError('MooMoo current option contract metadata unavailable; snapshot was not applied.');
     if (got.skip) skipped.push(got.skip);
     else if (got.lot) lots.push(got.lot);
   }
@@ -270,7 +269,11 @@ export function mapMooMooBundleToStatement(bundle: MooMooRawBundle, channel: str
     skipped,
   };
   if (metrics) statement.metrics = metrics;
-  const executions = mapMooMooExecutions(bundle, lots, channel);
-  if (executions !== undefined) statement.option_executions = executions;
+  const history = mapMooMooHistory(bundle, lots, channel);
+  if (history) {
+    statement.history = history;
+    statement.option_executions = optionExecutionsFromHistory(history);
+    for (const gap of history.sync.gaps) statement.skipped.push({ kind:'event', symbol:gap.reference ?? undefined, reason:gap.reason });
+  }
   return statement;
 }

@@ -14,6 +14,7 @@ import { getCashes, getPortfolio } from '../state/portfolio-state.js';
 import { buildHoldingKey } from '../market/position-value.js';
 import { getBrokerAdapter, type AdapterTransport } from './adapter.js';
 import { applyBrokerStatement } from './apply-statement.js';
+import { planBrokerHistorySync, assertBrokerHistory, type BrokerHistorySyncPlan } from './history.js';
 import { BROKER_CATALOG, getBrokerConnector, type BrokerConnectorDef } from './catalog.js';
 import { parseLastSync, readBrokerConnections, redactSecrets } from './connections.js';
 import { normalizePem } from './pem.js';
@@ -144,7 +145,8 @@ function canRebind(state: InvestorState, conn: BrokerAccountConnection): boolean
     !Object.values(getPortfolio(state)).some(h => h.channel === conn.channel) &&
     !getCashes(state).some(c => c.channel === conn.channel) &&
     !(state.option_executions ?? []).some(e => e.channel === conn.channel) &&
-    !(state.option_events ?? []).some(e => e.channel === conn.channel);
+    !(state.option_events ?? []).some(e => e.channel === conn.channel) &&
+    !state.broker_history?.[conn.channel];
 }
 
 /** Read legacy connector-keyed state as one account connection per type, without mutating it. */
@@ -266,6 +268,8 @@ export function publicBrokerAccounts(state: InvestorState) {
         last_sync: conn.last_sync ? { ...conn.last_sync,
           ...(conn.last_sync.error ? { error: redactSecrets(conn.last_sync.error, secrets) } : {}) } : null,
         metrics: conn.metrics ?? null,
+        history_sync: state.broker_history?.[conn.channel] && state.broker_history[conn.channel].account_id === conn.account_id
+          ? assertBrokerHistory(state.broker_history![conn.channel]).sync : null,
       };
     }),
   };
@@ -411,9 +415,9 @@ export function ibkrStatements(raw: Buffer, channel: string): BrokerStatement[] 
   return out;
 }
 async function fetchStatements(model: BrokerAccountModel, conn: BrokerAccountConnection, connectionId: string, slug: string, transport?: AdapterTransport,
-  onRaw?: (body: Buffer) => void): Promise<{ raw: Buffer; statements: BrokerStatement[] }> {
+  onRaw?: (body: Buffer) => void, history?: BrokerHistorySyncPlan): Promise<{ raw: Buffer; statements: BrokerStatement[] }> {
   const adapter = getBrokerAdapter(conn.broker_id);
-  const raw = await adapter.fetchRaw(combinedCredentials(model, conn), transport ? { transport } : undefined);
+  const raw = await adapter.fetchRaw(combinedCredentials(model, conn), { ...(transport ? { transport } : {}), ...(history ? { history } : {}) });
   onRaw?.(raw.body);
   const parser = adapter.usesCsvTables ? loadBrokerParserSpec(slug, conn.broker_id,
     conn.channel === conn.broker_id ? undefined : connectionId) : null;
@@ -515,7 +519,8 @@ export async function syncBrokerAccount(snapshot: InvestorSnapshot, id: string, 
       if (!conn.enabled) throw new Error('Broker connection is paused.');
       if (!conn.account_id) throw new Error('Broker account binding is required.');
       if (!requiredComplete(def, credentials)) throw new Error('Required broker fields are incomplete.');
-      const fetched = await fetchStatements(model, conn, id, state.user.id, transport, body => { raw = body; });
+      const history = planBrokerHistorySync(state.broker_history?.[conn.channel], conn.account_id);
+      const fetched = await fetchStatements(model, conn, id, state.user.id, transport, body => { raw = body; }, history);
       raw = fetched.raw;
       const statement = fetched.statements.find(s => s.account_id === conn.account_id);
       if (!statement) throw new Error(`Broker statement account mismatch: expected ${conn.account_id}.`);

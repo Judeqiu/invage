@@ -149,7 +149,7 @@ export const BROKER_CATALOG: readonly BrokerConnectorDef[] = [
     displayName: 'MooMoo',
     channel: 'moomoo',
     capability:
-      'Read-only moomoo Cloud Open API (not the local OpenD gateway). Pulls a live snapshot of stock and listed option lots plus per-currency cash into the selected account channel. Cannot trade or submit orders. Requests trade:read only. Snapshot time is the UTC date of Sync. Dashboard marks stay Yahoo. Option fill history is not imported (IBKR Flex Trades only). Broker-managed moomoo channels are separate from jude_futu — existing Futu-tagged lots and FDs stay until you move them.',
+      'Read-only moomoo Cloud Open API (not the local OpenD gateway). Pulls a live snapshot of stock and listed option lots plus per-currency cash into the selected account channel. Cannot trade or submit orders. Requests trade:read only. Snapshot time is the UTC date of Sync. Dashboard marks stay Yahoo. Sync also imports all available paginated stock/option fills, historical parent orders and spread legs. Missing or incomplete history triggers a full fetch. Unavailable expired-contract metadata and fees remain explicitly unknown. Broker-managed moomoo channels are separate from jude_futu — existing Futu-tagged lots and FDs stay until you move them.',
     credentialFields: [
       {
         id: 'app_key',

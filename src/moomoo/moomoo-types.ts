@@ -16,6 +16,10 @@ export interface MooMooRawBundle {
   option_basicinfo?: Record<string, unknown>[];
   /** Complete paginated fill history, with the requested range retained. */
   fills_history?: { start: string; end: string; rows: Record<string, unknown>[] };
+  orders_history?: { start: string; end: string; rows: Record<string, unknown>[] };
+  orders_details?: Record<string, unknown>[];
+  history_mode?: 'full' | 'incremental';
+  history_gaps?: Array<{ reference: string | null; reason: string }>;
 }
 
 export function envelopeOk(env: MooMooEnvelope): boolean {

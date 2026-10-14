@@ -76,6 +76,7 @@ describe('Moomoo fill pagination', () => {
         return Response.json(pages.shift() ?? { s: 'ok', d: { order_fills: [], completed: true, page_flag: '' } });
       }
       if (u.pathname.endsWith('/stock-basicinfo')) return Response.json({ ret_code: 0, data: { basic_list: bundle().option_basicinfo } });
+      if (u.pathname.endsWith('/orders_history')) return Response.json({ s:'ok', d:{ orders:[],completed:true,page_flag:'' } });
       throw new Error(`Unexpected ${u.pathname}`);
     };
     return { fetchImpl, queries };
@@ -112,9 +113,12 @@ describe('Moomoo complete execution history', () => {
     expect(statement.option_executions?.map(e => e.gross_premium).sort()).toEqual(['-2.25', '91.50']);
     expect(statement.option_executions?.every(e => e.multiplier === '25' && e.channel === 'moomoo-second')).toBe(true);
   });
-  it('refuses to silently drop historical fills or borrow a current contract multiplier', () => {
+  it('retains unpriced historical fills and reports a gap without borrowing a current multiplier', () => {
     const raw = bundle([{ ...fill('old'), code: expired }]);
-    expect(() => mapMooMooBundleToStatement(raw, 'moomoo')).toThrow(/Historical contract metadata unavailable/);
+    const statement=mapMooMooBundleToStatement(raw,'moomoo');
+    expect(statement.history?.executions[0]).toMatchObject({ id:'old',multiplier:null,gross_cash:null });
+    expect(statement.history?.sync.status).toBe('partial');
+    expect(statement.option_executions).toEqual([]);
     raw.option_basicinfo!.push({ code: expired, stock_type: 'DRVT', contract_size: 100 }, { code: expired, stock_type: 'DRVT', contract_size: 100 });
     expect(() => mapMooMooBundleToStatement(raw, 'moomoo')).toThrow(/Ambiguous/);
   });
@@ -129,6 +133,7 @@ describe('Moomoo complete execution history', () => {
       if (u.pathname.endsWith('/fills_history')) return Response.json({ s: 'ok', d: {
         order_fills: u.searchParams.get('trd_market') === 'US' ? [{ ...fill('old'), code: expired }] : [], completed: true,
       } });
+      if (u.pathname.endsWith('/orders_history')) return Response.json({ s:'ok', d:{ orders:[],completed:true,page_flag:'' } });
       if (u.pathname.endsWith('/stock-basicinfo')) {
         expect(JSON.parse(String(init?.body)).code_list).toEqual([expired]);
         return Response.json({ ret_code: 0, data: { basic_list: [{ code: expired, stock_type: 'DRVT', contract_size: 100 }] } });

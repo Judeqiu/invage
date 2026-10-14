@@ -3,6 +3,7 @@ import { mergeOptionExecutions } from './option-executions.js';
 import { mergeOptionLifecycleEvents } from './option-events.js';
 import { appendOptionObservation } from './option-history.js';
 import { normalizeBrokerOptionLot } from './statement.js';
+import { mergeBrokerHistory, optionExecutionsFromHistory } from './history.js';
 import { createHash } from 'node:crypto';
 /**
  * Channel snapshot apply — writes only public books types
@@ -158,6 +159,9 @@ export async function applyBrokerStatement(
   assertStatementNotOlder(state, connectorId, channel, doc.as_of);
   // All adapters and custom parsers pass through this before any books writes.
   doc = { ...doc, lots: doc.lots.map(normalizeBrokerOptionLot) };
+  if (doc.history && (doc.history.channel !== channel || doc.history.account_id !== doc.account_id || doc.history.broker_id !== (connection?.brokerId ?? connectorId))) throw new Error('History broker/channel/account differs from broker statement');
+  const history = doc.history ? mergeBrokerHistory(state.broker_history?.[channel], doc.history) : undefined;
+  if (history) doc = { ...doc, option_executions: mergeOptionExecutions(doc.option_executions ?? [], optionExecutionsFromHistory(history)) };
   // Validate all incoming history before ledger writes or snapshot mutation.
   const executions = doc.option_executions === undefined ? undefined : mergeOptionExecutions(
     state.option_executions === undefined ? [] : state.option_executions,
@@ -204,6 +208,7 @@ export async function applyBrokerStatement(
   writeConnectionMetrics(state, connectorId, doc);
   if (executions !== undefined) state.option_executions = executions;
   if (optionEvents !== undefined) state.option_events = optionEvents;
+  if (history) state.broker_history = { ...state.broker_history, [channel]: history };
 
   state.log.push({
     ts: today,
@@ -222,6 +227,7 @@ export async function applyBrokerStatement(
     lotsRemoved: removed,
     cash: doc.cash,
     skipped: doc.skipped,
+    ...(history ? { historySync:history.sync } : {}),
   };
   if (beforeSave) beforeSave(result);
   await saveInvestor(snapshot);

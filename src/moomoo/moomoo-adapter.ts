@@ -31,6 +31,7 @@ export const moomooAdapter: BrokerConnectorAdapter = {
   async fetchRaw(credentials, opts) {
     const bundle = await fetchMooMooRawBundle(credentialsFrom(credentials), {
       fetchImpl: fetchImpl(opts),
+      history: opts?.history,
     });
     return { kind: 'json', body: Buffer.from(JSON.stringify(bundle)), meta: { acc_id: bundle.acc_id } };
   },

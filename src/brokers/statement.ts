@@ -9,6 +9,7 @@ import { mergeOptionExecutions, type OptionExecution } from './option-executions
 import { mergeOptionLifecycleEvents, type OptionLifecycleEvent } from './option-events.js';
 import { assertHolding, buildOptionKey, HOLDING_KEY_CHANNEL_SEP } from '../market/position-value.js';
 import { canonicalOptionUnderlying } from './option-symbol.js';
+import { assertBrokerHistory, type BrokerHistory } from './history.js';
 import {
   assertBrokerConnectionMetrics,
   type BrokerConnectionMetrics,
@@ -54,6 +55,7 @@ export function normalizeBrokerOptionLot(lot: BrokerLot): BrokerLot {
 }
 
 export interface BrokerStatement {
+  history?: BrokerHistory;
   option_executions?: OptionExecution[];
   option_events?: OptionLifecycleEvent[];
   account_id: string;
@@ -66,6 +68,7 @@ export interface BrokerStatement {
 }
 
 export interface BrokerApplyResult {
+  historySync?: BrokerHistory['sync'];
   accountId: string;
   asOf: string;
   channel: string;
@@ -202,7 +205,7 @@ export function assertBrokerStatement(raw: unknown): BrokerStatement {
   }
   const o = raw as Record<string, unknown>;
   rejectVendorShape(o);
-  const allowed = new Set(['account_id', 'as_of', 'from_date', 'cash', 'lots', 'skipped', 'metrics', 'option_executions', 'option_events']);
+  const allowed = new Set(['account_id', 'as_of', 'from_date', 'cash', 'lots', 'skipped', 'metrics', 'option_executions', 'option_events', 'history']);
   for (const k of Object.keys(o)) {
     if (!allowed.has(k)) {
       throw new Error(`Broker statement: unknown field "${k}".`);
@@ -264,6 +267,10 @@ export function assertBrokerStatement(raw: unknown): BrokerStatement {
   if (o.option_events !== undefined) {
     doc.option_events = mergeOptionLifecycleEvents([], o.option_events);
     if (doc.option_events.some(row => row.account_id !== doc.account_id)) throw new Error('Option event account differs from statement account');
+  }
+  if (o.history !== undefined) {
+    doc.history = assertBrokerHistory(o.history);
+    if (doc.history.account_id !== doc.account_id) throw new Error('History account differs from statement account');
   }
   return doc;
 }

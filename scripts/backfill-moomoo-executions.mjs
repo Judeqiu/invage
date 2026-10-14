@@ -21,20 +21,24 @@ try {
   const { fetchMooMooRawBundle } = await import('../src/moomoo/moomoo-client.ts');
   const { parseSignAlg } = await import('../src/moomoo/moomoo-sign.ts');
   const { mapMooMooBundleToStatement } = await import('../src/moomoo/moomoo-map.ts');
+  const { mergeBrokerHistory, planBrokerHistorySync, optionExecutionsFromHistory } = await import('../src/brokers/history.ts');
   const { mergeOptionExecutions } = await import('../src/brokers/option-executions.ts');
   const { openOptionTradeDetails } = await import('../src/webapp/option-dashboard-data.ts');
   const snapshot = await loadInvestor(user);
   const model = readBrokerAccountModel(snapshot.state);
   let merged = snapshot.state.option_executions ?? [];
+  const history = { ...snapshot.state.broker_history };
   const evidence = [];
   const accounts = {};
   for (const [id, connection] of Object.entries(model.connections)) {
     if (connection.broker_id !== 'moomoo' || !connection.enabled || !connection.account_id) continue;
     const credentials = combinedCredentials(model, connection);
-    const raw = await fetchMooMooRawBundle({ ...credentials, sign_alg: parseSignAlg(credentials.sign_alg) });
+    const raw = await fetchMooMooRawBundle({ ...credentials, sign_alg: parseSignAlg(credentials.sign_alg) },
+      { history: planBrokerHistorySync(history[connection.channel], connection.account_id) });
     if (raw.acc_id !== connection.account_id) throw new Error('Moomoo history account differs from the connection');
     const statement = mapMooMooBundleToStatement(raw, connection.channel);
-    merged = mergeOptionExecutions(merged, statement.option_executions ?? []);
+    history[connection.channel] = mergeBrokerHistory(history[connection.channel], statement.history);
+    merged = mergeOptionExecutions(merged, optionExecutionsFromHistory(history[connection.channel]));
     accounts[connection.channel] = connection.account_id;
     evidence.push({ id, connection, raw });
   }
@@ -45,19 +49,21 @@ try {
   const verified = options.filter(([key]) => details[key]);
   const added = merged.length - (snapshot.state.option_executions?.length ?? 0);
   console.log(JSON.stringify({ user, apply: args.includes('--apply'), added,
+    history: Object.values(history).map(h => ({ channel:h.channel, executions:h.executions.length, orders:h.orders.length, sync:h.sync })),
     open_options: options.length, matched_options: verified.length,
     unknown_options: options.filter(([key]) => !details[key]).map(([key]) => key) }));
   if (args.includes('--apply')) {
     const stamp = new Date().toISOString().replaceAll(':', '-');
     const dir = join(resolveDataRoot(), 'drive', snapshot.state.user.id, 'moomoo-executions');
     mkdirSync(dir, { recursive: true, mode: 0o700 });
-    writeFileSync(join(dir, `${stamp}-before.json`), JSON.stringify(snapshot.state.option_executions ?? []), { mode: 0o600, flag: 'wx' });
+    writeFileSync(join(dir, `${stamp}-before.json`), JSON.stringify({ option_executions:snapshot.state.option_executions ?? [], broker_history:snapshot.state.broker_history ?? {} }), { mode: 0o600, flag: 'wx' });
     for (const { id, connection, raw } of evidence) {
       const archive = join(resolveDataRoot(), 'drive', snapshot.state.user.id, 'broker-sync', connection.channel);
       mkdirSync(archive, { recursive: true, mode: 0o700 });
       writeFileSync(join(archive, `${stamp}-${id}-execution-backfill.json`), JSON.stringify(raw), { mode: 0o600, flag: 'wx' });
     }
     snapshot.state.option_executions = merged;
+    snapshot.state.broker_history = history;
     snapshot.state.log.push({ ts: new Date().toISOString().slice(0, 10), action: 'moomoo_execution_backfill',
       reason: 'Operator requested complete historical option cash flow, including closed contracts and protective long legs; fees remain unreported.',
       execution_count: added });

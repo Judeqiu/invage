@@ -4,7 +4,7 @@ import { publicBrokerAccounts } from '../brokers/accounts.js';
 
 /** Every financial state root, including fields not projected by the convenience datasets. */
 export const financialRoots = ['portfolio', 'cash', 'deposits', 'option_executions', 'option_events',
-  'option_observations', 'recon', 'playbook', 'treasury', 'properties', 'liabilities', 'cash_flows',
+  'option_observations', 'broker_history', 'recon', 'playbook', 'treasury', 'properties', 'liabilities', 'cash_flows',
   'projection_assumptions', 'scenarios'] as const;
 
 export const recordFields = {

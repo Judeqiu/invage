@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto';
 import { SaxesParser } from 'saxes';
 import { addDecimals, decimal, validDate } from './option-executions.js';
 import { canonicalOptionUnderlying, optionUnderlyingFromBroker } from './option-symbol.js';
+import { moomooContractMetadata } from '../moomoo/moomoo-history.js';
+import type { MooMooRawBundle } from '../moomoo/moomoo-types.js';
 
 export interface RollContract {
   underlying: string; right: 'put' | 'call'; expiry: string; strike: string;
@@ -85,7 +87,7 @@ export function rollContractKey(c: RollContract): string { return JSON.stringify
 function identity(value: unknown): string { return createHash('sha256').update(JSON.stringify(value)).digest('hex').slice(0, 24); }
 
 /** Extract linkage directly from retained evidence, independently of today's holdings. */
-export function parseRelationshipArchive(broker: string, bytes: Buffer, account: string, source: RollSource): RollFill[] {
+export function parseRelationshipArchive(broker: string, bytes: Buffer, account: string, source: RollSource, verifiedMultipliers?: ReadonlyMap<string,string>): RollFill[] {
   const fills: RollFill[] = [];
   if (broker === 'ibkr') {
     const parser = new SaxesParser({ xmlns: false }); const path: string[] = []; let statementAccount = '';
@@ -125,12 +127,7 @@ export function parseRelationshipArchive(broker: string, bytes: Buffer, account:
   if (broker === 'moomoo') {
     if (text(b.acc_id) !== account) throw new Error('Archive account mismatch');
     if (!b.fills_history) return fills;
-    const profiles = Array.isArray(b.option_basicinfo) ? rows(b.option_basicinfo) : [];
-    const sizes = new Map<string, string>();
-    for (const r of profiles) {
-      if (sizes.has(String(r.code))) throw new Error('Ambiguous contract metadata needs reconciliation');
-      sizes.set(String(r.code), positive(r.contract_size ?? r.lot_size));
-    }
+    const metadata = moomooContractMetadata(b as unknown as MooMooRawBundle,[],verifiedMultipliers);
     for (const r of rows(record(b.fills_history).rows)) {
       const code = String(r.code); const m = code.match(/^(US|HK)\.(.+?)(\d{6})([PC])(\d+)$/); if (!m) continue;
       if (r.status !== 'OK') throw new Error('Changed option fill needs reconciliation');
@@ -140,9 +137,8 @@ export function parseRelationshipArchive(broker: string, bytes: Buffer, account:
       const action = actions[String(r.trd_side)]; if (!action) throw new Error('Unknown fill direction');
       // Historical contract sizes can be absent.
       // Preserve linkage while withholding cash estimates unless size is explicitly reported.
-      const size = sizes.get(code);
-      const profile = profiles.find(p => p.code === code);
-      const underlying = optionUnderlyingFromBroker({ market: m[1], optionRoot: m[2], owner: profile?.stock_owner == null ? undefined : String(profile.stock_owner) });
+      const profile = metadata.get(code), size = profile?.multiplier;
+      const underlying = optionUnderlyingFromBroker({ market: m[1], optionRoot: m[2], owner: profile?.owner });
       if (typeof underlying !== 'string') throw new Error(underlying.skip);
       const c = contract(underlying, m[4], `20${m[3]}`, multiply(m[5], '0.001'), size ?? '100', m[1] === 'US' ? 'USD' : 'HKD');
       const quantity = positive(r.qty); const cash = multiply(positiveOrZero(r.price), quantity, c.multiplier);

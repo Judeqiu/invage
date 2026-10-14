@@ -2,6 +2,7 @@ import { BrokerHttpError, BrokerParseError } from '../brokers/errors.js';
 import { moomooNonce, moomooSignContent, parseSignAlg, signMooMooRequest, type MooMooSignAlg } from './moomoo-sign.js';
 import { looksLikeOptionCode } from '../brokers/option-symbol.js';
 import { envelopeOk, type MooMooEnvelope, type MooMooRawBundle } from './moomoo-types.js';
+import type { BrokerHistorySyncPlan } from '../brokers/history.js';
 
 export const MOOMOO_HOST = 'webapi.moomoo.com';
 export const MOOMOO_ORIGIN = `https://${MOOMOO_HOST}`;
@@ -116,6 +117,10 @@ async function fetchOptionBasicInfo(
       if (timestampMs) raw = await moomooRequest({ ...args, timestampMs }) as Record<string, unknown>;
     }
     const data = raw?.data as { basic_list?: unknown } | undefined;
+    // Expired instruments can disappear from the quote directory. Preserve their fills.
+    // The common resolver may still have exact parent-leg metadata. The mapper
+    // rejects missing current-held size before snapshot replacement.
+    if (raw?.ret_code === -7) continue;
     if (raw?.ret_code !== 0 || !Array.isArray(data?.basic_list)) {
       throw new BrokerParseError('MooMoo option contract metadata unavailable; snapshot was not applied.');
     }
@@ -154,36 +159,36 @@ async function getWithSkewRetry(args: {
 }
 
 /** Read all pages, rather than silently truncating at the default 50 fills / 90 days. */
-async function fetchFillHistory(accId: string,
-  credentials: MooMooCredentials, fetchImpl: typeof fetch): Promise<MooMooRawBundle['fills_history']> {
+async function fetchHistory(accId: string, credentials: MooMooCredentials, fetchImpl: typeof fetch,
+  plan: BrokerHistorySyncPlan, resource: 'fills_history' | 'orders_history') {
   // Closed-only accounts must retain history too, even with no current options.
   const markets = ['US', 'HK'];
-  const start = '946684800000000'; // 2000-01-01, not the implicit 90-day window.
-  const end = String(BigInt(Date.now()) * 1000n);
+  const start = String(BigInt(Date.parse(plan.from)) * 1000n);
+  const end = String(BigInt(Date.parse(plan.through)) * 1000n);
   const rows: Record<string, unknown>[] = [];
   for (const market of markets) {
     let pageFlag = '';
     const seen = new Set<string>();
     for (let page = 0; ; page++) {
       if (page >= 1000) throw new BrokerParseError('MooMoo fill history exceeded the page limit; snapshot was not applied.');
-      const args = { path: `/api/v1.0/accounts/${encodeURIComponent(accId)}/fills_history`,
+      const args = { path: `/api/v1.0/accounts/${encodeURIComponent(accId)}/${resource}`,
         query: new URLSearchParams({ trd_market: market, start, end, page_flag: pageFlag, page_size: '50' }).toString(),
         credentials, fetchImpl };
       let env: MooMooEnvelope;
       for (let attempt = 0; ; attempt++) {
-        try { env = await getWithSkewRetry(args); break; }
+        try { env = await getWithSkewRetry(args); failIfError(env,resource); break; }
         catch (error) {
           if (!(error instanceof BrokerHttpError) || error.vendorCode !== '429' || attempt >= 3) throw error;
           await new Promise(resolve => setTimeout(resolve, 1000 * 2 ** attempt));
         }
       }
-      failIfError(env, 'fills_history');
-      const data = env.d as { order_fills?: unknown; completed?: unknown; page_flag?: unknown } | undefined;
-      if (!Array.isArray(data?.order_fills) || typeof data.completed !== 'boolean' ||
-          data.order_fills.some(row => !row || typeof row !== 'object' || Array.isArray(row))) {
-        throw new BrokerParseError('MooMoo fill history response is incomplete; snapshot was not applied.');
+      const data = env.d as { order_fills?: unknown; orders?: unknown; completed?: unknown; page_flag?: unknown } | undefined;
+      const pageRows = resource === 'fills_history' ? data?.order_fills : data?.orders;
+      if (!Array.isArray(pageRows) || typeof data?.completed !== 'boolean' ||
+          pageRows.some(row => !row || typeof row !== 'object' || Array.isArray(row))) {
+        throw new BrokerParseError(`MooMoo ${resource} response is incomplete; snapshot was not applied.`);
       }
-      rows.push(...data.order_fills as Record<string, unknown>[]);
+      rows.push(...pageRows as Record<string, unknown>[]);
       if (data.completed) break;
       if (typeof data.page_flag !== 'string' || !data.page_flag || seen.has(data.page_flag)) {
         throw new BrokerParseError('MooMoo fill history pagination did not advance; snapshot was not applied.');
@@ -193,6 +198,43 @@ async function fetchFillHistory(accId: string,
     }
   }
   return { start, end, rows };
+}
+
+async function fetchOrderDetails(accId: string, orders: Record<string, unknown>[], credentials: MooMooCredentials, fetchImpl: typeof fetch) {
+  const rows: Record<string, unknown>[] = [], gaps: NonNullable<MooMooRawBundle['history_gaps']> = [];
+  for (const exchange of ['US','HK']) {
+    const ids = [...new Set(orders.filter(o => String(o.exchange ?? String(o.code).split('.')[0]) === exchange).map(o => String(o.order_id)))];
+    for (let start = 0; start < ids.length; start += 50) {
+      const requested = ids.slice(start,start+50);
+      const args = { path:`/api/v1.0/accounts/${encodeURIComponent(accId)}/orders/detail`, method:'POST' as const,
+        body:JSON.stringify({ exchange, order_ids:requested }), credentials, fetchImpl };
+      try {
+        let result: MooMooEnvelope | undefined;
+        for (let attempt = 0; attempt < 4; attempt++) {
+          try {
+            let env = asEnvelope(await moomooRequest(args));
+            if (env.errcode === CLOCK_SKEW) {
+              const timestampMs = await serverTimeMs(fetchImpl);
+              if (timestampMs) env = asEnvelope(await moomooRequest({ ...args, timestampMs }));
+            }
+            failIfError(env,'orders/detail'); result = env; break;
+          } catch (error) {
+            if (!(error instanceof BrokerHttpError) || error.vendorCode !== '429' || attempt === 3) throw error;
+            await new Promise(resolve => setTimeout(resolve,1000 * 2 ** attempt));
+          }
+        }
+        if (!Array.isArray(result?.d)) throw new BrokerParseError('Order details missing');
+        for (const row of result.d) {
+          if (!row || typeof row !== 'object' || Array.isArray(row) || !requested.includes(String(row.order_id))) throw new BrokerParseError('Unexpected order details');
+        }
+        rows.push(...result.d);
+        for (const id of requested) if (!result.d.some(r => String(r.order_id) === id)) gaps.push({ reference:id, reason:'Historical parent-order details are unavailable.' });
+      } catch {
+        for (const id of requested) gaps.push({ reference:id, reason:'Historical parent-order details could not be fetched; retry on the next sync.' });
+      }
+    }
+  }
+  return { rows, gaps };
 }
 
 function failIfError(env: MooMooEnvelope, what: string): void {
@@ -291,7 +333,7 @@ function pickAccId(authorized: MooMooEnvelope, stored?: string): string {
 
 export async function fetchMooMooRawBundle(
   credentials: MooMooCredentials,
-  opts?: { fetchImpl?: typeof fetch },
+  opts?: { fetchImpl?: typeof fetch; history?: BrokerHistorySyncPlan },
 ): Promise<MooMooRawBundle> {
   const fetchImpl = opts?.fetchImpl ?? fetch;
   const authorized = await fetchAuthorizedEnvelope(credentials, fetchImpl);
@@ -309,7 +351,12 @@ export async function fetchMooMooRawBundle(
     fetchImpl,
   });
   failIfError(positions, 'positions');
-  const fills_history = await fetchFillHistory(acc_id, credentials, fetchImpl);
+  const plan = opts?.history ?? { mode:'full', from:'2000-01-01T00:00:00.000Z', through:new Date().toISOString() };
+  const fills_history = await fetchHistory(acc_id, credentials, fetchImpl, plan, 'fills_history');
+  const orders_history = await fetchHistory(acc_id, credentials, fetchImpl, plan, 'orders_history');
+  // Recent fills may belong to orders created before the incremental window.
+  const parents = [...orders_history.rows, ...fills_history.rows.filter(row => row.order_id != null)];
+  const details = await fetchOrderDetails(acc_id, parents, credentials, fetchImpl);
   const option_basicinfo = await fetchOptionBasicInfo(positions, credentials, fetchImpl, fills_history?.rows);
   return {
     schema: 'invage.moomoo.raw.v1',
@@ -320,5 +367,9 @@ export async function fetchMooMooRawBundle(
     positions,
     ...(option_basicinfo.length ? { option_basicinfo } : {}),
     ...(fills_history ? { fills_history } : {}),
+    orders_history,
+    orders_details:details.rows,
+    history_mode:plan.mode,
+    history_gaps:details.gaps,
   };
 }

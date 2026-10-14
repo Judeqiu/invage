@@ -1,3 +1,4 @@
+import { brokerHistoryDatasets } from './broker-history.js';
 import { getPortfolio, getCashes, getDeposits, holdingInstrument, type InvestorState } from '../state/portfolio-state.js';
 import { getProperties, getLiabilities, getCashFlows, type HouseholdInvestorState } from '../state/household-state.js';
 import { buildExecutionJournal } from '../brokers/option-executions.js';
@@ -74,6 +75,7 @@ const flowFields = { id: str('Cash-flow line identifier.'), currency: scope.curr
   frequency: str('Cash-flow interval.'), start_date: date('Flow start.'), end_date: date('Flow end, null if unspecified.'), category: str('Recorded category.'), updated_at: date('Book recording date.') };
 
 export const datasets: Record<string, Dataset> = {
+  ...brokerHistoryDatasets,
   positions: {
     description: 'Current stored equity, fund, and option lots, with reconciled opening evidence for options.',
     fields: { key: str('Stable portfolio lot key.'), ...scope, instrument: str('equity, fund, or option.'),
@@ -131,6 +133,9 @@ export const datasets: Record<string, Dataset> = {
 };
 
 export const relationships = [
+  { from: 'broker_executions', to: 'broker_orders', keys: ['broker_id', 'channel', 'account_id', 'order_id -> id'], meaning: 'Execution parent; orders are not extra cash flows.' },
+  { from: 'broker_order_legs', to: 'broker_orders', keys: ['broker_id', 'channel', 'account_id', 'order_id -> id'], meaning: 'Exact parent legs and ratios; actual fills remain in broker_executions.' },
+  { from: 'broker_history_sync', to: 'broker_history_gaps', keys: ['broker_id', 'channel', 'account_id'], meaning: 'Check completeness and unresolved metadata before historical totals.' },
   { from: 'option_relationships', to: 'broker_accounts', keys: ['channel', 'account_id'], meaning: 'Both account keys must agree. Relationship evidence describes a close/replacement, not current holdings or profit.' },
   { from: 'option_relationship_fills', to: 'option_relationships', keys: ['relationship_id -> id', 'channel', 'account_id'], meaning: 'closing/replacement archived fill references; inspect effect before claiming a new opening. Normalized option_executions may omit these closed contracts.' },
   { from: 'option_relationship_sources', to: 'option_relationships', keys: ['relationship_id -> id', 'channel', 'account_id'], meaning: 'Retained archive provenance for each transition.' },

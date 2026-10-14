@@ -15,6 +15,7 @@ import { tigerAdapter } from '../tiger/tiger-adapter.js';
 import { webullAdapter } from '../webull/webull-adapter.js';
 import { getBrokerConnector } from './catalog.js';
 import type { BrokerStatement } from './statement.js';
+import type { BrokerHistorySyncPlan } from './history.js';
 
 export type BrokerRawKind = 'xml' | 'json' | 'text';
 
@@ -36,7 +37,7 @@ export interface BrokerConnectorAdapter {
   readonly usesCsvTables: boolean;
   fetchRaw(
     credentials: Record<string, string>,
-    opts?: { transport?: AdapterTransport },
+    opts?: { transport?: AdapterTransport; history?: BrokerHistorySyncPlan },
   ): Promise<BrokerRawPayload>;
   parseToStatement(raw: BrokerRawPayload, channel: string): BrokerStatement;
 }

@@ -98,27 +98,10 @@ describe('MooMoo mapping', () => {
     expect(looksLikeOptionCode('AAPL')).toBe(false);
   });
 
-  it('skips option rows that cannot fill OptionSpec', () => {
-    const stmt = mapMooMooBundleToStatement(
-      bundle({
-        positions: {
-          s: 'ok',
-          d: [
-            {
-              position_side: 'LONG',
-              code: 'HK.TCH260629C390000',
-              qty: '1',
-              currency: 'HKD',
-              cost_price: '2',
-              cost_price_valid: true,
-            },
-          ],
-        },
-      }),
-      'moomoo',
-    );
-    expect(stmt.lots).toEqual([]);
-    expect(stmt.skipped.some((s) => s.reason === 'option missing multiplier')).toBe(true);
+  it('rejects current option rows without verified size so existing holdings cannot be removed', () => {
+    expect(() => mapMooMooBundleToStatement(bundle({ positions:{s:'ok',d:[{
+      position_side:'LONG',code:'HK.TCH260629C390000',qty:'1',currency:'HKD',cost_price:'2',cost_price_valid:true,
+    }] } }), 'moomoo')).toThrow(/current option contract metadata unavailable/);
   });
 
   it('maps real Cloud option rows using exact-code metadata and scaled strikes', () => {
@@ -142,24 +125,20 @@ describe('MooMoo mapping', () => {
     [{ code: 'US.PATH270319P15000', stock_type: 'DRVT', contract_size: 100 },
       { code: 'US.PATH270319P15000', stock_type: 'DRVT', contract_size: 10 }],
   ])('never guesses a multiplier from missing, wrong, or ambiguous metadata (%j)', (...profiles) => {
-    const stmt = mapMooMooBundleToStatement(bundle({
+    expect(() => mapMooMooBundleToStatement(bundle({
       positions: { s: 'ok', d: [{ code: 'US.PATH270319P15000', qty: '1', currency: 'USD',
         nominal_price: '1', cost_price: '2', cost_price_valid: true }] },
       option_basicinfo: profiles,
-    }), 'moomoo');
-    expect(stmt.lots).toEqual([]);
-    expect(stmt.skipped.some(s => s.reason === 'option missing multiplier')).toBe(true);
+    }), 'moomoo')).toThrow();
   });
 
-  it('preserves an explicit adjusted contract size over lot size and metadata', () => {
-    const stmt = mapMooMooBundleToStatement(bundle({
+  it('rejects contradictory current and static contract sizes before applying a snapshot', () => {
+    expect(() => mapMooMooBundleToStatement(bundle({
       positions: { s: 'ok', d: [{ code: 'US.PATH1270319P15000', qty: '1', currency: 'USD',
         nominal_price: '1', cost_price: '2', cost_price_valid: true,
         contract_size: 10, lot_size: 100, stock_owner: 'US.PATH' }] },
       option_basicinfo: [{ code: 'US.PATH1270319P15000', stock_type: 'DRVT', contract_size: 100 }],
-    }), 'moomoo');
-    expect(stmt.lots[0]?.holding.option?.multiplier).toBe(10);
-    expect(stmt.lots[0]?.holding.avg_price).toBe(20);
+    }), 'moomoo')).toThrow(/Conflicting exact-contract metadata/);
   });
 
   it('imports short option lots', () => {
@@ -216,6 +195,7 @@ describe('MooMoo fetchRaw', () => {
       }
       if (href.includes('/positions')) return Response.json(envelopes.positions);
       if (href.includes('/fills_history')) return Response.json(envelopes.history ?? { s: 'ok', d: { order_fills: [], completed: true, page_flag: '' } });
+      if (href.includes('/orders_history')) return Response.json({ s:'ok', d:{ orders:[],completed:true,page_flag:'' } });
       throw new Error(`unexpected ${href}`);
     };
   }
@@ -301,12 +281,15 @@ describe('MooMoo fetchRaw', () => {
     { s: 'error', errcode: -1200 },
     { ret_code: 0, data: {} },
   ])('fails before applying a snapshot when metadata cannot be fetched (%j)', async response => {
-    await expect(fetchMooMooRawBundle({ app_key: 'ak', private_key: ED, sign_alg: 'Ed25519' },
+    await expect((async () => {
+      const raw = await fetchMooMooRawBundle({ app_key: 'ak', private_key: ED, sign_alg: 'Ed25519' },
       { fetchImpl: async (url, init) => String(url).endsWith('/quote/stock-basicinfo')
         ? Response.json(response)
         : mockFetch({ authorized: AUTHORIZED, funds: FUNDS,
-          positions: { s: 'ok', d: [{ code: 'US.PATH270319P15000' }] } })(url, init) },
-    )).rejects.toThrow(/contract metadata unavailable/);
+          positions: { s: 'ok', d: [{ code: 'US.PATH270319P15000',qty:'1',currency:'USD',nominal_price:'1',cost_price:'2',cost_price_valid:true }] } })(url, init) },
+    );
+      mapMooMooBundleToStatement(raw,'moomoo');
+    })()).rejects.toThrow(/contract metadata unavailable/);
   });
 
   it('preserves numeric uint64 account IDs from the wire through account selection and request URLs', async () => {
@@ -322,12 +305,13 @@ describe('MooMoo fetchRaw', () => {
         }
         if (href.includes('/funds')) return Response.json(FUNDS);
         if (href.includes('/fills_history')) return Response.json({ s: 'ok', d: { order_fills: [], completed: true } });
+        if (href.includes('/orders_history')) return Response.json({ s:'ok',d:{orders:[],completed:true} });
         return Response.json(POSITIONS);
       } },
     );
     expect(raw.acc_id).toBe(id);
     expect(raw.authorized.d).toEqual({ accounts: [{ account_id: id }, { account_id: '283726798101330415' }] });
-    expect(urls.slice(1).filter(url => !url.includes('/fills_history'))).toEqual([
+    expect(urls.slice(1).filter(url => !url.includes('/fills_history') && !url.includes('/orders_history'))).toEqual([
       `https://webapi.moomoo.com/api/v1.0/accounts/${id}/funds?currency=USD`,
       `https://webapi.moomoo.com/api/v1.0/accounts/${id}/positions`,
     ]);

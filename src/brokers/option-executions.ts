@@ -78,11 +78,18 @@ export function mergeOptionExecutions(existing: unknown, incoming: unknown): Opt
     const key = JSON.stringify([row.channel, row.account_id, row.execution_id]);
     const prior = byId.get(key);
     if (prior && JSON.stringify(prior) !== JSON.stringify(row)) {
+      const normalized = (e: OptionExecution) => Object.fromEntries(Object.entries(e).map(([k,v]) => {
+        if (['strike','multiplier','contracts','gross_premium','commission'].includes(k) && v !== null) {
+          const value=addDecimals(v,'0');
+          return [k,/^-?0(?:\.0+)?$/.test(value) ? '0' : value.replace(/\.0+$/,'').replace(/(\.\d*?)0+$/,'$1')];
+        }
+        return [k,v];
+      }));
       // An unreported fee may become available after settlement. Keep known
       // fees when an overlapping source still omits them; never revise money.
-      if ((prior.commission === null || row.commission === null) &&
-          JSON.stringify({ ...prior, commission: null }) === JSON.stringify({ ...row, commission: null })) {
-        byId.set(key, prior.commission === null ? row : prior);
+      if (JSON.stringify(normalized({ ...prior,commission:null })) === JSON.stringify(normalized({ ...row,commission:null })) &&
+          (prior.commission === null || row.commission === null || JSON.stringify(normalized(prior)) === JSON.stringify(normalized(row)))) {
+        byId.set(key, prior.commission === null && row.commission !== null ? { ...prior,commission:row.commission } : prior);
         continue;
       }
       throw new Error(`Execution conflict: ${key}`);
