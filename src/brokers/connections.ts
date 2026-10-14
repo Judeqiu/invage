@@ -216,6 +216,7 @@ function parseStoredConnection(id: string, raw: unknown): BrokerConnection {
   }
   const credRaw = asRecord(o.credentials, `broker_connections.${id}.credentials`);
   const allowed = new Set(def.credentialFields.map((f) => f.id));
+  if (id === 'futubull') { allowed.add('opend_port'); allowed.add('security_firm'); }
   const credentials: Record<string, string> = {};
   for (const [key, val] of Object.entries(credRaw)) {
     if (!allowed.has(key)) {
@@ -291,6 +292,7 @@ export function requiredCredentialsComplete(
   def: BrokerConnectorDef,
   credentials: Record<string, string>,
 ): boolean {
+  if (def.id === 'futubull' && !credentials.app_key && credentials.opend_port && credentials.security_firm) return true;
   return def.credentialFields.every((f) => !f.required || Boolean(credentials[f.id]?.trim()));
 }
 

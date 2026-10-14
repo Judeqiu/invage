@@ -43,7 +43,7 @@ export function createConfigureBrokerTool(): AgentTool {
       'Store credentials for a catalog connector (ibkr, tiger, …) via the same path as Settings → Brokers. Never echoes secrets. After this, call sync_broker with the same connector_id.',
     parameters: Type.Object({
       ...channelIdParams,
-      connector_id: Type.String({ description: 'Catalog connector id (ibkr, tiger, moomoo, webull).' }),
+      connector_id: Type.String({ description: 'Catalog connector id (ibkr, tiger, moomoo, futubull, webull).' }),
       connection_id: Type.Optional(Type.String({ description: 'Required when more than one account uses this broker.' })),
       credentials: Type.Object({}, { additionalProperties: Type.String(), description: 'Credential field map from the catalog.' }),
     }),
@@ -93,7 +93,7 @@ export function createSyncBrokerTool(): AgentTool {
       'Pull the catalog connector statement and replace lots + cash on that channel only. Read-only. Other channels stay untouched. Unsupported lots are listed as not_imported. Default sync fetches latest data only; full_sync=true explicitly fetches available historical data. Query broker_history_sync/gaps before historical totals.',
     parameters: Type.Object({
       ...channelIdParams,
-      connector_id: Type.String({ description: 'Catalog connector id (ibkr, tiger, moomoo, webull).' }),
+      connector_id: Type.String({ description: 'Catalog connector id (ibkr, tiger, moomoo, futubull, webull).' }),
       full_sync: Type.Optional(Type.Boolean({description:'Explicit Full sync of available history; default false fetches latest data.'})),
       connection_id: Type.Optional(Type.String({ description: 'Required when more than one account uses this broker.' })),
     }),

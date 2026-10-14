@@ -231,7 +231,7 @@ function mapPosition(
 }
 
 export function mapMooMooBundleToStatement(bundle: MooMooRawBundle, channel: string): BrokerStatement {
-  if (bundle.schema !== 'invage.moomoo.raw.v1') {
+  if (bundle.schema !== 'invage.moomoo.raw.v1' && bundle.schema !== 'invage.futubull.cloud.raw.v1') {
     throw new BrokerParseError('MooMoo raw bundle schema is not invage.moomoo.raw.v1.');
   }
   if (!envelopeOk(bundle.funds) || !envelopeOk(bundle.positions)) {

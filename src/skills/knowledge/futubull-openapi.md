@@ -1,7 +1,13 @@
-# Futubull OpenD connector
+# Futubull Cloud Open API
 
-Futubull uses the [Futu OpenAPI](https://openapi.futunn.com/futu-api-doc/en/intro/intro.html). It requires a signed-in OpenD gateway and the official `futu-api` Python SDK on the Invage host. Install the SDK into the `python3` environment used by Invage. Keep the gateway API listener on `127.0.0.1`; configure its local port and the matching securities firm in Settings → Brokers. For a remote OpenD, provide a local SSH tunnel rather than exposing the gateway listener.
+Futubull uses the same cloud REST protocol as moomoo, through `https://webapi.futunn.com`. New connections do not require OpenD or Python.
 
-The connector calls only `get_acc_list`, `accinfo_query`, and `position_list_query`. It filters discovery to live securities accounts and binds sync to the selected `acc_id`. It imports stock and ETF positions plus per-currency cash into a distinct Futubull channel. It reports option positions and unsupported markets as skipped, and rejects a snapshot if cash is missing or negative. It does not unlock trading or submit orders. The `jude_futu` manual channel remains separate.
+In Settings → Brokers, choose Futubull. Log in at https://open.futunn.com/dashboard, open User Center, create an AppKey, and upload an Ed25519 or RSA public key. Save the AppKey ID and matching private key in Invage; set Signature algorithm to Ed25519 (default) or RSA-SHA256. Find accounts, select the authorized trading account using its card ending, then Preview and Sync. The Futubull profile ID and account card number are not the API account_id.
 
-OpenD login, device verification, and the Futu API questionnaire and agreements must be completed in OpenD. A separate OpenD instance and local port are needed for each login. Test discovery and Preview before first Sync. Live OpenD behavior requires verification with an authorized account; repository tests use synthetic snapshots only.
+The connector imports stock and listed option positions, per-currency cash, and available paginated US/HK fill and order history. Sync latest requests recent data; Full sync explicitly imports available history. Unknown fees and unavailable expired option metadata remain explicit gaps. Current option positions require authoritative contract sizes before snapshot replacement.
+
+Futubull connections and history retain broker_id `futubull` and their distinct channels. They do not move moomoo or manual `jude_futu` holdings. The integration is read-only and never unlocks trading or submits orders. Never echo private keys.
+
+Existing saved OpenD connections and archived OpenD snapshots remain supported. To use cloud access, configure a Futubull AppKey and matching private key. Live account access requires verification with an authorized Futubull account.
+
+Official documentation: https://open.futunn.com/api/overview/getting-started

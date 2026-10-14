@@ -1932,7 +1932,7 @@ function recordedMonthlyData(view, date) {
       if (value == null) { stats.excluded++; continue; }
       stats.value = (stats.value ?? 0) + value;
       stats.count++;
-      const broker = { ibkr: 'IBKR', tiger: 'Tiger', moomoo: 'MooMoo', webull: 'Webull' }[row.channel.split('-')[0]] || row.channel;
+      const broker = { ibkr: 'IBKR', tiger: 'Tiger', moomoo: 'MooMoo', futubull: 'Futubull', webull: 'Webull' }[row.channel.split('-')[0]] || row.channel;
       const name = `${row.underlying || 'Unspecified stock'} · ${broker}`;
       const contribution = stats.contributions.get(name) || { value: 0, count: 0 };
       contribution.value += value; contribution.count++;

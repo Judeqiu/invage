@@ -71,7 +71,7 @@ describe('readFlexEgressIpv4', () => {
 describe('broker_connections store', () => {
   it('never-configured IBKR is off, not needs_credentials', () => {
     const views = publicCatalog(investor());
-    expect(views).toHaveLength(4);
+    expect(views).toHaveLength(5);
     const ibkr = views.find((v) => v.id === 'ibkr');
     expect(ibkr).toMatchObject({
       id: 'ibkr',

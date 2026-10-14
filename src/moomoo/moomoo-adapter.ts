@@ -25,23 +25,30 @@ function fetchImpl(opts?: { transport?: AdapterTransport }): typeof fetch {
   return fetch;
 }
 
-export const moomooAdapter: BrokerConnectorAdapter = {
-  id: 'moomoo',
-  usesCsvTables: false,
-  async fetchRaw(credentials, opts) {
-    const bundle = await fetchMooMooRawBundle(credentialsFrom(credentials), {
-      fetchImpl: fetchImpl(opts),
-      history: opts?.history,
-    });
-    return { kind: 'json', body: Buffer.from(JSON.stringify(bundle)), meta: { acc_id: bundle.acc_id } };
-  },
-  parseToStatement(raw: BrokerRawPayload, channel: string) {
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(raw.body.toString('utf8'));
-    } catch {
-      throw new BrokerParseError('MooMoo raw body is not JSON.');
-    }
-    return mapMooMooBundleToStatement(parsed as MooMooRawBundle, channel);
-  },
-};
+export function createCloudBrokerAdapter(id: 'moomoo' | 'futubull'): BrokerConnectorAdapter {
+  return {
+    id,
+    usesCsvTables: false,
+    async fetchRaw(credentials, opts) {
+      const bundle = await fetchMooMooRawBundle({ ...credentialsFrom(credentials), broker: id }, {
+        fetchImpl: fetchImpl(opts),
+        history: opts?.history,
+      });
+      return { kind: 'json', body: Buffer.from(JSON.stringify(bundle)), meta: { acc_id: bundle.acc_id } };
+    },
+    parseToStatement(raw: BrokerRawPayload, channel: string) {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(raw.body.toString('utf8'));
+      } catch {
+        throw new BrokerParseError(`${id} raw body is not JSON.`);
+      }
+      const bundle = parsed as MooMooRawBundle;
+      const expected = id === 'futubull' ? 'invage.futubull.cloud.raw.v1' : 'invage.moomoo.raw.v1';
+      if (bundle?.schema !== expected) throw new BrokerParseError(`${id} raw bundle schema mismatch.`);
+      return mapMooMooBundleToStatement(bundle, channel);
+    },
+  };
+}
+
+export const moomooAdapter = createCloudBrokerAdapter('moomoo');

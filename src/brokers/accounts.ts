@@ -70,13 +70,18 @@ function sourceFields(def: BrokerConnectorDef): Set<string> {
 }
 function validateValues(raw: unknown, def: BrokerConnectorDef, kind: 'source' | 'connection'): Record<string, string> {
   const fields = kind === 'source' ? sourceFields(def) : configFields(def.id);
+  // Retain saved OpenD access while new Futubull sources use cloud credentials.
+  if (def.id === 'futubull' && kind === 'source') {
+    fields.add('opend_port');
+    fields.add('security_firm');
+  }
   const o = record(raw, kind === 'source' ? 'credentials' : 'config');
   const out: Record<string, string> = {};
   for (const [key, value] of Object.entries(o)) {
     if (!fields.has(key)) throw new Error(`Unknown ${kind} field "${key}" for ${def.id}.`);
     const field = def.credentialFields.find(f => f.id === key)!;
     const v = nonempty(value, key);
-    out[key] = field.format === 'pem' ? normalizePem(v) : v;
+    out[key] = field?.format === 'pem' ? normalizePem(v) : v;
   }
   return out;
 }
@@ -220,6 +225,7 @@ export function resolveBrokerAccountId(state: InvestorState, brokerId: string, c
   return matches[0][0];
 }
 function requiredComplete(def: BrokerConnectorDef, values: Record<string, string>): boolean {
+  if (def.id === 'futubull' && !values.app_key && values.opend_port && values.security_firm) return true;
   return def.credentialFields.every(f => !f.required || Boolean(values[f.id]?.trim()));
 }
 export type SyncFrequency = 'hourly' | 'daily' | 'weekly';
@@ -442,11 +448,12 @@ export async function discoverBrokerAccounts(state: InvestorState, sourceId: str
     const raw = await adapter.fetchRaw({ ...source.credentials, ...parsed }, transport ? { transport } : undefined);
     return ibkrStatements(raw.body, 'ibkr').map(s => ({ account_id: s.account_id, as_of: s.as_of, lots: s.lots.length, currencies: s.cash.map(c => c.currency) }));
   }
-  if (source.broker_id === 'moomoo') {
+  if (source.broker_id === 'moomoo' || (source.broker_id === 'futubull' && source.credentials.app_key)) {
     const { fetchMooMooAuthorizedAccounts } = await import('../moomoo/moomoo-client.js');
     const { parseSignAlg } = await import('../moomoo/moomoo-sign.js');
     return fetchMooMooAuthorizedAccounts({ app_key: source.credentials.app_key, private_key: source.credentials.private_key,
-      sign_alg: parseSignAlg(source.credentials.sign_alg) });
+      sign_alg: parseSignAlg(source.credentials.sign_alg), broker: source.broker_id as 'moomoo' | 'futubull' },
+      { fetchImpl: transport?.kind === 'http' ? transport.fetch : undefined });
   }
   if (source.broker_id === 'futubull') {
     const { discoverFutubullAccounts } = await import('../futubull/futubull-client.js');

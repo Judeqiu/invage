@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { addBrokerAccount, addBrokerSource, readBrokerAccountModel } from '../src/brokers/accounts.js';
 import { mapFutubullSnapshot } from '../src/futubull/futubull-map.js';
@@ -36,7 +37,7 @@ describe('Futubull OpenD snapshot', () => {
   it('binds a distinct account channel and rejects duplicate live accounts', () => {
     const state = { user: { id: 'u1', slug: 'alice', created_at: '2026-01-01' },
       profile: { display_name: 'Alice', contact_email: 'a@example.com' }, log: [] } as InvestorState;
-    const source = addBrokerSource(state, 'futubull', { opend_port: '11111', security_firm: 'FUTUSECURITIES' });
+    const source = addBrokerSource(state, 'futubull', { app_key: 'ak', private_key: readFileSync('tests/fixtures/moomoo/ed25519-private.pem', 'utf8') });
     const id = addBrokerAccount(state, { source_id: source, account_id: snapshot.acc_id,
       label: 'Futu HK', config: {} });
     expect(readBrokerAccountModel(state).connections[id].channel).toMatch(/^futubull-/);

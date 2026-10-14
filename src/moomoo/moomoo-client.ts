@@ -7,9 +7,15 @@ import type { BrokerHistorySyncPlan } from '../brokers/history.js';
 export const MOOMOO_HOST = 'webapi.moomoo.com';
 export const MOOMOO_ORIGIN = `https://${MOOMOO_HOST}`;
 
+function apiOrigin(credentials: MooMooCredentials): string {
+  return credentials.broker === 'futubull' ? 'https://webapi.futunn.com' : MOOMOO_ORIGIN;
+}
+
 const CLOCK_SKEW = -12006;
 
 export interface MooMooCredentials {
+  /** Selects a fixed, trusted API host; never supplied by broker credentials. */
+  broker?: 'moomoo' | 'futubull';
   app_key: string;
   private_key: string;
   acc_id?: string;
@@ -47,7 +53,7 @@ async function moomooRequest(args: {
 }): Promise<unknown> {
   const method = args.method ?? 'GET';
   const query = args.query ?? '';
-  const url = `${MOOMOO_ORIGIN}${args.path}${query ? `?${query}` : ''}`;
+  const url = `${apiOrigin(args.credentials)}${args.path}${query ? `?${query}` : ''}`;
   const timestampMs = args.timestampMs ?? String(Date.now());
   const nonce = moomooNonce();
   const content = moomooSignContent({
@@ -113,7 +119,7 @@ async function fetchOptionBasicInfo(
       body: JSON.stringify({ code_list: codes.slice(start, start + 400) }), credentials, fetchImpl };
     let raw = await moomooRequest(args) as Record<string, unknown>;
     if (raw?.errcode === CLOCK_SKEW) {
-      const timestampMs = await serverTimeMs(fetchImpl);
+      const timestampMs = await serverTimeMs(fetchImpl, credentials);
       if (timestampMs) raw = await moomooRequest({ ...args, timestampMs }) as Record<string, unknown>;
     }
     const data = raw?.data as { basic_list?: unknown } | undefined;
@@ -130,9 +136,9 @@ async function fetchOptionBasicInfo(
   return rows;
 }
 
-async function serverTimeMs(fetchImpl: typeof fetch): Promise<string | undefined> {
+async function serverTimeMs(fetchImpl: typeof fetch, credentials: MooMooCredentials): Promise<string | undefined> {
   try {
-    const res = await fetchImpl(`${MOOMOO_ORIGIN}/api/v1.0/server-time`);
+    const res = await fetchImpl(`${apiOrigin(credentials)}/api/v1.0/server-time`);
     if (!res.ok) return undefined;
     const json: unknown = await res.json();
     const rec = json && typeof json === 'object' ? (json as Record<string, unknown>) : {};
@@ -153,7 +159,7 @@ async function getWithSkewRetry(args: {
 }): Promise<MooMooEnvelope> {
   const first = await moomooGet(args);
   if (envelopeOk(first) || first.errcode !== CLOCK_SKEW) return first;
-  const server = await serverTimeMs(args.fetchImpl);
+  const server = await serverTimeMs(args.fetchImpl, args.credentials);
   if (!server) return first;
   return moomooGet({ ...args, timestampMs: server });
 }
@@ -214,7 +220,7 @@ async function fetchOrderDetails(accId: string, orders: Record<string, unknown>[
           try {
             let env = asEnvelope(await moomooRequest(args));
             if (env.errcode === CLOCK_SKEW) {
-              const timestampMs = await serverTimeMs(fetchImpl);
+              const timestampMs = await serverTimeMs(fetchImpl, credentials);
               if (timestampMs) env = asEnvelope(await moomooRequest({ ...args, timestampMs }));
             }
             failIfError(env,'orders/detail'); result = env; break;
@@ -359,7 +365,7 @@ export async function fetchMooMooRawBundle(
   const details = await fetchOrderDetails(acc_id, parents, credentials, fetchImpl);
   const option_basicinfo = await fetchOptionBasicInfo(positions, credentials, fetchImpl, fills_history?.rows);
   return {
-    schema: 'invage.moomoo.raw.v1',
+    schema: credentials.broker === 'futubull' ? 'invage.futubull.cloud.raw.v1' : 'invage.moomoo.raw.v1',
     fetched_at: new Date().toISOString(),
     acc_id,
     authorized,

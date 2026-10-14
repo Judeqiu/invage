@@ -108,7 +108,7 @@ function guide(b) {
   const futubull = b.id === 'futubull';
   return `<details class="${futubull ? 'setup-guide' : ''}" ${futubull ? 'open' : ''}>
     <summary>${futubull ? 'Set up Futubull before connecting' : `Setup instructions for ${esc(b.display_name)}`}</summary>
-    ${futubull ? '<p class="setup-prerequisite"><strong>Server setup required.</strong> Invage needs a signed-in OpenD gateway reachable through a local server port before Find accounts or Preview can work.</p>' : ''}
+    ${futubull ? '<p class="setup-prerequisite"><strong>Cloud API access.</strong> Create a Futubull AppKey and save its matching private key below, then find and select your trading account.</p>' : ''}
     <ol>${(b.help_steps || []).map(s => `<li>${esc(s)}</li>`).join('')}</ol>
     ${(b.help_notes || []).map(s => `<p>${esc(s)}</p>`).join('')}
     ${b.help_href ? `<p><a href="${esc(b.help_href)}" target="_blank" rel="noopener">${esc(b.help_href_label || 'Broker documentation')}</a></p>` : ''}
