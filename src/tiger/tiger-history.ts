@@ -7,6 +7,16 @@ import type { TigerRawBundle } from './tiger-types.js';
 import { tigerCommissions } from './tiger-executions.js';
 import { BrokerParseError } from '../brokers/errors.js';
 type Row = Record<string,unknown>;
+// Tiger transactions use SI and Yahoo-style symbols, while orders use SG.
+function normalizeHistoryRow(row:Row):Row {
+ const normalized={...row};
+ if(row.market==='SI'||row.market==='SG'){
+  normalized.market='SG';
+  if(typeof row.symbol==='string')normalized.symbol=row.symbol.replace(/\.SI$/,'');
+ }
+ if(Array.isArray(row.legs))normalized.legs=(row.legs as Row[]).map(normalizeHistoryRow);
+ return normalized;
+}
 function terms(row:Row){
  const right=row.right==='PUT'?'put':row.right==='CALL'?'call':null;
  if(!right)throw new BrokerParseError('Tiger historical option right missing');
@@ -22,7 +32,8 @@ function identity(row:Row):string {
 function side(row:Row):'buy'|'sell'{if(row.action==='BUY')return 'buy';if(row.action==='SELL')return 'sell';throw new BrokerParseError('Unknown Tiger historical side');}
 function effect(row:Row):'open'|'close'|'unknown'{return typeof row.isOpen==='boolean'?row.isOpen?'open':'close':'unknown';}
 export function mapTigerHistory(bundle:TigerRawBundle,lots:BrokerLot[],channel:string):BrokerHistory|undefined {
- const h=bundle.history;if(!h)return undefined;
+ const raw=bundle.history;if(!raw)return undefined;
+ const h={...raw,orders:raw.orders.map(normalizeHistoryRow),transactions:raw.transactions.map(normalizeHistoryRow)};
  const scope={broker_id:'tiger',channel,account_id:bundle.account},gaps:BrokerHistoryGap[]=[...h.gaps];
  const metadata=new Map<string,string>();
  const account=(row:Row)=>{const id=row.accountId??row.account;if(id==null||text(id)!==bundle.account)throw new BrokerParseError('Tiger history account mismatch');};
