@@ -61,7 +61,7 @@ function lifecycleKind(order: Record<string, unknown>): OptionLifecycleEvent['ki
 
 /** Fees are allocated among same-contract fills only when every fill in a final
  * order reconciles. Combo-order per-leg fees remain unknown. */
-function commissions(order: Record<string, unknown>, rows: Record<string, unknown>[], cutoff: number): Map<string, string> {
+export function tigerCommissions(order: Record<string, unknown>, rows: Record<string, unknown>[], cutoff: number): Map<string, string> {
   const result = new Map<string, string>();
   if (order.secType !== 'OPT' || order.commission == null || order.gst == null ||
       !['filled', 'cancelled', 'expired', 'rejected'].includes(String(order.status).toLowerCase())) return result;
@@ -124,7 +124,7 @@ export function mapTigerOptionHistory(bundle: TigerRawBundle, lots: BrokerLot[],
     const fees = new Map<string, string>();
     for (const [id, rows] of byOrder) {
       const order = orderById.get(id);
-      if (order) for (const [fillId, fee] of commissions(order, rows, bundle.option_history.end)) fees.set(fillId, fee);
+      if (order) for (const [fillId, fee] of tigerCommissions(order, rows, bundle.option_history.end)) fees.set(fillId, fee);
     }
     const events: OptionLifecycleEvent[] = [];
     const timeline: Array<{ at: string; key: string; event?: OptionLifecycleEvent; row?: Record<string, unknown> }> = [];

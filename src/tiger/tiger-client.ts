@@ -1,3 +1,4 @@
+import type { BrokerHistorySyncPlan } from '../brokers/history.js';
 import { BrokerHttpError, BrokerParseError } from '../brokers/errors.js';
 import { shanghaiTimestamp, signTigerRequest, verifyTigerResponse } from './tiger-sign.js';
 import {
@@ -156,7 +157,7 @@ export async function tigerExecute(args: {
   }
   const history = args.method === 'orders' || args.method === 'order_transactions';
   const exactFields = new Set(['id', 'orderId', 'accountId', 'filledQuantity', 'filledPrice',
-    'filledAmount', 'commission', 'gst', 'avgFillPrice', 'strike', 'multiplier']);
+    'filledAmount', 'commission', 'gst', 'avgFillPrice', 'avgFilledPrice', 'limitPrice', 'totalQuantity', 'ratio', 'strike', 'multiplier']);
   const parse = (text: string) => JSON.parse(text, (key, value, context?: { source?: string }) => {
     if (!history || !exactFields.has(key) || typeof value !== 'number') return value;
     if (context?.source && /^-?\d+(?:\.\d+)?$/.test(context.source)) return context.source;
@@ -188,10 +189,10 @@ export async function tigerExecute(args: {
 
 async function fetchOptionHistory(args: {
   gateway: string; credentials: TigerCredentials; fetchImpl: typeof fetch; timestamp?: string;
-}): Promise<NonNullable<TigerRawBundle['option_history']>> {
-  const start = 946684800000;
-  const end = Date.now();
-  async function pages(method: 'orders' | 'order_transactions', limit: number) {
+}, plan?: BrokerHistorySyncPlan, ordersOnly=false): Promise<NonNullable<TigerRawBundle['option_history']>> {
+  const start = plan ? Date.parse(plan.from) : 946684800000;
+  const end = plan ? Date.parse(plan.through) : Date.now();
+  async function pages(method: 'orders' | 'order_transactions', limit: number, secType = 'OPT') {
     const rows: Record<string, unknown>[] = [];
     const seen = new Set<string>();
     let token = '';
@@ -200,7 +201,7 @@ async function fetchOptionHistory(args: {
       // order_transactions is limited to 60 requests/minute. Orders allow 120.
       if (page) await new Promise(resolve => setTimeout(resolve, method === 'orders' ? 500 : 1000));
       const env = await tigerExecute({ ...args, method, biz: {
-        account: args.credentials.account, sec_type: method === 'orders' ? 'ALL' : 'OPT',
+        account: args.credentials.account, sec_type: method === 'orders' ? 'ALL' : secType,
         start_date: start, end_date: end, limit, page_token: token,
       } });
       if (!envelopeOk(env)) throw new BrokerHttpError(`Tiger ${method} history failed: ${env.message ?? env.code}`, String(env.code));
@@ -219,7 +220,7 @@ async function fetchOptionHistory(args: {
     return rows;
   }
   const orders = await pages('orders', 300);
-  const transactions = await pages('order_transactions', 100);
+  const transactions = ordersOnly ? [] : plan ? [...await pages('order_transactions',100,'STK'), ...await pages('order_transactions',100,'OPT')] : await pages('order_transactions', 100);
   return { start, end, orders, transactions };
 }
 
@@ -257,7 +258,7 @@ function accountKindFromManaged(
 
 export async function fetchTigerRawBundle(
   credentials: TigerCredentials,
-  opts?: { fetchImpl?: typeof fetch; timestamp?: string; gateway?: string },
+  opts?: { fetchImpl?: typeof fetch; timestamp?: string; gateway?: string; history?: BrokerHistorySyncPlan },
 ): Promise<TigerRawBundle> {
   if (credentials.license.toUpperCase() === 'TBHK' && !credentials.token?.trim()) {
     throw new BrokerParseError(
@@ -333,7 +334,21 @@ export async function fetchTigerRawBundle(
   const optionRows = Array.isArray(OPT.data) ? OPT.data :
     OPT.data && typeof OPT.data === 'object' ? (OPT.data as { items?: unknown }).items : undefined;
   const hasOptions = envelopeOk(OPT) && Array.isArray(optionRows) && optionRows.length > 0;
-  const option_history = hasOptions && account_kind !== 'global'
+  const history:TigerRawBundle['history'] = opts?.history ? account_kind === 'global'
+    ? { ...await fetchOptionHistory({gateway,credentials,fetchImpl,timestamp:opts.timestamp},opts.history,true),mode:opts.history.mode,gaps:[{kind:'coverage' as const,reference:null,reason:'Tiger Global execution history is not supported by order_transactions.'}] }
+    : { ...await fetchOptionHistory({gateway,credentials,fetchImpl,timestamp:opts.timestamp},opts.history),mode:opts.history.mode,gaps:[] } : undefined;
+  if(history && account_kind !== 'global'){
+    const existing=new Set(history.orders.map(row=>String(row.id)));
+    for(const id of new Set(history.transactions.map(row=>String(row.orderId))))if(!existing.has(id)){
+      await new Promise(r=>setTimeout(r,550));
+      const response=await tigerExecute({gateway,credentials,fetchImpl,method:'orders',biz:{account,id,show_charges:true},timestamp:opts?.timestamp});
+      if(!envelopeOk(response))throw new BrokerHttpError('Tiger historical parent lookup failed');
+      const data=response.data as Record<string,unknown>;const rows=Array.isArray(data?.items)?data.items:data?.id!=null?[data]:[];
+      if(!rows.length)history.gaps.push({kind:'orders',reference:id,reason:'Parent order metadata unavailable.'});
+      history.orders.push(...rows);
+    }
+  }
+  const option_history = !opts?.history && hasOptions && account_kind !== 'global'
     ? await fetchOptionHistory({ gateway, credentials, fetchImpl, timestamp: opts?.timestamp }) : undefined;
   return {
     schema: 'invage.tiger.raw.v1',
@@ -345,6 +360,7 @@ export async function fetchTigerRawBundle(
     managed_accounts: managed,
     assets: { method: assetMethod, envelope: assetsEnv },
     positions: { STK, OPT, FUND },
+    ...(history ? { history } : {}),
     ...(option_history ? { option_history } : {}),
   };
 }

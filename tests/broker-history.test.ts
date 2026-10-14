@@ -15,12 +15,13 @@ function history(broker = 'moomoo'): BrokerHistory {
 }
 const state = ():InvestorState=>({user:{id:'11111111-2222-4333-8444-555555555555',created_at:'2026-01-01'},profile:{display_name:'Test',contact_email:''},log:[]});
 describe('shared broker history',()=>{
-  it('requests full history when missing, partial, unmarked or bound to another account; overlaps completed history',()=>{
+  it('uses latest bounds for missing or partial history and backfills only on explicit full sync',()=>{
     const now=new Date('2026-10-14T00:00:00Z'), old=history();
-    expect(planBrokerHistorySync(undefined,'A',now).mode).toBe('full');
-    expect(planBrokerHistorySync(old,'B',now).mode).toBe('full');
-    old.sync.full_history_synced=false; expect(planBrokerHistorySync(old,'A',now).mode).toBe('full');
-    old.sync.full_history_synced=true;old.sync.status='partial'; expect(planBrokerHistorySync(old,'A',now).mode).toBe('full');
+    expect(planBrokerHistorySync(undefined,'A',now).mode).toBe('incremental');
+    expect(planBrokerHistorySync(old,'B',now).mode).toBe('incremental');
+    old.sync.full_history_synced=false; expect(planBrokerHistorySync(old,'A',now).mode).toBe('incremental');
+    old.sync.full_history_synced=true;old.sync.status='partial'; expect(planBrokerHistorySync(old,'A',now).mode).toBe('incremental');
+    expect(planBrokerHistorySync(old,'A',now,true)).toMatchObject({mode:'full',from:'2000-01-01T00:00:00.000Z'});
     old.sync.status='complete';expect(planBrokerHistorySync(old,'A',now)).toEqual({mode:'incremental',from:'2026-10-11T00:00:00.000Z',through:now.toISOString()});
   });
   it('enriches unknown economics, retains old records, and rejects conflicting fills and cross-account history',()=>{

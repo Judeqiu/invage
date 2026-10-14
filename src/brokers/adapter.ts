@@ -15,11 +15,14 @@ import { tigerAdapter } from '../tiger/tiger-adapter.js';
 import { webullAdapter } from '../webull/webull-adapter.js';
 import { getBrokerConnector } from './catalog.js';
 import type { BrokerStatement } from './statement.js';
-import type { BrokerHistorySyncPlan } from './history.js';
+import { assertBrokerHistory, type BrokerHistory, type BrokerHistorySyncPlan } from './history.js';
 
 export type BrokerRawKind = 'xml' | 'json' | 'text';
 
 export interface BrokerRawPayload {
+  history?: BrokerHistory;
+  historyUnavailable?: {broker_id:string;channel:string;plan:BrokerHistorySyncPlan;reason:string};
+  historyAttachments?: Array<{ body:Buffer; kind:'xml'|'json' }>;
   kind: BrokerRawKind;
   /** IBKR: Flex XML. Later vendors: versioned *RawBundle JSON. */
   body: Buffer;
@@ -37,7 +40,7 @@ export interface BrokerConnectorAdapter {
   readonly usesCsvTables: boolean;
   fetchRaw(
     credentials: Record<string, string>,
-    opts?: { transport?: AdapterTransport; history?: BrokerHistorySyncPlan },
+    opts?: { transport?: AdapterTransport; history?: BrokerHistorySyncPlan; accountId?:string; channel?:string },
   ): Promise<BrokerRawPayload>;
   parseToStatement(raw: BrokerRawPayload, channel: string): BrokerStatement;
 }
@@ -75,4 +78,17 @@ export function archiveBrokerSuccess(
     return file;
   }
   throw new Error(`No success archive path for broker connector "${id}".`);
+}
+
+/** Historical reports are evidence only; their old snapshots never replace current holdings. */
+export function attachFetchedHistory(raw:BrokerRawPayload,statement:BrokerStatement):BrokerStatement {
+  if(raw.historyUnavailable){const issue=raw.historyUnavailable;return {...statement,history:assertBrokerHistory({broker_id:issue.broker_id,channel:issue.channel,account_id:statement.account_id,executions:[],orders:[],sync:{...issue.plan,version:1,historical_imported:false,status:'partial',full_history_synced:false,fees:'unavailable',gaps:[{kind:'coverage',reference:null,reason:issue.reason}]}})};}
+  if(!raw.history||raw.history.account_id!==statement.account_id)return statement;
+  return {...statement,history:raw.history,...(raw.history.broker_id==='ibkr'?{option_executions:[]}: {})};
+}
+export function archiveHistoryAttachments(slug:string,channel:string,raw:BrokerRawPayload):void {
+  if(!raw.historyAttachments?.length)return;
+  const dir=join(resolveDataRoot(),'drive',slug,'broker-sync',channel,'history');mkdirSync(dir,{recursive:true,mode:0o700});
+  const stamp=new Date().toISOString().replace(/[:.]/g,'-');
+  raw.historyAttachments.forEach((item,index)=>writeFileSync(join(dir,`${stamp}-${index}.${item.kind}`),item.body,{mode:0o600,flag:'wx'}));
 }

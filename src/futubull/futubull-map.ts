@@ -1,3 +1,4 @@
+import { mapFutubullHistory } from './futubull-history.js';
 import { BrokerParseError } from '../brokers/errors.js';
 import { looksLikeOptionCode } from '../brokers/option-symbol.js';
 import type { BrokerStatement } from '../brokers/statement.js';
@@ -67,5 +68,5 @@ export function mapFutubullSnapshot(raw: unknown, channel: string): BrokerStatem
     assertHolding(key, holding);
     lots.push({ ticker, currency, holding });
   }
-  return { account_id: bundle.acc_id, as_of, cash, lots, skipped };
+  return { account_id: bundle.acc_id, as_of, cash, lots, skipped,history:mapFutubullHistory(bundle,channel) };
 }

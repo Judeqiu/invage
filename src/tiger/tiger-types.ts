@@ -23,6 +23,7 @@ export interface TigerRawBundle {
     FUND: TigerGatewayEnvelope;
   };
   /** Complete history pages, retained independently of the positions snapshot. */
+  history?: { start:number; end:number; mode:'full'|'incremental'; orders:Record<string,unknown>[]; transactions:Record<string,unknown>[]; gaps:Array<{kind:'orders'|'coverage';reference:string|null;reason:string}> };
   option_history?: {
     start: number;
     end: number;

@@ -131,6 +131,6 @@ export function mapMooMooHistory(bundle: MooMooRawBundle, lots: BrokerLot[], cha
   const from = new Date(Number(BigInt(bundle.fills_history.start)/1000n)).toISOString();
   const through = new Date(Number(BigInt(bundle.fills_history.end)/1000n)).toISOString();
   const mode = bundle.history_mode ?? 'full';
-  return assertBrokerHistory({ ...bound, executions, orders:[...orders.values()], sync:{ version:1, mode, from, through,
+  return assertBrokerHistory({ ...bound, executions, orders:[...orders.values()], sync:{ historical_imported:mode === 'full' && !bundle.history_gaps?.length, version:1, mode, from, through,
     status:gaps.length ? 'partial' : 'complete', full_history_synced:mode === 'full' && !gaps.length, fees:'unavailable', gaps } });
 }

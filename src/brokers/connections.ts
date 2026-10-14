@@ -8,7 +8,7 @@ import { saveInvestor, type InvestorSnapshot } from '../state/investor-store.js'
 import type { IbkrFlexConfig } from '../ibkr/flex-config.js';
 import { normalizePem } from './pem.js';
 import {
-  archiveBrokerSuccess,
+  archiveBrokerSuccess, attachFetchedHistory, archiveHistoryAttachments,
   getBrokerAdapter,
   type AdapterTransport,
   type BrokerRawPayload,
@@ -489,7 +489,7 @@ function writeLastSync(
 export async function syncBrokerConnection(
   snapshot: InvestorSnapshot,
   id: string,
-  opts?: { transport?: AdapterTransport },
+  opts?: { transport?: AdapterTransport; full?:boolean },
 ): Promise<{ view: PublicConnectorView; applied: BrokerApplyResult }> {
   const { state } = snapshot;
   const slug = state.user.id;
@@ -511,8 +511,8 @@ export async function syncBrokerConnection(
     let statement: BrokerStatement;
     try {
       const previousHistory = state.broker_history?.[def.channel];
-      const accountId = conn.last_sync?.account_id ?? conn.credentials.acc_id ?? previousHistory?.account_id ?? '';
-      raw = await adapter.fetchRaw(conn.credentials, { ...opts, history: planBrokerHistorySync(previousHistory, accountId) });
+      const accountId = conn.last_sync?.account_id ?? conn.credentials.acc_id ?? conn.credentials.account ?? conn.credentials.account_id ?? previousHistory?.account_id ?? '';
+      raw = await adapter.fetchRaw(conn.credentials, { ...opts, accountId:accountId||undefined,channel:def.channel, history: planBrokerHistorySync(previousHistory, accountId, new Date(), opts?.full === true) });
       try {
         const spec = adapter.usesCsvTables ? loadBrokerParserSpec(slug, id) : null;
         // A saved parser is an explicit user configuration, not a recovery path
@@ -532,7 +532,9 @@ export async function syncBrokerConnection(
       await saveInvestor(snapshot);
       throw error;
     }
+    statement=attachFetchedHistory(raw,statement);
     const archivePath = archiveBrokerSuccess(slug, id, raw, statement.as_of);
+    archiveHistoryAttachments(slug,broker.channel,raw);
     // Portfolio, cash, metrics and success status use the same revision-checked
     // aggregate write. Persistence errors propagate without a second attempt.
     const applied = await applyBrokerStatement(snapshot, id, statement, raw.body, result => {

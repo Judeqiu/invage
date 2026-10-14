@@ -10,7 +10,7 @@ const {addBrokerSource,addBrokerAccount,readBrokerAccountModel,syncBrokerAccount
 const {getCashes}=await import('../src/state/portfolio-state.js');
 const {adapters}=await import('../src/brokers/adapter.js');
 const user=randomUUID();
-it('normal sync backfills missing history despite successful position sync, persists it, retries gaps and then uses incremental coverage',async()=>{
+it('full sync persists historical data, latest sync retains gaps without backfilling, and explicit full sync can enrich it',async()=>{
   await migrateBooks();
   await createInvestorFixture({user:{id:user,created_at:'2026-10-01',auth_token:randomUUID()},profile:{display_name:'History test',contact_email:'history@test.local'},log:[]});
   let snap=await loadInvestor(user);
@@ -29,19 +29,22 @@ it('normal sync backfills missing history despite successful position sync, pers
     }))};
   });
   try{
-    await syncBrokerAccount(await loadInvestor(user),id);
+    await syncBrokerAccount(await loadInvestor(user),id,undefined,'manual',true);
     expect(fetch.mock.calls[0][1]!.history!.mode).toBe('full');
     snap=await loadInvestor(user);expect(snap.state.broker_history![channel].executions[0].gross_cash).toBeNull();expect(snap.state.option_executions).toEqual([]);
     expect(snap.state.broker_history![channel].sync).toMatchObject({status:'partial',full_history_synced:false});
     expect(readBrokerAccountModel(snap.state).connections[id].last_sync!.ok).toBe(true);
     const journals=(await booksListJournals(snap.state,100)).length;
-    includeMetadata=true;
-    await syncBrokerAccount(snap,id);expect(fetch.mock.calls[1][1]!.history!.mode).toBe('full');
+    includeFill=false;await syncBrokerAccount(snap,id);expect(fetch.mock.calls[1][1]!.history!.mode).toBe('incremental');
+    snap=await loadInvestor(user);expect(snap.state.broker_history![channel].sync).toMatchObject({historical_imported:true,status:'partial'});
+    expect(snap.state.broker_history![channel].sync.gaps).not.toHaveLength(0);
+    includeMetadata=true;includeFill=true;
+    await syncBrokerAccount(snap,id,undefined,'manual',true);expect(fetch.mock.calls[2][1]!.history!.mode).toBe('full');
     snap=await loadInvestor(user);expect(snap.state.broker_history![channel].sync).toMatchObject({status:'complete',full_history_synced:true});
     expect(snap.state.option_executions![0].gross_premium).toBe('1950.00');
     expect((await booksListJournals(snap.state,100)).length).toBe(journals);
     includeFill=false;
-    await syncBrokerAccount(snap,id);expect(fetch.mock.calls[2][1]!.history!.mode).toBe('incremental');
+    await syncBrokerAccount(snap,id);expect(fetch.mock.calls[3][1]!.history!.mode).toBe('incremental');
     snap=await loadInvestor(user);expect(snap.state.broker_history![channel].executions).toHaveLength(1);expect(snap.state.option_executions).toHaveLength(1);
     expect(getCashes(snap.state)).toEqual(expect.arrayContaining([expect.objectContaining({amount:1000,channel})]));
   }finally{fetch.mockRestore();}

@@ -90,22 +90,23 @@ export function createSyncBrokerTool(): AgentTool {
     name: 'sync_broker',
     label: 'Sync broker connector',
     description:
-      'Pull the catalog connector statement and replace lots + cash on that channel only. Read-only. Other channels stay untouched. Unsupported lots are listed as not_imported.',
+      'Pull the catalog connector statement and replace lots + cash on that channel only. Read-only. Other channels stay untouched. Unsupported lots are listed as not_imported. Default sync fetches latest data only; full_sync=true explicitly fetches available historical data. Query broker_history_sync/gaps before historical totals.',
     parameters: Type.Object({
       ...channelIdParams,
       connector_id: Type.String({ description: 'Catalog connector id (ibkr, tiger, moomoo, webull).' }),
+      full_sync: Type.Optional(Type.Boolean({description:'Explicit Full sync of available history; default false fetches latest data.'})),
       connection_id: Type.Optional(Type.String({ description: 'Required when more than one account uses this broker.' })),
     }),
     execute: async (_id, raw) => {
-      const p = raw as ChannelIds & { connector_id: string; connection_id?: string };
+      const p = raw as ChannelIds & { connector_id: string; connection_id?: string; full_sync?:boolean };
       try {
         const snapshot = await resolveInvestorFromChannel(p);
         const { state } = snapshot;
         const id = p.connector_id.trim();
         const def = getBrokerConnector(id);
         const { applied } = state.broker_sources
-          ? await syncBrokerAccount(snapshot, resolveBrokerAccountId(state, id, p.connection_id))
-          : await syncBrokerConnection(snapshot, id);
+          ? await syncBrokerAccount(snapshot, resolveBrokerAccountId(state, id, p.connection_id),undefined,'manual',p.full_sync===true)
+          : await syncBrokerConnection(snapshot, id,{full:p.full_sync===true});
         const cashLine =
           applied.cash.length > 0
             ? `Cash: ${applied.cash.map((c) => `${c.currency} ${c.amount}`).join(', ')}`

@@ -258,7 +258,8 @@ export function createBrokerConnectionsRouter(): Router {
   router.post('/broker-accounts/:id/sync', async (req: Request, res: Response) => {
     try {
       const snapshot = await sessionInvestor(req);
-      res.json(await syncBrokerAccount(snapshot, String(req.params.id)));
+      if(req.body?.full_sync!==undefined&&typeof req.body.full_sync!=='boolean'){res.status(400).json({error:'full_sync must be boolean'});return;}
+      res.json(await syncBrokerAccount(snapshot, String(req.params.id),undefined,'manual',req.body?.full_sync===true));
     } catch (e) { accountError(res, e); }
   });
   router.get('/broker-accounts/:id/sync-history', async (req: Request, res: Response) => {
@@ -518,7 +519,8 @@ export function createBrokerConnectionsRouter(): Router {
         return;
       }
       const id = connectorIdParam(req);
-      const { view, applied } = await syncBrokerConnection(snapshot, id);
+      if(req.body?.full_sync!==undefined&&typeof req.body.full_sync!=='boolean'){res.status(400).json({error:'full_sync must be boolean'});return;}
+      const { view, applied } = await syncBrokerConnection(snapshot, id,{full:req.body?.full_sync===true});
       res.json({
         ...view,
         latest_raw_data: latestBrokerRawData(state.user.id, id),

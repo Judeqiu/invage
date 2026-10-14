@@ -1,3 +1,4 @@
+import type { BrokerHistorySyncPlan } from '../brokers/history.js';
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -22,14 +23,14 @@ function validated(credentials: FutubullCredentials) {
   return { opend_port: port, security_firm };
 }
 
-async function bridgeCall(credentials: FutubullCredentials, mode: 'discover' | 'snapshot'): Promise<Record<string, unknown>> {
+async function bridgeCall(credentials: FutubullCredentials, mode: 'discover' | 'snapshot', history?:BrokerHistorySyncPlan): Promise<Record<string, unknown>> {
   const config = validated(credentials);
   if (mode === 'snapshot' && !/^\d+$/.test(credentials.acc_id ?? '')) {
     throw new Error('Futubull trading account ID must be numeric.');
   }
-  const payload = JSON.stringify({ ...config, mode, acc_id: credentials.acc_id });
+  const payload = JSON.stringify({ ...config, mode, acc_id: credentials.acc_id, history });
   const child = await new Promise<{ stdout: string; error?: Error }>((resolve) => {
-    const proc = execFile('python3', [bridge], { timeout: 30_000, maxBuffer: 8 * 1024 * 1024 },
+    const proc = execFile('python3', [bridge], { timeout: history?.mode === 'full' ? 120_000 : 30_000, maxBuffer: 64 * 1024 * 1024 },
       (error, stdout) => resolve({ stdout, ...(error ? { error } : {}) }));
     proc.stdin?.end(payload);
   });
@@ -53,6 +54,6 @@ export async function discoverFutubullAccounts(credentials: FutubullCredentials)
   });
 }
 
-export async function fetchFutubullSnapshot(credentials: FutubullCredentials) {
-  return bridgeCall(credentials, 'snapshot');
+export async function fetchFutubullSnapshot(credentials: FutubullCredentials, history?:BrokerHistorySyncPlan) {
+  return bridgeCall(credentials, 'snapshot',history);
 }

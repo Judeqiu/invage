@@ -38,6 +38,7 @@ export interface FlexTransport {
 export interface FlexFetchOpts {
   token: string;
   queryId: string;
+  fromDate?:string; throughDate?:string;
   pollAttempts?: number;
   pollWaitMs?: number;
   minIntervalMs?: number;
@@ -94,7 +95,7 @@ export async function fetchFlexStatement(
   const pollAttempts = opts.pollAttempts ?? 10;
   const pollWaitMs = opts.pollWaitMs ?? 6000;
 
-  const sendBuf = await transport.get('SendRequest', { t: token, q: queryId, v: '3' });
+  const sendBuf = await transport.get('SendRequest', { t: token, q: queryId, v: '3', ...(opts.fromDate&&opts.throughDate?{fd:opts.fromDate,td:opts.throughDate}:{}) });
   const sendText = sendBuf.toString('utf8');
   const sendStatus = xmlElementText(sendText, 'Status');
   if (sendStatus === 'Fail' || sendStatus === 'Error') {

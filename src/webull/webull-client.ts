@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import type { BrokerHistorySyncPlan } from '../brokers/history.js';
 import { BrokerHttpError, BrokerParseError } from '../brokers/errors.js';
 import { signWebullRequest, webullSignContent } from './webull-sign.js';
 import {
@@ -220,7 +221,7 @@ export function pickAccountId(accounts: unknown[], stored?: string): string {
 
 export async function fetchWebullRawBundle(
   credentials: WebullCredentials,
-  opts?: { fetchImpl?: typeof fetch },
+  opts?: { fetchImpl?: typeof fetch; history?: BrokerHistorySyncPlan },
 ): Promise<WebullRawBundle> {
   const fetchImpl = opts?.fetchImpl ?? fetch;
   const host = WEBULL_API_HOSTS[credentials.region];
@@ -248,12 +249,13 @@ export async function fetchWebullRawBundle(
   const option_history: unknown[] = [];
   const seen = new Set<string>();
   let pagination_key = '';
-  const end_time = new Date().toISOString();
+  const end_time = opts?.history?.through ?? new Date().toISOString();
+  const start_time = opts?.history?.from ?? '2018-05-21T00:00:00.000Z';
   for (let page = 0; ; page++) {
     if (page >= 1000) throw new BrokerParseError('Webull history exceeded the page limit.');
     if (page) await new Promise(resolve => setTimeout(resolve, 1000));
     const response = asRecord(await webullGet({ host, path: '/trading/orders/historical-orders/list',
-      query: { account_id, start_time: '2018-05-21T00:00:00.000Z', end_time,
+      query: { account_id, start_time, end_time,
         ...(pagination_key ? { pagination_key } : {}) }, credentials, fetchImpl }));
     if (!Array.isArray(response?.data)) throw new BrokerParseError('Webull order history is incomplete.');
     option_history.push(...response.data);
@@ -272,6 +274,7 @@ export async function fetchWebullRawBundle(
     balances,
     positions,
     option_history,
+    history_plan:opts?.history,
   };
 }
 

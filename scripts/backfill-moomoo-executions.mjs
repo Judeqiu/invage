@@ -34,7 +34,7 @@ try {
     if (connection.broker_id !== 'moomoo' || !connection.enabled || !connection.account_id) continue;
     const credentials = combinedCredentials(model, connection);
     const raw = await fetchMooMooRawBundle({ ...credentials, sign_alg: parseSignAlg(credentials.sign_alg) },
-      { history: planBrokerHistorySync(history[connection.channel], connection.account_id) });
+      { history: planBrokerHistorySync(history[connection.channel], connection.account_id,new Date(),true) });
     if (raw.acc_id !== connection.account_id) throw new Error('Moomoo history account differs from the connection');
     const statement = mapMooMooBundleToStatement(raw, connection.channel);
     history[connection.channel] = mergeBrokerHistory(history[connection.channel], statement.history);

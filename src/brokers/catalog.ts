@@ -83,7 +83,7 @@ export const BROKER_CATALOG: readonly BrokerConnectorDef[] = [
     displayName: 'Tiger Brokers',
     channel: 'tiger',
     capability:
-      'Read-only Tiger Brokers OpenAPI. Pulls a live snapshot of stock, option, and fund positions plus per-currency cash into the selected account channel. Cannot trade or submit orders. Snapshot time is the UTC date of Sync (not prior-day Flex). Dashboard marks stay Yahoo. Option fill history is not imported (IBKR Flex Trades only). Paper accounts ingest only if you select a paper account ID.',
+      'Read-only Tiger Brokers OpenAPI. Pulls a live snapshot of stock, option, and fund positions plus per-currency cash into the selected account channel. Cannot trade or submit orders. Snapshot time is the UTC date of Sync (not prior-day Flex). Dashboard marks stay Yahoo. Sync latest refreshes recent data; Full sync imports available history into shared agent queries. Coverage gaps remain explicit. Paper accounts ingest only if you select a paper account ID.',
     credentialFields: [
       {
         id: 'tiger_id',
@@ -230,7 +230,7 @@ export const BROKER_CATALOG: readonly BrokerConnectorDef[] = [
     displayName: 'Webull',
     channel: 'webull',
     capability:
-      'Read-only Webull OpenAPI. Pulls a live snapshot of equity and single-leg listed option lots plus per-currency cash into the selected account channel. Cannot trade or submit orders. Snapshot time is the UTC date of Sync. Dashboard marks stay Yahoo. Combo/multi-leg options are skipped. Option fill history is not imported (IBKR Flex Trades only). Paper/sandbox hosts are not used.',
+      'Read-only Webull OpenAPI. Pulls a live snapshot of equity and single-leg listed option lots plus per-currency cash into the selected account channel. Cannot trade or submit orders. Snapshot time is the UTC date of Sync. Dashboard marks stay Yahoo. Combo/multi-leg options are skipped. Sync latest refreshes recent data; Full sync imports available history into shared agent queries. Coverage gaps remain explicit. Paper/sandbox hosts are not used.',
     credentialFields: [
       {
         id: 'app_key',

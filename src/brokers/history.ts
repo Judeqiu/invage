@@ -23,6 +23,7 @@ export interface BrokerHistoryGap {
 }
 export interface BrokerHistorySyncPlan { mode: 'full' | 'incremental'; from: string; through: string; }
 export interface BrokerHistorySync extends BrokerHistorySyncPlan {
+  historical_imported?: boolean;
   version: 1; status: 'complete' | 'partial'; full_history_synced: boolean;
   fees: 'available' | 'partial' | 'unavailable'; gaps: BrokerHistoryGap[];
 }
@@ -108,9 +109,10 @@ export function assertBrokerHistory(raw: unknown): BrokerHistory {
   const o = obj(raw); keys(o, ['broker_id','channel','account_id','executions','orders','sync']);
   if (!Array.isArray(o.executions) || !Array.isArray(o.orders)) throw new Error('Broker history requires execution/order arrays');
   const bound = scope(o), s = obj(o.sync);
-  keys(s, ['version','mode','from','through','status','full_history_synced','fees','gaps']);
+  keys(s, ['historical_imported','version','mode','from','through','status','full_history_synced','fees','gaps']);
   if (s.version !== 1 || typeof s.full_history_synced !== 'boolean' || !Array.isArray(s.gaps)) throw new Error('Invalid broker history sync state');
-  const sync: BrokerHistorySync = { version: 1, mode: choice(s.mode, ['full','incremental']), from: stamp(s.from), through: stamp(s.through),
+  if (s.historical_imported !== undefined && typeof s.historical_imported !== 'boolean') throw new Error('Invalid historical import marker');
+  const sync: BrokerHistorySync = { ...(s.historical_imported !== undefined ? { historical_imported:s.historical_imported } : {}), version: 1, mode: choice(s.mode, ['full','incremental']), from: stamp(s.from), through: stamp(s.through),
     status: choice(s.status, ['complete','partial']), full_history_synced: s.full_history_synced, fees: choice(s.fees, ['available','partial','unavailable']),
     gaps: s.gaps.map((raw: unknown) => { const g = obj(raw); keys(g, ['kind','reference','reason']); return { kind: choice(g.kind, ['metadata','orders','coverage']), reference: nullableText(g.reference), reason: text(g.reason) }; }) };
   if (Date.parse(sync.from) > Date.parse(sync.through) || sync.status === 'complete' && sync.gaps.length) throw new Error('Invalid broker history coverage');
@@ -119,10 +121,11 @@ export function assertBrokerHistory(raw: unknown): BrokerHistory {
   return { ...bound, executions, orders, sync };
 }
 
-/** Missing/partial history is never inferred complete from a successful position sync. */
-export function planBrokerHistorySync(previous: BrokerHistory | undefined, accountId: string, now = new Date()): BrokerHistorySyncPlan {
+/** Latest sync never triggers a backfill. Only an explicit Full sync requests all history. */
+export function planBrokerHistorySync(previous: BrokerHistory | undefined, accountId: string, now = new Date(), full = false): BrokerHistorySyncPlan {
   const through = now.toISOString();
-  if (!previous || previous.account_id !== accountId || !previous.sync.full_history_synced || previous.sync.status !== 'complete') return { mode: 'full', from: '2000-01-01T00:00:00.000Z', through };
+  if (full) return { mode:'full',from:'2000-01-01T00:00:00.000Z',through };
+  if (!previous || previous.account_id !== accountId) return { mode:'incremental',from:new Date(now.getTime()-2*86400000).toISOString(),through };
   assertBrokerHistory(previous);
   if (Date.parse(previous.sync.through) > now.getTime()) throw new Error('Broker history checkpoint is in the future');
   return { mode: 'incremental', from: new Date(Math.max(Date.parse(previous.sync.from), Date.parse(previous.sync.through) - 2 * 86400000)).toISOString(), through };
@@ -149,14 +152,15 @@ export function mergeBrokerHistory(previous: BrokerHistory | undefined, incoming
     if (prior && (prior.native_symbol !== row.native_symbol || prior.side !== row.side)) throw new Error(`Conflicting broker history order ${row.id}`);
     if (!prior || row.updated_at >= prior.updated_at) orders.set(row.id, { ...row, legs: row.legs.length ? row.legs : prior?.legs ?? [] });
   }
-  const gaps = next.sync.gaps.filter(g => g.kind !== 'metadata' || !g.reference ||
+  const retainedGaps = next.sync.mode === 'incremental' ? [...(old?.sync.gaps ?? []), ...next.sync.gaps] : next.sync.gaps;
+  const gaps = retainedGaps.filter((g,i,all) => all.findIndex(other => other.kind === g.kind && other.reference === g.reference && other.reason === g.reason) === i).filter(g => g.kind !== 'metadata' || !g.reference ||
     !([...executions.values()].some(r => r.native_symbol === g.reference) &&
       [...executions.values()].filter(r => r.native_symbol === g.reference).every(r => r.multiplier !== null && r.symbol !== null)));
-  const status = next.sync.status === 'partial' && !gaps.length && next.sync.gaps.length ? 'complete' : next.sync.status;
+  const status = gaps.length ? 'partial' : next.sync.status === 'partial' && next.sync.gaps.length ? 'complete' : next.sync.status;
   const full = next.sync.mode === 'full' ? status === 'complete' : old?.sync.full_history_synced === true;
   return { ...next, executions: [...executions.values()].sort((a,b) => a.executed_at.localeCompare(b.executed_at) || a.id.localeCompare(b.id)),
     orders: [...orders.values()].sort((a,b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id)),
-    sync: { ...next.sync, status, gaps, from: old && old.sync.from < next.sync.from ? old.sync.from : next.sync.from, full_history_synced: full } };
+    sync: { ...next.sync, historical_imported: old?.sync.historical_imported === true || next.sync.historical_imported === true || old?.sync.full_history_synced === true, status, gaps, from: old && old.sync.from < next.sync.from ? old.sync.from : next.sync.from, full_history_synced: full } };
 }
 
 /** Existing option consumers share one projection; unpriced records remain in generic history. */

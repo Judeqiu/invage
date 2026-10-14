@@ -25,4 +25,5 @@ export interface WebullRawBundle {
   balances: unknown;
   positions: unknown;
   option_history?: unknown[];
+  history_plan?: import('../brokers/history.js').BrokerHistorySyncPlan;
 }

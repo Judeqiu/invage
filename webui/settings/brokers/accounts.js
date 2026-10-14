@@ -129,10 +129,12 @@ function existingCard(c) {
       <div class="cap">${esc(b.display_name)} · ${esc(c.account_id || 'Account selection needed')} · ${esc(c.channel)}</div></div>
       <span class="chip ${c.status === 'paused' ? 'off' : c.status === 'error' ? 'error' : c.status === 'verified' ? 'connected' : 'needs_credentials'}">${esc(status)}</span></div>
     <p class="hint">${esc(last)}</p>
+    <p class="hint">Sync latest refreshes recent data. Full sync imports available history${c.history_sync?.historical_imported ? " · History imported" : ""}${c.history_sync?.status === "partial" ? " · Coverage gaps remain" : ""}.</p>
     <div class="actions">
       <button data-action="manage" data-id="${esc(c.id)}">${open ? 'Close' : 'Manage'}</button>
       <button data-action="preview" data-id="${esc(c.id)}" ${busy || dirty.has(c.id) || !c.account_id ? 'disabled' : ''}>Preview</button>
-      <button data-action="sync" data-id="${esc(c.id)}" ${busy || dirty.has(c.id) || !c.enabled || !c.account_id || (!c.last_sync && !preview[c.id]) ? 'disabled' : ''}>Sync now</button>
+      <button data-action="sync" data-id="${esc(c.id)}" ${busy || dirty.has(c.id) || !c.enabled || !c.account_id || (!c.last_sync && !preview[c.id]) ? 'disabled' : ''}>Sync latest</button>
+      <button data-action="full-sync" data-id="${esc(c.id)}" ${busy || dirty.has(c.id) || !c.enabled || !c.account_id || (!c.last_sync && !preview[c.id]) ? 'disabled' : ''}>Full sync</button>
       ${c.latest_raw_data ? `<a href="${ROOT}/broker-accounts/${encodeURIComponent(c.id)}/raw-data" download>Download latest raw</a>` : ''}
     </div>
     ${dirty.has(c.id) ? '<p class="hint">Save changes before preview or sync.</p>' : ''}
@@ -220,7 +222,7 @@ function render() {
     input.addEventListener('input', () => {
       if (!managed) return;
       dirty.add(managed);
-      for (const button of el.list.querySelectorAll(`[data-action="preview"][data-id="${managed}"], [data-action="sync"][data-id="${managed}"]`)) button.disabled = true;
+      for (const button of el.list.querySelectorAll(`[data-action="preview"][data-id="${managed}"], [data-action="sync"][data-id="${managed}"], [data-action="full-sync"][data-id="${managed}"]`)) button.disabled = true;
       for (const button of el.list.querySelectorAll(`[data-action="history-more"][data-id="${managed}"]`)) button.disabled = true;
     });
   }
@@ -330,8 +332,8 @@ async function action(node) {
     });
   } else if (a === 'preview') {
     await run(async () => { preview[id] = await call(`/broker-accounts/${encodeURIComponent(id)}/preview`, 'POST'); });
-  } else if (a === 'sync') {
-    await run(() => call(`/broker-accounts/${encodeURIComponent(id)}/sync`, 'POST'));
+  } else if (a === 'sync' || a === 'full-sync') {
+    await run(() => call(`/broker-accounts/${encodeURIComponent(id)}/sync`, 'POST', {full_sync:a === 'full-sync'}));
   } else if (a === 'token-create' || a === 'token-check') {
     await run(async () => {
       const got = await call(`/broker-access/${encodeURIComponent(c.source_id)}/webull-token`,

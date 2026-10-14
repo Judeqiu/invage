@@ -18,7 +18,7 @@ export const brokerHistoryDatasets: Record<string,Dataset> = {
   broker_executions: dataset('All retained broker executions, including securities, closed options and unpriced historical contracts.',{
     ...scope,id:text('Broker execution identifier, unique within account and channel.'),order_id:text('Parent order identifier.'),
     native_symbol:text('Exact broker symbol.'),symbol:text('Canonical underlying/security symbol if resolved.'),instrument:text('security or option.'),
-    side:text('buy or sell.'),effect:text('open, close or unknown.'),executed_at:field('datetime','Broker-local execution timestamp.'),clock:text('IANA timezone for executed_at.'),
+    side:text('buy or sell.'),effect:text('open, close or unknown.'),executed_at:field('datetime','Broker-local execution timestamp.'),clock:text('Known timestamp timezone; IBKR_FLEX_UNSPECIFIED when Flex omits it.'),
     currency:text('Reported or market-derived currency.'),quantity:decimal('Positive quantity; group by account and native_symbol when summing.'),price:decimal('Execution price per unit.'),
     multiplier:decimal('Exact verified contract multiplier; null if unavailable.'),gross_cash:decimal('Signed gross execution cash; buys negative, sells positive.',true),
     fee_cash:decimal('Signed execution fee/rebate, null if not reported.',true),right:text('call or put; null for securities.'),expiry:field('date','Option expiration date.'),strike:decimal('Option strike.'),
@@ -35,7 +35,7 @@ export const brokerHistoryDatasets: Record<string,Dataset> = {
     ratio:decimal('Positive leg ratio per parent contract.'),multiplier:decimal('Reported leg premium multiplier.'),
   },s=>histories(s).flatMap(h=>h.orders.flatMap(o=>o.legs.map(l=>({...scopeValues(h),order_id:o.id,...l}))))),
   broker_history_sync: dataset('History completeness tracked independently of position sync success.',{
-    ...scope,version:field('number','History schema version.'),mode:text('Last fetch full or incremental.'),from:field('datetime','Retained coverage start, UTC.'),through:field('datetime','Last successful history fetch end, UTC.'),
+    ...scope,historical_imported:field('boolean','One-time historical fetch has been retained; coverage gaps remain separate.'),version:field('number','History schema version.'),mode:text('Last fetch full or incremental.'),from:field('datetime','Retained coverage start, UTC.'),through:field('datetime','Last successful history fetch end, UTC.'),
     status:text('complete or partial for the last history fetch.'),full_history_synced:field('boolean','Whether a complete full history fetch has been retained.'),fees:text('Fee availability: available, partial or unavailable.'),
   },s=>histories(s).map(h=>({...scopeValues(h),...h.sync}))),
   broker_history_gaps: dataset('Explicit unresolved history and metadata gaps; next sync retries partial coverage.',{

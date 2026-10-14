@@ -34,7 +34,7 @@ describe('Moomoo historical data',()=>{
     expect(statement.history!.executions.find(e=>e.id==='stock')).toMatchObject({instrument:'security',gross_cash:'-200',symbol:'AAPL',multiplier:'1'});
     expect(statement.history!.executions.find(e=>e.id==='unresolved')).toMatchObject({multiplier:null,gross_cash:null});
     expect(statement.history!.sync).toMatchObject({status:'partial',full_history_synced:false,gaps:[{kind:'metadata',reference:'US.AVGO260911C380000'}]});
-    expect(planBrokerHistorySync(statement.history,'A').mode).toBe('full');
+    expect(planBrokerHistorySync(statement.history,'A').mode).toBe('incremental');
   });
   it('keeps signed spread prices and previously verified legs when details temporarily disappear',()=>{
     const first=mapMooMooBundleToStatement(bundle(),'moomoo-A').history!;
@@ -106,7 +106,7 @@ describe('Moomoo historical data',()=>{
     const raw=await fetchMooMooRawBundle(credentials,transport(unavailable,malformed));
     expect(raw.orders_details).toEqual([]);expect(raw.history_gaps).toHaveLength(1);
     const mapped=mapMooMooBundleToStatement(raw,'moomoo-A');expect(mapped.history!.executions).toHaveLength(2);expect(mapped.option_executions).toEqual([]);
-    expect(mapped.history!.sync.status).toBe('partial');expect(planBrokerHistorySync(mapped.history,'A').mode).toBe('full');
+    expect(mapped.history!.sync.status).toBe('partial');expect(planBrokerHistorySync(mapped.history,'A').mode).toBe('incremental');
   });
 });
 

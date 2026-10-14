@@ -12,7 +12,7 @@ import type {
 import { assertBrokerConnectionMetrics } from '../state/portfolio-state.js';
 import { getCashes, getPortfolio } from '../state/portfolio-state.js';
 import { buildHoldingKey } from '../market/position-value.js';
-import { getBrokerAdapter, type AdapterTransport } from './adapter.js';
+import { getBrokerAdapter,attachFetchedHistory,archiveHistoryAttachments, type BrokerRawPayload, type AdapterTransport } from './adapter.js';
 import { applyBrokerStatement } from './apply-statement.js';
 import { planBrokerHistorySync, assertBrokerHistory, type BrokerHistorySyncPlan } from './history.js';
 import { BROKER_CATALOG, getBrokerConnector, type BrokerConnectorDef } from './catalog.js';
@@ -415,16 +415,16 @@ export function ibkrStatements(raw: Buffer, channel: string): BrokerStatement[] 
   return out;
 }
 async function fetchStatements(model: BrokerAccountModel, conn: BrokerAccountConnection, connectionId: string, slug: string, transport?: AdapterTransport,
-  onRaw?: (body: Buffer) => void, history?: BrokerHistorySyncPlan): Promise<{ raw: Buffer; statements: BrokerStatement[] }> {
+  onRaw?: (body: Buffer) => void, history?: BrokerHistorySyncPlan): Promise<{ raw: Buffer; statements: BrokerStatement[]; payload:BrokerRawPayload }> {
   const adapter = getBrokerAdapter(conn.broker_id);
-  const raw = await adapter.fetchRaw(combinedCredentials(model, conn), { ...(transport ? { transport } : {}), ...(history ? { history } : {}) });
+  const raw = await adapter.fetchRaw(combinedCredentials(model, conn), { ...(transport ? { transport } : {}), ...(history ? { history } : {}), accountId:conn.account_id,channel:conn.channel });
   onRaw?.(raw.body);
   const parser = adapter.usesCsvTables ? loadBrokerParserSpec(slug, conn.broker_id,
     conn.channel === conn.broker_id ? undefined : connectionId) : null;
   const statements = parser ? [runCsvTablesSpec(raw.body.toString('utf8'), parser, conn.channel)]
     : conn.broker_id === 'ibkr' ? ibkrStatements(raw.body, conn.channel)
     : [adapter.parseToStatement(raw, conn.channel)];
-  return { raw: raw.body, statements };
+  return { raw: raw.body, statements:statements.map(statement=>attachFetchedHistory(raw,statement)),payload:raw };
 }
 export async function discoverBrokerAccounts(state: InvestorState, sourceId: string, config: Record<string, string>, transport?: AdapterTransport) {
   const model = readBrokerAccountModel(state);
@@ -496,7 +496,7 @@ function archive(slug: string, conn: BrokerAccountConnection, raw: Buffer, asOf:
   return file;
 }
 export async function syncBrokerAccount(snapshot: InvestorSnapshot, id: string, transport?: AdapterTransport,
-  trigger: 'manual' | 'scheduled' = 'manual'): Promise<{ applied: BrokerApplyResult }> {
+  trigger: 'manual' | 'scheduled' = 'manual', full = false): Promise<{ applied: BrokerApplyResult }> {
   const state = snapshot.state;
   const model = readBrokerAccountModel(state);
   const conn = model.connections[id];
@@ -519,12 +519,13 @@ export async function syncBrokerAccount(snapshot: InvestorSnapshot, id: string, 
       if (!conn.enabled) throw new Error('Broker connection is paused.');
       if (!conn.account_id) throw new Error('Broker account binding is required.');
       if (!requiredComplete(def, credentials)) throw new Error('Required broker fields are incomplete.');
-      const history = planBrokerHistorySync(state.broker_history?.[conn.channel], conn.account_id);
+      const history = planBrokerHistorySync(state.broker_history?.[conn.channel], conn.account_id, new Date(), full);
       const fetched = await fetchStatements(model, conn, id, state.user.id, transport, body => { raw = body; }, history);
       raw = fetched.raw;
       const statement = fetched.statements.find(s => s.account_id === conn.account_id);
       if (!statement) throw new Error(`Broker statement account mismatch: expected ${conn.account_id}.`);
       archivePath = archive(state.user.id, conn, fetched.raw, statement.as_of, true);
+      archiveHistoryAttachments(state.user.id,conn.channel,fetched.payload);
       // A legacy connector-keyed connection is normalized in memory by
       // readBrokerAccountModel(). Persist that canonical shape before the apply
       // layer verifies the selected account and channel against stored state.

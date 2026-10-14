@@ -1,4 +1,5 @@
 import { mapWebullOptionHistory } from './webull-executions.js';
+import { mapWebullHistory } from './webull-history.js';
 import { BrokerParseError } from '../brokers/errors.js';
 import type { BrokerCashSleeve, BrokerSkip, BrokerStatement } from '../brokers/statement.js';
 import { yahooSymbolFromBroker } from '../brokers/yahoo-symbol.js';
@@ -252,7 +253,8 @@ export function mapWebullBundleToStatement(bundle: WebullRawBundle, channel: str
     lots,
     skipped,
   };
-  const executions = mapWebullOptionHistory(bundle, lots, channel);
+  stmt.history=mapWebullHistory(bundle,channel);
+  const executions = bundle.history_plan ? undefined : mapWebullOptionHistory(bundle, lots, channel);
   if (executions) stmt.option_executions = executions;
   if (metrics) stmt.metrics = metrics;
   return stmt;

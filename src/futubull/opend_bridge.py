@@ -13,6 +13,11 @@ MARKER = "INVAGE_FUTU_JSON:"
 
 def rows(frame):
     # pandas' JSON encoder handles numpy values and nulls consistently.
+    exact_fields = ["acc_id", "deal_id", "order_id", "qty", "price", "dealt_qty", "dealt_avg_price", "contract_size", "lot_size", "multiplier"]
+    frame = frame.copy()
+    for field in exact_fields:
+        if field in frame.columns:
+            frame[field] = frame[field].map(lambda value: None if value is None or str(value) == "nan" else str(value))
     if "acc_id" in frame.columns:
         frame = frame.copy()
         frame["acc_id"] = frame["acc_id"].astype(str)
@@ -57,6 +62,13 @@ def main():
                                                                acc_id=account), "positions", futu)
             output = {"schema": "invage.futubull.raw.v1", "fetched_at": datetime.now(timezone.utc).isoformat(),
                       "acc_id": account_id, "funds": funds, "positions": positions}
+            if request.get("history"):
+                plan = request["history"]
+                bounds = {"start": plan["from"][:10] + " 00:00:00", "end": plan["through"][:10] + " 23:59:59",
+                          "trd_env": futu.TrdEnv.REAL, "acc_id": account}
+                deals = require_ok(context.history_deal_list_query(**bounds), "historical deals", futu)
+                orders = require_ok(context.history_order_list_query(**bounds), "historical orders", futu)
+                output["history"] = {"plan": plan, "deals": deals, "orders": orders}
         print(MARKER + json.dumps(output, separators=(",", ":")))
     finally:
         context.close()

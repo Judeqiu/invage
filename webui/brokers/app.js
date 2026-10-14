@@ -257,7 +257,7 @@ function render() {
       </div>
       <div class="actions">
         <button type="button" class="primary" data-manage="${escapeAttr(conn.id)}" ${inFlight ? 'disabled' : ''}>${escapeHtml(primaryLabel(conn.status))}</button>
-        ${showSync ? `<button type="button" class="ghost" data-sync="${escapeAttr(conn.id)}" ${syncDisabled ? 'disabled' : ''}>Force sync</button>` : ''}
+        ${showSync ? `<button type="button" class="ghost" data-sync="${escapeAttr(conn.id)}" ${syncDisabled ? 'disabled' : ''}>Sync latest</button> <button type="button" class="ghost" data-full="true" data-sync="${escapeAttr(conn.id)}" ${syncDisabled ? 'disabled' : ''}>Full sync</button>` : ''}
         ${conn.latest_raw_data
           ? `<a class="ghost" href="${API}/${encodeURIComponent(conn.id)}/raw-data" download>Download latest raw data</a>`
           : '<button type="button" class="ghost" disabled title="No saved raw data yet">Download latest raw data</button>'}
@@ -318,7 +318,7 @@ function bind() {
     btn.addEventListener('click', () => void save(btn.getAttribute('data-save')));
   });
   el.list.querySelectorAll('button[data-sync]').forEach((btn) => {
-    btn.addEventListener('click', () => void syncNow(btn.getAttribute('data-sync')));
+    btn.addEventListener('click', () => void syncNow(btn.getAttribute('data-sync'),btn.getAttribute('data-full')==='true'));
   });
   el.list.querySelectorAll('button[data-refresh]').forEach((btn) => {
     btn.addEventListener('click', () => void refresh());
@@ -414,15 +414,17 @@ async function save(id) {
   }
 }
 
-async function syncNow(id) {
+async function syncNow(id, full = false) {
   inFlight = true;
   showError('');
   render();
   const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), 90_000);
+  const timer = setTimeout(() => ac.abort(), full ? 20 * 60_000 : 90_000);
   try {
     const res = await fetch(`${API}/${encodeURIComponent(id)}/sync`, {
       method: 'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({full_sync:full}),
       credentials: 'include',
       signal: ac.signal,
     });

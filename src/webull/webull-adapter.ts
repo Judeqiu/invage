@@ -30,7 +30,7 @@ export const webullAdapter: BrokerConnectorAdapter = {
   usesCsvTables: false,
   async fetchRaw(credentials, opts) {
     const bundle = await fetchWebullRawBundle(credentialsFrom(credentials), {
-      fetchImpl: fetchImpl(opts),
+      fetchImpl: fetchImpl(opts), history:opts?.history,
     });
     return {
       kind: 'json',

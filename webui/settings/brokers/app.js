@@ -216,7 +216,7 @@ function managePanel(conn) {
       <div class="last">${escapeHtml(lastSyncLine(conn))}${syncHint ? ` · ${syncHint}` : ''}${abortWait ? ' · Request still running on the server — wait, then Refresh.' : ''}</div>
       <div class="actions">
         <button type="button" class="primary" data-save="${escapeHtml(conn.id)}" ${saveDisabled ? 'disabled' : ''}>Save</button>
-        <button type="button" data-sync="${escapeHtml(conn.id)}" ${syncDisabled ? 'disabled' : ''}>Sync now</button>
+        <button type="button" data-sync="${escapeHtml(conn.id)}" ${syncDisabled ? 'disabled' : ''}>Sync latest</button> <button type="button" data-full="true" data-sync="${escapeHtml(conn.id)}" ${syncDisabled ? 'disabled' : ''}>Full sync</button>
         <button type="button" data-refresh="1" ${inFlight ? 'disabled' : ''}>Refresh</button>
       </div>
     </div>`;
@@ -252,7 +252,7 @@ function render() {
       </div>
       <div class="actions">
         <button type="button" class="primary" data-manage="${escapeHtml(conn.id)}" ${inFlight ? 'disabled' : ''}>${escapeHtml(primaryLabel(conn.status))}</button>
-        ${showSync ? `<button type="button" data-sync="${escapeHtml(conn.id)}" ${syncDisabled ? 'disabled' : ''}>Sync now</button>` : ''}
+        ${showSync ? `<button type="button" data-sync="${escapeHtml(conn.id)}" ${syncDisabled ? 'disabled' : ''}>Sync latest</button> <button type="button" data-full="true" data-sync="${escapeHtml(conn.id)}" ${syncDisabled ? 'disabled' : ''}>Full sync</button>` : ''}
         ${conn.latest_raw_data
           ? `<a href="${API}/${encodeURIComponent(conn.id)}/raw-data" download>Download latest raw data</a>`
           : '<button type="button" disabled title="No saved raw data yet">Download latest raw data</button>'}
@@ -318,7 +318,7 @@ function bind() {
     btn.addEventListener('click', () => void save(btn.getAttribute('data-save')));
   });
   el.list.querySelectorAll('button[data-sync]').forEach((btn) => {
-    btn.addEventListener('click', () => void syncNow(btn.getAttribute('data-sync')));
+    btn.addEventListener('click', () => void syncNow(btn.getAttribute('data-sync'),btn.getAttribute('data-full')==='true'));
   });
   el.list.querySelectorAll('button[data-refresh]').forEach((btn) => {
     btn.addEventListener('click', () => void refresh());
@@ -417,15 +417,17 @@ async function save(id) {
   }
 }
 
-async function syncNow(id) {
+async function syncNow(id, full = false) {
   inFlight = true;
   showError('');
   render();
   const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), 90_000);
+  const timer = setTimeout(() => ac.abort(), full ? 20 * 60_000 : 90_000);
   try {
     const res = await fetch(`${API}/${encodeURIComponent(id)}/sync`, {
       method: 'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({full_sync:full}),
       credentials: 'include',
       signal: ac.signal,
     });
