@@ -24,7 +24,9 @@ async function main(): Promise<void> {
     })();
     return stopping;
   };
-  const signal = () => { void stop().catch(error => { console.error('[Shutdown]', error); process.exitCode = 1; }); };
+  // Exit only after framework work and database pools have drained. Background
+  // SDK timers must not keep a stopped host alive until systemd sends SIGKILL.
+  const signal = () => { void stop().then(() => process.exit(process.exitCode ?? 0), error => { console.error('[Shutdown]', error); process.exit(1); }); };
   const observe = (handle: { closed: Promise<void> }) => {
     void handle.closed.then(() => stop(), error => stop(error)).catch(error => { console.error('[Shutdown]', error); process.exitCode = 1; });
   };
