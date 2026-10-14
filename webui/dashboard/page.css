@@ -311,10 +311,6 @@ footer { text-align: center; font-size: 0.72rem; color: var(--muted-foreground);
 .timeline-group-range { stroke: #c7d5e9; stroke-width: 5; stroke-linecap: round; }
 
 .pnl-card { grid-column: 1 / -1; min-width: 0; }
-.premium-history-breakdown { grid-column: 1 / -1; min-width: 0; }
-.premium-month-breakdown { margin-top: 0.75rem; }
-.premium-month-breakdown summary { cursor: pointer; }
-.premium-month-breakdown .table-scroll { margin-top: 0.75rem; }
 .option-ledger .option-spread-summary td { background: var(--muted); font-weight: 600; }
 .pnl-caption, .pnl-coverage-note, .pnl-legend { font-size: 0.8rem; line-height: 1.5; color: var(--muted-foreground); margin: 0.65rem 0; }
 .pnl-chart-scroll { overflow-x: auto; }

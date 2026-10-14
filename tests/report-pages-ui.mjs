@@ -667,13 +667,13 @@ try {
   assert(/Before fees/.test(await page.$eval('#kpiRow', node => node.textContent)), 'premium stays available before fees across all brokers');
   assert.equal(await page.$eval('#totalPremiumValue', node => node.textContent), '$654.00', 'total uses recorded premium before fees when fees are missing');
   assert.match(await page.$eval('#totalPremiumMeta', node => node.textContent), /Before fees/, 'gross total clearly states its basis');
-  assert(await page.$('#premiumEngine .premium-month-breakdown'), 'monthly premium has an execution breakdown');
+  assert.equal(await page.$('#premiumEngine .premium-history-breakdown'), null, 'recorded trades breakdown is hidden from dashboard');
   payload.optionHistoryGaps = [{ channel: 'ibkr', reason: 'Earlier archived fills are missing from imported history.' }];
   await page.goto(`http://127.0.0.1:${port}/dashboard/`);
   await page.waitForSelector('#channelPills [data-channel="ibkr"]');
   await page.click('#channelPills [data-channel="ibkr"]');
   assert.match(await page.$eval('#totalPremiumMeta', node => node.textContent), /Partial history/, 'archive omissions mark totals partial even for a selected broker');
-  assert.match(await page.$eval('#premiumEngine', node => node.textContent), /Earlier archived fills/, 'monthly premium explains missing historical records');
+  assert(!/Earlier archived fills|Recorded trades from|Trade breakdown/.test(await page.$eval('#premiumEngine', node => node.textContent)), 'detailed recorded-trade warnings and breakdowns stay hidden');
   delete payload.optionHistoryGaps;
   const savedPositionsForSpread = payload.model.live.positions;
   const spreadTemplate = savedPositionsForSpread.find(p => p.instrument === 'option' && p.channel === 'ibkr');

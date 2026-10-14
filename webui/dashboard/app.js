@@ -2009,16 +2009,6 @@ function renderPremiumEngine(view) {
   el.premiumEngine.innerHTML = cssBarCard('Net Option Premium by Month', rows(data.byMonth), 'Before fees · recorded trades') +
     cssBarCard('Net Option Premium by Underlying', rows(data.byUnderlying, true), 'Before fees · includes recorded option purchases and sales', { id: 'underlyingPremiumCard', limit: 5, help: premiumHelp }) +
     (showRecordedPnlByMonth ? monthlyLineCard('Recorded P&L by Month', data, ccy, plHelp) : '');
-  const channels = selectedTradeChannels(view);
-  const historyGaps = (payload.optionHistoryGaps || []).filter(g => channels.includes(g.channel));
-  const fills = (payload.optionAnalytics?.executions || []).filter(r => channels.includes(r.channel) && r.executed_at.slice(0, 10) <= date);
-  const dates = fills.map(r => r.executed_at.slice(0, 10)).sort();
-  el.premiumEngine.innerHTML += `<div class="premium-history-breakdown"><p class="pnl-coverage-note">${dates.length ? `Recorded trades from ${escapeHtml(optionDateLabel(dates[0]))} to ${escapeHtml(optionDateLabel(dates.at(-1)))}. ` : ''}Premium includes all recorded option purchases and sales, before fees; it is cash flow, not profit.</p>` +
-    historyGaps.map(g => `<p class="pnl-coverage-note">Partial history · ${escapeHtml(g.channel.toUpperCase())}: ${escapeHtml(g.reason)}</p>`).join('') +
-    [...data.byMonth.keys()].sort().map(month => {
-      const records = fills.filter(r => r.executed_at.startsWith(month)).sort((a, b) => a.executed_at.localeCompare(b.executed_at));
-      return `<details class="premium-month-breakdown"><summary>${escapeHtml(month)} · Trade breakdown · ${data.byMonth.get(month) == null ? 'Unknown' : fmtPrettyMoney(data.byMonth.get(month), ccy)}</summary><div class="table-scroll"><table class="report"><thead><tr><th>Date</th><th>Contract</th><th>Action</th><th>Quantity</th><th>Premium before fees</th><th>Fees / rebates</th><th>Broker</th></tr></thead><tbody>${records.map(r => `<tr><td>${escapeHtml(r.executed_at.slice(0, 10))}</td><td>${escapeHtml(`${r.underlying} ${r.right} ${r.strike} · ${r.expiry}`)}</td><td>${escapeHtml(`${r.side} to ${r.effect}`)}</td><td>${escapeHtml(r.contracts)}</td><td>${historyGaps.some(g => g.channel === r.channel && g.blocksTotals) ? 'Unverified' : fmtPrettyMoney(Number(r.gross_premium), r.currency, 2)}</td><td>${historyGaps.some(g => g.channel === r.channel && g.blocksTotals) || r.commission == null ? 'Unknown' : fmtPrettyMoney(Number(r.commission), r.currency, 2)}</td><td>${escapeHtml(r.channel.toUpperCase())}</td></tr>`).join('')}</tbody></table></div></details>`;
-    }).join('') + '</div>';
 }
 
 function renderOpenOptions(view) {
