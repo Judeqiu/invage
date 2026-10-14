@@ -1,3 +1,4 @@
+import { BrokerArchiveAccountMismatchError } from './errors.js';
 import { createHash } from 'node:crypto';
 import { SaxesParser } from 'saxes';
 import { addDecimals, decimal, validDate } from './option-executions.js';
@@ -125,10 +126,12 @@ export function parseRelationshipArchive(broker: string, bytes: Buffer, account:
   }
   const b = record(JSON.parse(bytes.toString('utf8')));
   if (broker === 'moomoo') {
-    if (text(b.acc_id) !== account) throw new Error('Archive account mismatch');
+    if (text(b.acc_id) !== account) throw new BrokerArchiveAccountMismatchError();
     if (!b.fills_history) return fills;
     const metadata = moomooContractMetadata(b as unknown as MooMooRawBundle,[],verifiedMultipliers);
     for (const r of rows(record(b.fills_history).rows)) {
+      const rowAccount = r.account_id ?? r.acc_id;
+      if (rowAccount != null && text(rowAccount) !== account) throw new Error('Archived fill account mismatch');
       const code = String(r.code); const m = code.match(/^(US|HK)\.(.+?)(\d{6})([PC])(\d+)$/); if (!m) continue;
       if (r.status !== 'OK') throw new Error('Changed option fill needs reconciliation');
       const actions: Record<string, [RollFill['side'], RollFill['effect']]> = {
@@ -148,7 +151,7 @@ export function parseRelationshipArchive(broker: string, bytes: Buffer, account:
         basis: 'gross', terminal: false, source });
     }
   } else if (broker === 'tiger') {
-    if (text(b.account) !== account) throw new Error('Archive account mismatch');
+    if (text(b.account) !== account) throw new BrokerArchiveAccountMismatchError();
     if (!b.option_history) return fills;
     const history = record(b.option_history); const orders = new Map(rows(history.orders).map(o => {
       if (text(o.account) !== account) throw new Error('Order account mismatch'); return [text(o.id), o];
@@ -189,7 +192,7 @@ export function parseRelationshipArchive(broker: string, bytes: Buffer, account:
         basis: 'gross', terminal: true, source });
     }
   } else if (broker === 'webull') {
-    if (text(b.account_id) !== account) throw new Error('Archive account mismatch');
+    if (text(b.account_id) !== account) throw new BrokerArchiveAccountMismatchError();
     if (!b.option_history) return fills;
     for (const group of rows(b.option_history)) for (const r of rows(group.orders)) {
       if (r.instrument_type !== 'OPTION' || Number(r.filled_quantity ?? 0) <= 0) continue;

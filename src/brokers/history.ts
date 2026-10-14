@@ -15,7 +15,7 @@ export interface BrokerHistoryOrderLeg {
 export interface BrokerHistoryOrder extends BrokerHistoryScope {
   id: string; native_symbol: string; side: 'buy' | 'sell' | 'unknown'; status: string;
   created_at: string; updated_at: string; clock: string; currency: string | null;
-  quantity: string; limit_price: string | null; filled_quantity: string; filled_price: string | null;
+  quantity: string | null; limit_price: string | null; filled_quantity: string | null; filled_price: string | null;
   order_type: string; time_in_force: string | null; session: string | null; legs: BrokerHistoryOrderLeg[];
 }
 export interface BrokerHistoryGap {
@@ -101,7 +101,7 @@ export function assertHistoryOrder(raw: unknown): BrokerHistoryOrder {
   });
   return { ...scope(o), id: text(o.id), native_symbol: text(o.native_symbol), side: choice(o.side, ['buy','sell','unknown']), status: text(o.status),
     created_at: stamp(o.created_at), updated_at: stamp(o.updated_at), clock: text(o.clock), currency: currency(o.currency),
-    quantity: amount(o.quantity, true), limit_price: nullableAmount(o.limit_price), filled_quantity: nonnegative(o.filled_quantity),
+    quantity: o.quantity === null ? null : nonnegative(o.quantity), limit_price: nullableAmount(o.limit_price), filled_quantity: o.filled_quantity === null ? null : nonnegative(o.filled_quantity),
     filled_price: nullableAmount(o.filled_price), order_type: text(o.order_type), time_in_force: nullableText(o.time_in_force), session: nullableText(o.session), legs };
 }
 export function assertBrokerHistory(raw: unknown): BrokerHistory {

@@ -243,7 +243,14 @@ export function mapMooMooBundleToStatement(bundle: MooMooRawBundle, channel: str
   if (cash.length === 0) {
     throw new BrokerParseError('MooMoo funds have no importable cash sleeves.');
   }
-  const rows = Array.isArray(bundle.positions.d) ? bundle.positions.d : [];
+  // An absent/malformed list is not evidence that an account has no positions.
+  // Reject it before the channel snapshot can remove stored holdings.
+  if (!Array.isArray(bundle.positions.d) || bundle.positions.d.some(row =>
+    !row || typeof row !== 'object' || Array.isArray(row) ||
+    typeof row.code !== 'string' || !row.code.trim() || parseNum(row.qty) == null)) {
+    throw new BrokerParseError('MooMoo positions response is incomplete; stored holdings were not replaced.');
+  }
+  const rows = bundle.positions.d;
   const lots: BrokerStatement['lots'] = [];
   const seen = new Set<string>();
   const contractMetadata = moomooContractMetadata(bundle);

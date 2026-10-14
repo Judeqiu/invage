@@ -14,6 +14,9 @@ function number(v: unknown): string {
   if (typeof v === 'number' && !Number.isSafeInteger(v)) throw new BrokerParseError('Moomoo history numeric metadata is not exact');
   return decimal(String(v));
 }
+function optionalNumber(v: unknown): string | null {
+  return v == null || typeof v === 'string' && !v.trim() ? null : number(v);
+}
 function positive(v: unknown): string {
   const value = number(v);
   if (value.startsWith('-') || !/[1-9]/.test(value)) throw new BrokerParseError('Moomoo history size must be positive');
@@ -113,8 +116,8 @@ export function mapMooMooHistory(bundle: MooMooRawBundle, lots: BrokerLot[], cha
     const legs = (info?.leg_infos ?? []).map(l => ({ native_symbol:string(l.leg_code), ...action(l.leg_side), ratio:positive(l.leg_ratio_qty), multiplier:l.leg_hp_multiplier == null ? null : positive(l.leg_hp_multiplier) }));
     const mapped: BrokerHistoryOrder = { ...bound, id:string(row.order_id), native_symbol:code, side:row.side === 'BUY' ? 'buy' : row.side === 'SELL' ? 'sell' : 'unknown',
       status:string(row.order_status), created_at:moomooMarketTime(row.create_time,market), updated_at:moomooMarketTime(row.updated_time ?? row.create_time,market),
-      clock:market === 'US' ? 'America/New_York' : 'Asia/Hong_Kong', currency:row.currency == null ? null : string(row.currency), quantity:positive(row.qty),
-      limit_price:row.price == null ? null : number(row.price), filled_quantity:number(row.dealt_qty ?? '0'), filled_price:row.dealt_avg_price == null ? null : number(row.dealt_avg_price),
+      clock:market === 'US' ? 'America/New_York' : 'Asia/Hong_Kong', currency:row.currency == null ? null : string(row.currency), quantity:optionalNumber(row.qty),
+      limit_price:optionalNumber(row.price), filled_quantity:optionalNumber(row.dealt_qty), filled_price:optionalNumber(row.dealt_avg_price),
       order_type:string(row.order_type), time_in_force:row.time_in_force == null ? null : string(row.time_in_force), session:row.session == null ? null : string(row.session), legs };
     const prior = orders.get(mapped.id);
     if (!prior || mapped.updated_at >= prior.updated_at) orders.set(mapped.id,mapped);

@@ -16,3 +16,12 @@ export class BrokerParseError extends Error {
     this.name = 'BrokerParseError';
   }
 }
+
+/** A whole archive from another account is unrelated evidence, not a correction
+ * to the selected account. Mixed-account rows within an archive still fail. */
+export class BrokerArchiveAccountMismatchError extends Error {
+  constructor() {
+    super('Archive account mismatch: belongs to a different trading account and was excluded.');
+    this.name = 'BrokerArchiveAccountMismatchError';
+  }
+}

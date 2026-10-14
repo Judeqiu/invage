@@ -26,8 +26,8 @@ export const brokerHistoryDatasets: Record<string,Dataset> = {
   broker_orders: dataset('Retained parent order history and latest reported status; do not add order amounts to execution cash.',{
     ...scope,id:text('Parent order identifier.'),native_symbol:text('Broker-native parent instrument.'),side:text('buy, sell or unknown.'),status:text('Broker order status.'),
     created_at:field('datetime','Broker-local order creation time.'),updated_at:field('datetime','Broker-local order update time.'),clock:text('IANA timezone for order timestamps.'),
-    currency:text('Reported order currency.'),quantity:decimal('Requested parent quantity.'),limit_price:decimal('Signed parent limit price, possibly a spread credit/debit.'),
-    filled_quantity:decimal('Reported cumulative parent filled quantity.'),filled_price:decimal('Reported average parent fill price.'),order_type:text('Broker order type.'),
+    currency:text('Reported order currency.'),quantity:decimal('Requested parent quantity; null when omitted, including amount-based orders.'),limit_price:decimal('Signed parent limit price, possibly a spread credit/debit.'),
+    filled_quantity:decimal('Reported cumulative parent filled quantity; null when unreported.'),filled_price:decimal('Reported average parent fill price.'),order_type:text('Broker order type.'),
     time_in_force:text('Reported time in force.'),session:text('Reported trading session.'),
   },s=>histories(s).flatMap(h=>h.orders)),
   broker_order_legs: dataset('Authoritative parent order legs; leg quantities are ratios, not independent fills.',{

@@ -109,3 +109,29 @@ describe('Moomoo historical data',()=>{
     expect(mapped.history!.sync.status).toBe('partial');expect(planBrokerHistorySync(mapped.history,'A').mode).toBe('full');
   });
 });
+
+describe('Moomoo position snapshot safety',()=>{
+  it.each([undefined,null,{}, {positions:[]}, [null], [[]], [{}], [{code:'US.AAPL',qty:'not-a-number'}]])('rejects malformed positions instead of treating them as an empty account (%j)',value=>{
+    const raw=bundle();raw.positions.d=value;
+    expect(()=>mapMooMooBundleToStatement(raw,'moomoo')).toThrow(/positions response is incomplete/);
+  });
+  it('preserves a large legacy Moomoo account while historical metadata remains partial',()=>{
+    const raw=bundle();
+    raw.positions.d=Array.from({length:129},(_,i)=>({code:`US.TEST${i}`,qty:'1',currency:'USD',position_side:'LONG',cost_price:'10',cost_price_valid:true,nominal_price:'11'}));
+    raw.fills_history!.rows.push(fill('unpriced','US.AVGO260911C380000','SELL_SHORT','3.25'));
+    const statement=mapMooMooBundleToStatement(raw,'moomoo');
+    expect(statement.lots).toHaveLength(129);expect(statement.history!.sync.status).toBe('partial');
+    expect(statement.lots.every(l=>l.holding.channel==='moomoo')).toBe(true);
+    raw.positions.d=[];expect(mapMooMooBundleToStatement(raw,'moomoo').lots).toEqual([]);
+  });
+});
+
+it('retains amount-based and rejected orders with an unreported requested quantity',()=>{
+  const raw=bundle();const amount={...parent(),order_id:'amount',code:'US.META',security_type:'STOCK',qty:'',dealt_qty:'0.0066',dealt_avg_price:'149.8'};
+  delete (amount as Partial<ReturnType<typeof parent>>).multi_leg_info;
+  raw.orders_history!.rows.push(amount,{...amount,order_id:'rejected',order_status:'FAILED',dealt_qty:'0',dealt_avg_price:''});
+  const mapped=mapMooMooBundleToStatement(raw,'moomoo');
+  expect(mapped.history!.orders.find(o=>o.id==='amount')).toMatchObject({quantity:null,filled_quantity:'0.0066',filled_price:'149.8'});
+  expect(mapped.history!.orders.find(o=>o.id==='rejected')).toMatchObject({quantity:null,filled_quantity:'0',filled_price:null});
+  expect(mapped.option_executions).toHaveLength(2);
+});

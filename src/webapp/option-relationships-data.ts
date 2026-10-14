@@ -1,3 +1,4 @@
+import { BrokerArchiveAccountMismatchError } from '../brokers/errors.js';
 import { listRawData, fetchRawData, type RawFile } from '../raw-data/store.js';
 import { readBrokerAccountModel } from '../brokers/accounts.js';
 import { buildOptionRelationships, buildOptionVerticalSpreads, groupOptionRelationships, parseRelationshipArchive,
@@ -65,6 +66,10 @@ export function optionRelationshipsForState(state: InvestorState, filters: Relat
         }
         fills.push(...parsed);
       } catch (error) {
+        if (error instanceof BrokerArchiveAccountMismatchError) {
+          gaps.push({ channel:conn.channel, source:file.id, reason:error.message });
+          continue;
+        }
         if (error instanceof Error && /correction|Changed|Conflicting|mismatch|needs reconciliation|disagrees/.test(error.message)) reconciliationBlocked = true;
         gaps.push({ channel: conn.channel, source: file.id,
           reason: error instanceof Error ? error.message : 'Archive could not be read' });
