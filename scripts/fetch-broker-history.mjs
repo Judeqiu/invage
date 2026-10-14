@@ -10,8 +10,10 @@ import { pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
 import { openDatabaseRuntime, bindDatabaseRuntime } from 'utarus/database';
 import { collectPages, assertAccountRows, flexYearWindows, summarizeFlex } from './lib/broker-history-research.mjs';
-const [user, output] = process.argv.slice(2);
-if (!user || !output || !isAbsolute(output) || process.argv.length !== 4) throw new Error('Usage: fetch-broker-history.mjs <UUID|all> <absolute-output-dir>');
+const [user, output, ...flags] = process.argv.slice(2);
+const selectedBroker=flags.find(f=>f.startsWith('--broker='))?.slice(9);
+const selectedYear=flags.find(f=>f.startsWith('--year='))?.slice(7);
+if (!user || !output || !isAbsolute(output) || flags.some(f=>!/^--broker=(tiger|webull|ibkr)$/.test(f)&&!/^--year=\d{4}$/.test(f)) || selectedYear&&selectedBroker!=='ibkr') throw new Error('Usage: fetch-broker-history.mjs <UUID|all> <absolute-output-dir> [--broker=tiger|webull|ibkr] [--year=YYYY]');
 mkdirSync(output,{recursive:true,mode:0o700});
 if (statSync(output).mode & 0o077) throw new Error('Research output directory must be private (0700)');
 const root = resolve(process.env.INVAGE_RESEARCH_MODULE_ROOT ?? new URL('../',import.meta.url).pathname);
@@ -24,17 +26,19 @@ const database=await openDatabaseRuntime({env:process.env,mode:'personal',onErro
 const release=bindDatabaseRuntime(database);const reports=[];
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 // Bound every HTTP request; do not allow broker hangs to stall the whole research job.
-const timedFetch=(url,opts={})=>fetch(url,{...opts,signal:AbortSignal.timeout(30000)});
+const nativeFetch=globalThis.fetch;
+const timedFetch=(url,opts={})=>nativeFetch(url,{...opts,signal:AbortSignal.timeout(30000)});
+const tokenRequests=new Map();
 try {
  for(const id of user==='all'?await database.users.listIds('active'):[user]) {
   const snapshot=await database.users.readById(id);const model=readBrokerAccountModel(snapshot.state);
   for(const [connectionId,c] of Object.entries(model.connections)) {
-   if(!c.enabled||!c.account_id||!['tiger','webull','ibkr'].includes(c.broker_id))continue;
+   if(!c.enabled||!c.account_id||!['tiger','webull','ibkr'].includes(c.broker_id)||selectedBroker&&c.broker_id!==selectedBroker)continue;
    const credentials=combinedCredentials(model,c);const dir=join(output,id,c.channel);mkdirSync(dir,{recursive:true,mode:0o700});
    const report={user:id,name:snapshot.state.profile?.display_name,broker:c.broker_id,channel:c.channel,connection:connectionId,requestedAt:new Date().toISOString(),status:'partial',files:[],gaps:[],stateModified:false};
    const safeError=e=>redactSecrets(e instanceof Error?e.message:String(e),Object.values(credentials));
    function save(name,data){const body=typeof data==='string'?data:JSON.stringify(data);writeFileSync(join(dir,name),body,{mode:0o600,flag:'wx'});report.files.push({name,sha256:createHash('sha256').update(body).digest('hex')});}
-   const section=async(name,run)=>{try{return await run();}catch(e){report.gaps.push({section:name,reason:safeError(e)});return null;}};
+   const section=async(name,run)=>{try{const result=await run();console.log(JSON.stringify({name:report.name,broker:c.broker_id,section:name,status:'fetched'}));return result;}catch(e){const reason=safeError(e);report.gaps.push({section:name,reason});console.log(JSON.stringify({name:report.name,broker:c.broker_id,section:name,status:'blocked',reason}));return null;}};
    try {
     if(c.broker_id==='tiger') {
      const {resolveTigerGateway,tigerExecute,isPaperAccountId}=await module('src/tiger/tiger-client.ts');
@@ -60,11 +64,16 @@ try {
      report.gaps.push({section:'executions',reason:'Trading API order history contains cumulative fills, not verified individual executions. Broker API List Order Executions uses a separate API/product; access not assumed.'});
     } else {
      const {createFlexTransport,fetchFlexStatement}=await module('src/ibkr/flex-client.ts');const {parseXmlAttrs}=await module('src/ibkr/flex-parse.ts');
-     const transport=createFlexTransport();report.periods=[];
+     const base=createFlexTransport();const tokenKey=createHash('sha256').update(credentials.token??'').digest('hex');
+     const transport={...base,get:async(path,params)=>{
+      if(path==='SendRequest'){const wait=(tokenRequests.get(tokenKey)??0)+6500-Date.now();if(wait>0)await sleep(wait);tokenRequests.set(tokenKey,Date.now());}
+      const previous=globalThis.fetch;globalThis.fetch=timedFetch;
+      try{return await base.get(path,params);}finally{globalThis.fetch=previous;}
+     }};report.periods=[];
      const queries=[...new Map(['activity_query_id','tradeconf_query_id'].filter(k=>credentials[k]).map(k=>[credentials[k],k])).entries()];
      if(!queries.length)throw new Error('No IBKR Flex query configured');
-     for(const [queryId,kind] of queries)for(const window of flexYearWindows())await section(`${kind}-${window.from}`,async()=>{
-      const xml=(await fetchFlexStatement({token:credentials.token,queryId},{...transport,get:(path,params)=>transport.get(path,path==='SendRequest'?{...params,fd:window.from,td:window.through}:params)})).toString('utf8');
+     for(const [queryId,kind] of queries)for(const window of flexYearWindows().filter(w=>!selectedYear||w.from.startsWith(selectedYear)))await section(`${kind}-${window.from}`,async()=>{
+      const xml=(await fetchFlexStatement({token:credentials.token,queryId,pollAttempts:30},{...transport,get:(path,params)=>transport.get(path,path==='SendRequest'?{...params,fd:window.from,td:window.through}:params)})).toString('utf8');
       const summary=summarizeFlex(xml,c.account_id,parseXmlAttrs);save(`${kind}-${window.from}-${window.through}.xml`,xml);report.periods.push({kind,requested:window,...summary});
       const actual=summary.periods;
       if(actual.some(p=>p.from?.replaceAll('-','')!==window.from||p.through?.replaceAll('-','')!==window.through))report.gaps.push({section:`coverage-${window.from}`,reason:'Returned Flex statement dates differ from the requested year. Coverage must use returned dates.'});
