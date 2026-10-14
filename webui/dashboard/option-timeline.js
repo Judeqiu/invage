@@ -140,6 +140,13 @@
       t.notes.push(context.replay ? 'Saved valuation position; not broker confirmation' : observed ? `Position as of ${observed}` : 'Opening date and broker position date unavailable');
     }
     for (const t of tracks.values()) {
+      // An archive-only opening still needs a calendar guide to expiry. It is
+      // trade evidence, not a broker observation or confirmation of a holding.
+      const latestDate = t.events.map(e => e.date).sort().at(-1);
+      const latestEvents = t.events.filter(e => e.date === latestDate);
+      if (!t.spans.length && latestEvents.length && latestEvents.every(e => e.kind === 'open') && t.contract.expiry > latestDate) {
+        t.spans.push({ from: latestDate, to: t.contract.expiry, projected: true, tradeEvidence: true });
+      }
       const recorded = [...t.events.map(e => e.date), ...t.spans.filter(s => !s.projected).map(s => s.from)].sort();
       const first = recorded[0];
       // This is an evidence boundary, not an estimated opening date or holding period.
@@ -258,7 +265,7 @@
         }
         const { t, index: i } = row, c = t.contract;
         trackY.set(t.key, cy);
-        const spans = t.spans.map(s => `<line class="timeline-span${s.projected ? ' projected' : ''}" x1="${x(s.from)}" x2="${x(s.to)}" y1="${cy}" y2="${cy}"><title>${esc(`${s.projected ? 'Remaining time to expiry' : 'Observed position'}: ${s.from} to ${s.to}`)}</title></line>`).join('');
+        const spans = t.spans.map(s => `<line class="timeline-span${s.projected ? ' projected' : ''}" x1="${x(s.from)}" x2="${x(s.to)}" y1="${cy}" y2="${cy}"><title>${esc(`${s.tradeEvidence ? 'Recorded opening to expiry; current position status is not confirmed' : s.projected ? 'Remaining time to expiry' : 'Observed position'}: ${s.from} to ${s.to}`)}</title></line>`).join('');
         const leadX = t.unknownStart ? Math.max(left, x(t.unknownStart) - 56) : 0;
         const leadIn = t.unknownStart ? `<g class="timeline-unknown-start"><title>Earlier history unavailable; opening date is unknown before ${esc(t.unknownStart)}</title>
           <line x1="${leadX}" x2="${x(t.unknownStart)}" y1="${cy}" y2="${cy}"/>

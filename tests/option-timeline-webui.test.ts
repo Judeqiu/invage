@@ -24,6 +24,28 @@ const openEpisode = { ...episode, id: 'active', contract: replacement, status: '
   observations: [{ as_of: '2026-10-01' }, { as_of: '2026-10-12' }], executions: [{ execution_id: 'new-open', executed_at: '2026-10-01T10:00:00', effect: 'open', side: 'sell', contracts: 2 }] };
 const context = { asOf: '2026-10-12', channel: '', replay: false, positions: [], tradeDetails: {}, brokerAsOf: {} };
 
+it('draws a trade-based expiry guide for an unobserved latest replacement without treating it as a holding', () => {
+  const window: any = {}; runInNewContext(script, { window });
+  const build = (episodes = [], relationships = [relationship], overrides = {}) =>
+    window.buildOptionTimelineTracks(episodes, [{ relationships }], { ...context, ...overrides });
+  const latest = build().tracks.find((t: any) => t.contract.strike === 220);
+  expect(latest.spans).toEqual([{ from: '2026-10-01', to: replacement.expiry, projected: true, tradeEvidence: true }]);
+  expect(latest.quote).toBeUndefined();
+  expect(latest.notes).toEqual([]);
+  expect(build().tracks.find((t: any) => t.contract.strike === 200).spans).toEqual([]);
+  expect(build([], [{ ...relationship, replacement_effect: 'unknown' }]).tracks.every((t: any) => !t.spans.length)).toBe(true);
+  expect(build([], [relationship], { replay: true, asOf: '2026-09-30' }).tracks).toEqual([]);
+  const observed = window.buildOptionTimelineTracks([openEpisode], groups, context).tracks.find((t: any) => t.contract.strike === 220);
+  expect(observed.spans).toEqual([
+    { from: '2026-10-01', to: '2026-10-12', projected: false },
+    { from: '2026-10-12', to: replacement.expiry, projected: true },
+  ]);
+  const closed = { ...openEpisode, observations: [], executions: [...openEpisode.executions,
+    { execution_id: 'new-close', executed_at: '2026-10-06', effect: 'close', side: 'buy', contracts: 2 }] };
+  expect(window.buildOptionTimelineTracks([closed], groups, context).tracks.find((t: any) => t.contract.strike === 220).spans).toEqual([]);
+  expect(build([], [{ ...relationship, replacement: { ...replacement, expiry: '2026-10-01' } }]).tracks.every((t: any) => !t.spans.length)).toBe(true);
+});
+
 it('keeps a roll chain adjacent in relationship order despite interleaved expiries and accounts', () => {
   const window: any = {}; runInNewContext(script, { window });
   const contracts = ['2026-03-20', '2026-08-21', '2026-04-17', '2026-11-20'].map((expiry, i) =>
@@ -297,6 +319,15 @@ it.skipIf(!existsSync(executable))('highlights the entire roll chain on selectio
     await page.setViewport({ width: 1400, height: 800 });
     await page.goto(`http://127.0.0.1:${(server.address() as { port: number }).port}/`);
     await page.waitForSelector('[data-timeline-group]'); await page.click('#timelineExpand');
+    const expiryGuide = await page.$eval('[data-timeline-row="2"] .timeline-span.projected', e => ({
+      from: Number(e.getAttribute('x1')), to: Number(e.getAttribute('x2')), title: e.textContent,
+      dash: getComputedStyle(e).strokeDasharray,
+      open: Number(e.parentElement!.querySelector('.timeline-event.open')!.getAttribute('cx')),
+    }));
+    expect(expiryGuide.from).toBe(expiryGuide.open);
+    expect(expiryGuide.to).toBeGreaterThan(expiryGuide.from);
+    expect(expiryGuide.dash).not.toBe('none');
+    expect(expiryGuide.title).toContain('current position status is not confirmed');
     await page.click('[data-timeline-row="1"]'); // Middle leg, highlighting both directions.
     expect(await page.$$('.timeline-selected')).toHaveLength(1);
     expect(await page.$$('.timeline-related')).toHaveLength(2);
