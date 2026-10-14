@@ -24,6 +24,17 @@ function bundle(): TigerRawBundle {
 }
 
 describe('Tiger option fills and fees', () => {
+  it('uses the same Hong Kong underlying and timezone for positions, fills and fees', () => {
+    const b = bundle();
+    const position = (b.positions.OPT.data as { items: Record<string, unknown>[] }).items[0];
+    Object.assign(position, { market: 'HK', symbol: '00700', underlyingSymbol: '00700' });
+    Object.assign(b.option_history!.orders[0], { market: 'HK', symbol: '00700' });
+    Object.assign(b.option_history!.transactions[0], { market: 'SEHK', symbol: '0700.HK' });
+    const statement = mapTigerBundleToStatement(b, 'tiger');
+    expect(statement.lots[0].holding.option!.underlying).toBe('0700.HK');
+    expect(statement.option_executions![0]).toMatchObject({ underlying: '0700.HK',
+      executed_at: '2026-09-29T09:30:00', commission: '-1.520000000000' });
+  });
   it('retains exact IDs, exchange-local opening dates, canonical underlyings, commission and GST', () => {
     const statement = mapTigerBundleToStatement(bundle(), 'tiger');
     expect(statement.option_executions?.[0]).toMatchObject({ execution_id: '44878623094603781',

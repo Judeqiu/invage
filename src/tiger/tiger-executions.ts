@@ -3,7 +3,7 @@ import { BrokerParseError } from '../brokers/errors.js';
 import { addDecimals, assertOptionExecution, decimal, mergeOptionExecutions, type OptionExecution } from '../brokers/option-executions.js';
 import { assertOptionLifecycleEvent, mergeOptionLifecycleEvents, type OptionLifecycleEvent } from '../brokers/option-events.js';
 import { canonicalOptionUnderlying } from '../brokers/option-symbol.js';
-import { yahooSymbolFromBroker } from '../brokers/yahoo-symbol.js';
+import { tigerYahooSymbol, tigerMarketClock, tigerHistoryTime } from './tiger-markets.js';
 import type { TigerRawBundle } from './tiger-types.js';
 
 function fixed(value: bigint, scale: number): string {
@@ -30,13 +30,9 @@ function multiply(...values: string[]): string {
   return fixed(values.reduce((n, text) => n * BigInt(text.replace('.', '')), 1n), scale);
 }
 function timestamp(raw: unknown, market: string): string {
-  const date = new Date(Number(raw));
-  const zones: Record<string, string> = { US: 'America/New_York', HK: 'Asia/Hong_Kong', SG: 'Asia/Singapore', AU: 'Australia/Sydney', JP: 'Asia/Tokyo' };
-  if (!zones[market]) throw new Error('Unknown transaction market timezone');
-  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: zones[market], year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }).formatToParts(date);
-  const part = (type: string) => parts.find(p => p.type === type)!.value;
-  return `${part('year')}-${part('month')}-${part('day')}T${part('hour')}:${part('minute')}:${part('second')}`;
+  const clock = tigerMarketClock(market);
+  if (!clock) throw new Error('Unknown transaction market timezone');
+  return tigerHistoryTime(raw, clock);
 }
 function key(underlying: string, right: string, expiry: string, strike: unknown): string {
   return JSON.stringify([underlying, right, expiry, Number(strike)]);
@@ -46,7 +42,7 @@ function contractKey(row: Record<string, unknown>): string | undefined {
   const right = String(row.right).toUpperCase() === 'PUT' ? 'put' : String(row.right).toUpperCase() === 'CALL' ? 'call' : '';
   if (!right) return undefined;
   const symbol = canonicalOptionUnderlying(String(row.symbol ?? ''), { expiry, right, strike: Number(row.strike) });
-  const underlying = yahooSymbolFromBroker({ market: String(row.market ?? ''), symbol });
+  const underlying = tigerYahooSymbol({ market: String(row.market ?? ''), symbol, exchange: row.exchange });
   return typeof underlying === 'string' ? key(underlying, right, expiry, row.strike) : undefined;
 }
 const lifecycleKinds: Record<string, OptionLifecycleEvent['kind']> = {
@@ -72,6 +68,7 @@ export function tigerCommissions(order: Record<string, unknown>, rows: Record<st
   const fee = addDecimals(decimal(String(order.commission)), decimal(String(order.gst)));
   if (fee.startsWith('-')) throw new Error('Negative Tiger order fee');
   // Tiger can return zero placeholders before overnight fee settlement.
+  if (Number(fee) === 0 && rows.some(row => !tigerMarketClock(row.market))) return result;
   if (Number(fee) === 0 && rows.some(row => timestamp(row.transactionTime, String(row.market)).slice(0, 10) ===
       timestamp(cutoff, String(row.market)).slice(0, 10))) return result;
   const scale = Math.max(12, fee.split('.')[1]?.length ?? 0);

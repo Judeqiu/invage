@@ -1,5 +1,5 @@
 import type { BrokerCashSleeve, BrokerSkip, BrokerStatement } from '../brokers/statement.js';
-import { yahooSymbolFromBroker } from '../brokers/yahoo-symbol.js';
+import { tigerYahooSymbol } from './tiger-markets.js';
 import { canonicalOptionUnderlying } from '../brokers/option-symbol.js';
 import type { Holding } from '../market/types.js';
 import {
@@ -93,7 +93,7 @@ function mapOnePosition(
   }
   if (secType === 'STK' || secType === '') {
     if (!(qty > 0)) return { skip: skipPos(symbol || undefined, `short stock (${qty}) is not supported on the books`) };
-    const yahoo = yahooSymbolFromBroker({ market: market || 'US', symbol });
+    const yahoo = tigerYahooSymbol({ market: market || 'US', symbol, exchange: pick(item, 'exchange', 'listingExchange') });
     if (typeof yahoo !== 'string') return { skip: skipPos(symbol || undefined, yahoo.skip) };
     const avg = parseNum(item.averageCost ?? item.average_cost);
     if (avg == null || !(avg > 0)) return { skip: skipPos(yahoo, 'missing averageCost') };
@@ -112,7 +112,7 @@ function mapOnePosition(
   }
   if (secType === 'FUND') {
     if (!(qty > 0)) return { skip: skipPos(symbol || undefined, `short fund (${qty}) is not supported`) };
-    const yahoo = yahooSymbolFromBroker({ market: market || 'US', symbol });
+    const yahoo = tigerYahooSymbol({ market: market || 'US', symbol, exchange: pick(item, 'exchange', 'listingExchange') });
     if (typeof yahoo !== 'string') return { skip: skipPos(symbol || undefined, yahoo.skip) };
     const avg = parseNum(item.averageCost ?? item.average_cost);
     const mark = parseNum(item.latestPrice ?? item.latest_price);
@@ -153,7 +153,10 @@ function mapOnePosition(
     }
   }
   if (!rawUnderlying) return { skip: skipPos(symbol || undefined, 'option missing underlying') };
-  const underlying = canonicalOptionUnderlying(rawUnderlying, { right, strike, expiry });
+  const mappedUnderlying = tigerYahooSymbol({ market: market || 'US',
+    symbol: canonicalOptionUnderlying(rawUnderlying, { right, strike, expiry }), exchange: pick(item, 'exchange', 'listingExchange') });
+  if (typeof mappedUnderlying !== 'string') return { skip: skipPos(symbol || undefined, mappedUnderlying.skip) };
+  const underlying = mappedUnderlying;
   const latest = parseNum(item.latestPrice ?? item.latest_price);
   if (latest == null) return { skip: skipPos(symbol || undefined, 'option missing mark') };
   const mark = latest * multiplier;

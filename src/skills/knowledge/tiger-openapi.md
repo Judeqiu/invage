@@ -8,6 +8,8 @@ Operator repair: `node --import tsx scripts/backfill-tiger-executions.mjs <user>
 
 Credentials (Settings or `configure_broker`): `tiger_id`, `account`, `license`, `private_key` (PEM). Optional TBHK `token` (paste-rotate, ~30 days). Optional institutional `secret_key`.
 
+Regional parsing covers Tiger's published US/HK/CN/SG/AU/NZ markets and existing JP compatibility through one registry (`src/tiger/tiger-markets.ts`); see `docs/brokers/tiger-regions.md`. Existing ticker suffixes are normalized consistently across positions and history. China quotes require an explicit Shanghai/Shenzhen listing. An unfamiliar history market retains its epoch timestamp in UTC with a metadata gap and partial coverage, rather than aborting the entire sync. Do not describe that fallback as verified exchange-local dating or complete regional coverage.
+
 TBHK without a token fails before fetch. Paper accounts ingest only if that account id is what the user stored.
 
 Parse failure writes `drive/<slug>/broker-raw/tiger/<id>/` (`raw.json` + `case.yaml`). Successful snapshots: `drive/<slug>/tiger-raw/`. Do not generate `csv_tables` for Tiger JSON.
