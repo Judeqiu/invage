@@ -13,3 +13,22 @@ This is collection and coverage research, not a replacement for the adapters or 
 Futubull/OpenD is also present in the connector catalog but was not connected on the inspected Velovest accounts. Its current snapshot bridge does not fetch history. Historical order/deal endpoints would require an available authorized OpenD gateway and their own pagination/date-window review; no gateway was started or reconfigured by this research task.
 
 Fetch failures are reported per connection/section and successful pages survive. Pagination loops, malformed arrays, or reported foreign account IDs stop that section. Missing credentials and broker permissions are not repaired automatically. A manifest retains explicit gaps even if every requested page returns successfully.
+
+## Verified fetch outcome
+
+The 14 October read-only run retrieved the following from connected Velovest accounts:
+
+| Account / broker | Retained research records | Verified coverage and remaining gaps |
+| --- | --- | --- |
+| Victor / Tiger | 1,994 unique orders, 1,889 unique transactions (13 stocks, 1,876 options), 300 option-order legs | Requested since 2000; returned fills range from 31 October 2022 through 6 October 2026. Every fill links to a fetched parent order. Retention/inception and other activity are not proved. |
+| Victor / Webull | 83 orders: 78 options, five equity; 62 filled and 21 cancelled | These are cumulative order records, not individual executions. Preserve partial fills on cancelled orders and multi-leg structures; do not fabricate a fill ledger. |
+| Victor / IBKR | 3,719 distinct execution-level trades: 3,499 options, 220 other securities | Full returned calendar reports for 2023–2025 plus 2026 through 12 October. Requested 2022 returned error 1003 (statement unavailable). |
+| jude.qiu / IBKR | 13 option executions | 2026 through 12 October. Prior-year requests returned statement unavailable. |
+| judetest1 / IBKR | 13 option executions | 2026 through 12 October. Prior-year requests returned statement unavailable. Counts remain scoped to this connection; do not add them across accounts without verifying custody ownership. |
+| Futubull/OpenD | No fetch | No configured account/gateway on inspected accounts. |
+
+A transient IBKR 1019 generation failure for 2024 succeeded on retry. Requests including 14 October returned 1003, while explicit 2026 requests through the verified latest statement date (12 October) succeeded. The tool now supports that cutoff and token-aware pacing. API errors are coverage gaps, not evidence of no trades.
+
+Responses and checksum receipts were copied to a private local research directory. The consolidated report is `/tmp/velovest-other-broker-history-20261014/research-report.json`. No live portfolio, cash, retained history, service code or service lifecycle was changed.
+
+For a later integration, normalize into the existing shared history contract, retaining all stock/option executions and orders independently of holdings. Tiger's parent order legs carry exact multipliers and can enrich matching expired contracts; standalone orders do not provide that field. Order-level commission/GST must not be duplicated across fills. Webull order quantities and fills require separate order-level representation until verified execution access is available. IBKR execution rows retain explicit fees and contract terms; exclude aggregate rows and deduplicate Activity/Confirmation reports by account-scoped trade identity. Keep raw fields available as evidence and completeness gaps queryable.
