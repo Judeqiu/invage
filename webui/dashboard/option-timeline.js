@@ -101,13 +101,22 @@
       for (const e of row.events || []) event(t, `event:${e.id}`, e.date, 'terminal', `${e.kind.replaceAll('_', ' ')} · ${e.contracts} contracts · ${e.date}`);
       if (visible(row.first_seen_absent)) event(t, `absent:${row.id}`, row.first_seen_absent, 'absent', 'First observed absent; this alone does not establish a close');
     }
+    for (const fill of context.executions || []) {
+      if (!visible(fill.executed_at) || context.channel && fill.channel !== context.channel) continue;
+      const side = (fill.effect === 'open') === (fill.side === 'buy') ? 'long' : 'short';
+      const t = track(fill.channel, fill.account_id, fill, side);
+      event(t, `fill:${fill.execution_id}`, fill.executed_at, fill.effect,
+        `${fill.side.toUpperCase()} to ${fill.effect} · ${fill.contracts} contracts · ${fill.executed_at}`, fill);
+    }
     for (const group of groups) for (const r of group.relationships) {
       if (!visible(r.through) || context.channel && r.channel !== context.channel) continue;
       const old = track(r.channel, r.account_id, r.old, r.side);
-      const next = track(r.channel, r.account_id, r.replacement, r.side);
+      const replacementSide = r.replacement_effect === 'close' ? (r.side === 'long' ? 'short' : 'long') : r.side;
+      const next = track(r.channel, r.account_id, r.replacement, replacementSide);
       // Archive-only tracks represent trade evidence, not a current position.
       event(old, `roll-close:${r.id}`, r.at, 'close', `Roll closing leg · ${r.closed_quantity} contracts`);
-      event(next, `roll-open:${r.id}`, r.through, r.replacement_effect === 'open' ? 'open' : 'unknown', `Replacement leg · ${r.opened_quantity} contracts · effect ${r.replacement_effect}`);
+      event(next, `roll-open:${r.id}`, r.through, ['open', 'close'].includes(r.replacement_effect) ? r.replacement_effect : 'unknown', `Related leg · ${r.opened_quantity} contracts · effect ${r.replacement_effect}`);
+      if (r.replacement_effect !== 'open') next.notes.push(`Relationship needs review: related leg effect is ${r.replacement_effect}; a replacement opening is not established.`);
       links.push({ from: old.key, to: next.key, date: day(r.at), through: day(r.through), evidence: r.evidence, reason: r.reason, id: r.id });
     }
     for (const p of context.positions || []) {
@@ -122,12 +131,12 @@
         units: number(p.units), currency: p.currency,
         source: context.replay ? 'Saved valuation' : 'Broker position mark',
       } : null;
-      if (candidates.length === 1 && candidates[0].spans.length) {
+      if (candidates.length === 1) {
         if (positionQuote && (!candidates[0].quote || observed >= candidates[0].quote.asOf)) candidates[0].quote = positionQuote;
-        continue;
+        if (candidates[0].spans.length) continue;
       }
       const c = { ...p.option, currency: p.currency };
-      const t = track(p.channel, '', c, c.side);
+      const t = candidates.length === 1 ? candidates[0] : track(p.channel, '', c, c.side);
       const detail = context.tradeDetails[p.ticker];
       if (positionQuote) t.quote = positionQuote;
       if (observed && visible(observed)) {
@@ -140,6 +149,48 @@
       t.notes.push(context.replay ? 'Saved valuation position; not broker confirmation' : observed ? `Position as of ${observed}` : 'Opening date and broker position date unavailable');
     }
     for (const t of tracks.values()) {
+      // Trade history also covers contracts never captured in a position
+      // snapshot. Only matched quantities establish a recorded interval.
+      const fills = t.events.filter(e => e.fill).sort((a, b) => a.fill.executed_at.localeCompare(b.fill.executed_at) || a.id.localeCompare(b.id));
+      const observedDates = t.spans.filter(s => !s.projected).map(s => s.to).sort();
+      let quantity = 0, opened = null;
+      const tradeSpan = to => {
+        if (opened && opened <= to) t.spans.push({ from: opened, to, projected: false, tradeEvidence: true });
+      };
+      for (const e of fills) {
+        const contracts = number(e.fill.contracts);
+        if (!(contracts > 0)) continue;
+        if (e.kind === 'open') {
+          if (!quantity) opened = e.date;
+          quantity += contracts;
+        } else if (e.kind === 'close') {
+          if (quantity && contracts <= quantity) {
+            quantity -= contracts;
+            if (!quantity) { tradeSpan(e.date); opened = null; }
+          } else { quantity = 0; opened = null; }
+        }
+      }
+      if (quantity && opened) {
+        const observations = observedDates.filter(date => date >= opened);
+        const boundary = t.events.filter(e => ['absent', 'terminal'].includes(e.kind) && e.date >= opened).map(e => e.date).sort()[0];
+        const through = observations.at(-1) || (boundary ? fills.at(-1).date : context.asOf);
+        const end = through < t.contract.expiry ? through : t.contract.expiry;
+        tradeSpan(end);
+        if (!observations.length && !boundary && end < t.contract.expiry) {
+          t.spans.push({ from: end, to: t.contract.expiry, projected: true, tradeEvidence: true });
+        }
+      }
+      // Merge overlapping evidence so the opening-to-observation segment is
+      // visible even when there is only one broker snapshot.
+      const solid = [];
+      for (const span of t.spans.filter(s => !s.projected).sort((a, b) => a.from.localeCompare(b.from))) {
+        const previous = solid.at(-1);
+        if (previous && span.from <= previous.to) {
+          if (span.to > previous.to) previous.to = span.to;
+          if (span.tradeEvidence) previous.tradeEvidence = true;
+        } else solid.push({ ...span });
+      }
+      t.spans = [...solid, ...t.spans.filter(s => s.projected)];
       // An archive-only opening still needs a calendar guide to expiry. It is
       // trade evidence, not a broker observation or confirmation of a holding.
       const latestDate = t.events.map(e => e.date).sort().at(-1);
@@ -215,7 +266,7 @@
       const scroll = chart.querySelector('.timeline-scroll');
       const scrollLeft = scroll?.scrollLeft || 0, scrollTop = scroll?.scrollTop || 0;
       const context = getContext();
-      current = buildTracks(data.episodes, data.groups, context);
+      current = buildTracks(data.episodes, data.groups, { ...context, executions: data.executions });
       const q = search.value.trim().toUpperCase();
       current.tracks = current.tracks.filter(t => (!right.value || t.contract.right === right.value) && (!q || label(t).toUpperCase().includes(q)));
       const byStock = new Map();
@@ -265,7 +316,7 @@
         }
         const { t, index: i } = row, c = t.contract;
         trackY.set(t.key, cy);
-        const spans = t.spans.map(s => `<line class="timeline-span${s.projected ? ' projected' : ''}" x1="${x(s.from)}" x2="${x(s.to)}" y1="${cy}" y2="${cy}"><title>${esc(`${s.tradeEvidence ? 'Recorded opening to expiry; current position status is not confirmed' : s.projected ? 'Remaining time to expiry' : 'Observed position'}: ${s.from} to ${s.to}`)}</title></line>`).join('');
+        const spans = t.spans.map(s => `<line class="timeline-span${s.projected ? ' projected' : ''}" x1="${x(s.from)}" x2="${x(s.to)}" y1="${cy}" y2="${cy}"><title>${esc(`${s.tradeEvidence ? s.projected ? 'Time to expiry from trade evidence; current position status is not confirmed' : 'Recorded opening and position/trade evidence' : s.projected ? 'Remaining time to expiry' : 'Observed position'}: ${s.from} to ${s.to}`)}</title></line>`).join('');
         const leadX = t.unknownStart ? Math.max(left, x(t.unknownStart) - 56) : 0;
         const leadIn = t.unknownStart ? `<g class="timeline-unknown-start"><title>Earlier history unavailable; opening date is unknown before ${esc(t.unknownStart)}</title>
           <line x1="${leadX}" x2="${x(t.unknownStart)}" y1="${cy}" y2="${cy}"/>
@@ -293,7 +344,7 @@
       highlightSelection();
     }
     async function pages(endpoint, field, params, id) {
-      const out = [], gaps = []; let offset = 0;
+      const out = [], gaps = [], executions = []; let offset = 0;
       for (let page = 0; page < 10; page++) {
         params.set('offset', String(offset)); params.set('limit', '100');
         const response = await fetch(`/api/domain/invage/${endpoint}?${params}`, { credentials: 'include' });
@@ -301,17 +352,18 @@
         if (!response.ok) throw new Error(body.message || `HTTP ${response.status}`);
         if (id !== request) return null;
         out.push(...body[field]); if (page === 0) gaps.push(...(body.gaps || []));
-        if (body.next_offset == null) return { rows: out, gaps, limited: false };
+        executions.push(...(body.executions || []));
+        if (body.next_offset == null) return { rows: out, executions, gaps, limited: false };
         offset = body.next_offset;
       }
-      return { rows: out, gaps, limited: true };
+      return { rows: out, executions, gaps, limited: true };
     }
     async function load(force = false) {
       const context = getContext(), key = JSON.stringify([context.channel, context.asOf, context.replay]);
       if (!force && pendingKey === key) return;
       if (!force && loadedKey === key) { render(); return; }
       const id = ++request; pendingKey = key; selectedKey = null; status.textContent = 'Loading option timeline…'; detail.innerHTML = ''; chart.innerHTML = '';
-      const historyParams = new URLSearchParams({ status: 'all' });
+      const historyParams = new URLSearchParams({ include_executions: 'true', as_of: context.asOf });
       const rollParams = new URLSearchParams({ as_of: context.asOf });
       if (context.channel) { historyParams.set('channel', context.channel); rollParams.set('channel', context.channel); }
       try {
@@ -319,7 +371,7 @@
         if (id !== request) return;
         const history = results[0].status === 'fulfilled' ? results[0].value : null;
         const rolls = results[1].status === 'fulfilled' ? results[1].value : null;
-        data = { episodes: history?.rows || [], groups: rolls?.rows || [], gaps: [...(history?.gaps || []), ...(rolls?.gaps || [])] };
+        data = { episodes: history?.rows || [], executions: history?.executions || [], groups: rolls?.rows || [], gaps: [...(history?.gaps || []), ...(rolls?.gaps || [])] };
         limited = Boolean(history?.limited || rolls?.limited);
         loadedKey = results.every(r => r.status === 'fulfilled') ? key : '';
         const errors = results.filter(r => r.status === 'rejected').map(r => r.reason.message);

@@ -23,6 +23,61 @@ const groups = [{ relationships: [relationship] }];
 const openEpisode = { ...episode, id: 'active', contract: replacement, status: 'open', first_seen: '2026-10-01', last_seen_open: '2026-10-12', first_seen_absent: null,
   observations: [{ as_of: '2026-10-01' }, { as_of: '2026-10-12' }], executions: [{ execution_id: 'new-open', executed_at: '2026-10-01T10:00:00', effect: 'open', side: 'sell', contracts: 2 }] };
 const context = { asOf: '2026-10-12', channel: '', replay: false, positions: [], tradeDetails: {}, brokerAsOf: {} };
+const avgoCall = { ...c, underlying: 'AVGO', strike: 400, expiry: '2026-12-18' };
+const avgoPut = { ...avgoCall, right: 'put', strike: 310, expiry: '2026-10-23' };
+const avgoFill = (contract: any, id: string, at: string, side: string, effect: string) => ({
+  ...contract, channel: 'moomoo', account_id: 'A', execution_id: id, executed_at: at, side, effect,
+  contracts: '2', gross_premium: '100', commission: null,
+});
+const avgoFills = [
+  avgoFill(avgoCall, 'call-open', '2026-10-07T11:41:55', 'sell', 'open'),
+  avgoFill(avgoPut, 'put-open', '2026-09-04T11:32:40', 'sell', 'open'),
+  avgoFill(avgoPut, 'put-close', '2026-10-05T11:05:44', 'buy', 'close'),
+];
+const avgoEpisode = { ...openEpisode, channel: 'moomoo', contract: avgoCall, first_seen: '2026-10-13', last_seen_open: '2026-10-13',
+  observations: [{ as_of: '2026-10-13' }], executions: [avgoFills[0]] };
+const avgoRelationships = [{ relationships: [{ ...relationship, channel: 'moomoo', evidence: 'review',
+  old: { ...avgoPut, side: 'long', strike: 295 }, replacement: avgoPut, side: 'long',
+  replacement_effect: 'close', at: '2026-10-05T11:05:44', through: '2026-10-05T11:05:44' }] }];
+const avgoContext = { ...context, asOf: '2026-10-14', executions: avgoFills };
+
+it('joins a recorded opening to a single observation and shows a historical short put through its actual close', () => {
+  const window: any = {}; runInNewContext(script, { window });
+  const result = window.buildOptionTimelineTracks([avgoEpisode], avgoRelationships, avgoContext);
+  const call = result.tracks.find((t: any) => t.contract.strike === 400);
+  expect(call.spans).toEqual([
+    { from: '2026-10-07', to: '2026-10-13', projected: false, tradeEvidence: true },
+    { from: '2026-10-13', to: '2026-12-18', projected: true },
+  ]);
+  const put = result.tracks.find((t: any) => t.contract.strike === 310);
+  expect(put.side).toBe('short');
+  expect(put.spans).toEqual([{ from: '2026-09-04', to: '2026-10-05', projected: false, tradeEvidence: true }]);
+  expect(put.events.some((e: any) => e.kind === 'unknown')).toBe(false);
+  expect(put.notes.join()).toContain('a replacement opening is not established');
+  expect(result.tracks.filter((t: any) => t.contract.strike === 310)).toHaveLength(1);
+  const replay = window.buildOptionTimelineTracks([], [], { ...avgoContext, replay: true, asOf: '2026-09-15' });
+  expect(replay.tracks).toHaveLength(1);
+  expect(replay.tracks[0].events.map((e: any) => e.kind)).toEqual(['open']);
+  expect(replay.tracks[0].spans[0].to).toBe('2026-09-15');
+  const withPosition = window.buildOptionTimelineTracks([], [], { ...avgoContext,
+    executions: [avgoFills[0]], brokerAsOf: { moomoo: '2026-10-13' },
+    positions: [{ instrument: 'option', ticker: 'AVGO-call', channel: 'moomoo', currency: 'USD', option: avgoCall }],
+  });
+  expect(withPosition.tracks).toHaveLength(1);
+  expect(withPosition.tracks[0].account).toBe('A');
+  expect(withPosition.tracks[0].spans[0]).toMatchObject({ from: '2026-10-07', to: '2026-10-13', projected: false });
+});
+
+it('keeps partial closes within their matched trade interval and leaves unknown opening history unfilled', () => {
+  const window: any = {}; runInNewContext(script, { window });
+  const partial = { ...avgoFills[2], contracts: '1' };
+  const result = window.buildOptionTimelineTracks([], [], { ...avgoContext, executions: [avgoFills[1], partial,
+    { ...partial, execution_id: 'final-close', executed_at: '2026-10-08T10:00:00' }] });
+  expect(result.tracks[0].spans).toEqual([{ from: '2026-09-04', to: '2026-10-08', projected: false, tradeEvidence: true }]);
+  const missing = window.buildOptionTimelineTracks([], [], { ...avgoContext, executions: [avgoFills[2]] });
+  expect(missing.tracks[0].spans).toEqual([]);
+  expect(missing.tracks[0].unknownStart).toBe('2026-10-05');
+});
 
 it('draws a trade-based expiry guide for an unobserved latest replacement without treating it as a holding', () => {
   const window: any = {}; runInNewContext(script, { window });
@@ -37,12 +92,14 @@ it('draws a trade-based expiry guide for an unobserved latest replacement withou
   expect(build([], [relationship], { replay: true, asOf: '2026-09-30' }).tracks).toEqual([]);
   const observed = window.buildOptionTimelineTracks([openEpisode], groups, context).tracks.find((t: any) => t.contract.strike === 220);
   expect(observed.spans).toEqual([
-    { from: '2026-10-01', to: '2026-10-12', projected: false },
+    { from: '2026-10-01', to: '2026-10-12', projected: false, tradeEvidence: true },
     { from: '2026-10-12', to: replacement.expiry, projected: true },
   ]);
   const closed = { ...openEpisode, observations: [], executions: [...openEpisode.executions,
     { execution_id: 'new-close', executed_at: '2026-10-06', effect: 'close', side: 'buy', contracts: 2 }] };
-  expect(window.buildOptionTimelineTracks([closed], groups, context).tracks.find((t: any) => t.contract.strike === 220).spans).toEqual([]);
+  expect(window.buildOptionTimelineTracks([closed], groups, context).tracks.find((t: any) => t.contract.strike === 220).spans).toEqual([
+    { from: '2026-10-01', to: '2026-10-06', projected: false, tradeEvidence: true },
+  ]);
   expect(build([], [{ ...relationship, replacement: { ...replacement, expiry: '2026-10-01' } }]).tracks.every((t: any) => !t.spans.length)).toBe(true);
 });
 
@@ -164,6 +221,48 @@ it('reads saved management configuration on each use and defaults to the existin
 });
 
 const executable = process.env.CHROME_BINARY || '/usr/bin/chromium';
+it.skipIf(!existsSync(executable))('renders solid AVGO trade intervals with the correct short-put side and no extension after closing', async () => {
+  const browser = await puppeteer.launch({ executablePath: executable, headless: true, args: ['--no-sandbox'] });
+  try {
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1500, height: 700 });
+    await page.setContent(`<style>${readFileSync('webui/dashboard/page.css', 'utf8')}</style>
+      <input id="timelineSearch"><select id="timelineRight"><option value=""></option></select>
+      <button id="timelineExpand">Expand</button><button id="timelineCollapse">Collapse</button><button id="timelineRefresh">Refresh</button>
+      <div id="timelineStatus"></div><div id="timelineChart"></div><div id="timelineDetail"></div>`);
+    await page.addScriptTag({ content: script });
+    await page.evaluate(({ episode, groups, context, executions }) => {
+      window.fetch = async input => {
+        const url = new URL(String(input), 'http://localhost');
+        if (url.pathname.endsWith('/option-history')) {
+          if (url.searchParams.has('status') || url.searchParams.get('include_executions') !== 'true') {
+            return new Response(JSON.stringify({ message: 'Invalid history request' }), { status: 400 });
+          }
+          return new Response(JSON.stringify({ episodes: [episode], executions, gaps: [], next_offset: null }));
+        }
+        return new Response(JSON.stringify({ groups, gaps: [], next_offset: null }));
+      };
+      (window as any).timeline = (window as any).createOptionTimeline(() => context);
+      return (window as any).timeline.load();
+    }, { episode: avgoEpisode, groups: avgoRelationships, context: avgoContext, executions: avgoFills });
+    await page.click('#timelineExpand');
+    const rows = await page.$$eval('[data-timeline-row]', es => es.map(e => ({
+      label: e.getAttribute('aria-label'),
+      solid: Array.from(e.querySelectorAll('.timeline-span:not(.projected)')).map(line => ({ from: Number(line.getAttribute('x1')), to: Number(line.getAttribute('x2')) })),
+      projected: e.querySelectorAll('.timeline-span.projected').length,
+    })));
+    const call = rows.find(row => row.label!.includes('short call 400'))!;
+    const put = rows.find(row => row.label!.includes('short put 310'))!;
+    expect(call.solid[0].to).toBeGreaterThan(call.solid[0].from);
+    expect(call.projected).toBe(1);
+    expect(put.solid[0].to).toBeGreaterThan(put.solid[0].from);
+    expect(put.projected).toBe(0);
+    expect(rows.some(row => row.label!.includes('long put 310'))).toBe(false);
+    expect(await page.$eval('#timelineStatus', e => e.textContent)).not.toContain('Partial timeline');
+    await page.screenshot({ path: '/tmp/option-timeline-avgo-evidence.png', fullPage: true });
+  } finally { await browser.close(); }
+});
+
 it.skipIf(!existsSync(executable))('defaults to Open and renders timeline filters, keyboard evidence, paging, partial failures and mobile scroll', async () => {
   const root = resolve('webui'); let failRolls = false;
   const queries: string[] = [];
@@ -173,6 +272,7 @@ it.skipIf(!existsSync(executable))('defaults to Open and renders timeline filter
     if (url.pathname === '/api/domain/invage/dashboard') return json({ empty: true, displayName: 'Test', productProfile: 'consultant', dashboardConfig: { optionView: 'timeline' } });
     if (url.pathname.endsWith('/option-history')) {
       queries.push(url.search);
+      if (url.searchParams.get('status') === 'all') return json({ message: 'Invalid option history filter.' }, 400);
       return json({ episodes: url.searchParams.get('offset') === '100' ? [{ ...episode, id: 'put', account_id: 'B', contract: { ...c, right: 'put' }, executions: [episode.executions[1]] }, { ...episode, id: 'msft', contract: { ...c, underlying: 'MSFT' } }] : [episode, openEpisode],
         connections: [], gaps: [], history_started: true, next_offset: url.searchParams.get('offset') === '100' ? null : 100 });
     }
@@ -252,6 +352,9 @@ it.skipIf(!existsSync(executable))('defaults to Open and renders timeline filter
     expect(await page.$$('.timeline-unknown-start')).toHaveLength(1);
     expect(await page.$eval('.timeline-unknown-start line', e => Number(e.getAttribute('x2')) - Number(e.getAttribute('x1')))).toBeGreaterThan(40);
     expect(queries.some(q => q.includes('offset=100'))).toBe(true);
+    const timelineQueries = queries.map(q => new URLSearchParams(q)).filter(q => q.has('include_executions'));
+    expect(timelineQueries.length).toBeGreaterThan(0);
+    expect(timelineQueries.every(q => q.get('include_executions') === 'true' && !q.has('status'))).toBe(true);
     await page.$eval('[data-timeline-row="0"]', e => (e as SVGElement).focus()); await page.keyboard.press('Enter');
     expect(await page.$eval('#timelineDetail', e => e.textContent)).toContain('<script>bad()</script>');
     expect(await page.$$('#timelineDetail script')).toHaveLength(0);

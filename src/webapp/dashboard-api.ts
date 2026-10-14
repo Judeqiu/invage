@@ -224,12 +224,15 @@ export function createDashboardApiRouter(): Router {
       const status = typeof req.query.status === 'string' ? req.query.status : '';
       const from = typeof req.query.from === 'string' ? req.query.from : '';
       const to = typeof req.query.to === 'string' ? req.query.to : '';
+      const asOf = typeof req.query.as_of === 'string' ? req.query.as_of : '';
       const q = typeof req.query.q === 'string' ? req.query.q.trim().toUpperCase().slice(0, 100) : '';
+      const includeExecutions = req.query.include_executions === 'true';
       if (right && right !== 'put' && right !== 'call' ||
           status && !['historical', 'open', 'unverified', 'no_longer_observed', 'closed_by_fills',
             'expired', 'assigned', 'exercised', 'cash_settled', 'mixed_outcomes',
             'partially_explained', 'conflicting_evidence'].includes(status) ||
           from && !validDate(from) || to && !validDate(to) ||
+          asOf && !validDate(asOf) ||
           from && to && from > to) {
         res.status(400).json({ error: 'invalid_filter', message: 'Invalid option history filter.' }); return;
       }
@@ -239,6 +242,14 @@ export function createDashboardApiRouter(): Router {
         (!from || (row.first_seen_absent ?? row.last_seen_open) >= from) &&
         (!to || (row.first_seen_absent ?? row.last_seen_open) <= to) &&
         (!q || `${row.contract.underlying} ${row.contract.expiry} ${row.contract.strike}`.toUpperCase().includes(q)));
+      // Timeline history includes contracts that opened and closed between
+      // position snapshots. Page these trades alongside the observed episodes.
+      const executions = includeExecutions ? (state.option_executions ?? []).filter(row =>
+        (!channel || row.channel === channel) && (!right || row.right === right) &&
+        (!from || row.executed_at.slice(0, 10) >= from) && (!to || row.executed_at.slice(0, 10) <= to) &&
+        (!asOf || row.executed_at.slice(0, 10) <= asOf) &&
+        (!q || `${row.underlying} ${row.expiry} ${row.strike}`.toUpperCase().includes(q)))
+        .sort((a, b) => b.executed_at.localeCompare(a.executed_at) || a.execution_id.localeCompare(b.execution_id)) : [];
       const connections = Object.entries(readBrokerAccountModel(state).connections).map(([id, conn]) => {
         const successful = observations
           .filter(row => row.connection_id === id && row.source === 'broker')
@@ -254,7 +265,8 @@ export function createDashboardApiRouter(): Router {
         };
       });
       res.json({ episodes: matches.slice(offset, offset + limit), total: matches.length,
-        next_offset: offset + limit < matches.length ? offset + limit : null,
+        ...(includeExecutions ? { executions: executions.slice(offset, offset + limit), execution_total: executions.length } : {}),
+        next_offset: offset + limit < Math.max(matches.length, executions.length) ? offset + limit : null,
         connections, history_started: observations.length > 0, gaps });
     } catch (e) {
       console.error('Option history failed:', e);

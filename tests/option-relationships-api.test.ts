@@ -33,6 +33,33 @@ function app(auth = true) {
   const app = express(); if (auth) app.use((req, _res, next) => { Object.assign(req, { user: { userId: owner } }); next(); });
   app.use(createDashboardApiRouter()); return app;
 }
+it('pages timeline executions even when no position snapshot exists and keeps tenant and contract filters', async () => {
+  const channel = Object.values(readBrokerAccountModel(state).connections)[0].channel;
+  const fill = { channel, account_id: 'A', contract_id: 'put310', underlying: 'AVGO', right: 'put' as const,
+    expiry: '2026-10-23', strike: '310', multiplier: '100', contracts: '2', currency: 'USD', commission: null };
+  state.option_executions = [
+    { ...fill, execution_id: 'open', executed_at: '2026-09-04T11:32:40', side: 'sell', effect: 'open', gross_premium: '666' },
+    { ...fill, execution_id: 'close', executed_at: '2026-10-05T11:05:44', side: 'buy', effect: 'close', gross_premium: '-96' },
+    { ...fill, execution_id: 'other-channel', channel: 'other', executed_at: '2026-10-06T11:05:44', side: 'buy', effect: 'close', gross_premium: '-96' },
+  ];
+  const before = JSON.stringify(state);
+  const url = `/option-history?include_executions=true&channel=${channel}&q=AVGO&right=put&to=2026-10-05&limit=1`;
+  const first = await request(app()).get(url);
+  expect(first.status).toBe(200);
+  expect(first.body.episodes).toEqual([]);
+  expect(first.body.executions.map((e: any) => e.execution_id)).toEqual(['close']);
+  expect(first.body.execution_total).toBe(2);
+  expect(first.body.next_offset).toBe(1);
+  const second = await request(app()).get(url + '&offset=1');
+  expect(second.body.executions.map((e: any) => e.execution_id)).toEqual(['open']);
+  expect(second.body.next_offset).toBeNull();
+  const replay = await request(app()).get(`/option-history?include_executions=true&channel=${channel}&as_of=2026-09-15`);
+  expect(replay.body.executions.map((e: any) => e.execution_id)).toEqual(['open']);
+  expect((await request(app()).get('/option-history?as_of=invalid')).status).toBe(400);
+  expect((await request(app()).get('/option-history')).body.executions).toBeUndefined();
+  expect((await request(app(false)).get(url)).status).toBe(401);
+  expect(JSON.stringify(state)).toBe(before);
+});
 it('reads only the authenticated tenant and deduplicates source records', async () => {
   archive(owner); archive(other, '20261002', '999');
   const response = await request(app()).get('/option-relationships');
