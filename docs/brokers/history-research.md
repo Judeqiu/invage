@@ -12,7 +12,7 @@ This is collection and coverage research, not a replacement for the adapters or 
 
 Futubull/OpenD is also present in the connector catalog but was not connected on the inspected Velovest accounts. Its current snapshot bridge does not fetch history. Historical order/deal endpoints would require an available authorized OpenD gateway and their own pagination/date-window review; no gateway was started or reconfigured by this research task.
 
-Fetch failures are reported per connection/section and successful pages survive. Pagination loops, malformed arrays, or reported foreign account IDs stop that section. Missing credentials and broker permissions are not repaired automatically. A manifest retains explicit gaps even if every requested page returns successfully.
+Fetch failures are reported per connection/section and successful pages survive. IBKR years are fetched newest first; a failed report stops further yearly requests to avoid accumulating failed attempts on a shared token. Pagination loops, malformed arrays, or reported foreign account IDs stop that section. Missing credentials and broker permissions are not repaired automatically. A manifest retains explicit gaps even if every requested page returns successfully.
 
 ## Verified fetch outcome
 

@@ -73,14 +73,18 @@ try {
      }};report.periods=[];
      const queries=[...new Map(['activity_query_id','tradeconf_query_id'].filter(k=>credentials[k]).map(k=>[credentials[k],k])).entries()];
      if(!queries.length)throw new Error('No IBKR Flex query configured');
-     for(const [queryId,kind] of queries)for(const window of flexYearWindows(new Date(),availableThrough).filter(w=>!selectedYear||w.from.startsWith(selectedYear)))await section(`${kind}-${window.from}`,async()=>{
+     for(const [queryId,kind] of queries)for(const window of flexYearWindows(new Date(),availableThrough).filter(w=>!selectedYear||w.from.startsWith(selectedYear)).reverse()){
+      const fetched=await section(`${kind}-${window.from}`,async()=>{
       const xml=(await fetchFlexStatement({token:credentials.token,queryId,pollAttempts:30},{...transport,get:(path,params)=>transport.get(path,path==='SendRequest'?{...params,fd:window.from,td:window.through}:params)})).toString('utf8');
       const summary=summarizeFlex(xml,c.account_id,parseXmlAttrs);save(`${kind}-${window.from}-${window.through}.xml`,xml);report.periods.push({kind,requested:window,...summary});
       const actual=summary.periods;
       if(actual.some(p=>p.from?.replaceAll('-','')!==window.from||p.through?.replaceAll('-','')!==window.through))report.gaps.push({section:`coverage-${window.from}`,reason:'Returned Flex statement dates differ from the requested year. Coverage must use returned dates.'});
       if(!summary.sections.includes('Trades')&&!summary.sections.includes('TradeConfirms'))report.gaps.push({section:`trades-${window.from}`,reason:'Flex query has no trade section; query template must include execution-level trades.'});
+      return true;
      });
-     report.gaps.push({section:'coverage',reason:'Requested current and four previous calendar years per IBKR retention guidance; earlier records require separately available statements. An explicit available-through date may clip requested coverage; later activity is not represented.'});
+     if(fetched===null){report.gaps.push({section:'coverage',reason:'Stopped further yearly requests after a failed report to avoid accumulating failed attempts on the shared token.'});break;}
+     }
+     report.gaps.push({section:'coverage',reason:'Eligible range is current and four previous calendar years per IBKR retention guidance; earlier records require separately available statements. An explicit available-through date may clip requested coverage; later activity is not represented.'});
     }
    } catch(e){report.gaps.push({section:'fetch',reason:safeError(e)});}
    report.status=report.files.length?'fetched_with_gaps':'blocked';report.completedAt=new Date().toISOString();save('report.json',{...report});reports.push(report);

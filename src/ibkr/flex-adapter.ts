@@ -43,7 +43,7 @@ export const ibkrFlexAdapter: BrokerConnectorAdapter = {
     let imported=opts.history.mode==='full';
     if(opts.history.mode==='full'){
       const year=Number(latest.slice(0,4));
-      for(let y=year-4;y<=year;y++){
+      for(let y=year;y>=year-4;y--){
         const from=`${y}0101`,through=y===year?latest:`${y}1231`;
         // Separate SendRequest pacing from the GetStatement polling interval.
         await (transport.sleepMs??(ms=>new Promise(r=>setTimeout(r,ms))))(6500);
@@ -55,7 +55,8 @@ export const ibkrFlexAdapter: BrokerConnectorAdapter = {
         }catch(error){
           if(!(error instanceof FlexHttpError))throw error;
           if(error.code!=='1003')imported=false;
-          gaps.push({kind:'coverage',reference:from,reason:`IBKR historical report unavailable (${error.code}).`});
+          gaps.push({kind:'coverage',reference:from,reason:`IBKR historical report unavailable (${error.code}); stopped further yearly requests to avoid repeated failed attempts.`});
+          break;
         }
       }
       gaps.push({kind:'coverage',reference:null,reason:'Flex history is limited to available current/four previous calendar years; earlier reports are not proved.'});

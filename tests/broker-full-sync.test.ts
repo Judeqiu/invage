@@ -74,7 +74,7 @@ describe('IBKR sync transport modes',()=>{
   expect(raw.historyAttachments).toEqual([]);
  });
  it('full sync requests five bounded calendar reports while keeping current cash and holdings',async()=>{
-  const {raw,calls,pauses,statement}=await fetchMode(true);expect(calls).toHaveLength(6);expect(calls.at(-1)).toMatchObject({fd:'20260101',td:'20261012'});expect(pauses).toBe(5);
+  const {raw,calls,pauses,statement}=await fetchMode(true);expect(calls).toHaveLength(6);expect(calls[1]).toMatchObject({fd:'20260101',td:'20261012'});expect(calls.at(-1)).toMatchObject({fd:'20220101',td:'20221231'});expect(pauses).toBe(5);
   expect(raw.historyAttachments).toHaveLength(5);expect(raw.history?.executions).toHaveLength(5);
   expect(statement.cash).toEqual([{currency:'USD',amount:100}]);expect(statement.lots).toEqual([]);expect(statement.history?.sync.historical_imported).toBe(true);
  });
@@ -87,4 +87,15 @@ it('preserves existing CSV snapshot parsing and exposes unsupported Flex histori
  expect(raw.body.toString()).toBe(csv);
  const statement=attachFetchedHistory(raw,{account_id:'A',as_of:'2026-10-12',cash:[{currency:'USD',amount:100}],lots:[],skipped:[]});
  expect(statement.cash[0].amount).toBe(100);expect(statement.history?.sync).toMatchObject({historical_imported:false,status:'partial'});expect(statement.history?.sync.gaps[0].reason).toContain('CSV');
+});
+
+it('stops yearly Flex backfill after the first unavailable report and preserves its coverage gap',async()=>{
+ const {ibkrFlexAdapter}=await import('../src/ibkr/flex-adapter.js');const requests:Record<string,string>[]=[];const refs=new Map<string,Record<string,string>>();
+ const current='<FlexQueryResponse><FlexStatement accountId="A" fromDate="20251013" toDate="20261012"><Trades/></FlexStatement></FlexQueryResponse>';
+ const raw=await ibkrFlexAdapter.fetchRaw({token:'secret',activity_query_id:'q'},{accountId:'A',channel:'ibkr-A',history:full,transport:{kind:'ibkr',flex:{sleepMs:async()=>{},get:async(path,p)=>{
+  if(path==='SendRequest'){requests.push(p);const ref=String(requests.length);refs.set(ref,p);return Buffer.from(`<FlexStatementResponse><Status>Success</Status><ReferenceCode>${ref}</ReferenceCode></FlexStatementResponse>`);}
+  return Buffer.from(refs.get(p.q)?.fd?'<FlexStatementResponse><Status>Fail</Status><ErrorCode>1003</ErrorCode><ErrorMessage>Statement is not available.</ErrorMessage></FlexStatementResponse>':current);
+ }}}});
+ expect(requests).toHaveLength(2);expect(requests[1].fd).toBe('20260101');expect(raw.historyAttachments).toEqual([]);
+ expect(raw.history?.sync.gaps.some(g=>g.reason.includes('stopped further yearly requests'))).toBe(true);
 });

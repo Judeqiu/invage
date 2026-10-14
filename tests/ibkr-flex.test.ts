@@ -495,6 +495,24 @@ describe('fetchFlexStatement', () => {
     expect(buf.toString('utf8')).toBe(csv);
   });
 
+  it.each([
+    ['1025', 'Too many failed attempts. Please review your configuration.'],
+    ['1018', 'Too many requests have been made from this token.'],
+    ['1013', 'IP restriction.'],
+  ])('preserves SendRequest Warn %s instead of masking it as a missing reference', async (code, message) => {
+    const calls: string[] = [];
+    await expect(fetchFlexStatement({token:'tok',queryId:'1'}, {get:async path=>{
+      calls.push(path);
+      return Buffer.from(`<FlexStatementResponse><Status>Warn</Status><ErrorCode>${code}</ErrorCode><ErrorMessage>${message}</ErrorMessage></FlexStatementResponse>`);
+    }})).rejects.toMatchObject({name:'FlexHttpError',code,message:`IBKR Flex [${code}] ${message}`});
+    expect(calls).toEqual(['SendRequest']);
+  });
+
+  it('reports unexpected HTML without including the response body or credentials', async () => {
+    await expect(fetchFlexStatement({token:'private-token',queryId:'1'}, {get:async()=>Buffer.from('<html><body>private-token</body></html>')}))
+      .rejects.toThrow('IBKR Flex SendRequest returned an HTML page instead of a Flex response.');
+  });
+
   it('fails fast on Warn 1018', async () => {
     await expect(
       fetchFlexStatement(

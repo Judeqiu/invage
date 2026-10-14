@@ -98,14 +98,20 @@ export async function fetchFlexStatement(
   const sendBuf = await transport.get('SendRequest', { t: token, q: queryId, v: '3', ...(opts.fromDate&&opts.throughDate?{fd:opts.fromDate,td:opts.throughDate}:{}) });
   const sendText = sendBuf.toString('utf8');
   const sendStatus = xmlElementText(sendText, 'Status');
-  if (sendStatus === 'Fail' || sendStatus === 'Error') {
+  const sendCode = xmlElementText(sendText, 'ErrorCode');
+  const sendMessage = xmlElementText(sendText, 'ErrorMessage');
+  if (sendStatus === 'Fail' || sendStatus === 'Error' || (sendCode && sendCode !== '0') ||
+      sendStatus === 'Warn' && sendMessage && !xmlElementText(sendText, 'ReferenceCode')) {
     throw new FlexHttpError(
-      xmlElementText(sendText, 'ErrorCode') ?? '?',
-      xmlElementText(sendText, 'ErrorMessage') ?? 'SendRequest failed',
+      sendCode ?? '?',
+      sendMessage ?? 'SendRequest failed',
     );
   }
   const reference = xmlElementText(sendText, 'ReferenceCode');
-  if (!reference) throw new Error('IBKR Flex SendRequest: missing ReferenceCode.');
+  if (!reference) {
+    if (/<html\b|<!doctype\s+html/i.test(sendText)) throw new Error('IBKR Flex SendRequest returned an HTML page instead of a Flex response.');
+    throw new Error(`IBKR Flex SendRequest: missing ReferenceCode${sendStatus ? ` (status ${sendStatus})` : ''}.`);
+  }
 
   for (let attempt = 1; attempt <= pollAttempts; attempt++) {
     const stmt = await transport.get('GetStatement', { t: token, q: reference, v: '3' });
