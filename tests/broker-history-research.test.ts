@@ -22,6 +22,10 @@ describe('read-only historical research',()=>{
    {from:'20220101',through:'20221231'},{from:'20230101',through:'20231231'},{from:'20240101',through:'20241231'},
    {from:'20250101',through:'20251231'},{from:'20260101',through:'20261014'}]);
  });
+ it('clips current-year requests to the verified latest available statement day',()=>{
+  expect(flexYearWindows(new Date('2026-10-14T00:00:00Z'),'20261012').at(-1)).toEqual({from:'20260101',through:'20261012'});
+  expect(()=>flexYearWindows(new Date('2026-10-14T00:00:00Z'),'20260230')).toThrow();
+ });
  it('counts only exact-account execution rows, excluding totals and foreign statements',()=>{
   const xml='<FlexQueryResponse><FlexStatement accountId="a" fromDate="20220101" toDate="20221231"><Trades><Trade accountId="a" levelOfDetail="EXECUTION" tradeID="1" assetCategory="STK" symbol="AAPL"/><Trade levelOfDetail="SYMBOL_SUMMARY" tradeID="2" assetCategory="STK"/></Trades></FlexStatement><FlexStatement accountId="b"><Trades><Trade tradeID="3" levelOfDetail="EXECUTION" assetCategory="OPT"/></Trades></FlexStatement></FlexQueryResponse>';
   expect(summarizeFlex(xml,'a',parseXmlAttrs)).toMatchObject({executionRows:1,foreignStatements:1,securities:1,options:0,sections:['Trades']});

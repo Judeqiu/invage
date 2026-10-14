@@ -12,8 +12,9 @@ import { openDatabaseRuntime, bindDatabaseRuntime } from 'utarus/database';
 import { collectPages, assertAccountRows, flexYearWindows, summarizeFlex } from './lib/broker-history-research.mjs';
 const [user, output, ...flags] = process.argv.slice(2);
 const selectedBroker=flags.find(f=>f.startsWith('--broker='))?.slice(9);
+const availableThrough=flags.find(f=>f.startsWith('--through='))?.slice(10);
 const selectedYear=flags.find(f=>f.startsWith('--year='))?.slice(7);
-if (!user || !output || !isAbsolute(output) || flags.some(f=>!/^--broker=(tiger|webull|ibkr)$/.test(f)&&!/^--year=\d{4}$/.test(f)) || selectedYear&&selectedBroker!=='ibkr') throw new Error('Usage: fetch-broker-history.mjs <UUID|all> <absolute-output-dir> [--broker=tiger|webull|ibkr] [--year=YYYY]');
+if (!user || !output || !isAbsolute(output) || flags.some(f=>!/^--broker=(tiger|webull|ibkr)$/.test(f)&&!/^--year=\d{4}$/.test(f)&&!/^--through=\d{8}$/.test(f)) || (selectedYear||availableThrough)&&selectedBroker!=='ibkr') throw new Error('Usage: fetch-broker-history.mjs <UUID|all> <absolute-output-dir> [--broker=tiger|webull|ibkr] [--year=YYYY] [--through=YYYYMMDD]');
 mkdirSync(output,{recursive:true,mode:0o700});
 if (statSync(output).mode & 0o077) throw new Error('Research output directory must be private (0700)');
 const root = resolve(process.env.INVAGE_RESEARCH_MODULE_ROOT ?? new URL('../',import.meta.url).pathname);
@@ -60,7 +61,7 @@ try {
      const groups=await collectPages(token=>webullGet({host,path:'/trading/orders/historical-orders/list',credentials,fetchImpl:timedFetch,query:{account_id:c.account_id,start_time:from,end_time:through,...(token?{pagination_key:token}:{})}}),
       {rows:r=>assertAccountRows(r?.data,c.account_id,['account_id']),cursor:r=>r?.pagination_key,onPage:async(rows,page)=>save(`orders-${page}.json`,rows),pause:()=>sleep(1100)});
      const orders=groups.flatMap(group=>Array.isArray(group.orders)?group.orders:[group]);assertAccountRows(orders,c.account_id,['account_id']);
-     report.counts={groups:groups.length,orders:orders.length,options:orders.filter(o=>o.instrument_type==='OPTION').length,securities:orders.filter(o=>o.instrument_type==='STOCK').length};
+     report.counts={groups:groups.length,orders:orders.length,options:orders.filter(o=>o.instrument_type==='OPTION').length,securities:orders.filter(o=>['STOCK','EQUITY'].includes(o.instrument_type)).length};
      report.gaps.push({section:'executions',reason:'Trading API order history contains cumulative fills, not verified individual executions. Broker API List Order Executions uses a separate API/product; access not assumed.'});
     } else {
      const {createFlexTransport,fetchFlexStatement}=await module('src/ibkr/flex-client.ts');const {parseXmlAttrs}=await module('src/ibkr/flex-parse.ts');
@@ -72,14 +73,14 @@ try {
      }};report.periods=[];
      const queries=[...new Map(['activity_query_id','tradeconf_query_id'].filter(k=>credentials[k]).map(k=>[credentials[k],k])).entries()];
      if(!queries.length)throw new Error('No IBKR Flex query configured');
-     for(const [queryId,kind] of queries)for(const window of flexYearWindows().filter(w=>!selectedYear||w.from.startsWith(selectedYear)))await section(`${kind}-${window.from}`,async()=>{
+     for(const [queryId,kind] of queries)for(const window of flexYearWindows(new Date(),availableThrough).filter(w=>!selectedYear||w.from.startsWith(selectedYear)))await section(`${kind}-${window.from}`,async()=>{
       const xml=(await fetchFlexStatement({token:credentials.token,queryId,pollAttempts:30},{...transport,get:(path,params)=>transport.get(path,path==='SendRequest'?{...params,fd:window.from,td:window.through}:params)})).toString('utf8');
       const summary=summarizeFlex(xml,c.account_id,parseXmlAttrs);save(`${kind}-${window.from}-${window.through}.xml`,xml);report.periods.push({kind,requested:window,...summary});
       const actual=summary.periods;
       if(actual.some(p=>p.from?.replaceAll('-','')!==window.from||p.through?.replaceAll('-','')!==window.through))report.gaps.push({section:`coverage-${window.from}`,reason:'Returned Flex statement dates differ from the requested year. Coverage must use returned dates.'});
       if(!summary.sections.includes('Trades')&&!summary.sections.includes('TradeConfirms'))report.gaps.push({section:`trades-${window.from}`,reason:'Flex query has no trade section; query template must include execution-level trades.'});
      });
-     report.gaps.push({section:'coverage',reason:'Requested current and four previous calendar years per IBKR retention guidance; earlier records require separately available statements.'});
+     report.gaps.push({section:'coverage',reason:'Requested current and four previous calendar years per IBKR retention guidance; earlier records require separately available statements. An explicit available-through date may clip requested coverage; later activity is not represented.'});
     }
    } catch(e){report.gaps.push({section:'fetch',reason:safeError(e)});}
    report.status=report.files.length?'fetched_with_gaps':'blocked';report.completedAt=new Date().toISOString();save('report.json',{...report});reports.push(report);

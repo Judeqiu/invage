@@ -22,9 +22,10 @@ export function assertAccountRows(rows, account, fields, required = false) {
   }
   return rows;
 }
-export function flexYearWindows(now = new Date()) {
+export function flexYearWindows(now = new Date(), availableThrough) {
+  if (availableThrough !== undefined && (!/^\d{8}$/.test(availableThrough) || new Date(`${availableThrough.slice(0,4)}-${availableThrough.slice(4,6)}-${availableThrough.slice(6,8)}T00:00:00Z`).toISOString().slice(0,10).replaceAll('-','') !== availableThrough)) throw new Error('Invalid available-through date');
   const year = now.getUTCFullYear(); const end = now.toISOString().slice(0, 10).replaceAll('-', '');
-  return Array.from({length: 5}, (_, i) => ({ from: `${year - 4 + i}0101`, through: i === 4 ? end : `${year - 4 + i}1231` }));
+  return Array.from({length: 5}, (_, i) => ({ from: `${year - 4 + i}0101`, through: i === 4 ? end : `${year - 4 + i}1231` })).map(w=>({...w,through:availableThrough&&availableThrough<w.through?availableThrough:w.through})).filter(w=>w.through>=w.from);
 }
 export function summarizeFlex(xml, account, parseAttrs) {
   if (!xml.includes('<FlexQueryResponse')) throw new Error('Historical Flex query must return XML; CSV cannot prove account/date scope');
