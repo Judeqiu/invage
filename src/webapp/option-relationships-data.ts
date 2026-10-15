@@ -6,6 +6,7 @@ import { buildOptionRelationships, buildOptionVerticalSpreads, groupOptionRelati
 import type { InvestorState } from '../state/portfolio-state.js';
 import { addDecimals } from '../brokers/option-executions.js';
 import { assertBrokerHistory,verifiedHistoryMultipliers } from '../brokers/history.js';
+import { cachedDashboardCalculation } from './dashboard-cache.js';
 
 const cache = new Map<string, RollFill[]>();
 const MAX_ARCHIVES = 500;
@@ -33,6 +34,16 @@ export function optionRelationshipsForState(state: InvestorState, filters: Relat
   }
   const connections = Object.values(readBrokerAccountModel(state).connections).filter(c => c.account_id &&
     ['ibkr', 'tiger', 'moomoo', 'webull'].includes(c.broker_id));
+  const input = { files: files.map(f => [f.id, f.version]), filters,
+    connections: connections.map(c => [c.channel, c.broker_id, c.account_id, c.label]),
+    history: state.broker_history, executions: state.option_executions };
+  return cachedDashboardCalculation('relationships', state.user.id + ':' + JSON.stringify(filters), input,
+    () => calculateRelationships(state, filters, files, connections),
+    result => !result.gaps.some(gap => gap.source !== null));
+}
+
+function calculateRelationships(state: InvestorState, filters: RelationshipFilters, files: RawFile[],
+  connections: ReturnType<typeof readBrokerAccountModel>['connections'][string][]) {
   const groups = []; const spreads = []; const historyGaps: Array<{ channel: string; reason: string; blocksTotals?: boolean }> = [];
   const gaps: Array<{ channel: string; source: string | null; reason: string }> = [];
   const coverage: Array<{ channel: string; broker_id: string; account_id: string; label: string;

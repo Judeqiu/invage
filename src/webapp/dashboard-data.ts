@@ -43,6 +43,8 @@ import { buildExecutionJournal } from '../brokers/option-executions.js';
 import { openOptionTradeDetails, attachLatestRollPremium, attachOpenVerticalSpreads, type OpenOptionTradeDetail } from './option-dashboard-data.js';
 import { buildRecordedOptionAnalytics } from './option-analytics.js';
 import { optionRelationshipsForState } from './option-relationships-data.js';
+import { cachedDashboardCalculation } from './dashboard-cache.js';
+import type { InvestorSnapshot } from '../state/investor-store.js';
 import { canonicalOptionUnderlying } from '../brokers/option-symbol.js';
 import { portfolioQuoteSymbols } from '../market/portfolio-quote-symbols.js';
 
@@ -103,12 +105,12 @@ function productMeta(): { productProfile: ProductProfileId; productName: string 
 }
 
 /** Fetch SPY adjusted closes at snapshot dates + current price. Soft-fails to null. */
-async function loadBenchmark(snapshots: Snapshot[]): Promise<BenchmarkData | null> {
+async function loadBenchmark(snapshots: Snapshot[], refreshHistory = false): Promise<BenchmarkData | null> {
   if (snapshots.length === 0) return null;
   try {
     const dates = snapshots.map((s) => s.date);
     const [closes, prices] = await Promise.all([
-      fetchHistoricalCloses(BENCHMARK_TICKER, dates),
+      fetchHistoricalCloses(BENCHMARK_TICKER, dates, { cache: true, refresh: refreshHistory }),
       fetchPrices([BENCHMARK_TICKER]),
     ]);
     return {
@@ -223,9 +225,20 @@ export async function loadDashboardForSlug(
   priceOverride?: Record<string, number>,
   benchmarkOverride?: BenchmarkData | null,
   onProgress?: (progress: DashboardLoadProgress) => void,
+  options: { snapshot?: InvestorSnapshot; refreshHistory?: boolean; startedAt?: number } = {},
 ): Promise<DashboardPayload> {
   let counts: Partial<DashboardLoadProgress> = {};
+  const startedAt = options.startedAt ?? performance.now();
+  let stageStartedAt = startedAt;
+  let activeStage = 'records';
+  const timings: Record<string, number> = {};
+  const logTimings = () => {
+    timings[activeStage] = Math.round(performance.now() - stageStartedAt);
+    console.info('[Dashboard load]', JSON.stringify({ ...counts, timingsMs: timings, totalMs: Math.round(performance.now() - startedAt) }));
+  };
   const progress = async (stage: DashboardLoadProgress['stage'], completedStages: number, extra: Partial<DashboardLoadProgress> = {}) => {
+    const now = performance.now();
+    if (stage !== activeStage) { timings[activeStage] = Math.round(now - stageStartedAt); activeStage = stage; stageStartedAt = now; }
     onProgress?.({ stage, completedStages, totalStages: 6, ...counts, ...extra });
     // Let streamed updates reach the browser before the next CPU-heavy stage.
     if (onProgress) await new Promise<void>(resolve => setImmediate(resolve));
@@ -236,7 +249,7 @@ export async function loadDashboardForSlug(
 
   let state: InvestorState;
   try {
-    state = (await loadInvestor(slug)).state;
+    state = (options.snapshot ?? await loadInvestor(slug)).state;
   } catch (e) {
     throw e; // auth / missing user still hard-fails
   }
@@ -258,6 +271,7 @@ export async function loadDashboardForSlug(
   counts = { positions: tickers.length, tradeRecords: state.option_executions?.length ?? 0, snapshots: snapshots.length };
   const hasFundAssets = Object.values(state.broker_connections ?? {}).some(c => c.metrics?.fund_assets != null);
   if (tickers.length === 0 && deposits.length === 0 && cashes.length === 0 && snapshots.length === 0 && !(state.option_executions?.length) && !hasFundAssets) {
+    logTimings();
     return {
       slug,
       displayName,
@@ -407,7 +421,7 @@ export async function loadDashboardForSlug(
   let benchmark: BenchmarkData | null = null;
   try {
     benchmark =
-      benchmarkOverride !== undefined ? benchmarkOverride : await loadBenchmark(snapshots);
+      benchmarkOverride !== undefined ? benchmarkOverride : await loadBenchmark(snapshots, options.refreshHistory);
   } catch {
     benchmark = null;
   }
@@ -465,8 +479,14 @@ export async function loadDashboardForSlug(
     });
   }
 
-  const journal = buildExecutionJournal(state.option_executions);
-  const optionTradeDetails = openOptionTradeDetails(portfolio, state.option_executions, accountsByChannel, state.option_events);
+  const tradeInput = [state.option_executions, state.option_events];
+  const { journal, analytics } = cachedDashboardCalculation('trade-results', state.user.id, tradeInput, () => ({
+    journal: buildExecutionJournal(state.option_executions),
+    analytics: buildRecordedOptionAnalytics(state.option_executions, state.option_events),
+  }));
+  const optionTradeDetails = cachedDashboardCalculation('open-trades', state.user.id,
+    [portfolio, ...tradeInput, accountsByChannel],
+    () => openOptionTradeDetails(portfolio, state.option_executions, accountsByChannel, state.option_events));
   let optionHistoryGaps: Array<{ channel: string; reason: string; blocksTotals?: boolean }> = [];
   try {
     const relationships = optionRelationshipsForState(state);
@@ -491,7 +511,7 @@ export async function loadDashboardForSlug(
   let processed = 0;
   await Promise.all([...entryDates].map(async ([symbol, dates]) => {
     try {
-      const closes = await fetchHistoricalCloses(symbol, [...dates]);
+      const closes = await fetchHistoricalCloses(symbol, [...dates], { cache: true, refresh: options.refreshHistory });
       for (const [key, detail] of Object.entries(optionTradeDetails)) {
         if (canonicalOptionUnderlying(portfolio[key].option!.underlying, portfolio[key].option!) !== symbol) continue;
         const price = closes[detail.openedFrom];
@@ -513,7 +533,7 @@ export async function loadDashboardForSlug(
     benchmark,
     warnings: model.live.issues,
     optionTradeDetails,
-    optionAnalytics: buildRecordedOptionAnalytics(state.option_executions, state.option_events),
+    optionAnalytics: analytics,
     premiumJournal: { available: journal.available, daily: journal.daily,
       channels: [...new Set(journal.executions.map(row => row.channel))] },
     premiumSupportedChannels,
@@ -523,5 +543,6 @@ export async function loadDashboardForSlug(
   if (Object.keys(market.prices).length > 0) out.equityPrices = market.prices;
   if (connectionMetrics) out.connectionMetrics = connectionMetrics;
   if (brokerAsOf) out.brokerAsOf = brokerAsOf;
+  logTimings();
   return out;
 }

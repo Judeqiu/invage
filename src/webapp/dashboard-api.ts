@@ -3,11 +3,11 @@
  * Mounted by DomainExtension.webUi at /api/domain/invage (auth: user).
  */
 
-import { createHash } from 'node:crypto';
 import { readDashboardConfig } from './dashboard-config.js';
 import { Router, type Request, type Response } from 'express';
 import { loadSessionState, targetUserId, type AuthUser } from 'utarus';
-import { loadDashboardForSlug } from './dashboard-data.js';
+import { loadDashboardForSlug, type DashboardLoadProgress } from './dashboard-data.js';
+import { cacheFingerprint, dashboardEnvironment, readDashboardCache, writeDashboardCache } from './dashboard-cache.js';
 import { loadWatchlistForSlug } from './watchlist-data.js';
 import { loadInvestor } from '../state/investor-store.js';
 import { buildExecutionJournal, validDate } from '../brokers/option-executions.js';
@@ -26,27 +26,21 @@ import { saveInvestor } from '../state/investor-store.js';
 
 export function createDashboardApiRouter(): Router {
   const router = Router();
-  // Keep snapshots on the server, scoped to the login and selected user.
-  // A fresh login, a book edit/sync, expiry, or explicit refresh rebuilds them.
-  const snapshots = new Map<string, { revision: number; at: number; body: unknown }>();
-  async function snapshotContext(req: Request, slug: string) {
-    const session = req.cookies?.bindrive_session;
-    if (typeof session !== 'string' || !session) return null;
-    const key = createHash('sha256').update(session).update(':' + slug).digest('hex');
-    const { revision } = await loadInvestor(slug);
-    return { key, revision };
+  // Persist only derived dashboard fields, partitioned by the authorized target UUID.
+  // Account revisions and configuration invalidate previews; prices always refresh.
+  async function snapshotContext(slug: string) {
+    const startedAt = performance.now();
+    const snapshot = await loadInvestor(slug);
+    return { snapshot, startedAt, fingerprint: cacheFingerprint([snapshot.revision, dashboardEnvironment(), readDashboardConfig()]) };
   }
-  function readSnapshot(context: { key: string; revision: number } | null) {
-    if (!context) return null;
-    const entry = snapshots.get(context.key);
-    if (!entry) return null;
-    const today = new Date().toISOString().slice(0, 10);
-    const snapshotDay = new Date(entry.at).toISOString().slice(0, 10);
-    if (entry.revision !== context.revision || snapshotDay !== today || Date.now() - entry.at > 24 * 60 * 60 * 1000) {
-      snapshots.delete(context.key);
-      return null;
-    }
-    return entry.body;
+  type DashboardWork = {
+    promise: Promise<unknown>;
+    listeners: Set<(progress: DashboardLoadProgress) => void>;
+    progress?: DashboardLoadProgress;
+  };
+  const pending = new Map<string, DashboardWork>();
+  function readSnapshot(slug: string, fingerprint: string) {
+    return readDashboardCache<unknown>('snapshots', slug, fingerprint, 24 * 60 * 60 * 1000);
   }
   router.get('/dashboard-cache', async (req: Request, res: Response) => {
     res.setHeader('Cache-Control', 'private, no-store');
@@ -54,7 +48,7 @@ export function createDashboardApiRouter(): Router {
       const user = (req as Request & { user?: AuthUser }).user;
       if (!user?.userId) { res.status(401).json({ error: 'unauthorized' }); return; }
       const slug = await targetUserId(req, user);
-      res.json(readSnapshot(await snapshotContext(req, slug)));
+      res.json(readSnapshot(slug, (await snapshotContext(slug)).fingerprint));
     } catch {
       res.status(500).json({ error: 'dashboard_failed', message: 'Could not read the portfolio snapshot.' });
     }
@@ -288,11 +282,7 @@ export function createDashboardApiRouter(): Router {
       }
       const slug = await targetUserId(req, user);
       res.setHeader('Cache-Control', 'private, no-store');
-      const context = await snapshotContext(req, slug);
-      if (req.query.progress !== '1') {
-        const cached = readSnapshot(context);
-        if (cached) { res.json(cached); return; }
-      }
+      const context = await snapshotContext(slug);
       streaming = req.query.progress === '1';
       if (streaming) {
         res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
@@ -303,14 +293,37 @@ export function createDashboardApiRouter(): Router {
         }, 15000);
         res.once('close', () => { clearInterval(heartbeat); });
       }
-      const payload = await loadDashboardForSlug(slug, undefined, undefined,
-        streaming ? progress => send({ type: 'progress', ...progress }) : undefined);
-      const body = { ...payload, dashboardConfig: readDashboardConfig() };
-      if (context) {
-        snapshots.delete(context.key);
-        if (snapshots.size >= 100) snapshots.delete(snapshots.keys().next().value!);
-        snapshots.set(context.key, { revision: context.revision, at: Date.now(), body });
+      const refreshHistory = req.query.refresh === '1';
+      if (streaming && req.query.preview === '1' && !refreshHistory) {
+        const cached = readSnapshot(slug, context.fingerprint);
+        if (cached) send({ type: 'snapshot', payload: cached });
       }
+      const key = cacheFingerprint([slug, context.fingerprint, refreshHistory]);
+      let work = pending.get(key);
+      if (!work) {
+        const listeners = new Set<(progress: DashboardLoadProgress) => void>();
+        const created = { listeners } as DashboardWork;
+        created.promise = Promise.resolve().then(async () => {
+          const payload = await loadDashboardForSlug(slug, undefined, undefined, progress => {
+            created.progress = progress;
+            for (const listener of listeners) listener(progress);
+          }, { snapshot: context.snapshot, refreshHistory, startedAt: context.startedAt });
+          const body = { ...payload, dashboardConfig: readDashboardConfig() };
+          writeDashboardCache('snapshots', slug, context.fingerprint, body);
+          return body;
+        }).finally(() => { pending.delete(key); });
+        work = created;
+        pending.set(key, work);
+      }
+      const listener = (progress: DashboardLoadProgress) => send({ type: 'progress', ...progress });
+      if (streaming) {
+        work.listeners.add(listener);
+        if (work.progress) listener(work.progress);
+        res.once('close', () => work!.listeners.delete(listener));
+      }
+      let body: unknown;
+      try { body = await work.promise; }
+      finally { work.listeners.delete(listener); }
       if (streaming) { send({ type: 'result', payload: body }); res.end(); }
       else res.json(body);
     } catch (e) {

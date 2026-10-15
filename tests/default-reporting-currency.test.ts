@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import type { HouseholdInvestorState } from '../src/state/household-state.js';
+import type { InvestorState } from '../src/state/portfolio-state.js';
 
 const mocks = vi.hoisted(() => ({
   loadInvestor: vi.fn(), saveInvestor: vi.fn(), loadSessionState: vi.fn(),
@@ -73,6 +74,28 @@ describe('default portfolio reporting currency', () => {
     expect(payload.model?.live).toMatchObject({ reportingCurrency: 'USD',
       navComplete: true, cashAmount: 2500, totalValue: 2720 });
     expect(state.treasury).toBeUndefined();
+  });
+
+  it('reuses trade results while fetching fresh market prices and FX, and recalculates corrected trades', async () => {
+    const investor = state as InvestorState;
+    const opening = { channel: 'ibkr', account_id: 'A', execution_id: 'open', contract_id: 'AMD-put-100', executed_at: '2026-08-01T10:00:00',
+      underlying: 'AMD', right: 'put' as const, expiry: '2026-09-18', strike: '100', multiplier: '100',
+      contracts: '1', currency: 'USD', side: 'sell' as const, effect: 'open' as const, gross_premium: '200', commission: '-1' };
+    investor.option_executions = [opening, { ...opening, execution_id: 'close', executed_at: '2026-08-10T10:00:00',
+      side: 'buy', effect: 'close', gross_premium: '-50' }];
+    const initial = await loadDashboardForSlug(state.user.id, undefined, null);
+    expect(initial.optionAnalytics?.profits[0].net).toBe(148);
+    expect(initial.model?.live.totalValue).toBe(2720);
+    mocks.resolvePortfolioMarket.mockResolvedValue({ portfolio: state.portfolio, equityPrices: { AAPL: 120 }, optionMarks: {} });
+    mocks.fetchFxRates.mockResolvedValue({ SGD: 0.8 });
+    const refreshed = await loadDashboardForSlug(state.user.id, undefined, null);
+    expect(refreshed.optionAnalytics).toEqual(initial.optionAnalytics);
+    expect(refreshed.model?.live.totalValue).toBe(2840);
+    expect(mocks.resolvePortfolioMarket).toHaveBeenCalledTimes(2);
+    expect(mocks.fetchFxRates).toHaveBeenCalledTimes(2);
+    investor.option_executions[1].gross_premium = '-100';
+    const corrected = await loadDashboardForSlug(state.user.id, undefined, null);
+    expect(corrected.optionAnalytics?.profits[0].net).toBe(98);
   });
 
   it('returns separate fund account totals and an explicit itemized NAV coverage note', async () => {

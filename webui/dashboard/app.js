@@ -486,12 +486,13 @@ function showOptionHistoryDetail(id) {
   </div>`;
 }
 
-async function loadOptionHistory(more = false, signal) {
+async function loadOptionHistory(more = false, signal, channelOverride) {
   const offset = more ? optionHistory.next_offset : 0;
   if (more && offset == null) return;
   const request = ++optionHistoryRequest;
   const params = new URLSearchParams({ offset: String(offset), limit: '100' });
-  if (el.historyBroker.value) params.set('channel', el.historyBroker.value);
+  const channel = channelOverride ?? el.historyBroker.value;
+  if (channel) params.set('channel', channel);
   if (el.historyRight.value) params.set('right', el.historyRight.value);
   if (el.historyStatus.value !== 'all') params.set('status', el.historyStatus.value);
   if (el.historyFrom.value) params.set('from', el.historyFrom.value);
@@ -504,7 +505,7 @@ async function loadOptionHistory(more = false, signal) {
     if (request !== optionHistoryRequest) return;
     optionHistory = { ...body, episodes: more ? [...optionHistory.episodes, ...body.episodes] : body.episodes };
     optionHistoryError = '';
-    const selected = el.historyBroker.value;
+    const selected = channelOverride ?? el.historyBroker.value;
     el.historyBroker.innerHTML = `<option value="">All brokers</option>${body.connections.map(row => `<option value="${escapeHtml(row.channel)}">${escapeHtml(row.label || row.broker_id)}</option>`).join('')}`;
     el.historyBroker.value = selected;
   } catch (error) {
@@ -2790,8 +2791,8 @@ function initChannelSelect() {
   if (el.channelSelect) el.channelSelect.value = selectedChannel;
 }
 
-function initDashboard() {
-  const requested = normalizeChannelId(channelFromQuery());
+function initDashboard(preserveSelection = false) {
+  const requested = preserveSelection ? selectedChannel : normalizeChannelId(channelFromQuery());
   const liveChannels = payload.model.live.channels || [];
   selectedChannel =
     requested === MERGED_CHANNEL_VIEW || liveChannels.includes(requested)
@@ -2930,8 +2931,8 @@ function updateLoading(step, info = {}) {
   if (step === 4 && info.total > 0) details.push(`Opening prices checked for ${info.processed} of ${info.total} stocks`);
   loadUi.insights.textContent = details.join(' · ') || 'Preparing your dashboard…';
 }
-async function fetchDashboardWithProgress(signal) {
-  const response = await fetch(`${API}?progress=1`, { credentials: 'include', signal, headers: { Accept: 'text/event-stream' } });
+async function fetchDashboardWithProgress(signal, force = false, onSnapshot) {
+  const response = await fetch(`${API}?progress=1${force ? '&refresh=1' : '&preview=1'}`, { credentials: 'include', signal, headers: { Accept: 'text/event-stream' } });
   if (!response.ok) {
     throw new Error(response.status === 401 ? 'Your session has ended. Sign in again, then retry.' : 'The dashboard could not load. Please retry.');
   }
@@ -2947,7 +2948,8 @@ async function fetchDashboardWithProgress(signal) {
     if (!line.startsWith('data:')) return;
     let event;
     try { event = JSON.parse(line.slice(5)); } catch { throw new Error('The dashboard response was interrupted. Please retry.'); }
-    if (event.type === 'progress') updateLoading(event.completedStages, event);
+    if (event.type === 'snapshot' && !force && onSnapshot) onSnapshot(event.payload);
+    else if (event.type === 'progress') updateLoading(event.completedStages, event);
     else if (event.type === 'result') result = event.payload;
     else if (event.type === 'error') throw new Error(event.message || 'The dashboard could not finish loading. Please retry.');
   };
@@ -2980,46 +2982,53 @@ function paintLoadingStage() {
   });
 }
 
+let historyLoadController;
+function loadHistoryInBackground() {
+  historyLoadController?.abort();
+  const controller = new AbortController();
+  historyLoadController = controller;
+  const timeout = setTimeout(() => controller.abort(), 60000);
+  if (el.optionFreshness) el.optionFreshness.textContent = 'Loading option history…';
+  const channel = selectedChannel !== MERGED_CHANNEL_VIEW ? selectedChannel : undefined;
+  void loadOptionHistory(false, controller.signal, channel).finally(() => {
+    clearTimeout(timeout);
+    if (historyLoadController === controller) historyLoadController = undefined;
+  });
+  if (optionTab === 'timeline') void optionTimeline.load(true);
+  if (optionTab === 'rolls') void loadRollRelationships();
+}
+
 async function load(force = false) {
   if (loading) return;
-  if (!force) {
-    try {
-      const cached = await cachedDashboard();
-      if (cached) {
-        payload = cached;
-        if (cached.empty || !cached.model) renderEmpty(cached);
-        else initDashboard();
-        el.loading.classList.add('hidden');
-        el.dashboard.setAttribute('aria-busy', 'false');
-        el.status.textContent = `Snapshot ${cached.generatedAt ? new Date(cached.generatedAt).toLocaleString() : 'loaded'} · Refresh to update prices`;
-        await loadOptionHistory(false);
-        return;
-      }
-    } catch (e) {
-      el.status.textContent = e instanceof Error ? e.message : String(e);
-      el.error.classList.remove('hidden');
-      loadUi.error.textContent = el.status.textContent;
-      el.loading.classList.add('hidden');
-      el.dashboard.setAttribute('aria-busy', 'false');
-      return;
-    }
-  }
-  if (loading) return;
   loading = true;
+  let showingSnapshot = payload != null && !el.dashboard.classList.contains('hidden');
+  let historyStarted = false;
   loadStartedAt = performance.now(); loadPosition = 0; loadCounts = {};
-  el.loading.classList.remove('hidden');
   el.error.classList.add('hidden');
-  el.dashboard.setAttribute('aria-busy', 'true');
+  el.status.className = 'status-line';
+  const snapshotLabel = () => `Snapshot ${payload?.generatedAt ? new Date(payload.generatedAt).toLocaleString() : 'from the last successful load'}`;
+  el.loading.classList.toggle('hidden', showingSnapshot);
+  el.dashboard.setAttribute('aria-busy', showingSnapshot ? 'false' : 'true');
   loadUi.progress.classList.remove('failed');
   loadUi.hint.textContent = 'Progress advances as each step finishes.';
   updateLoading(0); loadingClock();
   const timer = setInterval(loadingClock, 1000);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 180000);
-  el.status.className = 'status-line';
-  el.status.textContent = '';
+  el.status.textContent = showingSnapshot ? `${snapshotLabel()} · Updating prices and portfolio…` : '';
   try {
-    const body = await fetchDashboardWithProgress(controller.signal);
+    const body = await fetchDashboardWithProgress(controller.signal, force, cached => {
+      payload = cached;
+      if (cached.empty || !cached.model) renderEmpty(cached);
+      else initDashboard();
+      showingSnapshot = true;
+      optionDefaultApplied = true;
+      el.loading.classList.add('hidden');
+      el.dashboard.setAttribute('aria-busy', 'false');
+      el.status.textContent = `${snapshotLabel()} · Updating prices and portfolio…`;
+      loadHistoryInBackground();
+      historyStarted = true;
+    });
     payload = body;
     updateLoading(6, { positions: body.model?.live?.positions?.length, tradeRecords: body.optionAnalytics?.executions?.length, snapshots: body.model?.history?.length });
     await paintLoadingStage();
@@ -3028,24 +3037,28 @@ async function load(force = false) {
       optionDefaultApplied = true;
     }
     if (body.empty || !body.model) renderEmpty(body);
-    else initDashboard();
-    updateLoading(7);
-    await loadOptionHistory(false, controller.signal);
-    if (optionTab === 'timeline') await optionTimeline.load(true);
-    if (optionTab === 'rolls') await loadRollRelationships();
-    if (selectedChannel !== MERGED_CHANNEL_VIEW) followHistoryBroker(selectedChannel);
+    else initDashboard(showingSnapshot);
     loadUi.progress.setAttribute('aria-valuenow', '8');
     loadUi.progress.setAttribute('aria-valuetext', 'Dashboard ready');
     loadUi.fill.style.width = '100%';
     el.loading.classList.add('hidden');
-    el.status.textContent = `Last refresh ${new Date().toLocaleTimeString()} · Loaded in ${loadDuration()}${optionHistoryError ? ' · Some option history is unavailable' : ''}`;
+    el.dashboard.setAttribute('aria-busy', 'false');
+    el.status.textContent = `Last refresh ${body.generatedAt ? new Date(body.generatedAt).toLocaleString() : new Date().toLocaleTimeString()} · Loaded in ${loadDuration()}`;
+    // History has its own deadline and request lifecycle; it cannot block valuation.
+    if (selectedChannel !== MERGED_CHANNEL_VIEW && el.historyBroker.value !== selectedChannel) {
+      el.optionHistoryDetail.innerHTML = '';
+      historyStarted = false;
+    }
+    if (!historyStarted) loadHistoryInBackground();
   } catch (e) {
     loadUi.progress.classList.add('failed');
     loadUi.progress.setAttribute('aria-valuetext', 'Dashboard loading interrupted');
     loadUi.stage.textContent = 'Dashboard loading interrupted';
     loadUi.hint.textContent = 'You can retry loading below.';
     el.status.className = 'status-line error';
-    el.status.textContent = 'The dashboard could not finish loading.';
+    el.status.textContent = showingSnapshot
+      ? `${snapshotLabel()} · Update failed; showing the previous figures. Retry to update.`
+      : 'The dashboard could not finish loading.';
     loadUi.error.textContent = e?.name === 'AbortError' ? 'Loading took longer than expected. Please retry.' : e instanceof Error ? e.message : 'The dashboard could not load. Please retry.';
     el.error.classList.remove('hidden');
   } finally {

@@ -100,6 +100,16 @@ it('flags archived fills missing from normalized history without changing the us
   expect(optionRelationshipsForState(state, { asOf: '2026-09-30' }).historyGaps).toEqual([]);
 });
 
+it('invalidates cached relationships when an archived trade changes', () => {
+  archive(owner);
+  const first = optionRelationshipsForState(state);
+  expect(first.groups[0].relationships[0].cash).toBe('20');
+  first.groups[0].relationships[0].cash = '999';
+  expect(optionRelationshipsForState(state).groups[0].relationships[0].cash).toBe('20');
+  archive(owner, '20261001', '50');
+  expect(optionRelationshipsForState(state).groups[0].relationships[0].cash).toBe('40');
+});
+
 it('compares exact gross cash despite different decimal scales and withholds conflicting roll evidence', () => {
   archive(owner);
   const channel = Object.values(readBrokerAccountModel(state).connections)[0].channel;
