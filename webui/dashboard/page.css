@@ -349,3 +349,8 @@ footer { text-align: center; font-size: 0.72rem; color: var(--muted-foreground);
 }
 
 .pnl-month-detail li span { overflow-wrap: anywhere; min-width: 0; }
+
+.card-explain { display: inline-flex; align-items: center; min-height: 36px; margin-top: 0.85rem; padding: 0.35rem 0.75rem; border: 1px solid var(--border); border-radius: 0.45rem; background: var(--card); color: var(--brand); font: inherit; font-size: 0.75rem; font-weight: 600; cursor: pointer; }
+.card-explain:hover, .card-explain[aria-expanded="true"] { background: color-mix(in oklab, var(--brand) 10%, var(--card)); border-color: var(--brand); }
+.card-explain:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.card-explain:disabled { opacity: 0.6; cursor: wait; }

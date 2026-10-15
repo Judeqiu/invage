@@ -80,3 +80,73 @@ it.skipIf(!existsSync(executable))('opens on Open without date or refresh contro
     expect(errors).toEqual([]);
   } finally { await browser.close(); await new Promise<void>(r => server.close(() => r())); }
 });
+
+it.skipIf(!existsSync(executable))('explains dashboard cards in side chat with the displayed values and reuses conversations', async () => {
+  const root = resolve('webui');
+  const prompts: { text: string; composeSource: { kind: string } }[] = [];
+  let failChat = true;
+  const dashboard = {
+    empty: false, displayName: 'Test', generatedAt: '2026-10-15T10:00:00Z',
+    brokerAsOf: { ibkr: '2026-10-14' },
+    model: buildDashboardModel(buildLivePositions({ AAPL: { avg_price: 100, units: 10, channel: 'ibkr', currency: 'USD' } }, { AAPL: 120 }), []),
+  };
+  const server = createServer(async (req, res) => {
+    const url = new URL(req.url!, 'http://localhost');
+    const json = (body: unknown) => { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(body)); };
+    if (url.pathname === '/shell') return res.end('<iframe src="/dashboard/index.html" style="width:100%;height:95vh"></iframe><script>window.messages=[];addEventListener("message",e=>messages.push(e.data))</script>');
+    if (url.pathname.endsWith('/dashboard')) return json(dashboard);
+    if (url.pathname === '/api/chat/messages') {
+      let raw = ''; for await (const chunk of req) raw += chunk;
+      prompts.push(JSON.parse(raw));
+      res.statusCode = failChat ? 503 : 200;
+      return json(failChat ? { message: 'Try again' } : { conversationId: `explain-${prompts.length}` });
+    }
+    if (url.pathname.endsWith('/option-history')) return json({ episodes: [], connections: [], gaps: [], next_offset: null });
+    const file = resolve(root, '.' + url.pathname);
+    if (!file.startsWith(root + '/') || !existsSync(file)) { res.writeHead(404); return res.end(); }
+    res.setHeader('Content-Type', extname(file) === '.css' ? 'text/css' : extname(file) === '.js' ? 'text/javascript' : 'text/html');
+    res.end(readFileSync(file));
+  });
+  await new Promise<void>(r => server.listen(0, '127.0.0.1', r));
+  const browser = await puppeteer.launch({ executablePath: executable, headless: true, args: ['--no-sandbox'] });
+  try {
+    const page = await browser.newPage();
+    const errors: string[] = []; page.on('pageerror', e => errors.push(e.message));
+    await page.goto(`http://127.0.0.1:${(server.address() as { port: number }).port}/shell`);
+    const frame = page.frames().find(f => f.url().includes('/dashboard/'))!;
+    const selector = '.hero-metrics [data-card-explain]';
+    await frame.waitForSelector(selector);
+    expect(await frame.$$eval('.hero-metrics .metric-card, #kpiRow .metric-card', cards => cards.every(card => card.querySelectorAll('[data-card-explain]').length === 1))).toBe(true);
+    const value = await frame.$eval('#navValue', e => e.textContent!);
+    await frame.focus(selector); await page.keyboard.press('Enter');
+    await frame.waitForFunction(() => document.getElementById('optionChatStatus')?.textContent?.includes('Try again'));
+    expect(await page.evaluate(() => (window as any).messages.some((m: any) => m.type === 'utarus:chat-panel:error'))).toBe(true);
+    failChat = false;
+    await page.evaluate(() => {
+      const messages = (window as any).messages;
+      document.querySelector('iframe')!.contentWindow!.postMessage({ type: 'utarus:chat-panel:retry', requestId: messages.find((m: any) => m.type === 'utarus:chat-panel:open').requestId }, location.origin);
+    });
+    await page.waitForFunction(() => (window as any).messages.some((m: any) => m.type === 'utarus:chat-panel:ready'));
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1].text).toContain(value);
+    expect(prompts[1].text).toContain('Net asset value (NAV)');
+    expect(prompts[1].text).toContain('All brokers (merged)');
+    expect(prompts[1].text).toContain(dashboard.generatedAt);
+    expect(prompts[1].text).toContain('2026-10-14');
+    expect(prompts[1].text).toContain('Calculation notes:');
+    expect(prompts[1].composeSource.kind).toBe('host_seed');
+    await page.evaluate(() => document.querySelector('iframe')!.contentWindow!.postMessage({ type: 'utarus:chat-panel:closed' }, location.origin));
+    await frame.waitForFunction(() => document.activeElement?.hasAttribute('data-card-explain'));
+    await frame.click(selector);
+    expect(prompts).toHaveLength(2);
+    await frame.click('#channelPills [data-channel="ibkr"]');
+    await frame.click(selector);
+    await frame.waitForFunction(() => document.querySelector('.hero-metrics [data-card-explain]')?.textContent === 'Explain');
+    expect(prompts).toHaveLength(3);
+    expect(prompts[2].text).toContain('Selected dashboard: ibkr');
+    await page.setViewport({ width: 390, height: 844 });
+    expect(await frame.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: '/tmp/invage-dashboard-explain-mobile.png', fullPage: true });
+    expect(errors).toEqual([]);
+  } finally { await browser.close(); await new Promise<void>(r => server.close(() => r())); }
+});

@@ -1662,7 +1662,57 @@ function renderOverview(view) {
 
   renderExpiryRisk(view, asOf);
   renderChannelPills(view);
+  installCardExplainButtons();
 }
+
+// Read the rendered values so the explanation matches the current dashboard filters.
+function installCardExplainButtons() {
+  el.dashboard.querySelectorAll('.metric-card').forEach(card => {
+    const heading = card.querySelector('.label-eyebrow, h3');
+    if (!heading || card.querySelector('[data-card-explain]')) return;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'card-explain';
+    button.dataset.cardExplain = '';
+    button.textContent = 'Explain';
+    button.setAttribute('aria-label', `Explain ${heading.textContent.trim()}`);
+    button.setAttribute('aria-expanded', 'false');
+    button.disabled = optionChatPending;
+    card.appendChild(button);
+  });
+}
+
+function prepareCardExplanation(button) {
+  const card = button.closest('.metric-card');
+  const title = card.querySelector('.label-eyebrow, h3').textContent.trim();
+  const content = card.cloneNode(true);
+  content.querySelectorAll('button, svg, summary').forEach(node => node.remove());
+  content.querySelectorAll('div, p, td, th, li, span').forEach(node => node.append(' '));
+  const values = content.textContent.replace(/\s+/g, ' ').trim();
+  const notes = [...card.querySelectorAll('[data-help]')].map(node => node.dataset.help).join(' ');
+  const asOf = selectedDate === 'live' ? payload?.generatedAt || 'latest' : selectedDate;
+  const channel = selectedChannel === MERGED_CHANNEL_VIEW ? 'All brokers (merged)' : selectedChannel;
+  const context = `${channel} · ${selectedDate === 'live' ? 'Latest view' : 'Historical snapshot'} · ${asOf}`;
+  const prompt = [
+    `Explain the number${card.querySelector('.metric-value') ? '' : 's'} on my dashboard card "${title}" in plain language.`,
+    `Displayed card: ${values}`,
+    `Selected dashboard: ${context}. Reporting currency: ${payload?.model ? reportingCcyCode(buildView(selectedDate, selectedChannel)) : 'unavailable'}.`,
+    `Broker snapshot dates: ${JSON.stringify(selectedDate === 'live' ? payload?.brokerAsOf || {} : payload?.model?.history?.find(row => row.date === selectedDate)?.brokerAsOf || {})}.`,
+    notes ? `Calculation notes: ${notes}` : '',
+    'Explain what the displayed amount means, how it is calculated, and which recorded components contribute to it. Use my portfolio records to reconcile the number where possible. Explain missing data, currency conversion, fees, and date ranges where relevant. If a value is unavailable or cannot be reconciled, say why without inventing figures. Treat the displayed value as the selected snapshot, which may differ from current data.',
+  ].filter(Boolean).join('\n\n');
+  button.dataset.optionKey = `explain:${prompt}`;
+  button.dataset.optionTitle = `Explain · ${title}`;
+  button.dataset.optionContext = context;
+  button.dataset.optionDiscuss = prompt;
+}
+
+document.addEventListener('click', event => {
+  const button = event.target.closest('[data-card-explain]');
+  if (!button) return;
+  prepareCardExplanation(button);
+  void startOptionDiscussion(button);
+});
 
 let optionChatPending = false;
 const optionDiscussions = new Map();
@@ -1674,7 +1724,7 @@ function sendOptionPanelMessage(message) {
 }
 
 function highlightOptionDiscussion() {
-  el.expiryTable.querySelectorAll('[data-option-discuss]').forEach(button => {
+  el.dashboard.querySelectorAll('[data-option-discuss], [data-card-explain]').forEach(button => {
     const selected = button.dataset.optionKey === activeOptionDiscussionKey;
     button.classList.toggle('option-discuss-active', selected);
     button.setAttribute('aria-expanded', String(selected));
@@ -1695,7 +1745,7 @@ window.addEventListener('message', event => {
   activeOptionDiscussionKey = null;
   highlightOptionDiscussion();
   const trigger = optionDiscussionTrigger?.isConnected ? optionDiscussionTrigger
-    : [...el.expiryTable.querySelectorAll('[data-option-discuss]')].find(button => button.dataset.optionKey === previousKey);
+    : [...el.dashboard.querySelectorAll('[data-option-discuss], [data-card-explain]')].find(button => button.dataset.optionKey === previousKey);
   trigger?.focus({ preventScroll: true });
 });
 
@@ -1732,9 +1782,9 @@ async function startOptionDiscussion(button) {
   sendOptionPanelMessage({ type: 'utarus:chat-panel:open', ...discussion });
   highlightOptionDiscussion();
   const status = document.getElementById('optionChatStatus');
-  status.textContent = 'Starting your option discussion…';
+  status.textContent = button.hasAttribute('data-card-explain') ? 'Starting your explanation…' : 'Starting your option discussion…';
   status.classList.remove('error');
-  el.expiryTable.querySelectorAll('[data-option-discuss]').forEach(item => { item.disabled = true; });
+  el.dashboard.querySelectorAll('[data-option-discuss], [data-card-explain]').forEach(item => { item.disabled = true; });
   button.textContent = 'Opening…';
   try {
     // Omitting conversationId starts a focused conversation without a generic opener.
@@ -1761,7 +1811,7 @@ async function startOptionDiscussion(button) {
     status.classList.add('error');
   } finally {
     optionChatPending = false;
-    el.expiryTable.querySelectorAll('[data-option-discuss]').forEach(item => { item.disabled = false; item.textContent = 'Discuss'; });
+    el.dashboard.querySelectorAll('[data-option-discuss], [data-card-explain]').forEach(item => { item.disabled = false; item.textContent = item.hasAttribute('data-card-explain') ? 'Explain' : 'Discuss'; });
   }
 }
 
@@ -1894,6 +1944,7 @@ function renderExpiryRisk(view, asOf) {
   }
   renderPremiumEngine(view);
   renderOpenOptions(view);
+  installCardExplainButtons();
   highlightOptionDiscussion();
 }
 
@@ -2874,6 +2925,7 @@ function renderEmpty(body) {
   if (el.openOptionsBlock) el.openOptionsBlock.classList.add('hidden');
   if (el.expiryTable) el.expiryTable.innerHTML = '';
   setOptionTab(optionTab);
+  installCardExplainButtons();
 }
 
 const loadStages = [
