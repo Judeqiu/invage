@@ -240,8 +240,12 @@ function optionFinishItmProbability(position, spot, days) {
   const o = position.option;
   const strike = Number(o?.strike);
   const multiplier = Number(o?.multiplier || 100);
-  const mark = Number.isFinite(position.brokerMark) ? position.brokerMark : position.price;
+  const quote = position.probabilityQuote;
+  const mark = quote?.mark;
   const unavailable = (reason) => ({ probability: null, iv: null, reason });
+  if (!quote) return unavailable('Waiting for matching prices');
+  spot = quote.spot;
+  days = daysToExpiry(o?.expiry, quote.spotAsOf.slice(0, 10));
   if (!(spot > 0)) return unavailable('No spot quote');
   if (!(strike > 0 && multiplier > 0) || days == null) return unavailable('Incomplete contract');
   if (position.pricingMode === 'cost' || position.markSource === 'cost' || !Number.isFinite(mark)) return unavailable('No market mark');
@@ -251,7 +255,7 @@ function optionFinishItmProbability(position, spot, days) {
   const premium = mark / multiplier;
   const intrinsic = o.right === 'put' ? Math.max(strike - spot, 0) : Math.max(spot - strike, 0);
   const upper = o.right === 'put' ? strike : spot;
-  if (premium < intrinsic - 0.01 || premium >= upper) return unavailable('Mark and spot disagree');
+  if (premium < intrinsic - 0.01 || premium >= upper) return unavailable('Matching prices fail value check');
   const priceAt = (vol) => {
     const vsqrt = vol * Math.sqrt(years);
     const d1 = (Math.log(spot / strike) + vsqrt * vsqrt / 2) / vsqrt;
@@ -1845,11 +1849,11 @@ function renderExpiryRisk(view, asOf) {
               <td class="num muted">${estimate.iv == null ? '—' : `${Math.round(estimate.iv * 100)}%`}</td>
               <td class="num">${openingPremiumHtml(trade, p.currency, true)}</td>
               <td class="num muted">${Number.isFinite(assigned) && assigned > 0 ? fmtPrettyMoney(assigned, view.navComplete === false ? p.currency : reportingCcyCode(view), 0) : '—'}</td>
-              <td>${riskPill(tone, probability == null ? `— · ${status}` : `${probability.toFixed(1)}% · ${status}`)}</td>
+              <td title="${escapeHtml(p.probabilityQuote ? `Estimate uses option trade at ${p.probabilityQuote.optionAsOf} and stock quote at ${p.probabilityQuote.spotAsOf}. Current Spot may be newer.` : 'A timestamped option trade and a stock quote within 15 minutes are required.')}">${riskPill(tone, probability == null ? `— · ${status}` : `${probability.toFixed(1)}% · ${status}`)}</td>
               <td>${escapeHtml(p.channel === DEFAULT_CHANNEL ? 'Unassigned' : p.channel.toUpperCase())}</td>
             </tr>`;
           }).join('') : '<tr><td colspan="12" class="empty">No flagged contracts match these filters.</td></tr>'}</tbody></table></div>
-        <div class="risk-method">How Prob. ITM is calculated: Implied volatility is derived from each contract’s mark price and used in the Black–Scholes model to estimate the probability of expiring in the money: N(−d₂) for puts and N(d₂) for calls, assuming a zero risk-free interest rate and no dividend adjustment. Contracts cannot be scored when the underlying quote or a usable mark is missing, contract terms are incomplete, or the mark cannot produce a valid IV. Confirmed ITM contracts expiring within 21 days remain in this radar even without a probability estimate. Their assignment exposure is included, while probability-weighted exposure stays unavailable. Other unscored contracts remain available in Section 03. Premium is the opening credit, or replacement STO minus old-contract BTC for the latest verified roll, before fees; it is not realized profit.</div>
+        <div class="risk-method">How Prob. ITM is calculated: Implied volatility is derived from a timestamped option trade paired with the regular-session stock quote from the same options-chain response (within 15 minutes, on the same date). Before the market opens, these may be the last regular-session prices. Hover over Prob. ITM for both quote times; Current Spot may be newer. Stored broker marks and untimestamped bid/ask prices are not used for this estimate. If matching quotes are unavailable, the probability stays blank. Implied volatility is used in the Black–Scholes model to estimate the probability of expiring in the money: N(−d₂) for puts and N(d₂) for calls, assuming a zero risk-free interest rate and no dividend adjustment. Contracts cannot be scored when the underlying quote or a usable mark is missing, contract terms are incomplete, or the mark cannot produce a valid IV. Confirmed ITM contracts expiring within 21 days remain in this radar even without a probability estimate. Their assignment exposure is included, while probability-weighted exposure stays unavailable. Other unscored contracts remain available in Section 03. Premium is the opening credit, or replacement STO minus old-contract BTC for the latest verified roll, before fees; it is not realized profit.</div>
       </div>`;
     }
   }

@@ -13,7 +13,16 @@ import { canonicalOptionUnderlying } from '../brokers/option-symbol.js';
 
 export type OptionMarkSource = 'manual' | 'yahoo';
 
+export interface OptionProbabilityQuote {
+  mark: number;
+  spot: number;
+  optionAsOf: string;
+  spotAsOf: string;
+}
+
 export interface OptionLiveMark {
+  /** Timestamp-checked model inputs, separate from the portfolio valuation. */
+  probabilityQuote?: OptionProbabilityQuote;
   /** Premium $ per contract used for MTM. */
   mark: number;
   source: OptionMarkSource;
@@ -35,6 +44,34 @@ export interface YahooContractRow {
   bid?: number;
   ask?: number;
   expiration?: Date | string;
+  lastTradeDate?: Date | string | number;
+}
+
+/** Pair a recent option trade with the regular-session stock quote from its chain.
+ * Bid/ask have no timestamps in this API, so cannot establish a matching pair.
+ */
+export function matchingProbabilityQuote(
+  row: YahooContractRow,
+  quote: { regularMarketPrice?: number; regularMarketTime?: Date | string | number } | undefined,
+  multiplier: number,
+  now = Date.now(),
+): OptionProbabilityQuote | undefined {
+  const time = (v: Date | string | number | undefined) => v == null ? NaN
+    : typeof v === 'number' ? (v < 1e12 ? v * 1000 : v) : new Date(v).getTime();
+  const optionTime = time(row.lastTradeDate);
+  const spotTime = time(quote?.regularMarketTime);
+  const spot = quote?.regularMarketPrice;
+  if (!(spot != null && Number.isFinite(spot) && spot > 0)
+    || !(Number.isFinite(row.lastPrice) && row.lastPrice > 0)
+    || !(Number.isFinite(multiplier) && multiplier > 0)
+    || !Number.isFinite(optionTime) || !Number.isFinite(spotTime)
+    || Math.abs(optionTime - spotTime) > 15 * 60_000
+    || Math.max(optionTime, spotTime) > now + 60_000
+    || now - Math.min(optionTime, spotTime) > 7 * 86400_000) return undefined;
+  const optionAsOf = new Date(optionTime).toISOString();
+  const spotAsOf = new Date(spotTime).toISOString();
+  if (optionAsOf.slice(0, 10) !== spotAsOf.slice(0, 10)) return undefined;
+  return { mark: perShareToContractMark(row.lastPrice, multiplier), spot, optionAsOf, spotAsOf };
 }
 
 export function toDateKey(d: Date | string): string {
@@ -121,7 +158,7 @@ function manualMark(o: OptionSpec, note?: string): OptionLiveMark {
  */
 export async function fetchYahooContractMark(
   o: OptionSpec,
-): Promise<{ row: YahooContractRow; mark: number; perShare: number }> {
+): Promise<{ row: YahooContractRow; mark: number; perShare: number; probabilityQuote?: OptionProbabilityQuote }> {
   const underlying = canonicalOptionUnderlying(o.underlying, o);
   const expiryYmd = o.expiry;
 
@@ -178,7 +215,12 @@ export async function fetchYahooContractMark(
 
   const perShare = pickPerSharePremium(row);
   const mark = perShareToContractMark(perShare, o.multiplier);
-  return { row, mark, perShare };
+  const quote = chain.quote && 'regularMarketPrice' in chain.quote ? {
+    regularMarketPrice: typeof chain.quote.regularMarketPrice === 'number' ? chain.quote.regularMarketPrice : undefined,
+    regularMarketTime: 'regularMarketTime' in chain.quote && chain.quote.regularMarketTime instanceof Date
+      ? chain.quote.regularMarketTime : undefined,
+  } : undefined;
+  return { row, mark, perShare, probabilityQuote: matchingProbabilityQuote(row, quote, o.multiplier) };
 }
 
 /**
@@ -204,10 +246,11 @@ export async function fetchOptionMarks(
       }
 
       try {
-        const { row, mark, perShare } = await fetchYahooContractMark(o);
+        const { row, mark, perShare, probabilityQuote } = await fetchYahooContractMark(o);
         out[key] = {
           mark,
           source: 'yahoo',
+          probabilityQuote,
           perShare,
           contractSymbol: row.contractSymbol,
           bid: row.bid,

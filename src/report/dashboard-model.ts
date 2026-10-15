@@ -48,6 +48,7 @@ export interface LivePosition {
   price: number;
   /** Broker snapshot mark per contract, retained when live pricing replaces price. */
   brokerMark?: number;
+  probabilityQuote?: OptionLiveMark['probabilityQuote'];
   cost: number;
   value: number;
   pl: number;
@@ -260,6 +261,7 @@ function economicsToLive(
     markSource,
     markNote: pricingNote ?? markMeta?.note,
     contractSymbol: markMeta?.contractSymbol,
+    probabilityQuote: markMeta?.probabilityQuote,
     pricingMode,
   };
 }
