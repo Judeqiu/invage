@@ -71,9 +71,9 @@ function render(dash) {
   const when = dash.generatedAt ? dash.generatedAt.slice(0, 10) : '';
   el.eyebrow.textContent = `Books briefing · ${when}`;
   const chNote = channel === 'all' ? 'All Platforms' : channelLabel(channel);
-  el.summary.textContent = `${live.positionCount} itemized lots · ${hasUnitemizedFunds ? 'Itemized NAV (excludes broker fund total)' : 'NAV'}: ${money(live.totalValue, ccy)} · ${chNote}. All insights below are calculated using this portfolio data only.`;
+  el.summary.textContent = `${live.positionCount} lots · ${hasUnitemizedFunds ? 'Itemized NAV' : 'NAV'}: ${money(live.totalValue, ccy)} · ${chNote}.`;
   el.metrics.innerHTML =
-    metricCard(hasUnitemizedFunds ? 'Itemized NAV' : 'NAV', money(live.totalValue, ccy), hasUnitemizedFunds ? 'Excludes broker fund total shown separately' : live.fxApplied ? `in ${ccy}` : null) +
+    metricCard(hasUnitemizedFunds ? 'Itemized NAV' : 'NAV', money(live.totalValue, ccy), live.fxApplied ? `in ${ccy}` : null) +
     metricCard(
       'Unrealized P&L',
       signedMoney(live.totalPL, ccy),
@@ -83,14 +83,13 @@ function render(dash) {
     metricCard(
       'Cash',
       live.cashAmount == null ? 'unknown' : money(live.cashAmount, live.cashCurrency || ccy),
-      live.cashAmount == null ? 'cash block omitted' : null,
+      null,
     ) +
     metricCard(
       'Assignment cash',
       money(live.contingentCashObligation, ccy),
       `${live.optionCount} option lots`,
     ) + brokerFundAssetsCards(dash, channel);
-  const issues = [...(dash.warnings || []), ...(live.issues || [])];
   const prices = dash.equityPrices || {};
   const shorts = live.positions.filter((p) => p.instrument === 'option' && p.option && p.option.side === 'short');
   const itmNear = shorts.filter((p) => {
@@ -100,12 +99,6 @@ function render(dash) {
   const cashVsCont =
     live.cashAmount != null && live.contingentCashObligation > live.cashAmount;
   const riskCards = [];
-  for (const w of issues) {
-    riskCards.push(`<div class="metric-card" style="border-left:4px solid var(--warning)">
-      <div class="label-eyebrow">${esc(w.code || 'warning')}</div>
-      <p style="margin-top:0.5rem;font-size:0.875rem">${esc(w.message || w.code)}</p>
-    </div>`);
-  }
   for (const p of itmNear) {
     riskCards.push(`<div class="metric-card risk-danger">
       <div class="label-eyebrow">ITM · DTE ${dteDays(p.option.expiry)}d</div>
@@ -163,8 +156,7 @@ function render(dash) {
   );
   el.edge.innerHTML =
     metricCard('Equity lots', String(live.equityCount)) +
-    (hasUnitemizedFunds && live.fundCount === 0 ? '' : metricCard('Fund lots', String(live.fundCount),
-      hasUnitemizedFunds ? 'Itemized fund holdings only' : null)) +
+    (hasUnitemizedFunds && live.fundCount === 0 ? '' : metricCard('Fund lots', String(live.fundCount))) +
     metricCard('Option lots', String(live.optionCount), opts.length ? `${puts} put · ${calls} call` : null) +
     metricCard(
       'Avg DTE / LEAPs',

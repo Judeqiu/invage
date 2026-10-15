@@ -376,7 +376,7 @@
         loadedKey = results.every(r => r.status === 'fulfilled') ? key : '';
         const errors = results.filter(r => r.status === 'rejected').map(r => r.reason.message);
         render();
-        status.textContent = `${current.tracks.length} contract tracks · history through ${context.asOf}${limited ? ' · Showing up to 1,000 history records and 1,000 roll groups; select a broker to narrow the view' : ''}${data.gaps.length ? ` · ${data.gaps.length} history coverage gaps` : ''}${errors.length ? ` · Partial timeline: ${errors.join('; ')}. Use Refresh timeline to retry.` : ''}`;
+        status.textContent = `${current.tracks.length} contract tracks · history through ${context.asOf}${limited ? ' · Showing up to 1,000 history records and 1,000 roll groups; select a broker to narrow the view' : ''}${errors.length ? ' · Some records could not be loaded. Use Refresh timeline to retry.' : ''}`;
       } finally { if (id === request) pendingKey = ''; }
     }
     function showEvidence(target) {
@@ -387,8 +387,6 @@
       const links = current.links.filter(l => l.from === t.key || l.to === t.key);
       detail.innerHTML = `<div class="metric-card timeline-detail"><h3>${esc(label(t))}</h3><p>${esc(t.channel)}${t.account ? ` / ${esc(t.account)}` : ''}</p>
         <p>${relatedCount ? `Highlighted ${relatedCount} related contract${relatedCount === 1 ? '' : 's'} in this roll chain. Dashed arrows remain possible or review relationships.` : 'No related contracts in the current view.'} <button type="button" class="chip-btn" data-timeline-clear>Clear selection</button></p>
-        <p>${esc([...new Set(t.notes)].join(' · ') || 'Archive trade evidence; current position status is not confirmed.')}</p>
-        ${t.unknownStart ? '<p><strong>Earlier history unavailable.</strong> The dashed lead-in indicates missing opening records; its length does not represent a known holding period.</p>' : ''}
         <ul>${t.events.map(e => `<li>${esc(e.date)} · ${esc(e.label)}</li>`).join('')}</ul>
         ${links.map(l => `<p><strong>${esc(l.evidence)} roll relationship</strong> · ${esc(l.date)}: ${esc(l.reason)}</p>`).join('')}</div>`;
     }
@@ -423,7 +421,7 @@
         tooltip.innerHTML = `<strong>${esc(label(t))}</strong><p>${esc(t.channel)}${t.account ? ` / ${esc(t.account)}` : ''}</p>
           ${selected ? `<p>${esc(selected.label)}</p>` : ''}
           ${pairs.length ? `<dl>${pairs.map(([name, value]) => `<dt>${esc(name)}</dt><dd>${esc(value)}</dd>`).join('')}</dl>` : '<p>Price data unavailable for this contract.</p>'}
-          <p class="timeline-tooltip-source">${esc(t.quote ? `${t.quote.source} · ${t.quote.asOf}` : 'Recorded trade evidence')}. Recorded prices; live bid/ask unavailable.</p>`;
+          <p class="timeline-tooltip-source">${esc(t.quote ? `${t.quote.source} · ${t.quote.asOf}` : 'Recorded trade evidence')}</p>`;
         tooltip.hidden = false;
       }
       const rect = target.getBoundingClientRect();

@@ -327,7 +327,7 @@ it.skipIf(!existsSync(executable))('defaults to Open and renders timeline filter
     expect(hoverText).toContain('USD 500.00');
     expect(hoverText).toContain('USD 200.00');
     expect(hoverText).toContain('2026-09-29');
-    expect(hoverText).toContain('Recorded prices; live bid/ask unavailable.');
+    expect(hoverText).not.toContain('live bid/ask unavailable');
     await page.screenshot({ path: '/tmp/option-timeline-hover.png', fullPage: true });
     await page.keyboard.press('Escape');
     expect(await page.$eval('#optionTimelineTooltip', e => (e as HTMLElement).hidden)).toBe(true);
@@ -360,7 +360,7 @@ it.skipIf(!existsSync(executable))('defaults to Open and renders timeline filter
     expect(await page.$$('#timelineDetail script')).toHaveLength(0);
     await page.select('#timelineRight', 'put'); expect(await page.$$('[data-timeline-row]')).toHaveLength(1);
     await page.$eval('[data-timeline-row="0"]', e => (e as SVGElement).focus()); await page.keyboard.press('Enter');
-    expect(await page.$eval('#timelineDetail', e => e.textContent)).toContain('Earlier history unavailable.');
+    expect(await page.$eval('#timelineDetail', e => e.textContent)).not.toContain('Earlier history unavailable.');
     await page.type('#timelineSearch', 'MISSING'); expect(await page.$eval('#timelineChart', e => e.textContent)).toContain('No option records');
     await page.$eval('#timelineSearch', e => { (e as HTMLInputElement).value = ''; e.dispatchEvent(new Event('input')); });
     await page.select('#timelineRight', '');
@@ -383,10 +383,10 @@ it.skipIf(!existsSync(executable))('defaults to Open and renders timeline filter
     await page.setViewport({ width: 375, height: 900 });
     await page.screenshot({ path: '/tmp/option-timeline-mobile.png', fullPage: true });
     failRolls = true; await page.click('#timelineRefresh');
-    await page.waitForFunction(() => document.getElementById('timelineStatus')!.textContent!.includes('Partial timeline'));
+    await page.waitForFunction(() => document.getElementById('timelineStatus')!.textContent!.includes('Some records could not be loaded'));
     expect(await page.$$('.option-timeline')).toHaveLength(1);
     failRolls = false; await page.click('#timelineRefresh');
-    await page.waitForFunction(() => !document.getElementById('timelineStatus')!.textContent!.includes('Partial timeline') && document.querySelector('.timeline-roll'));
+    await page.waitForFunction(() => !document.getElementById('timelineStatus')!.textContent!.includes('Some records could not be loaded') && document.querySelector('.timeline-roll'));
     await page.click('#optionOpenTab'); expect(await page.$eval('#optionTimelinePanel', e => e.classList.contains('hidden'))).toBe(true);
     expect(errors).toEqual([]);
     expect(await page.$eval('#status', e => e.classList.contains('error'))).toBe(false);

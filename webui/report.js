@@ -271,7 +271,7 @@ function brokerFundAssets(dash, channel) {
 
 function brokerFundAssetsCards(dash, channel) {
   return brokerFundAssets(dash, channel).map(row => metricCard('Fund assets · broker',
-    money(row.amount, row.currency), `${channelLabel(row.channel)} · as of ${row.asOf}. Account total only; excluded from itemized NAV and P/L. Individual fund details unavailable.`)).join('');
+    money(row.amount, row.currency), `${channelLabel(row.channel)} · ${row.asOf}`)).join('');
 }
 
 function channelFromQuery() {

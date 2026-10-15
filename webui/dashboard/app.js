@@ -79,7 +79,6 @@ const el = {
   barGrid: document.getElementById('barGrid'),
   chartGrid: document.getElementById('chartGrid'),
   insightGrid: document.getElementById('insightGrid'),
-  warningsBanner: document.getElementById('warningsBanner'),
 };
 
 let payload = null;
@@ -372,8 +371,7 @@ function renderOptionFreshness() {
     const late = interval && row.last_success_at && Date.now() - Date.parse(row.last_success_at) > (interval + 1) * 3600000 ? '; sync overdue' : '';
     return `${name}: ${confirmed}${failed}${schedule}${late}${row.enabled ? '' : '; paused'}`;
   }).join(' · ') : 'Option history begins with broker observations. Valuation snapshots do not confirm position status.';
-  const gaps = optionHistory.gaps?.length ? ` · ${optionHistory.gaps.length} older sync${optionHistory.gaps.length === 1 ? '' : 's'} could not be reconstructed` : '';
-  el.optionFreshness.textContent = summary + gaps;
+  el.optionFreshness.textContent = summary;
 }
 
 function historyContractLabel(row) {
@@ -444,8 +442,6 @@ function showOptionHistoryDetail(id) {
       p.option.strike === row.contract.strike && p.option.expiry === row.contract.expiry)).map(s => s.date);
   el.optionHistoryDetail.innerHTML = `<div class="history-detail"><h3>${escapeHtml(historyContractLabel(row))}</h3>
     <p><strong>Evidence:</strong> Last observed open ${optionDateLabel(row.last_seen_open)}${row.first_seen_absent ? `; first observed absent ${optionDateLabel(row.first_seen_absent)}` : ''}. ${row.matched_trade_pl ? 'Imported opening and closing fills reconcile to a flat position.' : row.events?.length ? 'Broker lifecycle records are listed below; partial or conflicting records do not establish a complete outcome.' : 'Disappearance alone does not establish a close, expiry, or assignment.'}</p>
-    ${row.uncertain_as_of ? `<p><strong>Coverage gap:</strong> The ${escapeHtml(row.uncertain_as_of)} response did not confirm this contract. ${row.uncertain_skips?.length ? escapeHtml(row.uncertain_skips.map(skip => `${skip.symbol || 'Unidentified row'}: ${skip.reason}`).join('; ')) : 'One or more position rows were skipped.'}</p>` : ''}
-    ${row.event_coverage_gap ? `<p><strong>Event coverage gap:</strong> ${escapeHtml(row.event_coverage_gap)}</p>` : ''}
     <p><strong>Broker observations:</strong></p><ul>${row.observations.map(o => `<li>${escapeHtml(o.as_of)} · ${o.units} contract${o.units === 1 ? '' : 's'} · broker mark ${fmtPrettyMoney(o.mark, row.contract.currency)}${o.source === 'prior_books' ? ' · prior books' : ''}</li>`).join('')}</ul>
     <p><strong>Imported fills for this contract:</strong> ${row.executions.length ? `${row.executions.length} execution${row.executions.length === 1 ? '' : 's'}. Dates can precede the first position observation; a same-day reopen may share fills across episodes.` : 'None available.'}</p>
     ${row.executions.length ? `<ul>${row.executions.map(fill => `<li>${escapeHtml(`${optionDateLabel(fill.executed_at.slice(0, 10))} ${fill.executed_at.slice(11)}`)} · ${escapeHtml(fill.side.toUpperCase())} to ${escapeHtml(fill.effect)} · ${escapeHtml(fill.contracts)} contracts · gross ${escapeHtml(fill.gross_premium)} ${escapeHtml(fill.currency)} · commission ${fill.commission == null ? 'not reported' : `${escapeHtml(fill.commission)} ${escapeHtml(fill.currency)}`}</li>`).join('')}</ul>` : ''}
@@ -567,12 +563,9 @@ function renderRollRelationships() {
   rollEl.more.classList.toggle('hidden', rollData.next_offset == null || !!rollError || rollLoading);
   const replay = selectedDate === 'live' ? '' : ` · trades through ${optionDateLabel(selectedDate)}`;
   rollEl.status.textContent = rollLoading ? 'Reading archived execution evidence…' : rollError ? `Could not load relationships: ${rollError}` :
-    `${rollData.total} contract groups${replay} · retained history only${rollData.gaps.length ? ` · ${rollData.gaps.length} coverage gaps` : ''}`;
+    `${rollData.total} contract groups${replay}`;
   if (rollError && !rollData.groups.length) { rollEl.groups.innerHTML = ''; return; }
-  const gapHtml = rollData.gaps.length ? `<details class="roll-coverage"><summary>History coverage gaps (${rollData.gaps.length})</summary><ul>${rollData.gaps.map(g => `<li>${escapeHtml(g.channel)}: ${escapeHtml(g.reason)}${g.source ? ` · ${escapeHtml(g.source)}` : ''}</li>`).join('')}</ul></details>` : '';
-  const coverageHtml = rollData.coverage.filter(c => c.history_available).map(c => `${c.label} (${c.account_id}): ${optionDateLabel(c.first_trade.slice(0, 10))}–${optionDateLabel(c.last_trade.slice(0, 10))}`).join(' · ');
-  rollEl.groups.innerHTML = `${coverageHtml ? `<details class="roll-coverage"><summary>Data coverage</summary><p>Earliest and latest retained option trades by account. These ranges do not confirm complete history.</p><p>${escapeHtml(coverageHtml)}</p></details>` : ''}${gapHtml}` +
-    (rollData.groups.length ? rollData.groups.map(g => {
+  rollEl.groups.innerHTML = (rollData.groups.length ? rollData.groups.map(g => {
       const id = `group-${g.id}`;
       const possible = g.relationships.some(r => r.evidence === 'possible');
       const review = g.relationships.some(r => r.evidence === 'review');
@@ -1556,8 +1549,8 @@ function renderOverview(view) {
     const positionDates = view.isLive ? Object.entries(payload.brokerAsOf || {})
       .filter(([channel]) => view.channelView === MERGED_CHANNEL_VIEW || channel === view.channelView)
       .map(([channel, date]) => `${channel.toUpperCase()} ${optionDateLabel(date)}`) : [];
-    el.heroLead.textContent = `${n} ${n === 1 ? 'position' : 'positions'} — ${e} equity, ${o} option, ${f} fund.${archive}${view.isLive && positionDates.length ? ` Broker positions as of ${positionDates.join(' · ')}.` : ''}`;
-    if (hasUnitemizedFunds) el.heroLead.textContent += ' Fund holding details are unavailable; account fund totals are shown separately and excluded from itemized NAV and P/L.';
+    const fundCountLabel = hasUnitemizedFunds && f === 0 ? '' : `, ${f} fund`;
+    el.heroLead.textContent = `${n} ${n === 1 ? 'position' : 'positions'} — ${e} equity, ${o} option${fundCountLabel}.${archive}${view.isLive && positionDates.length ? ` Broker positions as of ${positionDates.join(' · ')}.` : ''}`;
   }
   if (el.navValue) el.navValue.textContent = view.navComplete === false
     ? '—' : fmtPrettyMoney(view.totalValue, repCcy, 2);
@@ -1967,17 +1960,6 @@ function monthlyLineCard(title, data, ccy, help) {
     return `<line x1="${x(index)}" y1="${y(previous.value)}" x2="${x(index + 1)}" y2="${y(stats.value)}" stroke="var(--brand)" stroke-width="2"${stats.partial || previous.partial ? ' stroke-dasharray="5 5"' : ''} />`;
   }).join('');
   const feeLabel = basis => basis === 'net' ? 'After reported fees' : basis === 'gross' ? 'Before fees' : 'Fees partly included';
-  const excluded = entries.reduce((n, [, stats]) => n + stats.excluded, 0);
-  const gapReasons = new Map();
-  for (const gap of data.gaps) {
-    const reason = gap.reason.includes('opening fills') ? 'Earlier opening trades are missing, so we cannot work out the profit or loss on these closes.'
-      : gap.reason.includes('Physical delivery') ? 'Shares were assigned or exercised, but the broker did not report the option profit or loss.'
-      : gap.reason.includes('side') ? 'The records do not establish which option position ended.'
-      : 'The payment when the option ended is missing.';
-    gapReasons.set(reason, (gapReasons.get(reason) || 0) + 1);
-  }
-  const missingCurrency = excluded - data.gaps.length;
-  if (missingCurrency) gapReasons.set('Currency conversion or a usable profit/loss amount is missing.', missingCurrency);
   const rows = entries.map(([month, stats]) => `<tr data-pnl-month="${escapeHtml(month)}">
     <td>${escapeHtml(monthLabel(month))}</td>
     <td class="num ${stats.value == null ? '' : plClass(stats.value)}">${stats.value == null ? 'Not available' : fmtPrettyMoney(stats.value, ccy)}${stats.value != null && stats.partial ? '<small class="pnl-partial">Partial subtotal</small>' : ''}</td>
@@ -1990,8 +1972,6 @@ function monthlyLineCard(title, data, ccy, help) {
     <p class="pnl-caption">Profit or loss from recorded completed option trades, shown in the month they ended. This is not your full account profit or loss.</p>
     ${available.length ? `<div class="pnl-chart-scroll"><svg class="monthly-line" viewBox="0 0 760 270" role="img" aria-label="Monthly option profit and loss in ${escapeHtml(ccy || 'reporting currency')}. Values and partial months are listed in the table below."><text class="pnl-axis" x="12" y="18">P&amp;L (${escapeHtml(ccy || 'reporting currency')})</text>${[-max, 0, max].map(value => `<line x1="90" y1="${y(value)}" x2="720" y2="${y(value)}" stroke="currentColor" opacity="${value === 0 ? '.4' : '.12'}" /><text class="pnl-axis" x="80" y="${y(value) + 4}" text-anchor="end">${escapeHtml(fmtPrettyMoney(value, ccy, 0))}</text>`).join('')}${lines}${entries.map(([month, stats], i) => stats.value == null ? `<text class="pnl-missing" x="${x(i)}" y="225" text-anchor="middle">—</text>` : `<circle class="${stats.partial ? 'pnl-point-partial' : 'pnl-point'}" cx="${x(i)}" cy="${y(stats.value)}" r="5"><title>${escapeHtml(monthLabel(month))}: ${escapeHtml(fmtPrettyMoney(stats.value, ccy))}${stats.partial ? ' · Partial subtotal' : ''} · ${feeLabel(stats.basis)}</title></circle>`).join('')}${ticks}</svg></div><p class="pnl-scroll-hint">Swipe the chart to see all months.</p><p class="pnl-legend"><span>● Recorded result</span><span>○ Partial subtotal</span><span>— No result available</span><span>Dashed line: partial results</span></p>` : '<p class="empty">No completed option results can be calculated yet. Open positions are shown in Section 03.</p>'}
     ${entries.length ? `<div class="table-scroll"><table class="report pnl-table"><thead><tr><th>Month</th><th>Recorded P&amp;L</th><th>Fees / availability</th><th>What is included</th></tr></thead><tbody>${rows}</tbody></table></div>` : ''}
-    <p class="pnl-coverage-note">${excluded ? `${excluded} trade records are excluded because their profit or loss cannot yet be calculated. Partial subtotals show only the results we can calculate.` : 'Based on imported option records. Missing history may mean some trades are not included.'} Fee treatment is shown for each month.</p>
-    ${gapReasons.size ? `<details class="pnl-coverage-details"><summary>Why some results are incomplete</summary><ul>${[...gapReasons].map(([reason, count]) => `<li>${count} records: ${escapeHtml(reason)}</li>`).join('')}</ul><p>Import the earlier broker trade history to help fill these gaps. Excluded records are not treated as zero.</p></details>` : ''}
   </div>`;
 }
 
@@ -2175,38 +2155,6 @@ function renderChannelPills(view) {
       return `<button type="button" class="chip-btn${on}" data-channel="${escapeHtml(p.id)}">${escapeHtml(p.label)}</button>`;
     })
     .join('');
-}
-
-function renderWarnings() {
-  const banner = el.warningsBanner;
-  if (!banner) return;
-  const list = [
-    ...(Array.isArray(payload?.warnings) ? payload.warnings : []),
-    ...(Array.isArray(payload?.model?.live?.issues) ? payload.model.live.issues : []),
-  ];
-  // Dedupe by message
-  const seen = new Set();
-  const unique = list.filter((w) => {
-    const m = w && w.message ? String(w.message) : '';
-    if (!m || seen.has(m)) return false;
-    seen.add(m);
-    return true;
-  });
-  if (unique.length === 0) {
-    banner.classList.remove('visible');
-    banner.innerHTML = '';
-    return;
-  }
-  banner.classList.add('visible');
-  banner.innerHTML =
-    `<strong>Data notes (${unique.length}) — dashboard still loaded</strong><ul>` +
-    unique
-      .map((w) => {
-        const key = w.key ? `<code>${escapeHtml(w.key)}</code>: ` : '';
-        return `<li>${key}${escapeHtml(w.message)}</li>`;
-      })
-      .join('') +
-    '</ul>';
 }
 
 function renderAllocation(view) {
@@ -2751,7 +2699,6 @@ function renderDate(dateKey, channelKey = selectedChannel) {
   }
   syncDateControls();
 
-  renderWarnings();
   renderOverview(view);
   setOptionTab(optionTab);
 }

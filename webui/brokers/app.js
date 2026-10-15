@@ -129,11 +129,9 @@ function syncSummary(conn) {
   const sync = conn.last_sync;
   if (!sync) return '<p class="sync-summary">Never synced</p>';
   if (sync.ok === false) return `<p class="sync-summary sync-failed">Last sync failed: ${escapeHtml(sync.error || 'Unknown error')}</p>`;
-  const skipped = Array.isArray(sync.not_imported) ? sync.not_imported : [];
   return `<div class="sync-summary">
-    <div class="sync-heading">${skipped.length ? 'Sync complete · some items not imported' : 'Sync complete'}</div>
+    <div class="sync-heading">Sync complete</div>
     <p>${escapeHtml(sync.as_of || sync.at)}${sync.lots_upserted != null ? ` · ${escapeHtml(sync.lots_upserted)} positions imported` : ''}</p>
-    ${skipped.length ? `<details class="sync-issues"><summary>${skipped.length} items not imported</summary><ul>${skipped.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul></details>` : ''}
   </div>`;
 }
 

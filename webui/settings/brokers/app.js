@@ -179,9 +179,6 @@ function lastSyncLine(conn) {
   const bits = [`Last sync ${conn.last_sync.as_of || conn.last_sync.at}`];
   if (conn.last_sync.account_id) bits.push(`account ${conn.last_sync.account_id}`);
   if (conn.last_sync.lots_upserted != null) bits.push(`${conn.last_sync.lots_upserted} lots`);
-  if (Array.isArray(conn.last_sync.not_imported) && conn.last_sync.not_imported.length > 0) {
-    bits.push(`${conn.last_sync.not_imported.length} not imported: ${conn.last_sync.not_imported.join('; ')}`);
-  }
   return bits.join(' · ');
 }
 

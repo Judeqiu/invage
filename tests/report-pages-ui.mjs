@@ -762,8 +762,7 @@ try {
   assert(await page.$('.pnl-card .pnl-point-partial'), 'partial results have hollow markers');
   await page.click('[data-pnl-month="2026-05"] summary');
   assert.match(await page.$eval('[data-pnl-month="2026-05"] details', node => node.textContent), /AMD · IBKR/);
-  await page.click('.pnl-coverage-details summary');
-  assert.match(await page.$eval('.pnl-coverage-details', node => node.textContent), /Earlier opening trades are missing/);
+  assert.equal(await page.$('.pnl-coverage-details, .pnl-coverage-note'), null, 'coverage notes belong in notifications');
   await page.$eval('.pnl-card', node => node.scrollIntoView());
   await (await page.$('.pnl-card')).screenshot({ path: '/tmp/velovest-monthly-pnl-desktop.png' });
   await page.setViewport({ width: 390, height: 844 });
@@ -861,6 +860,17 @@ try {
 
   // Account fund totals have no fabricated lot count, units, cost or FX conversion.
   const originalMetrics = structuredClone(payload.connectionMetrics);
+  const originalWarnings = payload.warnings;
+  const originalIssues = payload.model.live.issues;
+  const originalRiskCash = payload.model.live.cashAmount;
+  const originalRiskObligation = payload.model.live.contingentCashObligation;
+  payload.model.live.cashAmount = 0;
+  payload.model.live.contingentCashObligation = 134250;
+  const coverageWarning = { code: 'broker_fund_details_unavailable', key: 'moomoo',
+    message: 'Individual fund holdings, units and cost basis are unavailable.', severity: 'warning' };
+  payload.warnings = [coverageWarning];
+  payload.model.live.issues = [coverageWarning, coverageWarning,
+    { code: 'price_fetch_failed', message: 'Internal data diagnostic should not appear on report pages.' }];
   payload.connectionMetrics.moomoo = { as_of: '2026-10-15', currency: 'USD', fund_assets: 1198.16 };
   payload.connectionMetrics.ibkr = { as_of: '2026-10-14', currency: 'SGD', fund_assets: 2000 };
   await page.goto(`http://127.0.0.1:${port}/insights/`);
@@ -872,16 +882,27 @@ try {
   'verified equity lot count remains visible alongside the fund summary');
   const fundCards = await page.$eval('#metrics', el => el.textContent);
   assert(fundCards.includes('2,000.00 SGD') && fundCards.includes('2026-10-15'), 'fund values retain each account currency and date');
-  assert(fundCards.includes('excluded from itemized NAV and P/L'), 'fund total excluded from cost accounting');
-  assert(await page.$eval('#summary', el => el.textContent.includes('excludes broker fund total')), 'partial NAV is identified');
+  assert(!/unavailable|excluded from|coverage/i.test(fundCards), 'fund summary has no coverage notes');
+  const insightBody = await page.evaluate(() => document.body.innerText);
+  assert(!insightBody.includes(coverageWarning.message) && !insightBody.includes(coverageWarning.code) &&
+    !insightBody.includes('Internal data diagnostic'), 'duplicated coverage warnings and internal codes never appear on Insights');
+  assert(await page.$eval('#risks', el => [...el.querySelectorAll('.label-eyebrow')]
+    .every(label => /Cash vs assignment|ITM/.test(label.textContent))), 'risk cards are financial risks only');
+  assert(await page.$eval('#risks', el => el.textContent.includes('Cash vs assignment') &&
+    el.textContent.includes('134,250')), 'real cash-versus-assignment risk stays visible');
+  await page.screenshot({ path: '/tmp/velovest-insights-no-coverage-desktop.png', fullPage: true });
   await page.click('#filters [data-channel="moomoo"]');
   assert(await page.$eval('#metrics', el => el.textContent.includes('1,198.16') && !el.textContent.includes('2,000.00 SGD')), 'fund values respect account filter');
   await page.setViewport({ width: 390, height: 844 });
   assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'fund summary fits phone width');
+  await page.screenshot({ path: '/tmp/velovest-insights-no-coverage-mobile.png', fullPage: true });
   await page.setViewport({ width: 1440, height: 1000 });
   await page.goto(`http://127.0.0.1:${port}/dashboard/`);
   await page.waitForFunction(() => document.getElementById('kpiRow')?.textContent.includes('1,198.16'));
-  assert(await page.$eval('#heroLead', el => el.textContent.includes('Fund holding details are unavailable')), 'dashboard explains omitted fund detail');
+  assert.equal(await page.$('#warningsBanner'), null, 'dashboard has no data-note banner');
+  assert(!await page.$eval('#heroLead', el => el.textContent.includes('0 fund')), 'aggregate fund assets are not described as zero funds');
+  assert(!await page.evaluate(() => document.body.innerText.includes('Internal data diagnostic') ||
+    document.body.innerText.includes('Individual fund holdings')), 'dashboard does not display coverage notes');
   assert(await page.$eval('#navLabel', el => el.textContent.includes('Itemized')), 'dashboard does not label the subtotal as full account NAV');
   delete payload.connectionMetrics.ibkr;
   payload.connectionMetrics.moomoo.fund_assets = 0;
@@ -889,6 +910,10 @@ try {
   await page.waitForFunction(() => document.getElementById('metrics')?.textContent.includes('Fund assets'));
   assert(await page.$eval('#edge', el => /Fund lots\s+0/.test(el.textContent)), 'explicit zero retains itemized fund count');
   payload.connectionMetrics = originalMetrics;
+  payload.warnings = originalWarnings;
+  payload.model.live.issues = originalIssues;
+  payload.model.live.cashAmount = originalRiskCash;
+  payload.model.live.contingentCashObligation = originalRiskObligation;
 
   cachedSnapshot = structuredClone(payload);
   const beforeNavigation = dashboardRequests;

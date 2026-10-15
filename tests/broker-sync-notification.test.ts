@@ -42,12 +42,30 @@ describe('broker sync notification', () => {
     const notify = vi.fn(async () => ({ notification: {} as never, delivery: [] }));
     const summarize = vi.fn(async () => 'The first IBKR snapshot has no holdings.');
     await publishBrokerSyncSuccess('alice', false, facts, { summarize, notify });
-    expect(notify.mock.calls[0]?.[0]).toMatchObject({ slug: 'alice', body: 'The first IBKR snapshot has no holdings.',
+    expect(notify.mock.calls[0]?.[0]).toMatchObject({ userId: 'alice', body: 'The first IBKR snapshot has no holdings.',
       status_hint: 'success', href: '/settings/brokers' });
     summarize.mockRejectedValueOnce(new Error('model unavailable'));
     await publishBrokerSyncSuccess('alice', false, facts, { summarize, notify });
     expect(notify.mock.calls[1]?.[0].body).toContain('Initial snapshot');
     await publishBrokerSyncFailure('alice', 'IBKR', 'Main', 'fetch failed', notify);
     expect(notify.mock.calls[2]?.[0]).toMatchObject({ status_hint: 'failure', severity: 'medium' });
+  });
+
+  it('includes each coverage note once in notifications even when the LLM omits it or fails', async () => {
+    const note = 'Fund assets 1198.16 USD recorded as an account total only; individual fund holdings are unavailable.';
+    const facts = brokerSyncFacts('Moomoo', 'Main', captureBrokerSyncSnapshot(state(), 'moomoo'),
+      captureBrokerSyncSnapshot(state(), 'moomoo'), { ...applied,
+        skipped: [{ kind: 'position', reason: note }, { kind: 'position', reason: note }] }, true);
+    expect(facts.coverage_notes).toEqual([note]);
+    const notify = vi.fn(async () => ({ notification: {} as never, delivery: [] }));
+    const summarize = vi.fn(async () => 'Moomoo sync complete.');
+    await publishBrokerSyncSuccess('alice', false, facts, { summarize, notify });
+    expect(notify.mock.calls[0]?.[0].body).toBe(`Moomoo sync complete.\n\nData notes:\n${note}`);
+    expect(summarize.mock.calls[0]?.[2]).not.toHaveProperty('coverage_notes');
+    summarize.mockRejectedValueOnce(new Error('model unavailable'));
+    await publishBrokerSyncSuccess('alice', false, facts, { summarize, notify });
+    const body = notify.mock.calls[1]?.[0].body ?? '';
+    expect(body.split(note)).toHaveLength(2);
+    expect(body).toContain('No holdings or cash changes');
   });
 });

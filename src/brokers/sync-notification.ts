@@ -2,7 +2,7 @@ import { completeSimple } from '@earendil-works/pi-ai/compat';
 import { checkTurnAllowed, getLlmCallOptions, notifyUser, recordLlm, resolveUtilityLlm } from 'utarus';
 import type { Holding } from '../market/types.js';
 import { getCashes, getPortfolio, type InvestorState } from '../state/portfolio-state.js';
-import type { BrokerApplyResult } from './statement.js';
+import { formatBrokerSkip, type BrokerApplyResult } from './statement.js';
 
 interface PositionSnapshot {
   ticker: string;
@@ -52,6 +52,8 @@ export interface BrokerSyncFacts {
   cash: string[];
   executions_added: number;
   skipped: number;
+  /** Detailed coverage notes belong in the sync notification, never page risk cards. */
+  coverage_notes?: string[];
 }
 
 function formatNumber(value: number): string {
@@ -87,7 +89,8 @@ export function brokerSyncFacts(broker: string, account: string, before: BrokerS
     initial: !hadPreviousSync && !Object.keys(before.positions).length && !Object.keys(before.cash).length,
     positions_total: Object.keys(after.positions).length,
     added, removed, changed, cash,
-    executions_added: Math.max(0, after.execution_count - before.execution_count), skipped: applied.skipped.length };
+    executions_added: Math.max(0, after.execution_count - before.execution_count), skipped: applied.skipped.length,
+    coverage_notes: [...new Set(applied.skipped.map(formatBrokerSkip))] };
 }
 
 export function fallbackBrokerSyncSummary(facts: BrokerSyncFacts): string {
@@ -147,10 +150,15 @@ const defaultDeps: BrokerSyncNotificationDeps = { summarize: llmSummary, notify:
 export async function publishBrokerSyncSuccess(slug: string, isAdmin: boolean, facts: BrokerSyncFacts,
   deps: BrokerSyncNotificationDeps = defaultDeps): Promise<void> {
   let summary = fallbackBrokerSyncSummary(facts);
-  try { summary = await deps.summarize(slug, isAdmin, facts); }
+  // Keep notes out of the model-written summary so they appear exactly once,
+  // including when model summarization fails or omits the coverage detail.
+  const { coverage_notes, ...summaryFacts } = facts;
+  const notes = [...new Set((coverage_notes ?? []).map(note => note.trim()).filter(Boolean))];
+  try { summary = await deps.summarize(slug, isAdmin, summaryFacts); }
   catch (error) { console.warn('[broker/sync-notification] LLM fallback:', error instanceof Error ? error.message : String(error)); }
   try {
-    await deps.notify({ userId: slug, title: `${facts.broker} sync complete`, body: summary,
+    await deps.notify({ userId: slug, title: `${facts.broker} sync complete`,
+      body: summary + (notes.length ? `\n\nData notes:\n${notes.join('\n')}` : ''),
       source: 'system', severity: 'info', status_hint: 'success', href: '/settings/brokers' });
   } catch (error) { console.error('[broker/sync-notification] publish failed:', error); }
 }

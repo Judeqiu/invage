@@ -129,7 +129,7 @@ function existingCard(c) {
       <div class="cap">${esc(b.display_name)} · ${esc(c.account_id || 'Account selection needed')} · ${esc(c.channel)}</div></div>
       <span class="chip ${c.status === 'paused' ? 'off' : c.status === 'error' ? 'error' : c.status === 'verified' ? 'connected' : 'needs_credentials'}">${esc(status)}</span></div>
     <p class="hint">${esc(last)}</p>
-    <p class="hint">Sync latest refreshes recent data. Full sync imports available history${c.history_sync?.historical_imported ? " · History imported" : ""}${c.history_sync?.status === "partial" ? " · Coverage gaps remain" : ""}.</p>
+    <p class="hint">Sync latest refreshes recent data. Full sync imports available history${c.history_sync?.historical_imported ? " · History imported" : ""}.</p>
     <div class="actions">
       <button data-action="manage" data-id="${esc(c.id)}">${open ? 'Close' : 'Manage'}</button>
       <button data-action="preview" data-id="${esc(c.id)}" ${busy || dirty.has(c.id) || !c.account_id ? 'disabled' : ''}>Preview</button>
@@ -138,8 +138,7 @@ function existingCard(c) {
       ${c.latest_raw_data ? `<a href="${ROOT}/broker-accounts/${encodeURIComponent(c.id)}/raw-data" download>Download latest raw</a>` : ''}
     </div>
     ${dirty.has(c.id) ? '<p class="hint">Save changes before preview or sync.</p>' : ''}
-    ${preview[c.id] ? `<p class="hint">Preview ${esc(preview[c.id].as_of)} · ${esc(preview[c.id].lots)} incoming lots · ${esc(preview[c.id].would_remove)} existing lots would be removed · ${esc(preview[c.id].currencies.join(', '))} cash${preview[c.id].not_imported.length ? ` · ${esc(preview[c.id].not_imported.length)} skipped` : ''}</p>
-      ${preview[c.id].not_imported.length ? `<details><summary>Skipped rows</summary><ul>${preview[c.id].not_imported.map(item => `<li>${esc(item)}</li>`).join('')}</ul></details>` : ''}` : ''}
+    ${preview[c.id] ? `<p class="hint">Preview ${esc(preview[c.id].as_of)} · ${esc(preview[c.id].lots)} incoming lots · ${esc(preview[c.id].would_remove)} existing lots would be removed · ${esc(preview[c.id].currencies.join(', '))} cash</p>` : ''}
     ${open ? `<div class="manage">
       ${b.id === 'futubull' ? guide(b) : ''}
       <label class="field" for="account-label">Account label<input id="account-label" type="text" value="${esc(c.label)}"></label>
