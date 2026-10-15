@@ -244,7 +244,7 @@ footer { text-align: center; font-size: 0.72rem; color: var(--muted-foreground);
 .roll-legs .chip-btn { margin-top: 0.5rem; font-size: 0.7rem; }
 
 .hero-row .hero-copy { flex: 1 1 340px; min-width: 0; }
-.hero-metrics { display: flex; flex: 0 1 580px; flex-wrap: wrap; gap: 0.75rem; align-self: flex-start; }
+.hero-metrics { display: flex; flex: 0 1 870px; flex-wrap: wrap; gap: 0.75rem; align-self: flex-start; }
 .hero-metrics .nav-card { flex: 1 1 220px; min-width: 0; max-width: 280px; }
 @media (max-width: 600px) {
   .hero-metrics { width: 100%; }

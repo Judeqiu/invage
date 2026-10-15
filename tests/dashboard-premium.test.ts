@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { expect, it } from 'vitest';
 import { buildExecutionJournal, type OptionExecution } from '../src/brokers/option-executions.js';
+import { buildRecordedOptionAnalytics } from '../src/webapp/option-analytics.js';
 
 const source = readFileSync('webui/dashboard/app.js', 'utf8');
 const calculator = source.slice(source.indexOf('function selectedTradeChannels('), source.indexOf('\nfunction unverifiedOptionChannels'));
@@ -16,6 +17,59 @@ const fills = [execution,
   { ...execution, execution_id: '3', executed_at: '2026-09-10T10:00:00', gross_premium: '200' },
   { ...execution, execution_id: '4', executed_at: '2026-10-10T10:00:00', gross_premium: '900' },
 ] as OptionExecution[];
+
+function earned(analytics: unknown, overrides: Record<string, unknown> = {}, view: Record<string, unknown> = {}) {
+  const helpers = source.slice(source.indexOf('function selectedTradeChannels('), source.indexOf('function entrySpotHtml('));
+  return runInNewContext(`${helpers}\nrecordedRealizedForView(view, date)`, {
+    payload: { optionAnalytics: analytics, premiumJournal: { channels: ['ibkr'] }, ...overrides },
+    view: { channelView: 'ibkr', reportingCurrency: 'USD', ...view }, date: '2026-09-16',
+    MERGED_CHANNEL_VIEW: 'merged', reportingCcyCode: (v: any) => v.reportingCurrency,
+    optionDateLabel: (d: string) => d,
+  });
+}
+
+it('earns only matched closed quantities, excluding open premium and future results', () => {
+  const analytics = buildRecordedOptionAnalytics([
+    { ...execution, contracts: '2', gross_premium: '800', commission: '-2' },
+    fills[1], fills[2],
+    { ...fills[1], execution_id: 'future-close', executed_at: '2026-10-10T10:00:00' },
+  ]);
+  expect(earned(analytics)).toMatchObject({ value: 348, basis: 'net', partial: false });
+  expect(earned(buildRecordedOptionAnalytics([execution])).value).toBeNull();
+});
+
+it('earns expiring option premium and includes realized losses', () => {
+  const analytics = buildRecordedOptionAnalytics([execution], [{
+    id: 'expired', broker_id: 'ibkr', channel: 'ibkr', account_id: 'A', underlying: 'AMD', right: 'put',
+    strike: '100', expiry: '2026-09-18', multiplier: '100', contracts: '1', currency: 'USD',
+    date: '2026-09-15', kind: 'expiration', settlement: 'unknown', fees: '0', source: 'ibkr_flex',
+  }]);
+  expect(earned(analytics).value).toBe(399);
+  const loss = buildRecordedOptionAnalytics([execution, { ...fills[1], gross_premium: '-500' }]);
+  expect(earned(loss).value).toBe(-102);
+});
+
+it('uses a consistent before-fees basis when closing fees are missing', () => {
+  const analytics = buildRecordedOptionAnalytics([execution, { ...fills[1], commission: null }]);
+  expect(earned(analytics)).toMatchObject({ value: 350, basis: 'gross' });
+  expect(earned(analytics).reason).toContain('Before fees');
+});
+
+it('filters realized results by broker and date, converts FX and identifies partial subtotals', () => {
+  const profits = [
+    { channel: 'ibkr', date: '2026-08-10', currency: 'USD', net: 348 },
+    { channel: 'tiger', date: '2026-08-10', currency: 'SGD', net: 100 },
+    { channel: 'ibkr', date: '2026-10-10', currency: 'USD', net: 999 },
+  ];
+  expect(earned({ profits }).value).toBe(348);
+  const merged = { channelView: 'merged', channels: ['ibkr', 'tiger'], fxRates: { SGD: 0.75 } };
+  const journal = { premiumJournal: { channels: ['ibkr', 'tiger'] } };
+  expect(earned({ profits }, journal, merged)).toMatchObject({ value: 423, partial: false });
+  expect(earned({ profits }, journal, { ...merged, fxRates: {} })).toMatchObject({ value: 348, partial: true, excluded: 1 });
+  expect(earned({ profits, gaps: [{ channel: 'ibkr', date: '2026-08-11' }] })).toMatchObject({ value: 348, partial: true });
+  expect(earned({ profits }, { optionHistoryGaps: [{ channel: 'ibkr', blocksTotals: true }] }).value).toBeNull();
+});
+
 function calculate(records = fills, view: Record<string, unknown> = {}, date = '2026-09-16') {
   const journal = buildExecutionJournal(records);
   return runInNewContext(`${calculator}\nrecordedPremiumForView(view, date)`, {

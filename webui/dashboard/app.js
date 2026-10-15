@@ -35,6 +35,9 @@ const el = {
   totalPremiumCard: document.getElementById('totalPremiumCard'),
   totalPremiumValue: document.getElementById('totalPremiumValue'),
   totalPremiumMeta: document.getElementById('totalPremiumMeta'),
+  realizedPnlCard: document.getElementById('realizedPnlCard'),
+  realizedPnlValue: document.getElementById('realizedPnlValue'),
+  realizedPnlMeta: document.getElementById('realizedPnlMeta'),
   kpiRow: document.getElementById('kpiRow'),
   expiryRow: document.getElementById('expiryRow'),
   expiryLead: document.getElementById('expiryLead'),
@@ -195,6 +198,30 @@ function recordedPremiumForView(view, date) {
     missingFees, partial: missing.length > 0 || historyGaps.length > 0, firstTrade: dates[0], lastTrade: dates.at(-1),
     reason: missing.length || historyGaps.length ? 'Recorded trades only · incomplete history · before fees' : 'Recorded option trades · before fees',
     totalReason: conflictingRecords ? 'Conflicting broker records need reconciliation' : 'No recorded option cash flow or currencies cannot be combined without FX' };
+}
+
+function recordedRealizedForView(view, date) {
+  const channels = selectedTradeChannels(view);
+  const historyGaps = (payload?.optionHistoryGaps || []).filter(g => channels.includes(g.channel));
+  if (historyGaps.some(g => g.blocksTotals)) {
+    return { value: null, reason: 'Conflicting broker records need reconciliation' };
+  }
+  const rows = (payload?.optionAnalytics?.profits || []).filter(r => channels.includes(r.channel) && r.date <= date);
+  const gaps = (payload?.optionAnalytics?.gaps || []).filter(g => channels.includes(g.channel) && g.date <= date);
+  const basis = rows.length ? rows.every(r => r.net != null) ? 'net'
+    : rows.every(r => r.gross != null) ? 'gross' : 'mixed' : null;
+  let value = null, excluded = gaps.length;
+  for (const row of rows) {
+    const amount = tradeAmount(view, row, basis === 'net' ? row.net : basis === 'gross' ? row.gross : row.gross ?? row.net);
+    if (amount == null) { excluded++; continue; }
+    value = (value ?? 0) + amount;
+  }
+  const observed = new Set(payload?.premiumJournal?.channels || []);
+  const partial = excluded > 0 || historyGaps.length > 0 || basis === 'mixed' || channels.some(ch => !observed.has(ch));
+  const feeLabel = basis === 'net' ? 'After reported fees' : basis === 'gross' ? 'Before fees' : 'Fees partly included';
+  return { value, basis, partial, excluded,
+    reason: value == null ? 'No calculable completed option results or FX unavailable'
+      : `${feeLabel} · Recorded history through ${optionDateLabel(date)}${partial ? ' · Partial subtotal' : ''}` };
 }
 
 function entrySpotHtml(trade, ccy) {
@@ -1596,6 +1623,13 @@ function renderOverview(view) {
     el.totalPremiumMeta.textContent = premium.total == null ? premium.totalReason
       : `Before fees · buys + sells · ${premium.firstTrade ? optionDateLabel(premium.firstTrade) : 'Recorded history'} through ${premium.lastTrade ? optionDateLabel(premium.lastTrade) : optionDateLabel(premiumDate)}${premium.partial ? ' · Partial history' : ''}`;
   }
+  if (el.realizedPnlCard) {
+    el.realizedPnlCard.classList.toggle('hidden', payload.dashboardConfig?.showRealizedPnl === false);
+    const realized = recordedRealizedForView(view, premiumDate);
+    el.realizedPnlValue.textContent = realized.value == null ? '—' : fmtPrettyMoney(realized.value, repCcy, 2);
+    el.realizedPnlValue.className = 'metric-value ' + (realized.value > 0 ? 'up' : realized.value < 0 ? 'down' : '');
+    el.realizedPnlMeta.textContent = realized.reason;
+  }
   const puts = (view.positions || []).filter(p => p.instrument === 'option' && p.option?.side === 'short' && p.option.right === 'put');
   const putAmounts = puts.map(p => tradeAmount(view, p, Number(p.option.strike) * Number(p.option.multiplier) * Number(p.units)));
   const putObligation = putAmounts.every(amount => amount != null)
@@ -2805,6 +2839,7 @@ function renderEmpty(body) {
   if (el.navValue) el.navValue.textContent = '—';
   if (el.navDelta) el.navDelta.textContent = 'Empty books';
   if (el.totalPremiumCard) el.totalPremiumCard.classList.add('hidden');
+  if (el.realizedPnlCard) el.realizedPnlCard.classList.add('hidden');
   if (el.dateInput) {
     const today = new Date().toISOString().slice(0, 10);
     el.dateInput.value = today;
