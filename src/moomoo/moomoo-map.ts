@@ -169,7 +169,10 @@ function mapFunds(d: unknown, asOf: string, skipped: BrokerSkip[]): {
   }
   const power = parseNum(rec.power);
   const maintenance_margin = parseNum(rec.maintenance_margin);
-  const currency = 'USD';
+  const reportedCurrency = String(rec.currency ?? '').trim().toUpperCase();
+  const hasCurrency = /^[A-Z]{3,4}$/.test(reportedCurrency);
+  // USD is the requested display currency for legacy margin-only snapshots.
+  const currency = hasCurrency ? reportedCurrency : 'USD';
   let metrics: BrokerConnectionMetrics | undefined;
   if (power != null || maintenance_margin != null) {
     if ((power == null || power >= 0) && (maintenance_margin == null || maintenance_margin >= 0)) {
@@ -178,6 +181,19 @@ function mapFunds(d: unknown, asOf: string, skipped: BrokerSkip[]): {
       if (maintenance_margin != null && maintenance_margin >= 0) {
         metrics.maintenance_margin = maintenance_margin;
       }
+    }
+  }
+  // Cloud exposes only the aggregate value, not the fund identities/units/costs.
+  // Keep it separate from both free cash and itemized position accounting.
+  if (rec.funds_assets != null && rec.funds_assets !== '') {
+    const amount = parseNum(rec.funds_assets);
+    if (amount == null || amount < 0 || !hasCurrency) {
+      skipped.push({ kind: 'position', reason: 'Fund assets could not be recorded: invalid amount or missing display currency.' });
+    } else {
+      metrics ??= { as_of: asOf, currency };
+      metrics.fund_assets = amount;
+      if (amount > 0) skipped.push({ kind: 'position', currency,
+        reason: `Fund assets ${amount.toFixed(2)} ${currency} recorded as an account total only. Moomoo does not return individual fund holdings; fund lot count, units and cost basis are unavailable. This total is separate from cash and excluded from itemized NAV and P/L.` });
     }
   }
   return { cash, metrics };

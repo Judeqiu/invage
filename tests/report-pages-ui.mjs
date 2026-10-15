@@ -859,6 +859,33 @@ try {
   await page.click('#filters [data-channel="ibkr"]');
   await page.waitForFunction(() => /ibkr/i.test(document.getElementById('summary')?.textContent || ''));
 
+  // Account fund totals have no fabricated lot count, units, cost or FX conversion.
+  const originalMetrics = structuredClone(payload.connectionMetrics);
+  payload.connectionMetrics.moomoo = { as_of: '2026-10-15', currency: 'USD', fund_assets: 1198.16 };
+  payload.connectionMetrics.ibkr = { as_of: '2026-10-14', currency: 'SGD', fund_assets: 2000 };
+  await page.goto(`http://127.0.0.1:${port}/insights/`);
+  await page.waitForFunction(() => document.getElementById('metrics')?.textContent.includes('1,198.16'));
+  assert(await page.$eval('#edge', el => /Fund lots\s+Unavailable/.test(el.textContent)), 'positive account total makes fund lot count unavailable');
+  const fundCards = await page.$eval('#metrics', el => el.textContent);
+  assert(fundCards.includes('2,000.00 SGD') && fundCards.includes('2026-10-15'), 'fund values retain each account currency and date');
+  assert(fundCards.includes('excluded from itemized NAV and P/L'), 'fund total excluded from cost accounting');
+  assert(await page.$eval('#summary', el => el.textContent.includes('excludes broker fund total')), 'partial NAV is identified');
+  await page.click('#filters [data-channel="moomoo"]');
+  assert(await page.$eval('#metrics', el => el.textContent.includes('1,198.16') && !el.textContent.includes('2,000.00 SGD')), 'fund values respect account filter');
+  await page.setViewport({ width: 390, height: 844 });
+  assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'fund summary fits phone width');
+  await page.setViewport({ width: 1440, height: 1000 });
+  await page.goto(`http://127.0.0.1:${port}/dashboard/`);
+  await page.waitForFunction(() => document.getElementById('kpiRow')?.textContent.includes('1,198.16'));
+  assert(await page.$eval('#heroLead', el => el.textContent.includes('Fund holding details are unavailable')), 'dashboard explains omitted fund detail');
+  assert(await page.$eval('#navLabel', el => el.textContent.includes('Itemized')), 'dashboard does not label the subtotal as full account NAV');
+  delete payload.connectionMetrics.ibkr;
+  payload.connectionMetrics.moomoo.fund_assets = 0;
+  await page.goto(`http://127.0.0.1:${port}/insights/`);
+  await page.waitForFunction(() => document.getElementById('metrics')?.textContent.includes('Fund assets'));
+  assert(await page.$eval('#edge', el => /Fund lots\s+0/.test(el.textContent)), 'explicit zero retains itemized fund count');
+  payload.connectionMetrics = originalMetrics;
+
   cachedSnapshot = structuredClone(payload);
   const beforeNavigation = dashboardRequests;
   await page.goto(`http://127.0.0.1:${port}/dashboard/`);

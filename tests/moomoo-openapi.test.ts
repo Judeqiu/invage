@@ -10,6 +10,7 @@ import { moomooSignContent, parseSignAlg, signMooMooRequest } from '../src/moomo
 import type { MooMooEnvelope, MooMooRawBundle } from '../src/moomoo/moomoo-types.js';
 import { sourceReconConnector } from '../src/recon/index.js';
 import type { InvestorState } from '../src/state/portfolio-state.js';
+import { assertBrokerStatement } from '../src/brokers/statement.js';
 
 const FIX = join(process.cwd(), 'tests/fixtures/moomoo');
 const ED = readFileSync(join(FIX, 'ed25519-private.pem'), 'utf8');
@@ -60,6 +61,49 @@ function bundle(over: Partial<MooMooRawBundle> = {}): MooMooRawBundle {
 }
 
 describe('MooMoo mapping', () => {
+  it('retains account fund assets without inventing lots, cash or a cost basis', () => {
+    const original = mapMooMooBundleToStatement(bundle(), 'moomoo');
+    const stmt = assertBrokerStatement(mapMooMooBundleToStatement(bundle({
+      funds: { s: 'ok', d: { ...(FUNDS.d as object), funds_assets: '1198.1600', currency: 'USD' } },
+    }), 'moomoo'));
+    expect(stmt.metrics?.fund_assets).toBe(1198.16);
+    expect(stmt.cash).toEqual(original.cash);
+    expect(stmt.lots).toEqual(original.lots);
+    expect(stmt.skipped.some(row => row.reason.includes('fund lot count, units and cost basis are unavailable'))).toBe(true);
+  });
+
+  it('supports a fund-only account total in the reported display currency', () => {
+    const stmt = assertBrokerStatement(mapMooMooBundleToStatement(bundle({
+      funds: { s: 'ok', d: { funds_assets: '1600', currency: 'SGD', sg_cash: '0' } },
+      positions: { s: 'ok', d: [] },
+    }), 'moomoo'));
+    expect(stmt.metrics).toEqual({ as_of: '2026-09-17', currency: 'SGD', fund_assets: 1600 });
+    expect(stmt.lots).toEqual([]);
+    expect(stmt.cash).toEqual([{ currency: 'SGD', amount: 0 }]);
+  });
+
+  it('distinguishes unreported fund assets from an explicit zero', () => {
+    const stmt = mapMooMooBundleToStatement(bundle({
+      funds: { s: 'ok', d: { us_cash: '0', funds_assets: '0.00', currency: 'USD' } },
+    }), 'moomoo');
+    expect(assertBrokerStatement(stmt).metrics?.fund_assets).toBe(0);
+    expect(stmt.skipped.some(row => row.reason.includes('Fund assets'))).toBe(false);
+    expect(mapMooMooBundleToStatement(bundle({ funds: { s: 'ok', d: { us_cash: '0' } } }), 'moomoo').metrics).toBeUndefined();
+  });
+
+  it.each([
+    { funds_assets: '-1', currency: 'USD' },
+    { funds_assets: 'NaN', currency: 'USD' },
+    { funds_assets: '1198.16' },
+    { funds_assets: '1198.16', currency: '$' },
+  ])('reports invalid fund totals without corrupting other imports: %j', fields => {
+    const stmt = mapMooMooBundleToStatement(bundle({ funds: { s: 'ok', d: { us_cash: '1', ...fields } } }), 'moomoo');
+    expect(stmt.metrics?.fund_assets).toBeUndefined();
+    expect(stmt.skipped.some(row => row.reason.includes('invalid amount or missing display currency'))).toBe(true);
+    expect(stmt.cash).toEqual([{ currency: 'USD', amount: 1 }]);
+    expect(stmt.lots.length).toBeGreaterThan(0);
+  });
+
   it('books per-ISO cash (skip negatives, keep zeros) and long equities', () => {
     const stmt = mapMooMooBundleToStatement(bundle(), 'moomoo');
     expect(stmt.account_id).toBe('281756420273981734');

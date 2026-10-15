@@ -254,7 +254,7 @@ export interface BrokerConnectionLastSync {
 }
 
 /**
- * Optional margin / buying-power snapshot from any broker.
+ * Optional account-value / margin / buying-power snapshot from any broker.
  * Omit the whole object when unknown. Never invent from cash.
  */
 export interface BrokerConnectionMetrics {
@@ -263,6 +263,8 @@ export interface BrokerConnectionMetrics {
   buying_power?: number;
   excess_liquidity?: number;
   maintenance_margin?: number;
+  /** Broker-reported aggregate fund value; not cash, a lot, or a cost basis. */
+  fund_assets?: number;
 }
 
 export interface BrokerConnection {
@@ -410,7 +412,7 @@ export function assertCashBalance(raw: unknown): CashBalance {
   return result;
 }
 
-const METRICS_NUMBER_KEYS = ['buying_power', 'excess_liquidity', 'maintenance_margin'] as const;
+const METRICS_NUMBER_KEYS = ['buying_power', 'excess_liquidity', 'maintenance_margin', 'fund_assets'] as const;
 
 /** Fail-fast validation for optional broker margin snapshot. */
 export function assertBrokerConnectionMetrics(
@@ -446,13 +448,9 @@ export function assertBrokerConnectionMetrics(
     }
     result[key] = v;
   }
-  if (
-    result.buying_power == null &&
-    result.excess_liquidity == null &&
-    result.maintenance_margin == null
-  ) {
+  if (METRICS_NUMBER_KEYS.every(key => result[key] == null)) {
     throw new Error(
-      `${ctx} needs buying_power, excess_liquidity, and/or maintenance_margin.`,
+      `${ctx} needs buying_power, excess_liquidity, maintenance_margin, and/or fund_assets.`,
     );
   }
   return result;

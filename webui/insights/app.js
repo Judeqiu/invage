@@ -67,12 +67,13 @@ function render(dash) {
     return;
   }
   const ccy = ccyOf(live);
+  const hasUnitemizedFunds = brokerFundAssets(dash, channel).some(row => row.amount > 0);
   const when = dash.generatedAt ? dash.generatedAt.slice(0, 10) : '';
   el.eyebrow.textContent = `Books briefing · ${when}`;
   const chNote = channel === 'all' ? 'All Platforms' : channelLabel(channel);
-  el.summary.textContent = `${live.positionCount} lots · NAV: ${money(live.totalValue, ccy)} · ${chNote}. All insights below are calculated using this portfolio data only.`;
+  el.summary.textContent = `${live.positionCount} itemized lots · ${hasUnitemizedFunds ? 'Itemized NAV (excludes broker fund total)' : 'NAV'}: ${money(live.totalValue, ccy)} · ${chNote}. All insights below are calculated using this portfolio data only.`;
   el.metrics.innerHTML =
-    metricCard('NAV', money(live.totalValue, ccy), live.fxApplied ? `in ${ccy}` : null) +
+    metricCard(hasUnitemizedFunds ? 'Itemized NAV' : 'NAV', money(live.totalValue, ccy), hasUnitemizedFunds ? 'Excludes broker fund total shown separately' : live.fxApplied ? `in ${ccy}` : null) +
     metricCard(
       'Unrealized P&L',
       signedMoney(live.totalPL, ccy),
@@ -88,7 +89,7 @@ function render(dash) {
       'Assignment cash',
       money(live.contingentCashObligation, ccy),
       `${live.optionCount} option lots`,
-    );
+    ) + brokerFundAssetsCards(dash, channel);
   const issues = [...(dash.warnings || []), ...(live.issues || [])];
   const prices = dash.equityPrices || {};
   const shorts = live.positions.filter((p) => p.instrument === 'option' && p.option && p.option.side === 'short');
@@ -162,7 +163,8 @@ function render(dash) {
   );
   el.edge.innerHTML =
     metricCard('Equity lots', String(live.equityCount)) +
-    metricCard('Fund lots', String(live.fundCount)) +
+    metricCard('Fund lots', hasUnitemizedFunds ? 'Unavailable' : String(live.fundCount),
+      hasUnitemizedFunds ? `${live.fundCount} itemized; account fund count unavailable from broker` : null) +
     metricCard('Option lots', String(live.optionCount), opts.length ? `${puts} put · ${calls} call` : null) +
     metricCard(
       'Avg DTE / LEAPs',

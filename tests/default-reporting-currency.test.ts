@@ -6,6 +6,7 @@ import type { HouseholdInvestorState } from '../src/state/household-state.js';
 const mocks = vi.hoisted(() => ({
   loadInvestor: vi.fn(), saveInvestor: vi.fn(), loadSessionState: vi.fn(),
   fetchFxRates: vi.fn(), resolvePortfolioMarket: vi.fn(),
+  readBrokerAccountModel: vi.fn(),
 }));
 
 vi.mock('../src/state/investor-store.js', () => ({
@@ -22,8 +23,9 @@ vi.mock('../src/market/index.js', () => ({
 vi.mock('../src/market/fetch-fx.js', () => ({ fetchFxRates: mocks.fetchFxRates }));
 vi.mock('../src/state/snapshot.js', () => ({ loadSnapshots: () => [] }));
 vi.mock('../src/brokers/accounts.js', () => ({
-  readBrokerAccountModel: () => ({ sources: {}, connections: {} }),
+  readBrokerAccountModel: mocks.readBrokerAccountModel,
 }));
+vi.mock('../src/brokers/sync-history.js', () => ({ latestSuccessfulBrokerSyncRun: () => null }));
 
 import { loadDashboardForSlug } from '../src/webapp/dashboard-data.js';
 import { createDashboardApiRouter } from '../src/webapp/dashboard-api.js';
@@ -34,6 +36,7 @@ describe('default portfolio reporting currency', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.readBrokerAccountModel.mockReturnValue({ sources: {}, connections: {} });
     state = {
       user: { id: '00000000-0000-4000-8000-000000000099', slug: 'judetest1',
         created_at: '2026-10-09', telegram_user_ids: [], auth_token: 'test-token' },
@@ -70,6 +73,37 @@ describe('default portfolio reporting currency', () => {
     expect(payload.model?.live).toMatchObject({ reportingCurrency: 'USD',
       navComplete: true, cashAmount: 2500, totalValue: 2720 });
     expect(state.treasury).toBeUndefined();
+  });
+
+  it('returns separate fund account totals and an explicit itemized NAV coverage note', async () => {
+    const metrics = { as_of: '2026-10-15', currency: 'USD', fund_assets: 1198.16 };
+    mocks.readBrokerAccountModel.mockReturnValue({ sources: {}, connections: {
+      test: { broker_id: 'moomoo', channel: 'moomoo-test', metrics },
+    } });
+    const payload = await loadDashboardForSlug('judetest1', undefined, null);
+    expect(payload.connectionMetrics?.['moomoo-test']).toEqual(metrics);
+    expect(payload.warnings).toContainEqual(expect.objectContaining({
+      code: 'broker_fund_details_unavailable', key: 'moomoo-test',
+      message: expect.stringContaining('excluded from itemized NAV and P/L'),
+    }));
+    expect(payload.model?.live.totalValue).toBe(2720);
+    expect(payload.model?.live.positions).toHaveLength(1);
+    expect(payload.model?.live.channels).toContain('moomoo-test');
+  });
+
+  it('does not hide an account with only a recorded fund total as an empty portfolio', async () => {
+    state.portfolio = {};
+    delete state.cash;
+    state.broker_connections = { moomoo: { enabled: true, credentials: {},
+      metrics: { as_of: '2026-10-15', currency: 'USD', fund_assets: 1198.16 } } };
+    mocks.readBrokerAccountModel.mockReturnValue({ sources: {}, connections: {
+      moomoo: { broker_id: 'moomoo', channel: 'moomoo', metrics: state.broker_connections.moomoo.metrics },
+    } });
+    const payload = await loadDashboardForSlug('judetest1', undefined, null);
+    expect(payload.empty).toBe(false);
+    expect(payload.connectionMetrics?.moomoo.fund_assets).toBe(1198.16);
+    expect(payload.model?.live.positions).toEqual([]);
+    expect(payload.warnings?.some(w => w.code === 'broker_fund_details_unavailable')).toBe(true);
   });
 
   it('honors a saved reporting currency for holdings and cash', async () => {

@@ -1510,6 +1510,10 @@ function renderDetailTables(view) {
  */
 function renderOverview(view) {
   const repCcy = reportingCcyCode(view);
+  const fundAssets = view.isLive ? brokerFundAssets(payload, view.channelView) : [];
+  const hasUnitemizedFunds = fundAssets.some(row => row.amount > 0);
+  const navLabel = document.getElementById('navLabel');
+  if (navLabel) navLabel.textContent = hasUnitemizedFunds ? 'Itemized net asset value (NAV)' : 'Net asset value (NAV)';
   const channels = Array.isArray(view.channels) ? view.channels : [];
   const asOf = view.isLive
     ? (payload.generatedAt || '').slice(0, 10) || new Date().toISOString().slice(0, 10)
@@ -1553,6 +1557,7 @@ function renderOverview(view) {
       .filter(([channel]) => view.channelView === MERGED_CHANNEL_VIEW || channel === view.channelView)
       .map(([channel, date]) => `${channel.toUpperCase()} ${optionDateLabel(date)}`) : [];
     el.heroLead.textContent = `${n} ${n === 1 ? 'position' : 'positions'} — ${e} equity, ${o} option, ${f} fund.${archive}${view.isLive && positionDates.length ? ` Broker positions as of ${positionDates.join(' · ')}.` : ''}`;
+    if (hasUnitemizedFunds) el.heroLead.textContent += ' Fund holding details are unavailable; account fund totals are shown separately and excluded from itemized NAV and P/L.';
   }
   if (el.navValue) el.navValue.textContent = view.navComplete === false
     ? '—' : fmtPrettyMoney(view.totalValue, repCcy, 2);
@@ -1620,7 +1625,7 @@ function renderOverview(view) {
       metricCardHtml('Max assignment obligation', assignmentObligation == null ? '—' : fmtPrettyMoney(assignmentObligation, cashCcy, 0),
         assignmentObligation == null ? (stalePuts ? 'Put positions need a fresh broker sync' : 'Put currency or FX unavailable') : 'Gross short-put obligation',
         'Cash needed to buy the shares if all recorded short puts are assigned. For example, one put with a $100 strike covering 100 shares needs $10,000. The total does not subtract cash, premium received, or protection from other options. Compare it with your cash available.'),
-    ].join('');
+    ].join('') + (view.isLive ? brokerFundAssetsCards(payload, view.channelView) : '');
   }
 
   renderExpiryRisk(view, asOf);

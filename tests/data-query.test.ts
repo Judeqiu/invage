@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { runQuery } from '../src/data-query/engine.js';
 import { createDataQueryTools } from '../src/tools/data_query.js';
 import { bindDomainToolsToUser } from '../src/tools/bound-identity.js';
@@ -32,6 +33,24 @@ const text = (r: { content: Array<{ type: string; text?: string }> }) => r.conte
 
 describe('discoverable read-only data queries', () => {
   beforeEach(() => { vi.clearAllMocks(); vi.mocked(resolveInvestorFromChannel).mockResolvedValue(snapshot()); });
+
+  it('exposes aggregate fund value with its currency/date independently of current lots', () => {
+    const s = snapshot();
+    const source = addBrokerSource(s.state, 'moomoo', { app_key: 'secret',
+      private_key: readFileSync('tests/fixtures/moomoo/ed25519-private.pem', 'utf8') });
+    const account = addBrokerAccount(s.state, { source_id: source, account_id: 'M1', label: 'Moomoo', config: {} });
+    s.state.broker_connections![account].metrics = { as_of: '2026-10-15', currency: 'USD', fund_assets: 1198.16 };
+    const query = { from: 'broker_accounts', select: ['fund_assets', 'metrics_currency', 'metrics_as_of'] };
+    expect(runQuery(s, query).rows).toEqual([{ fund_assets: 1198.16, metrics_currency: 'USD', metrics_as_of: '2026-10-15' }]);
+    expect(() => runQuery(s, { from: 'broker_accounts', aggregates: [{ op: 'sum', field: 'fund_assets', as: 'total' }] }))
+      .toThrow(/requires group_by/);
+    expect(runQuery(s, { from: 'broker_accounts', group_by: ['metrics_currency'],
+      aggregates: [{ op: 'sum', field: 'fund_assets', as: 'total' }] }).rows).toEqual([{ metrics_currency: 'USD', total: '1198.16' }]);
+    s.state.broker_connections![account].metrics!.fund_assets = 0;
+    expect(runQuery(s, query).rows[0].fund_assets).toBe(0);
+    delete s.state.broker_connections![account].metrics;
+    expect(runQuery(s, query).rows[0]).toEqual({ fund_assets: null, metrics_currency: null, metrics_as_of: null });
+  });
 
   it('queries reconciled current opening ranges without treating expired dates or another account as opens', () => {
     const s = snapshot();

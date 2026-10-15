@@ -73,7 +73,7 @@ export interface DashboardPayload {
   warnings?: DashboardIssue[];
   /** Live equity and option-underlying quotes used for the assignment radar. Omit when none. */
   equityPrices?: Record<string, number>;
-  /** Optional margin snapshot keyed by holding channel. Omit when none recorded. */
+  /** Optional account-value / margin snapshot keyed by holding channel. */
   connectionMetrics?: Record<string, BrokerConnectionMetrics>;
   /** Broker statement dates keyed by holding channel. */
   brokerAsOf?: Record<string, string>;
@@ -256,7 +256,8 @@ export async function loadDashboardForSlug(
   }
 
   counts = { positions: tickers.length, tradeRecords: state.option_executions?.length ?? 0, snapshots: snapshots.length };
-  if (tickers.length === 0 && deposits.length === 0 && cashes.length === 0 && snapshots.length === 0 && !(state.option_executions?.length)) {
+  const hasFundAssets = Object.values(state.broker_connections ?? {}).some(c => c.metrics?.fund_assets != null);
+  if (tickers.length === 0 && deposits.length === 0 && cashes.length === 0 && snapshots.length === 0 && !(state.option_executions?.length) && !hasFundAssets) {
     return {
       slug,
       displayName,
@@ -432,6 +433,13 @@ export async function loadDashboardForSlug(
       if (conn.metrics == null) continue;
       const ch = conn.channel;
       mapped[ch] = conn.metrics;
+      if (conn.metrics.fund_assets != null) {
+        if (!live.channels.includes(ch)) live.channels.push(ch);
+        if (conn.metrics.fund_assets > 0) live.issues.push({
+          key: ch, code: 'broker_fund_details_unavailable', severity: 'warning',
+          message: `${ch}: broker reports fund assets of ${conn.metrics.fund_assets.toFixed(2)} ${conn.metrics.currency} as of ${conn.metrics.as_of}. Individual fund holdings, units and cost basis are unavailable. The account fund total is shown separately and is excluded from itemized NAV and P/L; a zero itemized fund count does not mean no funds.`,
+        });
+      }
     }
     for (const observation of state.option_observations ?? []) {
       if (observation.source !== 'broker') continue;
