@@ -54,9 +54,9 @@ function registerOptionsExpertSkills(): Skill[] {
     },
     {
       id: 'firecrawl',
-      name: 'Firecrawl',
+      name: 'Public Financial Research',
       description:
-        'Load for public fundamentals, issuer filings, earnings/dividends, news and macro evidence relevant to underlying risk and the options horizon. Verify primary pages and cite dates/URLs. Pair portfolio_analyzer for financial metrics and options_insight for chain facts; never invent IV crush magnitude.',
+        'Use moli_browser first for public web research; Firecrawl is fallback/backup. Load for public fundamentals, issuer filings, earnings/dividends, news and macro evidence relevant to underlying risk and the options horizon. Verify primary pages and cite dates/URLs. Pair portfolio_analyzer for financial metrics and options_insight for chain facts; never invent IV crush magnitude.',
     },
     {
       id: 'bindrive',

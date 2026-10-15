@@ -57,9 +57,9 @@ function registerRealEstateExpertSkills(): Skill[] {
     },
     {
       id: 'firecrawl',
-      name: 'Firecrawl',
+      name: 'Public Financial Research',
       description:
-        'Load for official SG property policy tables (IRAS stamp duties, HDB rules) and primary sources. Pair with sg-real-estate-portfolio for numeric duties. Prefer property_intel for transaction comps.',
+        'Use moli_browser first for public web research; Firecrawl is fallback/backup. Load for official SG property policy tables (IRAS stamp duties, HDB rules) and primary sources. Pair with sg-real-estate-portfolio for numeric duties. Prefer property_intel for transaction comps.',
     },
   ];
   const skills: Skill[] = [];

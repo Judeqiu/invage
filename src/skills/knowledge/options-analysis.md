@@ -25,7 +25,7 @@ Standalone **buy/sell stock thesis** → consult **InvestmentAdvisor** when inst
 
 ## Public evidence for the options thesis
 
-Public research works without broker holdings. For strategy, risk or expiry analysis, use `portfolio_analyzer` with `tickers` only when valuation, debt, cash flow, margins, growth or analyst expectations affect underlying risk. Use `firecrawl` to verify earnings/dividend dates, issuer reports, material news and relevant macro events against primary pages. Fetch only inputs needed for the requested decision; a historical-trade lookup does not need a market research pack.
+Public research works without broker holdings. For strategy, risk or expiry analysis, use `portfolio_analyzer` with `tickers` only when valuation, debt, cash flow, margins, growth or analyst expectations affect underlying risk. Use `moli_browser` first, with `firecrawl` as fallback/backup (see the `firecrawl` research skill), to verify earnings/dividend dates, issuer reports, material news and relevant macro events against primary pages. Fetch only inputs needed for the requested decision; a historical-trade lookup does not need a market research pack.
 
 Explain how sourced evidence changes the option direction, expiry, premium, assignment or downside assumptions. Cite URLs and reporting/event dates for web facts, and source timestamps for quotes. Do not infer the user's past trades from public prices or compute IV Rank from a single IV snapshot. A historical price series is available only when actually retrieved from a tool or cited source; no dedicated general-purpose chat history tool is registered. Missing inputs become explicit gaps, not invented numbers or a reason to discard verified evidence.
 

@@ -402,7 +402,7 @@ const research = (): string =>
     '*Research, news → price-path & market themes*',
     '',
     'Skills: *firecrawl* (sources) + *investment-analysis* Part D (news → trend hypothesis).',
-    'Tool: `firecrawl` search/scrape + `portfolio_analyzer` for live metrics. Needs FIRECRAWL_API_KEY.',
+    'Research: Moli browser first; Firecrawl is fallback/backup. Use `portfolio_analyzer` for live metrics. Only the Firecrawl backup needs FIRECRAWL_API_KEY.',
     '',
     '── *News → stock trend (smart path analysis)* ──',
     'I do **not** promise next-tick predictions. I structure:',

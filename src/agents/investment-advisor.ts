@@ -53,9 +53,9 @@ function registerInvestmentAdvisorSkills(): Skill[] {
     },
     {
       id: 'firecrawl',
-      name: 'Firecrawl',
+      name: 'Public Financial Research',
       description:
-        'Load for live web research: Yahoo key-stats/news/financials/options, SEC/HKEX/CNINFO filings, Finviz screens, IR, peers, chart/history text, Reuters/CNBC, macro. Pair with investment-analysis Part D/F/G/H (statements, peers, technical structure). Prefer portfolio_analyzer for quotes.',
+        'Use moli_browser first for public web research; Firecrawl is fallback/backup. Load for live web research: Yahoo key-stats/news/financials/options, SEC/HKEX/CNINFO filings, Finviz screens, IR, peers, chart/history text, Reuters/CNBC, macro. Pair with investment-analysis Part D/F/G/H (statements, peers, technical structure). Prefer portfolio_analyzer for quotes.',
     },
     {
       id: 'bindrive',

@@ -26,7 +26,7 @@ const CATALOG: RawSkill[] = [
     id: 'firecrawl',
     name: 'Public Financial Research',
     description:
-      'Load for public issuer filings, financial statements, earnings/dividends, news and macro evidence relevant to the requested analysis. Search then verify primary pages and cite dates/URLs. Use get_quote for prices; delegate analytical fundamentals and options chain work to the installed specialist with portfolio_analyzer/options_insight. Public research does not require broker holdings.',
+      'Use moli_browser first for public web research; Firecrawl is fallback/backup. Load for public issuer filings, financial statements, earnings/dividends, news and macro evidence relevant to the requested analysis. Search then verify primary pages and cite dates/URLs. Use get_quote for prices; delegate analytical fundamentals and options chain work to the installed specialist with portfolio_analyzer/options_insight. Public research does not require broker holdings.',
   },
   {
     id: 'bindrive',
