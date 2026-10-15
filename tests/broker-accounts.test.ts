@@ -21,6 +21,22 @@ function flex(id: string, cash: number): string {
 }
 
 describe('account-based broker connections', () => {
+  it('defaults new connections to daily sync and preserves an explicit opt-out', () => {
+    const state = investor();
+    const source = addBrokerSource(state, 'ibkr', { token: 'secret1234' });
+    const before = Date.now();
+    const id = addBrokerAccount(state, { source_id: source, account_id: 'U1', label: 'Main',
+      config: { activity_query_id: '111' } });
+    const schedule = publicBrokerAccounts(state).connections.find(c => c.id === id)!.sync_schedule!;
+    expect(schedule.frequency).toBe('daily');
+    expect(Date.parse(schedule.next_run_at)).toBeGreaterThanOrEqual(before + 86_400_000);
+    expect(Date.parse(schedule.next_run_at)).toBeLessThanOrEqual(Date.now() + 86_400_000);
+
+    patchBrokerAccount(state, id, { sync_frequency: null });
+    patchBrokerAccount(state, id, { label: 'Renamed' });
+    expect(readBrokerAccountModel(state).connections[id].sync_schedule).toBeUndefined();
+  });
+
   it('configures and validates account sync schedules', () => {
     const state = investor();
     const source = addBrokerSource(state, 'ibkr', { token: 'secret1234' });

@@ -331,6 +331,7 @@ export function addBrokerAccount(state: InvestorState, args: {
   model.connections[id] = {
     broker_id: def.id, source_id: args.source_id, label: nonempty(args.label, 'label'),
     account_id, channel, enabled: true, config,
+    sync_schedule: { frequency: 'daily', next_run_at: nextBrokerSyncAt('daily', new Date()) },
   };
   persistBrokerAccountModel(state, model);
   return id;
