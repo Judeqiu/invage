@@ -85,6 +85,8 @@ it.skipIf(!existsSync(executable))('explains dashboard cards in side chat with t
   const root = resolve('webui');
   const prompts: { text: string; composeSource: { kind: string } }[] = [];
   let failChat = true;
+  let delayChats = false;
+  const waitingChats: (() => void)[] = [];
   const dashboard = {
     empty: false, displayName: 'Test', generatedAt: '2026-10-15T10:00:00Z',
     brokerAsOf: { ibkr: '2026-10-14' },
@@ -98,6 +100,7 @@ it.skipIf(!existsSync(executable))('explains dashboard cards in side chat with t
     if (url.pathname === '/api/chat/messages') {
       let raw = ''; for await (const chunk of req) raw += chunk;
       prompts.push(JSON.parse(raw));
+      if (delayChats) await new Promise<void>(resolve => waitingChats.push(resolve));
       res.statusCode = failChat ? 503 : 200;
       return json(failChat ? { message: 'Try again' } : { conversationId: `explain-${prompts.length}` });
     }
@@ -144,9 +147,28 @@ it.skipIf(!existsSync(executable))('explains dashboard cards in side chat with t
     await frame.waitForFunction(() => document.querySelector('.hero-metrics [data-card-explain]')?.textContent === 'Explain');
     expect(prompts).toHaveLength(3);
     expect(prompts[2].text).toContain('Selected dashboard: ibkr');
+    delayChats = true;
+    const firstCard = '#kpiRow .metric-card:nth-child(1) [data-card-explain]';
+    const secondCard = '#kpiRow .metric-card:nth-child(2) [data-card-explain]';
+    await frame.click(firstCard);
+    await frame.click(secondCard);
+    await frame.waitForFunction(() => document.querySelectorAll('[data-card-explain]:disabled').length === 2);
+    await expect.poll(() => waitingChats.length).toBe(2);
+    expect(prompts).toHaveLength(5);
+    expect(await frame.$eval('.hero-metrics [data-card-explain]', button => (button as HTMLButtonElement).disabled)).toBe(false);
+    delayChats = false; waitingChats.splice(0).forEach(resolve => resolve());
+    await frame.waitForFunction(() => document.querySelectorAll('[data-card-explain]:disabled').length === 0);
+    await page.evaluate(() => {
+      const opens = (window as any).messages.filter((m: any) => m.type === 'utarus:chat-panel:open');
+      document.querySelector('iframe')!.contentWindow!.postMessage({ type: 'utarus:chat-panel:activated', requestId: opens.at(-2).requestId }, location.origin);
+    });
+    await frame.waitForFunction(() => document.querySelector('#kpiRow .metric-card:nth-child(1) [data-card-explain]')?.getAttribute('aria-expanded') === 'true');
+    expect(await frame.$eval(secondCard, button => button.getAttribute('aria-expanded'))).toBe('false');
+    await page.evaluate(() => document.querySelector('iframe')!.contentWindow!.postMessage({ type: 'utarus:chat-panel:closed', minimized: true }, location.origin));
+    await frame.waitForFunction(() => document.activeElement === document.querySelector('#kpiRow .metric-card:nth-child(1) [data-card-explain]'));
     await page.setViewport({ width: 390, height: 844 });
     expect(await frame.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.screenshot({ path: '/tmp/invage-dashboard-explain-mobile.png', fullPage: true });
     expect(errors).toEqual([]);
-  } finally { await browser.close(); await new Promise<void>(r => server.close(() => r())); }
+  } finally { waitingChats.splice(0).forEach(resolve => resolve()); await browser.close(); await new Promise<void>(r => server.close(() => r())); }
 });

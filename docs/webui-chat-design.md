@@ -72,3 +72,17 @@ and snapshot context. It caches the conversation per contract/broker/view for
 this dashboard visit, so reopening does not resend the initial assessment.
 Closing and switching panels preserve draft messages. Framework integration is
 documented in `utarus/docs/webui-integration.md` under Contextual chat panels.
+
+### Multiple dashboard discussions
+
+Minimize or Escape collapses the chat into Utarus's page-local Chats tray. Users
+can start another Explain or Section 01 Discuss conversation from the dashboard,
+then switch between open discussions through the tray or the drawer's chat
+switcher. Drafts and replies remain mounted while hidden. Close removes a chat
+from the tray; its conversation is retained. This workspace lasts until leaving
+the domain route.
+
+Invage launches different cards independently, suppresses duplicate launches for
+the same card, and retries the original snapshot context with the same request
+ID. The `utarus:chat-panel:activated` bridge event keeps dashboard highlighting
+and focus restoration aligned with the discussion selected in the tray.

@@ -1669,7 +1669,9 @@ function renderOverview(view) {
 function installCardExplainButtons() {
   el.dashboard.querySelectorAll('.metric-card').forEach(card => {
     const heading = card.querySelector('.label-eyebrow, h3');
-    if (!heading || card.querySelector('[data-card-explain]')) return;
+    if (!heading) return;
+    const existing = card.querySelector('[data-card-explain]');
+    if (existing) { prepareCardExplanation(existing); return; }
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'card-explain';
@@ -1677,9 +1679,11 @@ function installCardExplainButtons() {
     button.textContent = 'Explain';
     button.setAttribute('aria-label', `Explain ${heading.textContent.trim()}`);
     button.setAttribute('aria-expanded', 'false');
-    button.disabled = optionChatPending;
     card.appendChild(button);
+    prepareCardExplanation(button);
   });
+  syncDiscussionButtons();
+  highlightOptionDiscussion();
 }
 
 function prepareCardExplanation(button) {
@@ -1704,7 +1708,7 @@ function prepareCardExplanation(button) {
   button.dataset.optionKey = `explain:${prompt}`;
   button.dataset.optionTitle = `Explain · ${title}`;
   button.dataset.optionContext = context;
-  button.dataset.optionDiscuss = prompt;
+  button.dataset.cardPrompt = prompt;
 }
 
 document.addEventListener('click', event => {
@@ -1714,13 +1718,23 @@ document.addEventListener('click', event => {
   void startOptionDiscussion(button);
 });
 
-let optionChatPending = false;
+const pendingDiscussions = new Set();
+// Retain an immutable launch context so retry still targets its original snapshot.
+const discussionRequests = new Map();
 const optionDiscussions = new Map();
 let activeOptionDiscussionKey = null;
 let optionDiscussionTrigger = null;
 
 function sendOptionPanelMessage(message) {
   window.parent.postMessage(message, window.location.origin);
+}
+
+function syncDiscussionButtons() {
+  el.dashboard.querySelectorAll('[data-option-discuss], [data-card-explain]').forEach(button => {
+    const pending = pendingDiscussions.has(button.dataset.optionKey);
+    button.disabled = pending;
+    button.textContent = pending ? 'Opening…' : button.hasAttribute('data-card-explain') ? 'Explain' : 'Discuss';
+  });
 }
 
 function highlightOptionDiscussion() {
@@ -1735,8 +1749,16 @@ window.addEventListener('message', event => {
   if (event.origin !== window.location.origin || event.source !== window.parent ||
       !event.data) return;
   if (event.data.type === 'utarus:chat-panel:retry') {
-    if (event.data.requestId === optionDiscussionTrigger?.dataset.optionRequestId) {
-      void startOptionDiscussion(optionDiscussionTrigger);
+    const trigger = discussionRequests.get(event.data.requestId);
+    if (trigger) void startOptionDiscussion(trigger, event.data.requestId);
+    return;
+  }
+  if (event.data.type === 'utarus:chat-panel:activated') {
+    const match = [...optionDiscussions].find(([, discussion]) => discussion.requestId === event.data.requestId);
+    if (match) {
+      activeOptionDiscussionKey = match[0];
+      optionDiscussionTrigger = discussionRequests.get(event.data.requestId);
+      highlightOptionDiscussion();
     }
     return;
   }
@@ -1761,21 +1783,24 @@ function optionDiscussionPrompt(p, view, asOf) {
   ].join('\n\n');
 }
 
-async function startOptionDiscussion(button) {
-  if (optionChatPending) return;
+async function startOptionDiscussion(button, retryRequestId) {
   const key = button.dataset.optionKey;
+  if (pendingDiscussions.has(key)) return;
   let discussion = optionDiscussions.get(key);
   if (discussion) {
     document.getElementById('optionChatStatus').textContent = '';
+    button.dataset.optionRequestId = discussion.requestId;
+    discussionRequests.set(discussion.requestId, button.cloneNode(true));
     activeOptionDiscussionKey = key;
     optionDiscussionTrigger = button;
     sendOptionPanelMessage({ type: 'utarus:chat-panel:open', ...discussion });
     highlightOptionDiscussion();
     return;
   }
-  optionChatPending = true;
-  discussion = { requestId: crypto.randomUUID(), title: button.dataset.optionTitle, context: button.dataset.optionContext };
+  pendingDiscussions.add(key);
+  discussion = { requestId: retryRequestId || crypto.randomUUID(), title: button.dataset.optionTitle, context: button.dataset.optionContext };
   button.dataset.optionRequestId = discussion.requestId;
+  discussionRequests.set(discussion.requestId, button.cloneNode(true));
   optionDiscussions.set(key, discussion);
   activeOptionDiscussionKey = key;
   optionDiscussionTrigger = button;
@@ -1784,15 +1809,14 @@ async function startOptionDiscussion(button) {
   const status = document.getElementById('optionChatStatus');
   status.textContent = button.hasAttribute('data-card-explain') ? 'Starting your explanation…' : 'Starting your option discussion…';
   status.classList.remove('error');
-  el.dashboard.querySelectorAll('[data-option-discuss], [data-card-explain]').forEach(item => { item.disabled = true; });
-  button.textContent = 'Opening…';
+  syncDiscussionButtons();
   try {
     // Omitting conversationId starts a focused conversation without a generic opener.
     const response = await fetch('/api/chat/messages', {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: button.dataset.optionDiscuss, composeSource: { kind: 'host_seed' } }),
+      body: JSON.stringify({ text: button.dataset.cardPrompt ?? button.dataset.optionDiscuss, composeSource: { kind: 'host_seed' } }),
     });
     const body = await response.json();
     if (!response.ok) throw new Error(body.message || body.error || 'Chat is unavailable.');
@@ -1810,8 +1834,8 @@ async function startOptionDiscussion(button) {
     status.textContent = `Couldn't open the discussion. ${error instanceof Error ? error.message : 'Please try again.'}`;
     status.classList.add('error');
   } finally {
-    optionChatPending = false;
-    el.dashboard.querySelectorAll('[data-option-discuss], [data-card-explain]').forEach(item => { item.disabled = false; item.textContent = item.hasAttribute('data-card-explain') ? 'Explain' : 'Discuss'; });
+    pendingDiscussions.delete(key);
+    syncDiscussionButtons();
   }
 }
 
@@ -1923,7 +1947,7 @@ function renderExpiryRisk(view, asOf) {
             const trade = view.isLive ? payload.optionTradeDetails?.[p.ticker] : null;
             return `<tr class="risk-row risk-row-${tone}" data-risk-underlying="${escapeHtml(o.underlying)}" tabindex="0" aria-label="Highlight ${escapeHtml(o.underlying)} in open options">
               <td><span class="risk-contract">${tone === 'danger' ? '<span class="pulse-dot" aria-hidden="true"></span>' : ''}<strong>${escapeHtml(o.underlying || p.ticker)}</strong><span class="risk-contract-meta">${escapeHtml(o.right.toUpperCase())} · ${o.right === 'put' ? 'CSP' : 'CC'} · ${p.units}x</span></span>
-                <button type="button" class="option-discuss" aria-expanded="false" data-option-key="${escapeHtml(JSON.stringify([p.ticker, p.channel, view.isLive ? 'latest' : asOf]))}" data-option-title="${escapeHtml(`${optionUnderlyingLabel(o)} · ${o.strike} ${o.right.toUpperCase()} · ${o.expiry}`)}" data-option-context="${escapeHtml(`${p.channel} · ${p.units} contracts · Snapshot ${asOf}`)}" data-option-discuss="${escapeHtml(optionDiscussionPrompt(p, view, asOf))}" aria-label="Discuss ${escapeHtml(`${optionUnderlyingLabel(o)} ${o.side} ${o.right}, strike ${o.strike}, expiry ${o.expiry}, ${p.channel}`)}" title="Discuss this contract in the chat panel"${optionChatPending ? ' disabled' : ''}>Discuss</button>
+                <button type="button" class="option-discuss" aria-expanded="false" data-option-key="${escapeHtml(JSON.stringify([p.ticker, p.channel, view.isLive ? 'latest' : asOf]))}" data-option-title="${escapeHtml(`${optionUnderlyingLabel(o)} · ${o.strike} ${o.right.toUpperCase()} · ${o.expiry}`)}" data-option-context="${escapeHtml(`${p.channel} · ${p.units} contracts · Snapshot ${asOf}`)}" data-option-discuss="${escapeHtml(optionDiscussionPrompt(p, view, asOf))}" aria-label="Discuss ${escapeHtml(`${optionUnderlyingLabel(o)} ${o.side} ${o.right}, strike ${o.strike}, expiry ${o.expiry}, ${p.channel}`)}" title="Discuss this contract in the chat panel"${pendingDiscussions.has(JSON.stringify([p.ticker, p.channel, view.isLive ? 'latest' : asOf])) ? ' disabled' : ''}>Discuss</button>
               </td>
               <td class="num">${entrySpotHtml(trade, p.currency)}</td>
               <td class="num">${spot > 0 ? Number(spot).toFixed(2) : '—'}</td>
