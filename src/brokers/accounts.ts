@@ -557,6 +557,10 @@ export async function syncBrokerAccount(snapshot: InvestorSnapshot, id: string, 
         const current = readBrokerAccountModel(fresh.state);
         if (current.connections[id]) {
           current.connections[id].last_sync = { at, ok: false, error: message };
+          const schedule = current.connections[id].sync_schedule;
+          if (schedule) {
+            schedule.next_run_at = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+          }
           persistBrokerAccountModel(fresh.state, current);
           await saveInvestor(fresh);
         }

@@ -12,7 +12,7 @@ vi.mock('../src/brokers/sync-notification.js', async importOriginal => ({
   publishBrokerSyncFailure: notices.failure,
 }));
 
-const { addBrokerAccount, addBrokerSource, readBrokerAccountModel, syncBrokerAccount } = await import('../src/brokers/accounts.js');
+const { addBrokerAccount, addBrokerSource, patchBrokerAccount, readBrokerAccountModel, syncBrokerAccount } = await import('../src/brokers/accounts.js');
 const { listBrokerSyncRuns } = await import('../src/brokers/sync-history.js');
 const { brokerRawDataFile, fetchRawData } = await import('../src/raw-data/store.js');
 const { adapters } = await import('../src/brokers/adapter.js');
@@ -24,7 +24,7 @@ let id: string;
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'broker-sync-run-'));
   process.env.UTARUS_DATA_ROOT = root;
-  stored = { user: { id: 'u1', slug: 'alice', created_at: '2026-01-01' },
+  stored = { user: { id: '11111111-1111-4111-8111-111111111111', slug: 'alice', created_at: '2026-01-01' },
     profile: { display_name: 'Alice', contact_email: 'a@example.com' }, log: [] };
   const source = addBrokerSource(stored, 'ibkr', { token: 'secret1234' });
   id = addBrokerAccount(stored, { source_id: source, account_id: 'U1', label: 'Main',
@@ -38,8 +38,40 @@ beforeEach(() => {
     snapshot.revision = ++revision;
   });
 });
-afterEach(() => { vi.restoreAllMocks(); vi.clearAllMocks(); rmSync(root, { recursive: true, force: true });
+afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.clearAllMocks(); rmSync(root, { recursive: true, force: true });
   delete process.env.UTARUS_DATA_ROOT; });
+
+it.each(['manual', 'scheduled'] as const)('retries a failed %s sync 30 minutes after failure', async trigger => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-10-15T01:00:00Z'));
+  vi.spyOn(adapters.ibkr, 'fetchRaw').mockImplementation(async () => {
+    // The retry delay starts when the attempt fails, even for a slow request.
+    vi.setSystemTime(new Date(Date.now() + 5 * 60 * 1000));
+    throw new Error('Broker unavailable');
+  });
+  await expect(syncBrokerAccount({ state: structuredClone(stored), revision }, id, undefined, trigger))
+    .rejects.toThrow('Broker unavailable');
+  expect(readBrokerAccountModel(stored).connections[id].sync_schedule).toEqual({
+    frequency: 'daily', next_run_at: '2026-10-15T01:35:00.000Z',
+  });
+
+  vi.setSystemTime(new Date('2026-10-15T01:35:00Z'));
+  await expect(syncBrokerAccount({ state: structuredClone(stored), revision }, id, undefined, 'scheduled'))
+    .rejects.toThrow('Broker unavailable');
+  expect(readBrokerAccountModel(stored).connections[id].sync_schedule).toEqual({
+    frequency: 'daily', next_run_at: '2026-10-15T02:10:00.000Z',
+  });
+});
+
+it('preserves automatic sync being turned off while a sync is failing', async () => {
+  vi.spyOn(adapters.ibkr, 'fetchRaw').mockImplementation(async () => {
+    patchBrokerAccount(stored, id, { sync_frequency: null });
+    throw new Error('Broker unavailable');
+  });
+  await expect(syncBrokerAccount({ state: structuredClone(stored), revision }, id))
+    .rejects.toThrow('Broker unavailable');
+  expect(readBrokerAccountModel(stored).connections[id].sync_schedule).toBeUndefined();
+});
 
 it('records successful and failed sync attempts with their original raw responses', async () => {
   const valid = `<FlexQueryResponse><FlexStatements count="1"><FlexStatement accountId="U1" fromDate="20260930" toDate="20261001"><OpenPositions/><CashReport><CashReportCurrency accountId="U1" currency="USD" endingCash="100"/></CashReport></FlexStatement></FlexStatements></FlexQueryResponse>`;
@@ -56,14 +88,14 @@ it('records successful and failed sync attempts with their original raw response
   fetch.mockResolvedValue({ kind: 'xml', body: Buffer.from('<bad>raw response</bad>') });
   await expect(syncBrokerAccount({ state: structuredClone(stored), revision }, id)).rejects.toThrow();
   expect(notices.failure).toHaveBeenCalledOnce();
-  const runs = listBrokerSyncRuns('alice', channel).runs;
+  const runs = listBrokerSyncRuns(stored.user.id, channel).runs;
   expect(runs).toHaveLength(2);
   expect(runs.map(run => [run.trigger, run.ok])).toEqual([['manual', false], ['scheduled', true]]);
   expect(stored.option_observations?.map(row => row.id)).toEqual([runs[1].id]);
   for (const run of runs) {
-    const file = brokerRawDataFile('alice', channel, run.raw_data_id!);
+    const file = brokerRawDataFile(stored.user.id, channel, run.raw_data_id!);
     expect(file).not.toBeNull();
-    const body = fetchRawData('alice', file!.id, file!.version, 0, 65536, 'base64').content;
+    const body = fetchRawData(stored.user.id, file!.id, file!.version, 0, 65536, 'base64').content;
     expect(Buffer.from(body, 'base64').toString()).toContain(run.ok ? 'FlexQueryResponse' : 'raw response');
   }
 });
