@@ -164,9 +164,12 @@ export async function publishBrokerSyncSuccess(slug: string, isAdmin: boolean, f
 }
 
 export async function publishBrokerSyncFailure(slug: string, broker: string, account: string, message: string,
-  notify: typeof notifyUser = notifyUser): Promise<void> {
+  { notify = notifyUser, retryScheduled = false }: { notify?: typeof notifyUser; retryScheduled?: boolean } = {}): Promise<void> {
   try {
-    await notify({ userId: slug, title: `${broker} sync failed`, body: `${account}: ${message.slice(0, 500)}. Check Settings → Brokers → Sync history.`,
+    await notify({ userId: slug, title: `${broker} sync failed`,
+      body: `${account}: ${message.slice(0, 500)}.` +
+        (retryScheduled ? " We'll automatically retry in 30 minutes. Your regular sync frequency stays the same." : '') +
+        ' Check Settings → Brokers → Sync history.',
       source: 'system', severity: 'medium', status_hint: 'failure', href: '/settings/brokers' });
   } catch (error) { console.error('[broker/sync-notification] publish failed:', error); }
 }

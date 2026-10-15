@@ -552,6 +552,7 @@ export async function syncBrokerAccount(snapshot: InvestorSnapshot, id: string, 
       if (raw && !archivePath) archivePath = archive(state.user.id, conn, raw, at.slice(0, 10), false, message);
       recordBrokerSyncRun(state.user.id, conn.channel, { id: syncId, at, trigger, ok: false, error: message,
         ...(rawId() ? { raw_data_id: rawId() } : {}) });
+      let retryScheduled = false;
       try {
         const fresh = await loadInvestor(state.user.id);
         const current = readBrokerAccountModel(fresh.state);
@@ -563,9 +564,10 @@ export async function syncBrokerAccount(snapshot: InvestorSnapshot, id: string, 
           }
           persistBrokerAccountModel(fresh.state, current);
           await saveInvestor(fresh);
+          retryScheduled = !!schedule && current.connections[id].enabled;
         }
       } finally {
-        await publishBrokerSyncFailure(state.user.id, def.displayName, conn.label, message);
+        await publishBrokerSyncFailure(state.user.id, def.displayName, conn.label, message, { retryScheduled });
       }
       throw new Error(message);
     }

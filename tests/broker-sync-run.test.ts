@@ -54,6 +54,8 @@ it.each(['manual', 'scheduled'] as const)('retries a failed %s sync 30 minutes a
   expect(readBrokerAccountModel(stored).connections[id].sync_schedule).toEqual({
     frequency: 'daily', next_run_at: '2026-10-15T01:35:00.000Z',
   });
+  expect(notices.failure).toHaveBeenLastCalledWith(stored.user.id, 'Interactive Brokers', 'Main',
+    'Broker unavailable', { retryScheduled: true });
 
   vi.setSystemTime(new Date('2026-10-15T01:35:00Z'));
   await expect(syncBrokerAccount({ state: structuredClone(stored), revision }, id, undefined, 'scheduled'))
@@ -71,6 +73,17 @@ it('preserves automatic sync being turned off while a sync is failing', async ()
   await expect(syncBrokerAccount({ state: structuredClone(stored), revision }, id))
     .rejects.toThrow('Broker unavailable');
   expect(readBrokerAccountModel(stored).connections[id].sync_schedule).toBeUndefined();
+  expect(notices.failure).toHaveBeenLastCalledWith(stored.user.id, 'Interactive Brokers', 'Main',
+    'Broker unavailable', { retryScheduled: false });
+});
+
+it('does not announce a retry if saving the retry schedule fails', async () => {
+  vi.spyOn(adapters.ibkr, 'fetchRaw').mockRejectedValue(new Error('Broker unavailable'));
+  mocks.save.mockRejectedValueOnce(new Error('State unavailable'));
+  await expect(syncBrokerAccount({ state: structuredClone(stored), revision }, id))
+    .rejects.toThrow('State unavailable');
+  expect(notices.failure).toHaveBeenLastCalledWith(stored.user.id, 'Interactive Brokers', 'Main',
+    'Broker unavailable', { retryScheduled: false });
 });
 
 it('records successful and failed sync attempts with their original raw responses', async () => {

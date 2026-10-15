@@ -47,8 +47,17 @@ describe('broker sync notification', () => {
     summarize.mockRejectedValueOnce(new Error('model unavailable'));
     await publishBrokerSyncSuccess('alice', false, facts, { summarize, notify });
     expect(notify.mock.calls[1]?.[0].body).toContain('Initial snapshot');
-    await publishBrokerSyncFailure('alice', 'IBKR', 'Main', 'fetch failed', notify);
+    await publishBrokerSyncFailure('alice', 'IBKR', 'Main', 'fetch failed', { notify });
     expect(notify.mock.calls[2]?.[0]).toMatchObject({ status_hint: 'failure', severity: 'medium' });
+  });
+
+  it('explains the retry plan only when an automatic retry is scheduled', async () => {
+    const notify = vi.fn(async () => ({ notification: {} as never, delivery: [] }));
+    await publishBrokerSyncFailure('alice', 'IBKR', 'Main', 'fetch failed', { notify, retryScheduled: true });
+    expect(notify.mock.calls[0]?.[0].body).toContain("We'll automatically retry in 30 minutes. Your regular sync frequency stays the same.");
+    expect(notify.mock.calls[0]?.[0].body).toContain('Check Settings → Brokers → Sync history.');
+    await publishBrokerSyncFailure('alice', 'IBKR', 'Main', 'fetch failed', { notify });
+    expect(notify.mock.calls[1]?.[0].body).not.toContain('retry');
   });
 
   it('includes each coverage note once in notifications even when the LLM omits it or fails', async () => {
