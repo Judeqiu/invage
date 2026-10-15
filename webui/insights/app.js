@@ -163,8 +163,8 @@ function render(dash) {
   );
   el.edge.innerHTML =
     metricCard('Equity lots', String(live.equityCount)) +
-    metricCard('Fund lots', hasUnitemizedFunds ? 'Unavailable' : String(live.fundCount),
-      hasUnitemizedFunds ? `${live.fundCount} itemized; account fund count unavailable from broker` : null) +
+    (hasUnitemizedFunds && live.fundCount === 0 ? '' : metricCard('Fund lots', String(live.fundCount),
+      hasUnitemizedFunds ? 'Itemized fund holdings only' : null)) +
     metricCard('Option lots', String(live.optionCount), opts.length ? `${puts} put · ${calls} call` : null) +
     metricCard(
       'Avg DTE / LEAPs',

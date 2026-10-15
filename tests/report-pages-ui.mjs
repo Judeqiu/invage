@@ -865,7 +865,11 @@ try {
   payload.connectionMetrics.ibkr = { as_of: '2026-10-14', currency: 'SGD', fund_assets: 2000 };
   await page.goto(`http://127.0.0.1:${port}/insights/`);
   await page.waitForFunction(() => document.getElementById('metrics')?.textContent.includes('1,198.16'));
-  assert(await page.$eval('#edge', el => /Fund lots\s+Unavailable/.test(el.textContent)), 'positive account total makes fund lot count unavailable');
+  assert(await page.$eval('#edge', el => !el.textContent.includes('Fund lots')), 'aggregate fund summary does not display an unknown fund-lot card');
+  assert.equal(await page.$eval('#edge', el => [...el.querySelectorAll('.metric-card')]
+    .find(card => card.querySelector('.label-eyebrow')?.textContent === 'Equity lots')
+    ?.querySelector('.metric-value')?.textContent), String(payload.model.live.equityCount),
+  'verified equity lot count remains visible alongside the fund summary');
   const fundCards = await page.$eval('#metrics', el => el.textContent);
   assert(fundCards.includes('2,000.00 SGD') && fundCards.includes('2026-10-15'), 'fund values retain each account currency and date');
   assert(fundCards.includes('excluded from itemized NAV and P/L'), 'fund total excluded from cost accounting');
