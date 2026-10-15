@@ -1989,7 +1989,7 @@ function renderPremiumEngine(view) {
   el.premiumHead.innerHTML = sectionHead('Section 02', showRecordedPnlByMonth ? 'Premium and recorded P&L' : 'Option premium',
     `${showRecordedPnlByMonth ? 'Track premium collected and profit or loss (P&L) by calendar month.' : 'Track option premium collected by calendar month and underlying.'} Historical trades are included where available; otherwise the charts build over time as Velovest records new trades.`);
   const rows = (entries, byAmount = false) => [...entries].sort(([a, av], [b, bv]) => {
-    if (!byAmount) return a.localeCompare(b);
+    if (!byAmount) return b.localeCompare(a);
     if (av == null || bv == null) return av == null && bv == null ? a.localeCompare(b) : av == null ? 1 : -1;
     return bv - av || a.localeCompare(b);
   }).map(([label, value]) => ({ label, value: value ?? 0, display: value == null ? 'Unknown' : fmtPrettyMoney(value, ccy) }));
