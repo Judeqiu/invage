@@ -83,6 +83,34 @@ or early-assignment probabilities. Cash interest, borrow/transaction costs,
 partial assignment paths and close/hedge action comparisons remain unavailable.
 No forecast, VaR, ES, probability-of-profit or action-ranking capability is claimed.
 
+### Connected-broker assessment (16 October 2026)
+
+A read-only `option_brief` v2 request using the existing Tiger connection returned
+code 4, `4000:permission denied(field 'device_id' cannot be empty)`. No quotes were
+returned. This establishes missing quote-device configuration, not whether the
+account has purchased the required market-data entitlement. Tiger trading/history
+access must not be treated as proven quote access. No portfolio state or broker
+configuration was changed by this probe.
+
+Tiger's [option quote documentation](https://docs-en.itigerup.com/docs/quote-option-java)
+describes prices, mid/mark timestamps and `ratesBonds`; option-chain Greeks are
+deprecated for intraday use. A future adapter must establish device authorization
+and entitlements, verify quote timestamps and contract terms, and source a verified
+dividend schedule before publishing model inputs. A last-trade timestamp does not
+prove that bid/ask quotes are current, and historical volatility is not implied
+volatility. The current IBKR connection uses the
+[Flex report service](https://www.interactivebrokers.com/docs/web-api/flex-web-service/using-flex-web-service/generate-the-report),
+not TWS/Gateway market data. Its statement credentials do not establish access to
+the [live Greeks API](https://www.interactivebrokers.com/docs/tws-api/doc/md/option-greeks).
+
+When no positions have usable model inputs, the dashboard shows a single input
+readiness panel and recorded position/contract counts. It omits empty metric cards,
+tables and discussion controls. Rechecking data never invents missing inputs or
+implicitly connects a provider. Model details and exact exclusions remain in the
+coverage disclosure. When inputs are usable, results are grouped into scenario,
+funding, payoff and exposure sections; unsupported probability/action analytics
+are explained together rather than displayed as empty KPIs.
+
 ## Access, lifecycle and retention
 
 All APIs use the framework's trusted registered session loader. Submission also

@@ -64,7 +64,12 @@
       tabs.classList.toggle('hidden', !context.hasOptions);
       if (!cap.available) status(cap.reason || 'Analysis service is not configured.');
     } catch { if (key === contextKey) disable(); }
-    finally { checking = false; }
+    finally {
+      checking = false;
+      // Cached and fresh dashboard renders can overlap this request. Recheck
+      // the current context immediately instead of leaving its tabs hidden.
+      if (key !== contextKey) void checkCapabilities();
+    }
   }
   function render(value, stale = false) {
     if (result !== value) resultStale = false;
@@ -72,19 +77,38 @@
     stale = stale || resultStale || !!value.marketAsOf && Date.now() - Date.parse(value.marketAsOf) > 900000;
     const c = value.coverage;
     const partial = value.status === 'partial' ? 'Covered positions only · ' : '';
-    status(`${stale ? 'Stale · ' : ''}${partial}${value.status === 'unavailable' ? 'Unavailable: validated inputs missing' : 'Ready'} · ${c.supportedContracts}/${c.totalContracts} contracts · ${c.supportedQuantity}/${c.totalQuantity} absolute quantity`);
-    const metric = (label, m) => `<div class="metric-card"><div class="metric-label">${esc(label)}</div><div class="metric-value">${esc(money(m.value, m.unit))}</div><p>${esc(m.reason)}</p></div>`;
-    $('optionRiskOutput').innerHTML = `<p>As of ${esc(value.marketAsOf || 'Unavailable')} · Quote age ${value.marketAsOf ? esc(Math.max(0, Math.floor((Date.now() - Date.parse(value.marketAsOf)) / 60000))) + ' minutes' : 'unknown'} · Account ${esc(value.scope.accountIds.join(', ') || context.channel)} · Model ${esc(value.model.id)} ${esc(value.model.version)} · Holdings revision ${esc(value.portfolioRevision)}</p>
-      <div class="kpi-row">${metric('Conditional stress loss (positive magnitude)', value.metrics.stressLoss)}${metric('Standalone option dollar delta', value.metrics.dollarDelta)}${metric('Expected shortfall', value.metrics.expectedShortfall)}</div>
-      <h3>Conditional scenarios · signed P/L</h3><div class="table-scroll"><table class="report"><thead><tr><th>Spot / IV shock</th><th>Currency</th><th>Standalone options</th><th>Options + related shares</th></tr></thead><tbody>${value.scenarios.flatMap(s => s.byCurrency.map(v => `<tr><td>${esc((s.spotShock * 100).toFixed(0))}% / ${esc(s.volatilityPointShock)} vol points</td><td>${esc(v.currency)}</td><td>${esc(money(v.optionPnl, v.currency))}</td><td>${esc(money(v.combinedPnl, v.currency))}</td></tr>`)).join('')}</tbody></table></div>
-      <h3>Assignment branches · gross funding, not loss</h3>${value.funding.map(f => `<p>${esc(f.accountId)} · Short put funding ${esc(money(f.grossPutFunding, f.currency))} · Recorded cash ${esc(money(f.cash, f.currency))} as of ${esc(f.cashAsOf || 'unknown')} · Funding gap ${esc(money(f.fundingGap, f.currency))} ${f.delivery.map(d => ` · ${esc(d.underlying)} call delivery ${esc(d.requiredShares)} shares; available ${esc(d.availableShares)}`).join('')}.</p>`).join('')}
-      <h3>Option expiry payoff bounds</h3><p>Standalone legs grouped by account, underlying and expiry; excludes costs and early exercise.</p>${value.payoffBounds.map(b => `<p>${esc(b.accountId)} · ${esc(b.underlying)} · ${esc(b.expiryAt)} · Minimum ${b.unlimitedLoss ? 'Unlimited loss' : esc(money(b.minPnl, b.currency))} · Maximum ${b.unlimitedGain ? 'Unlimited gain' : esc(money(b.maxPnl, b.currency))}</p>`).join('')}
-      <h3>Option exposures</h3><div class="table-scroll"><table class="report"><thead><tr><th>Contract / account</th><th>Dollar delta</th><th>Vega / vol point</th><th>Theta / calendar day</th></tr></thead><tbody>${value.contributors.map(c => `<tr><td>${esc(c.id)} · ${esc(c.accountId)}</td><td>${esc(money(c.dollarDelta, c.currency))}</td><td>${esc(money(c.vega, c.currency))}</td><td>${esc(money(c.theta, c.currency))}</td></tr>`).join('')}</tbody></table></div>
-      <h3>Possible actions</h3><p>Hold scenarios shown. Close and hedge comparisons require fresh, validated executable quotes and costs.</p>
-      <details><summary>Coverage, assumptions and input evidence</summary><p>Market snapshot ${esc(value.marketSnapshotId)} · Metadata ${esc(value.metadataVersion)} · Generated ${esc(value.generatedAt)}</p><ul>${c.exclusions.map(x => `<li>${esc(x.id)} (${esc(x.quantity)} contracts): ${esc(x.reason)}</li>`).join('')}${value.assumptions.map(a => `<li>${esc(a)}</li>`).join('')}</ul></details>
-      <button type="button" class="chip-btn" aria-expanded="false" data-option-risk-discuss data-option-key="${esc(JSON.stringify(['risk', value.id]))}" data-option-discuss="${esc(`@OptionsExpert Explain saved risk analysis ${value.id}. Retrieve it with get_option_risk_result before making numerical claims. Account ${value.scope.accountIds.join(', ')}, revision ${value.portfolioRevision}, horizon ${value.scope.horizonTradingDays} trading days, model ${value.model.version}, as of ${value.marketAsOf}. Explain assumptions and exclusions; state staleness first. No trade execution.`)}" data-option-title="Risk &amp; scenarios" data-option-context="${esc(value.id)}">Discuss analysis</button>`;
-    $('optionRiskRun').textContent = 'Recalculate';
+    const unavailable = value.status === 'unavailable' || c.supportedContracts === 0;
+    status(`${stale ? 'Stale · ' : ''}${partial}${unavailable ? 'Analysis not ready' : 'Ready'} · ${c.supportedContracts}/${c.totalContracts} option positions · ${c.supportedQuantity}/${c.totalQuantity} contracts covered`);
+    const evidence = `<details class="risk-evidence"><summary>Coverage and data sources</summary><p>Accounts: ${esc(value.scope.accountIds.join(', ') || context.channel)}. Generated: ${esc(value.generatedAt)}.</p><p>Model: ${esc(value.model.id)} ${esc(value.model.version)}. Holdings revision: ${esc(value.portfolioRevision)}. Market snapshot: ${esc(value.marketSnapshotId)}. Metadata: ${esc(value.metadataVersion)}.</p><ul>${c.exclusions.map(x => `<li>${esc(x.id)} (${esc(x.quantity)} contracts): ${esc(x.reason)}</li>`).join('')}${value.assumptions.map(a => `<li>${esc(a)}</li>`).join('')}</ul></details>`;
+    $('optionRiskRun').textContent = unavailable ? 'Check data again' : 'Recalculate';
+    if (unavailable) {
+      const missingFeed = value.marketSnapshotId === 'unavailable';
+      $('optionRiskOutput').innerHTML = `<section class="risk-empty-state" data-option-risk-empty>
+        <div class="label-eyebrow">Model inputs unavailable</div><h3>${missingFeed ? 'Market data is not connected' : 'No positions have usable model inputs'}</h3>
+        <p>Your holdings are loaded. ${missingFeed ? 'A verified market-data feed has not been connected to this analysis.' : 'The supplied market data does not yet meet the model’s contract and freshness checks.'} Risk numbers will appear when those inputs are available.</p>
+        <dl class="risk-input-summary"><div><dt>Option positions</dt><dd>${esc(c.totalContracts)}</dd></div><div><dt>Contracts held</dt><dd>${esc(c.totalQuantity)}</dd></div><div><dt>Broker accounts</dt><dd>${esc(value.scope.accountIds.length)}</dd></div></dl>
+        <div class="risk-input-needs"><h4>What this analysis needs</h4><ul><li>Time-stamped option and underlying prices</li><li>Verified exercise, expiry and settlement terms</li><li>Interest rates and a verified dividend schedule</li></ul></div>
+        <p class="risk-note">Refreshing checks the available inputs again. It does not connect a missing data feed. Your expiry and assignment view remains available.</p>
+      </section>${evidence}`;
+      return;
+    }
+    const metric = (label, m, note = '') => `<div class="metric-card"><div class="label-eyebrow">${esc(label)}</div><div class="metric-value">${esc(money(m.value, m.unit))}</div><p class="risk-note">${esc(m.reason || note)}</p></div>`;
+    const section = (title, content, note = '') => `<section class="risk-result-section"><div class="risk-section-head"><h3>${esc(title)}</h3>${note ? `<p>${esc(note)}</p>` : ''}</div>${content}</section>`;
+    const table = (headers, rows) => `<div class="table-scroll"><table class="report"><thead><tr>${headers.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>`;
+    const scenarios = value.scenarios.flatMap(s => s.byCurrency.map(v => `<tr><td>${esc((s.spotShock * 100).toFixed(0))}% / ${esc(s.volatilityPointShock)} vol points</td><td>${esc(v.currency)}</td><td>${esc(money(v.optionPnl, v.currency))}</td><td>${esc(money(v.combinedPnl, v.currency))}</td></tr>`)).join('');
+    const contributors = value.contributors.map(c => `<tr><td>${esc(c.id)}<span class="risk-account">${esc(c.accountId)}</span></td><td>${esc(money(c.dollarDelta, c.currency))}</td><td>${esc(money(c.vega, c.currency))}</td><td>${esc(money(c.theta, c.currency))}</td></tr>`).join('');
+    const coverageMetric = { value: c.supportedContracts, unit: `of ${c.totalContracts} positions`, reason: `${c.supportedQuantity} of ${c.totalQuantity} contracts covered` };
+    $('optionRiskOutput').innerHTML = `<div class="risk-asof">${value.marketAsOf ? `Market data as of ${esc(new Date(value.marketAsOf).toLocaleString())} · ${esc(Math.max(0, Math.floor((Date.now() - Date.parse(value.marketAsOf)) / 60000)))} minutes old` : 'Market quote time unavailable'} · ${esc(value.scope.accountIds.length)} broker accounts</div>
+      <div class="kpi-row">${metric('Scenario loss', value.metrics.stressLoss, 'Largest loss across the tested shocks; covered positions only')}${metric('Options dollar delta', value.metrics.dollarDelta, 'Option exposure only; excludes underlying shares')}${metric('Positions covered', coverageMetric)}</div>
+      ${scenarios ? section('Conditional scenarios', table(['Spot / volatility shock', 'Currency', 'Options P/L', 'Options + shares P/L'], scenarios), 'Signed profit or loss under each shock. These scenarios have no forecast probabilities.') : ''}
+      ${value.funding.length ? section('Cash and share requirements', `<div class="risk-funding-grid">${value.funding.map(f => `<article class="risk-funding-card"><h4>${esc(f.accountId)}</h4><dl><div><dt>Short-put funding</dt><dd>${esc(money(f.grossPutFunding, f.currency))}</dd></div><div><dt>Recorded cash</dt><dd>${esc(money(f.cash, f.currency))}</dd></div><div><dt>Funding gap</dt><dd>${esc(money(f.fundingGap, f.currency))}</dd></div></dl><p class="risk-note">Cash as of ${esc(f.cashAsOf || 'unknown')}${f.delivery.map(d => ` · ${esc(d.underlying)}: ${esc(d.requiredShares)} call-delivery shares required; ${esc(d.availableShares)} available`).join('')}</p></article>`).join('')}</div>`, 'Gross assignment requirements, rather than a loss estimate. Broker collateral netting is excluded.') : ''}
+      ${value.payoffBounds.length ? section('Expiry payoff bounds', table(['Account / underlying', 'Expiry', 'Minimum P/L', 'Maximum P/L'], value.payoffBounds.map(b => `<tr><td>${esc(b.underlying)}<span class="risk-account">${esc(b.accountId)}</span></td><td>${esc(b.expiryAt)}</td><td>${b.unlimitedLoss ? 'Unlimited loss' : esc(money(b.minPnl, b.currency))}</td><td>${b.unlimitedGain ? 'Unlimited gain' : esc(money(b.maxPnl, b.currency))}</td></tr>`).join('')), 'Standalone option legs grouped by account, underlying and expiry. Excludes costs and early exercise.') : ''}
+      ${contributors ? section('Option exposures', table(['Contract / account', 'Dollar delta', 'Vega / volatility point', 'Theta / calendar day'], contributors)) : ''}
+      <aside class="risk-limitations"><h3>Analysis limits</h3><p>${esc(value.metrics.expectedShortfall.reason || 'Validated physical forecasts unavailable')}. Expected shortfall is unavailable. Close and hedge comparisons also need verified executable quotes and trading costs.</p></aside>
+      ${evidence}
+      <button type="button" class="chip-btn risk-discuss" aria-expanded="false" data-option-risk-discuss data-option-key="${esc(JSON.stringify(['risk', value.id]))}" data-option-discuss="${esc(`@OptionsExpert Explain saved risk analysis ${value.id}. Retrieve it with get_option_risk_result before making numerical claims. Account ${value.scope.accountIds.join(', ')}, revision ${value.portfolioRevision}, horizon ${value.scope.horizonTradingDays} trading days, model ${value.model.version}, as of ${value.marketAsOf}. Explain assumptions and exclusions; state staleness first. No trade execution.`)}" data-option-title="Risk &amp; scenarios" data-option-context="${esc(value.id)}">Discuss analysis</button>`;
   }
+
   async function poll(token) {
     if (!job || token !== generation || section01View !== 'risk' || document.hidden || !enabled) return;
     try {
