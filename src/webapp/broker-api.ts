@@ -1,4 +1,5 @@
 import { saveInvestor, type InvestorSnapshot } from '../state/investor-store.js';
+import { createBrokerSyncJobs } from '../brokers/sync-all.js';
 /**
  * Session-authenticated broker connection APIs.
  * Not agent tools. Principal is loadSessionState(req) only — no targetSlug.
@@ -137,6 +138,22 @@ function savedWebullCredentials(state: InvestorState): WebullCredentials {
 
 export function createBrokerConnectionsRouter(): Router {
   const router = Router();
+  const syncJobs = createBrokerSyncJobs();
+
+  router.post('/broker-sync', async (req: Request, res: Response) => {
+    try {
+      const snapshot = await sessionInvestor(req);
+      res.setHeader('Cache-Control', 'private, no-store');
+      res.status(202).json(syncJobs.start(snapshot));
+    } catch (e) { accountError(res, e); }
+  });
+  router.get('/broker-sync', async (req: Request, res: Response) => {
+    try {
+      const snapshot = await sessionInvestor(req);
+      res.setHeader('Cache-Control', 'private, no-store');
+      res.json(syncJobs.get(snapshot.state.user.id));
+    } catch (e) { accountError(res, e); }
+  });
 
   function accountError(res: Response, e: unknown): void {
     const message = e instanceof Error ? e.message : String(e);

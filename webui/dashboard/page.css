@@ -1,4 +1,7 @@
 /* Dashboard-only chrome. Tokens come from ../report.css. */
+.dashboard-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+#brokerSyncProgress { display: block; width: 100%; height: 12px; margin-top: 1rem; accent-color: var(--brand); }
+#brokerSyncDetails { font-size: 0.8rem; overflow-wrap: anywhere; }
  .loading { margin: 1rem 0; padding: 1.25rem; border: 1px solid var(--border); border-radius: 0.85rem; background: var(--card); color: var(--muted-foreground); }
 .load-heading { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.75rem; color: var(--foreground); }
 #loadElapsed, #loadStep, #loadInsights, #loadHint { font-size: 0.8rem; line-height: 1.5; }

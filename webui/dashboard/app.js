@@ -2954,6 +2954,73 @@ function renderEmpty(body) {
   installCardExplainButtons();
 }
 
+let syncingBrokers = false;
+let refreshingAfterSync = false;
+const syncButton = document.getElementById('dashboardSync');
+const refreshButton = document.getElementById('dashboardRefresh');
+const syncPanel = document.getElementById('brokerSyncPanel');
+const syncStatus = document.getElementById('brokerSyncStatus');
+const syncProgress = document.getElementById('brokerSyncProgress');
+const syncDetails = document.getElementById('brokerSyncDetails');
+
+function updateActionButtons() {
+  syncButton.disabled = loading || syncingBrokers;
+  refreshButton.disabled = loading || syncingBrokers;
+  document.getElementById('dashboardRetry').disabled = loading || syncingBrokers;
+}
+async function brokerSyncRequest(method = 'GET') {
+  const response = await fetch('/api/domain/invage/broker-sync', {
+    method, credentials: 'include', signal: AbortSignal.timeout(20000),
+  });
+  if (!response.ok) throw new Error(response.status === 401
+    ? 'Your session has ended. Sign in again.' : 'Could not check broker sync. Click Sync brokers to reconnect.');
+  return response.json();
+}
+async function syncBrokers(existingJob) {
+  if (loading || syncingBrokers) return;
+  syncingBrokers = true;
+  updateActionButtons();
+  syncPanel.classList.remove('hidden');
+  syncProgress.value = 0;
+  syncStatus.textContent = 'Starting broker sync…';
+  syncDetails.textContent = 'Syncing enabled broker accounts, then refreshing your dashboard.';
+  try {
+    let job = existingJob || await brokerSyncRequest('POST');
+    const jobId = job.id;
+    while (true) {
+      if (!job || job.id !== jobId) throw new Error('The sync job is no longer available. Click Sync brokers to start again.');
+      const completed = job.accounts.filter(a => a.status === 'succeeded' || a.status === 'failed').length;
+      const current = job.accounts.find(a => a.status === 'running');
+      syncProgress.value = job.accounts.length ? completed / job.accounts.length * 80 : 80;
+      syncStatus.textContent = `Syncing brokers · ${completed} of ${job.accounts.length} accounts finished`;
+      syncDetails.textContent = current ? `Syncing ${current.label}…` : 'Finishing broker sync…';
+      if (job.status === 'completed') break;
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      job = await brokerSyncRequest();
+    }
+    const failed = job.accounts.filter(a => a.status === 'failed');
+    const succeeded = job.accounts.filter(a => a.status === 'succeeded').length;
+    syncStatus.textContent = 'Broker sync finished · Refreshing dashboard…';
+    syncDetails.textContent = failed.length
+      ? `${failed.map(a => a.label).join(', ')} failed to sync. Check Settings → Brokers for details.`
+      : job.accounts.length ? `${succeeded} accounts synced.` : 'No enabled broker accounts. Connect a broker in Settings → Brokers.';
+    refreshingAfterSync = true;
+    const refreshed = await load(true);
+    if (!refreshed) throw new Error('Broker sync finished, but the dashboard refresh failed. Retry Refresh portfolio.');
+    syncProgress.value = 100;
+    syncStatus.textContent = failed.length
+      ? `Dashboard refreshed · ${succeeded} synced, ${failed.length} failed`
+      : 'Dashboard refreshed · Broker sync complete';
+  } catch (error) {
+    syncStatus.textContent = error instanceof Error ? error.message : 'Broker sync was interrupted. Click Sync brokers to reconnect.';
+  } finally {
+    refreshingAfterSync = false;
+    syncingBrokers = false;
+    updateActionButtons();
+  }
+}
+syncButton.addEventListener('click', () => void syncBrokers());
+
 const loadStages = [
   'Reading your portfolio records',
   'Checking market prices and currencies',
@@ -2997,6 +3064,10 @@ function updateLoading(step, info = {}) {
   loadUi.progress.setAttribute('aria-valuenow', String(loadPosition));
   loadUi.progress.setAttribute('aria-valuetext', `Step ${step + 1} of 8: ${loadStages[step]}`);
   loadUi.fill.style.width = `${loadPosition / 8 * 100}%`;
+  if (refreshingAfterSync) {
+    syncProgress.value = 80 + loadPosition / 8 * 19;
+    syncStatus.textContent = `Refreshing dashboard · ${loadStages[step]}`;
+  }
   if (loadUi.stage.textContent !== loadStages[step]) loadUi.stage.textContent = loadStages[step];
   loadUi.step.textContent = `Step ${step + 1} of 8`;
   for (const key of ['positions', 'tradeRecords', 'snapshots']) {
@@ -3079,6 +3150,7 @@ function loadHistoryInBackground() {
 async function load(force = false) {
   if (loading) return;
   loading = true;
+  updateActionButtons();
   let showingSnapshot = payload != null && !el.dashboard.classList.contains('hidden');
   let historyStarted = false;
   loadStartedAt = performance.now(); loadPosition = 0; loadCounts = {};
@@ -3128,6 +3200,7 @@ async function load(force = false) {
       historyStarted = false;
     }
     if (!historyStarted) loadHistoryInBackground();
+    return true;
   } catch (e) {
     loadUi.progress.classList.add('failed');
     loadUi.progress.setAttribute('aria-valuetext', 'Dashboard loading interrupted');
@@ -3139,11 +3212,13 @@ async function load(force = false) {
       : 'The dashboard could not finish loading.';
     loadUi.error.textContent = e?.name === 'AbortError' ? 'Loading took longer than expected. Please retry.' : e instanceof Error ? e.message : 'The dashboard could not load. Please retry.';
     el.error.classList.remove('hidden');
+    return false;
   } finally {
     clearInterval(timer); clearTimeout(timeout); controller.abort();
     loadingClock();
     el.dashboard.setAttribute('aria-busy', 'false');
     loading = false;
+    updateActionButtons();
   }
 }
 document.getElementById('dashboardRetry').addEventListener('click', () => void load(true));
@@ -3214,7 +3289,14 @@ if (el.channelPills) {
   });
 }
 
-void load();
+void (async () => {
+  await load();
+  // Reattach after a reload; closing this page does not cancel the background job.
+  try {
+    const job = await brokerSyncRequest();
+    if (job?.status === 'running') await syncBrokers(job);
+  } catch { /* The explicit Sync brokers action reports connection errors. */ }
+})();
 
 el.expiryTable?.addEventListener('input', event => {
   if (event.target.id !== 'riskSearch') return;
