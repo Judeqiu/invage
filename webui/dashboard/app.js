@@ -2981,6 +2981,7 @@ async function syncBrokers(existingJob) {
   syncingBrokers = true;
   updateActionButtons();
   syncPanel.classList.remove('hidden');
+  syncProgress.classList.remove('hidden');
   syncProgress.value = 0;
   syncStatus.textContent = 'Starting broker sync…';
   syncDetails.textContent = 'Syncing enabled broker accounts, then refreshing your dashboard.';
@@ -3011,9 +3012,11 @@ async function syncBrokers(existingJob) {
     syncStatus.textContent = failed.length
       ? `Dashboard refreshed · ${succeeded} synced, ${failed.length} failed`
       : 'Dashboard refreshed · Broker sync complete';
+    if (!failed.length && job.accounts.length) syncPanel.classList.add('hidden');
   } catch (error) {
     syncStatus.textContent = error instanceof Error ? error.message : 'Broker sync was interrupted. Click Sync brokers to reconnect.';
   } finally {
+    syncProgress.classList.add('hidden');
     refreshingAfterSync = false;
     syncingBrokers = false;
     updateActionButtons();

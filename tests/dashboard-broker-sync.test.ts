@@ -77,6 +77,8 @@ it.skipIf(!existsSync(chrome))('tracks broker sync through refresh, reports fail
     expect(await page.$eval('#brokerSyncStatus', n => n.textContent)).toContain('1 synced, 1 failed');
     expect(await page.$eval('#brokerSyncDetails', n => n.textContent)).toContain('Second broker');
     expect(await page.$eval('#brokerSyncProgress', n => (n as HTMLProgressElement).value)).toBe(100);
+    expect(await page.$eval('#brokerSyncProgress', n => getComputedStyle(n).display)).toBe('none');
+    expect(await page.$eval('#brokerSyncPanel', n => getComputedStyle(n).display)).not.toBe('none');
     await page.setViewport({ width: 390, height: 844 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.screenshot({ path: '/tmp/invage-dashboard-broker-sync.png' });
@@ -84,10 +86,21 @@ it.skipIf(!existsSync(chrome))('tracks broker sync through refresh, reports fail
     failRefresh = true;
     await page.click('#dashboardSync');
     await page.waitForFunction(() => document.getElementById('brokerSyncDetails')!.textContent!.includes('Main broker'));
+    expect(await page.$eval('#brokerSyncProgress', n => getComputedStyle(n).display)).not.toBe('none');
     job!.accounts.forEach(a => { a.status = 'succeeded'; }); job!.status = 'completed';
     await page.waitForSelector('#dashboardSync:enabled');
     expect(await page.$eval('#brokerSyncStatus', n => n.textContent)).toContain('dashboard refresh failed');
     expect(await page.$eval('#brokerSyncProgress', n => (n as HTMLProgressElement).value)).toBeLessThan(100);
+    expect(await page.$eval('#brokerSyncProgress', n => getComputedStyle(n).display)).toBe('none');
+
+    failRefresh = false;
+    await page.click('#dashboardSync');
+    await page.waitForFunction(() => document.getElementById('brokerSyncDetails')!.textContent!.includes('Main broker'));
+    job!.accounts.forEach(a => { a.status = 'succeeded'; }); job!.status = 'completed';
+    await page.waitForFunction(() => document.getElementById('brokerSyncStatus')!.textContent!.startsWith('Refreshing dashboard'));
+    refresh!.end(frame({ type: 'result', payload }));
+    await page.waitForSelector('#dashboardSync:enabled');
+    expect(await page.$eval('#brokerSyncPanel', n => getComputedStyle(n).display)).toBe('none');
     expect(errors).toEqual([]);
   } finally {
     await browser.close(); server.closeAllConnections();
