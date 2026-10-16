@@ -22,10 +22,15 @@ describe.skipIf(!enabled)('durable risk queue', () => {
     expect(a.id).toBe(b.id);
     expect(await repo.get(other,a.id)).toBeNull();
     const claim = await repo.claim(); expect(claim?.id).toBe(a.id);
+    expect(await repo.freezeInputs(a.id,randomUUID(),inputs)).toBe(false);
+    const frozen={...inputs,marketSnapshotId:'collected-market'};
+    expect(await repo.freezeInputs(a.id,claim!.token,frozen)).toBe(true);
+    expect((await getPool().query('SELECT inputs FROM option_risk_jobs WHERE id=$1',[a.id])).rows[0].inputs.marketSnapshotId).toBe('collected-market');
     expect(await repo.claim()).toBeNull();
     await expect(repo.enqueue(owner, request, { ...inputs, marketSnapshotId: '2' })).rejects.toThrow('already in progress');
     await getPool().query("UPDATE option_risk_jobs SET lease_until=now()-interval '1 second' WHERE id=$1", [a.id]);
     const recovered=await repo.claim(); expect(recovered?.id).toBe(a.id);
+    expect(await repo.freezeInputs(a.id,claim!.token,inputs)).toBe(false);
     // An expired worker cannot overwrite the replacement worker's result/status.
     await repo.finish(a.id,claim!.token,null);
     expect((await repo.get(owner,a.id))?.status).toBe('running');

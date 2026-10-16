@@ -6,7 +6,7 @@ import sys
 import time
 import QuantLib as ql
 
-VERSION = 'conditional-ql-v1'
+VERSION = 'conditional-ql-v2'
 SCENARIOS = [('down-20', -.20, .20), ('down-10', -.10, .10),
              ('flat', 0., 0.), ('up-10', .10, -.05), ('up-20', .20, .05)]
 
@@ -149,7 +149,7 @@ def analyze(inputs):
           'Cash is unchanged: cash interest, transaction costs, borrow costs and hedges are unavailable. Hold scenarios only.',
           'All related shares affect P/L; only free shares cover delivery. Cash and delivery remain account-specific; no cross-account collateral netting.',
           'No cross-currency aggregation without a validated FX snapshot.',
-          'Daily pricing grid; intraday expiry precision is unsupported. Horizons crossing expiry are excluded.'],
+          'Daily pricing grid; intraday expiry precision is unsupported. Horizons crossing expiry are excluded.'] + inputs.get('providerAssumptions', []),
         diagnostics=dict(maxPricingDifference=max_diff, grid=400, elapsedMs=round((time.monotonic() - started) * 1000)))
 
 

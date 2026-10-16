@@ -70,7 +70,7 @@ export function normalizeRiskInputs(snapshot: InvestorSnapshot, request: RiskReq
     const matches = usable ? market.contracts.filter(c => c && c.id === id) : [];
     const c = matches.length === 1 ? matches[0] : undefined;
     let reason = '';
-    if (!c) reason = 'Validated contract metadata and market snapshot unavailable';
+    if (!c) reason = market?.exclusions?.find(e=>e.id===id)?.reason || 'Validated contract metadata and market snapshot unavailable';
     else if (!/^[A-Z]{3}$/.test(c.currency || '') || c.underlying !== o.underlying || c.right !== o.right || c.strike !== o.strike || c.multiplier !== o.multiplier || c.currency !== h.currency ||
       c.expiryAt?.slice(0, 10) !== o.expiry || c.deliverable !== 'standard-shares' || c.multiplier !== 100 || o.settlement !== 'physical' ||
       c.expiryTimezone !== 'America/New_York' || !['american', 'european'].includes(c.exerciseStyle)) reason = 'Unsupported or mismatched contract metadata/deliverable';

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { getPool } from '../books/db.js';
 import { digest, RiskError } from './context.js';
 import type { RiskAnalysis, RiskInputs, RiskJob, RiskRequest } from './types.js';
+import { deleteRiskMarketSnapshot, pruneRiskMarketSnapshots } from './market-provider.js';
 
 export const scopeKey = (r: RiskRequest) => digest([r.accountScope, r.horizonTradingDays, r.scenarioSet, r.mode]);
 export class RiskRepository {
@@ -58,11 +59,18 @@ export class RiskRepository {
   async heartbeat(id: string, token: string) {
     await getPool().query("UPDATE option_risk_jobs SET lease_until=now()+interval '15 seconds' WHERE id=$1 AND lease_token=$2 AND status='running'", [id, token]);
   }
+  async freezeInputs(id: string, token: string, inputs: RiskInputs): Promise<boolean> {
+    if (inputs.collectMarketData) throw new Error('Market inputs must be collected before freezing');
+    const result = await getPool().query(`UPDATE option_risk_jobs SET inputs=$3,dedup_key=$4
+      WHERE id=$1 AND lease_token=$2 AND status='running' AND lease_until>now() AND expires_at>now()`,
+      [id,token,JSON.stringify(inputs),digest(inputs)]);
+    return result.rowCount === 1;
+  }
   async finish(id: string, token: string, result: RiskAnalysis | null) {
     await getPool().query(`UPDATE option_risk_jobs SET status=$3,result=$4,error=$5,lease_token=NULL,lease_until=NULL WHERE id=$1 AND lease_token=$2 AND status='running'`,
-      [id, token, result ? 'complete' : 'failed', result ? JSON.stringify(result) : null, result ? null : 'Analysis failed or exceeded its 60-second deadline. Retry with validated inputs.']);
+      [id, token, result ? 'complete' : 'failed', result ? JSON.stringify(result) : null, result ? null : 'Market-data collection or numerical analysis failed. Retry with validated inputs.']);
   }
-  async pruneExpired() { await getPool().query('DELETE FROM option_risk_jobs WHERE expires_at<=now()'); }
+  async pruneExpired() { await getPool().query('DELETE FROM option_risk_jobs WHERE expires_at<=now()'); await pruneRiskMarketSnapshots(); }
   async cancelQueued() { await getPool().query("UPDATE option_risk_jobs SET status='cancelled' WHERE status='queued'"); }
-  async deleteUser(owner: string) { await getPool().query('DELETE FROM option_risk_jobs WHERE owner_id=$1', [owner]); }
+  async deleteUser(owner: string) { await getPool().query('DELETE FROM option_risk_jobs WHERE owner_id=$1', [owner]); await deleteRiskMarketSnapshot(owner); }
 }

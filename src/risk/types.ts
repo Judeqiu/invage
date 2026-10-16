@@ -1,5 +1,5 @@
 /** Risk-only DTOs. Portfolio premium units remain dollars per contract. */
-export const ENGINE_VERSION = 'conditional-ql-v1';
+export const ENGINE_VERSION = 'conditional-ql-v2';
 export const SCENARIO_SET = 'equity-options-standard-v1';
 export type Horizon = 1 | 5 | 21;
 export interface RiskRequest {
@@ -40,6 +40,7 @@ export interface RiskMarketSnapshot {
   metadataVersion: string;
   capturedAt: string;
   contracts: RiskMarketContract[];
+  exclusions?: { id: string; reason: string }[];
 }
 export interface RiskContract extends RiskMarketContract {
   accountId: string;
@@ -50,6 +51,9 @@ export interface RiskContract extends RiskMarketContract {
 }
 export interface Exclusion { id: string; quantity: number; reason: string }
 export interface RiskInputs {
+  /** Queue-only collection marker; removed before inputs are frozen/priced. */
+  collectMarketData?: true;
+  providerAssumptions?: string[];
   analysisContextId: string;
   portfolioRevision: string;
   marketSnapshotId: string;
@@ -74,6 +78,7 @@ export interface Funding {
   availableShares: number; cash: number | null; cashAsOf: string | null; fundingGap: number | null;
 }
 export interface RiskAnalysis {
+  inputEvidence?: Array<Pick<RiskMarketContract,'id'|'source'|'quoteAsOf'|'spotAsOf'|'rateReference'|'dividendReference'>>;
   id: string; status: 'ready' | 'partial' | 'unavailable'; analysisContextId: string;
   portfolioRevision: string; generatedAt: string; marketAsOf: string | null;
   marketSnapshotId: string; metadataVersion: string;

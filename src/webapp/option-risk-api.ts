@@ -35,6 +35,8 @@ export function createOptionRiskRouter() {
       const request = parseRiskRequest(req.body);
       const snapshot = res.locals.riskSnapshot as InvestorSnapshot;
       const inputs = normalizeRiskInputs(snapshot, request, await readRiskMarketSnapshot(snapshot.state.user.id));
+      // Only the leased background worker collects connected market data.
+      inputs.collectMarketData = true;
       if (!riskEnabled()) throw new RiskError(404, 'Risk analysis unavailable');
       const job = await riskRepository.enqueue(snapshot.state.user.id, request, inputs);
       res.status(job.status === 'complete' ? 200 : 202).json(job);

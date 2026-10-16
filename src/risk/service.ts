@@ -1,8 +1,10 @@
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { ENGINE_VERSION, type RiskAnalysis, type RiskInputs } from './types.js';
-import { riskConfigured, riskEnabled } from './context.js';
+import { analysisContext, normalizeRiskInputs, riskConfigured, riskEnabled } from './context.js';
 import { RiskRepository } from './repository.js';
+import { collectConnectedRiskMarket, writeRiskMarketSnapshot } from './market-provider.js';
+import { loadInvestor } from '../state/investor-store.js';
 
 export const riskRepository = new RiskRepository();
 export async function runRiskWorker(inputs: RiskInputs): Promise<Omit<RiskAnalysis, 'id'>> {
@@ -40,6 +42,7 @@ export async function runRiskWorker(inputs: RiskInputs): Promise<Omit<RiskAnalys
   return { ...(result as unknown as RiskAnalysis), analysisContextId: inputs.analysisContextId,
     portfolioRevision: inputs.portfolioRevision, generatedAt: new Date().toISOString(),
     marketAsOf: inputs.marketAsOf, marketSnapshotId: inputs.marketSnapshotId, metadataVersion: inputs.metadataVersion,
+    inputEvidence:inputs.contracts.map(({id,source,quoteAsOf,spotAsOf,rateReference,dividendReference})=>({id,source,quoteAsOf,spotAsOf,rateReference,dividendReference})),
     coverage: (result.coverage as RiskInputs['coverage'] | undefined) ?? inputs.coverage,
     model: { id: 'quantlib-fd-cash-dividend', version: ENGINE_VERSION, measure: 'conditional' } };
 }
@@ -77,7 +80,29 @@ export async function drainRiskQueue(): Promise<void> {
     if (!job) return;
     const heartbeat = setInterval(() => { void riskRepository.heartbeat(job.id, job.token).catch(() => {}); }, 5000);
     try {
-      const result = { ...await runRiskWorker(job.inputs), id: job.id };
+      let inputs = job.inputs;
+      if (inputs.collectMarketData) {
+        const snapshot = await loadInvestor(job.owner_id);
+        if (String(snapshot.revision) !== inputs.portfolioRevision || analysisContext(snapshot) !== inputs.analysisContextId) throw new Error('Portfolio changed before market collection');
+        const market = await collectConnectedRiskMarket(snapshot,inputs.accountIds);
+        const request = { analysisContextId:inputs.analysisContextId, accountScope:{kind:'selected' as const,accountIds:inputs.accountIds},
+          horizonTradingDays:inputs.horizonTradingDays,scenarioSet:'equity-options-standard-v1' as const,mode:'conditional' as const,refresh:false };
+        // Do not overwrite valid operator-supplied inputs when no connector exists.
+        if (market.contracts.length || !inputs.contracts.length) {
+          inputs = normalizeRiskInputs(snapshot,request,market);
+          inputs.providerAssumptions = [
+            'Connected broker last-trade option prices and regular-session underlying prices; quote timestamps are shown separately from fetch time.',
+            'Standard US stock options only; ETFs, adjusted contracts and unverifiable terms are excluded.',
+            'Uses the published FRED DGS1 one-year Treasury yield as a flat-rate proxy, converted from semiannual to continuous compounding; not a maturity-matched zero curve.',
+            'Supports only underlying stocks with zero reported TTM cash dividends/yield and no recent or announced positive cash dividend in the provider history. Assumes no unannounced future dividends; dividend-paying stocks are excluded.',
+          ];
+          await writeRiskMarketSnapshot(job.owner_id,market);
+        } else { inputs={...inputs};delete inputs.collectMarketData; }
+        // Recheck after I/O: never bind a fresh quote to an obsolete portfolio.
+        if ((await loadInvestor(job.owner_id)).revision !== snapshot.revision || !riskEnabled()) throw new Error('Portfolio or feature changed during market collection');
+        if (!await riskRepository.freezeInputs(job.id,job.token,inputs)) throw new Error('Worker lease lost');
+      }
+      const result = { ...await runRiskWorker(inputs), id: job.id };
       await riskRepository.finish(job.id, job.token, result);
     } catch { await riskRepository.finish(job.id, job.token, null); }
     finally { clearInterval(heartbeat); }

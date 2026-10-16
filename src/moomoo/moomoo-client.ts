@@ -100,6 +100,28 @@ export async function moomooGet(args: {
   return asEnvelope(await moomooRequest(args));
 }
 
+/** Read-only Cloud quote endpoints use ret_code/data rather than trade s/d. */
+export async function moomooMarketData(args: {
+  path: string; query?: string; body?: Record<string, unknown>;
+  credentials: MooMooCredentials; fetchImpl?: typeof fetch;
+}): Promise<Record<string, any>> {
+  const post = ['/api/v1.0/quote/snapshot', '/api/v1.0/quote/stock-quote', '/api/v1.0/quote/stock-basicinfo'].includes(args.path);
+  const get = /^\/api\/v1\.0\/quote\/US\.[A-Z][A-Z0-9.]*\/(?:option-chain|corporate-actions\/dividends)$/.test(args.path);
+  if (!post && !get || post !== (args.body !== undefined)) throw new Error('Unsupported read-only market-data request');
+  const fetchImpl = args.fetchImpl ?? fetch;
+  const request = { path: args.path, query: args.query, method: post ? 'POST' as const : 'GET' as const,
+    body: args.body ? JSON.stringify(args.body) : undefined, credentials: args.credentials, fetchImpl };
+  let raw = await moomooRequest(request) as Record<string, unknown>;
+  if (raw?.errcode === CLOCK_SKEW) {
+    const timestampMs = await serverTimeMs(fetchImpl, args.credentials);
+    if (timestampMs) raw = await moomooRequest({ ...request, timestampMs }) as Record<string, unknown>;
+  }
+  if (raw?.ret_code !== 0 || !raw.data || typeof raw.data !== 'object' || Array.isArray(raw.data)) {
+    throw new BrokerParseError('Connected broker market data unavailable or not authorized');
+  }
+  return raw.data as Record<string, any>;
+}
+
 /** Trade positions omit contract size; obtain it from exact-code static metadata. */
 async function fetchOptionBasicInfo(
   positions: MooMooEnvelope, credentials: MooMooCredentials, fetchImpl: typeof fetch,

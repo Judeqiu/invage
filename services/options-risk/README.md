@@ -36,43 +36,60 @@ records. Queries constrain owner UUID; the numerical worker never gets credentia
 The server starts a two-second queue scan without putting numerical work on the
 Express event loop. PostgreSQL leases and a deployment-wide claim lock allow one
 worker at a time, one active job per investor, up to 100 contract positions and 100 pending jobs deployment-wide, a
-60-second worker deadline, 2 MiB input/output limits, five-second heartbeats, and
+45-second market-collection deadline followed by a 60-second numerical worker deadline, 2 MiB worker input/output limits, five-second heartbeats, and
 at most one recovery attempt after a worker lease expires. Invalid financial
 inputs/model failures are not retried automatically. Browser requests return
 queued status promptly. The claimed worker handles the whole portfolio.
 
 ## Validated input provider boundary
 
-**Existing Yahoo valuation/probability quotes are insufficient for this engine.**
-They do not verify exercise style, deliverables, exact expiry, rate/dividend
-provenance or fresh executable quotes. The initial adapter consumes an immutable
-snapshot written by an operator-controlled market-data ingestion process, rather
-than asserting defaults for those fields. There is no HTTP endpoint accepting
-caller-supplied valuations, no automatic conversion of manual marks into verified
-inputs, and no commercial feed bundled in this repository.
+Live recalculation now uses the investor's enabled Futubull/Moomoo Cloud connection
+for all selected custodian accounts, including Tiger and IBKR holdings. Requests
+use the existing signed, read-only quote API. No connection from another investor
+is used. Trading endpoints are rejected before credentials are sent. Collection
+runs inside the leased queue, with bounded response sizes and timeouts; the HTTP
+submission returns immediately. The collected inputs are frozen using the active
+lease before the isolated QuantLib worker receives them. The worker never receives
+broker credentials or network access.
 
-Write atomically with private permissions to:
+The initial connected adapter deliberately admits standard USD, 100-share,
+physically settled US **stock** options only. It verifies exact underlying, strike,
+right and expiry against the option chain, STANDARD deliverables, and American
+exercise against the quote metadata. ETFs and adjusted contracts are excluded.
+It pairs option last trades with regular-session underlying prices using actual
+`stock-quote.data_time` values; overnight snapshot update times are not substituted.
+Quotes must be no older than 24 hours and synchronized within 15 minutes. These
+are conditional valuation inputs, not executable bid/ask offers.
+
+The rate source is the Federal Reserve's DGS1 series published through FRED. The
+latest observation at or before the quote date must be within seven days. Its
+one-year investment-basis Treasury yield is converted from semiannual to continuous
+compounding and used as an explicitly disclosed **flat one-year proxy**, rather
+than a maturity-matched zero curve. Failure never becomes a zero rate.
+
+An empty forward dividend schedule is conditional on no unannounced future cash
+dividends. It is admitted only when the broker reports valid equity data, zero
+trailing cash dividends and yield, and a checked dividend history with no recent
+or announced future positive cash dividend. Dividend-paying stocks and ETFs are
+excluded until a verified forward schedule is implemented. The assumption and
+per-contract source, quote times, rate and dividend evidence are shown in the
+coverage disclosure. Missing or unsupported entries retain specific exclusions;
+partial coverage is labelled and never represented as whole-portfolio coverage.
+
+Recalculate collects fresh inputs. A private atomic snapshot is also saved at
 `$UTARUS_DATA_ROOT/option-risk/market/<digest>.json`, where `digest` is SHA-256 of
-`JSON.stringify(ownerUserUUID)`. See `RiskMarketSnapshot` and
-`RiskMarketContract` in `src/risk/types.ts` for the exact schema. A snapshot includes:
+`JSON.stringify(ownerUserUUID)`. See `RiskMarketSnapshot` and `RiskMarketContract`
+in `src/risk/types.ts`. Snapshot entries bind the investor revision, metadata
+version, actual quote timestamps, verified terms, premium **per contract**, decimal
+IV/rate and dividend provenance. Existing validated operator snapshots can still
+be used if a connected refresh yields no usable contracts. Missing data is never
+filled with manual marks or Yahoo probability estimates.
 
-- Stable snapshot ID, investor revision, metadata version and capture timestamp.
-- One contract entry per portfolio holding key, matching underlying/right/strike,
-  multiplier, currency and expiry date.
-- Verified American/European exercise, `standard-shares` deliverable,
-  `America/New_York` expiry timezone and an offset-qualified expiry timestamp.
-- Spot, premium **per contract**, implied volatility as a decimal, annual rate as
-  a decimal, and an explicit dividend schedule (empty only when verified empty).
-- Actual option/spot quote timestamps, provider source, rate reference and
-  dividend reference. Fetch time is not a quote timestamp.
-
-Quotes must be no older than 24 hours and synchronized within 15 minutes. The
-oldest used quote determines the displayed as-of time and quote age. Missing,
-stale, duplicate or mismatched entries become exclusions; no supported entries
-produces a durable `unavailable` result. The recalculate button rereads the
-provider snapshot; ingestion must publish a new snapshot for fresher inputs. A
-new computation from the same old snapshot remains visibly stale. This adapter
-needs an actual licensed provider assessment/integration before live enablement.
+Provider references: [Futu quote API](https://open.futunn.com/api/quote/realtime/stock-quote),
+[option chain](https://open.futunn.com/api/quote/derivatives/option-chain),
+[dividends](https://open.futunn.com/api/quote/corporate-actions/dividends),
+[FRED DGS1](https://fred.stlouisfed.org/series/DGS1), and
+[OCC equity option specifications](https://www.theocc.com/clearance-and-settlement/clearing/equity-options-product-specifications).
 
 The numerical engine uses calendar dates with the NYSE trading-day calendar.
 Contracts whose horizon reaches/crosses expiry are excluded because exercise,
@@ -85,28 +102,19 @@ No forecast, VaR, ES, probability-of-profit or action-ranking capability is clai
 
 ### Connected-broker assessment (16 October 2026)
 
-A read-only `option_brief` v2 request using the existing Tiger connection returned
-code 4, `4000:permission denied(field 'device_id' cannot be empty)`. No quotes were
-returned. This establishes missing quote-device configuration, not whether the
-account has purchased the required market-data entitlement. Tiger trading/history
-access must not be treated as proven quote access. No portfolio state or broker
-configuration was changed by this probe.
-
-Tiger's [option quote documentation](https://docs-en.itigerup.com/docs/quote-option-java)
-describes prices, mid/mark timestamps and `ratesBonds`; option-chain Greeks are
-deprecated for intraday use. A future adapter must establish device authorization
-and entitlements, verify quote timestamps and contract terms, and source a verified
-dividend schedule before publishing model inputs. A last-trade timestamp does not
-prove that bid/ask quotes are current, and historical volatility is not implied
-volatility. The current IBKR connection uses the
-[Flex report service](https://www.interactivebrokers.com/docs/web-api/flex-web-service/using-flex-web-service/generate-the-report),
-not TWS/Gateway market data. Its statement credentials do not establish access to
-the [live Greeks API](https://www.interactivebrokers.com/docs/tws-api/doc/md/option-greeks).
+The existing Futubull Cloud connection returned real US stock/option quotes,
+standard option-chain terms and dividend histories in read-only production probes.
+Tiger's read-only permission query, after supplying the required device identifier,
+returned no quote permissions. No primary-device permission was transferred.
+The existing IBKR connection is Flex statement reporting, which does not supply
+TWS/Gateway live option inputs. Futubull can price this investor's compatible
+positions held at these other custodians without moving holdings or changing
+broker configuration.
 
 When no positions have usable model inputs, the dashboard shows a single input
 readiness panel and recorded position/contract counts. It omits empty metric cards,
 tables and discussion controls. Rechecking data never invents missing inputs or
-implicitly connects a provider. Model details and exact exclusions remain in the
+creates a new provider connection. Model details and exact exclusions remain in the
 coverage disclosure. When inputs are usable, results are grouped into scenario,
 funding, payoff and exposure sections; unsupported probability/action analytics
 are explained together rather than displayed as empty KPIs.
@@ -123,7 +131,8 @@ no incognito/session-only portfolio mode; anonymous/private session identities
 cannot submit jobs through this API.
 
 A 30-day TTL applies to immutable inputs/results, checked on every read and
-purged at the next configured queue scan, even while the feature is disabled. `RiskRepository.deleteUser(ownerUUID)`
+purged at the next configured queue scan, even while the feature is disabled. Latest
+market snapshots receive the same TTL (hourly cleanup) and explicit user deletion. `RiskRepository.deleteUser(ownerUUID)`
 provides explicit deletion of that user's risk corpus. It must also be wired to
 any deployment-specific account erasure procedure (the user-state and books
 stores are separate databases). Do not delete only the financial state and leave
