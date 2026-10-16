@@ -35,9 +35,12 @@ records. Queries constrain owner UUID; the numerical worker never gets credentia
 
 The server starts a two-second queue scan without putting numerical work on the
 Express event loop. PostgreSQL leases and a deployment-wide claim lock allow one
-worker at a time, one active job per investor, up to 100 contract positions and 100 pending jobs deployment-wide, a
-45-second market-collection deadline followed by a 60-second numerical worker deadline, 2 MiB worker input/output limits, five-second heartbeats, and
-at most one recovery attempt after a worker lease expires. Invalid financial
+worker at a time, one active job per investor, and up to 100 pending jobs
+deployment-wide. There is no portfolio position-count cap. Provider quote
+requests are batched without truncating the portfolio. Collection has a 45-second
+deadline, followed by a 60-second numerical worker deadline. Workers retain
+2 MiB input/output limits, five-second heartbeats, and at most one recovery
+attempt after a worker lease expires. Invalid financial
 inputs/model failures are not retried automatically. Browser requests return
 queued status promptly. The claimed worker handles the whole portfolio.
 

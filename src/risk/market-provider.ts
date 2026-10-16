@@ -81,7 +81,6 @@ export async function collectConnectedRiskMarket(snapshot: InvestorSnapshot, acc
     return new Response(Buffer.concat(chunks), { status: response.status, headers: response.headers });
   };
   const holdings = Object.entries(getPortfolio(snapshot.state)).filter(([,h]) => h.instrument === 'option' && h.option && h.units !== 0 && accountIds.includes(h.channel || 'default'));
-  if (holdings.length > 100) throw new Error('Too many option positions');
   const market: RiskMarketSnapshot = { id: '', portfolioRevision: snapshot.revision, capturedAt: new Date(now).toISOString(),
     metadataVersion: 'futu-standard-us-equity-v2', contracts: [], exclusions: [] };
   const exclude = (id: string, reason: string) => market.exclusions!.push({ id, reason });
@@ -104,13 +103,20 @@ export async function collectConnectedRiskMarket(snapshot: InvestorSnapshot, acc
   let quotes: Row[], snapshots: Row[], basics: Row[], csv: string;
   try {
     const start=new Date(now-20*day).toISOString().slice(0,10);
-    const [q,s,b,rate] = await Promise.all([
-      query('/api/v1.0/quote/stock-quote',{code_list:codes}), query('/api/v1.0/quote/snapshot',{code_list:codes}),
-      query('/api/v1.0/quote/stock-basicinfo',{code_list:codes}),
+    // Bound each provider request without limiting or truncating the portfolio.
+    const batches: string[][] = [];
+    for (let i=0;i<codes.length;i+=100) batches.push(codes.slice(i,i+100));
+    const [rows,rate] = await Promise.all([
+      limitedMap(batches,async batch => {
+        const q=await query('/api/v1.0/quote/stock-quote',{code_list:batch});
+        const s=await query('/api/v1.0/quote/snapshot',{code_list:batch});
+        const b=await query('/api/v1.0/quote/stock-basicinfo',{code_list:batch});
+        if (!Array.isArray(q.quote_list) || !Array.isArray(s.snapshot_list) || !Array.isArray(b.basic_list)) throw new Error('Malformed quote data');
+        return {quotes:q.quote_list as Row[],snapshots:s.snapshot_list as Row[],basics:b.basic_list as Row[]};
+      }),
       fetchImpl(`${RATE_URL}?id=DGS1&cosd=${start}`).then(async r => {if(!r.ok)throw new Error('Rate source unavailable');return r.text();}),
     ]);
-    if (!Array.isArray(q.quote_list) || !Array.isArray(s.snapshot_list) || !Array.isArray(b.basic_list)) throw new Error('Malformed quote data');
-    quotes=q.quote_list; snapshots=s.snapshot_list; basics=b.basic_list;csv=rate;
+    quotes=rows.flatMap(r=>r.quotes); snapshots=rows.flatMap(r=>r.snapshots); basics=rows.flatMap(r=>r.basics);csv=rate;
   } catch { eligible.forEach(([id])=>exclude(id,'Connected broker quotes or official interest-rate source unavailable')); market.id=digest(market); return market; }
   const unique = (rows:Row[], symbol:string) => { const found=rows.filter(r=>r.code===symbol);return found.length===1?found[0]:undefined; };
   const groups = [...new Set(eligible.map(([,h])=>`${h.option!.underlying}|${h.option!.expiry}`))];

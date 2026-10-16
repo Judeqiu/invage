@@ -57,7 +57,6 @@ export function normalizeRiskInputs(snapshot: InvestorSnapshot, request: RiskReq
   if (request.accountScope.accountIds.some(a => !accounts.includes(a))) throw new RiskError(400, 'Unknown account scope');
   const selected = request.accountScope.kind === 'all' ? accounts : request.accountScope.accountIds;
   const entries = Object.entries(portfolio).filter(([, h]) => h.instrument === 'option' && h.option && h.units !== 0 && selected.includes(h.channel || 'default'));
-  if (entries.length > 100) throw new RiskError(400, 'Analysis supports at most 100 contract positions');
   const validTimestamp = (s: unknown) => typeof s === 'string' && Number.isFinite(Date.parse(s)) && Date.parse(s) <= now + 60_000;
   const usable = market && typeof market.id === 'string' && !!market.id && typeof market.metadataVersion === 'string' && !!market.metadataVersion &&
     market.portfolioRevision === snapshot.revision && validTimestamp(market.capturedAt) && Array.isArray(market.contracts);

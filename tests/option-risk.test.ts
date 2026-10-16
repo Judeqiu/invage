@@ -92,3 +92,18 @@ it('uses a stable New York valuation date independent of quote age',()=>{
   const b=normalizeRiskInputs(snapshot,request(),market(),Date.parse('2026-10-16T02:30:00Z'));
   expect(a.valuationDate).toBe('2026-10-15');expect(b.valuationDate).toBe(a.valuationDate);
 });
+
+it('includes every position above the former 100-row cap without truncating quantities or exclusions',()=>{
+  vi.stubEnv('INVAGE_OPTION_RISK_CONTEXT_SECRET','test-only');
+  const large=structuredClone(snapshot), m=market();
+  const holding=large.state.portfolio!['AAPL-C@ibkr'], quote=m.contracts[0];
+  large.state.portfolio=Object.fromEntries(Array.from({length:1001},(_,i)=>[`AAPL-C-${i}@ibkr`,structuredClone(holding)]));
+  m.contracts=Object.keys(large.state.portfolio).map(id=>({...quote,id}));
+  const r={...request(),analysisContextId:analysisContext(large)!};
+  const covered=normalizeRiskInputs(large,r,m);
+  expect(covered.contracts).toHaveLength(1001);
+  expect(covered.coverage).toMatchObject({totalContracts:1001,supportedContracts:1001,totalQuantity:2002,supportedQuantity:2002,exclusions:[]});
+  const missing=normalizeRiskInputs(large,r,null);
+  expect(missing.coverage.exclusions).toHaveLength(1001);
+  expect(missing.coverage.totalContracts).toBe(1001);
+});

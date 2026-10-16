@@ -91,3 +91,35 @@ it('uses announced cash only once and never invents a missing trailing yield',()
   expect(cashDividendInputs({dividend_ttm:2},{dividend_list:[d,d]},100,now)).toMatchObject({dividendYield:0,dividends:[{date:'2026-11-01',amount:1}]});
   expect(cashDividendInputs({},null,100,now)).toBeNull();
 });
+
+it('collects all positions above 100 using bounded provider batches without losing a contract',async()=>{
+  const s=investor(), holding=s.state.portfolio![id];
+  const specs=Array.from({length:137},(_,i)=>({id:`AMD-P-${i}@tiger`,strike:100+i,code:`US.AMD261218P${(100+i)*1000}`}));
+  s.state.portfolio=Object.fromEntries(specs.map(c=>[c.id,{...holding,option:{...holding.option!,strike:c.strike}}]));
+  const byCode=new Map(specs.map(c=>[c.code,c])), f=fixture();
+  const requested: string[][]=[];
+  const fetchImpl:typeof fetch=async(input,init)=>{
+    const url=new URL(String(input)), response=await f.fetchImpl(input,init);
+    if(url.hostname==='fred.stlouisfed.org')return response;
+    const envelope=await response.json();
+    const codes:string[]=init?.body?JSON.parse(String(init.body)).code_list:[];
+    if(init?.body){expect(codes.length).toBeLessThanOrEqual(100);requested.push(codes);}
+    if(url.pathname.endsWith('stock-quote')){
+      const template=envelope.data.quote_list.find((r:any)=>r.code===code);
+      envelope.data.quote_list=codes.map(c=>c==='US.AMD'?{code:c,data_time:at,last_price:562.23}:
+        {...template,code:c,option_ex_data:{...template.option_ex_data,strike_price:byCode.get(c)!.strike}});
+    }
+    if(url.pathname.endsWith('/snapshot'))envelope.data.snapshot_list=envelope.data.snapshot_list.filter((r:any)=>codes.includes(r.code));
+    if(url.pathname.endsWith('stock-basicinfo'))envelope.data.basic_list=envelope.data.basic_list.filter((r:any)=>codes.includes(r.code));
+    if(url.pathname.endsWith('option-chain')){
+      const template=envelope.data.option_chain[0];
+      envelope.data.option_chain=specs.map(c=>({...template,code:c.code,strike_price:c.strike}));
+    }
+    return Response.json(envelope);
+  };
+  const market=await collectConnectedRiskMarket(s,['tiger'],{fetchImpl,now});
+  expect(market.exclusions).toEqual([]);
+  expect(market.contracts.map(c=>c.id)).toEqual(specs.map(c=>c.id));
+  expect(requested).toHaveLength(6);
+  expect(new Set(requested.flat())).toEqual(new Set(['US.AMD',...specs.map(c=>c.code)]));
+});

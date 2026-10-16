@@ -46,8 +46,6 @@ def price(c, today, spot=None, vol=None, grid=200):
 def analyze(inputs):
     started = time.monotonic()
     contracts = inputs['contracts']
-    if len(contracts) > 100:
-        raise ValueError('Contract limit exceeded')
     today = date(inputs.get('valuationDate') or inputs['marketAsOf']) if inputs.get('valuationDate') or inputs['marketAsOf'] else ql.Date.todaysDate()
     end = horizon_date(today.ISO(), inputs['horizonTradingDays'])
     coverage = dict(inputs['coverage'])

@@ -115,6 +115,17 @@ class EngineTests(unittest.TestCase):
         out=analyze(data)
         self.assertAlmostEqual(out['scenarios'][2]['optionPnl'],-500)
 
+    def test_more_than_100_positions_contribute_to_the_whole_portfolio(self):
+        single=analyze(inputs([contract()]))
+        many=analyze(inputs([contract(id=f'position-{i}') for i in range(137)]))
+        self.assertEqual(many['status'],'ready')
+        self.assertEqual(many['coverage']['supportedContracts'],137)
+        self.assertEqual(many['coverage']['supportedQuantity'],137)
+        self.assertEqual(len(many['contributors']),137)
+        for one,all_positions in zip(single['scenarios'],many['scenarios']):
+            self.assertAlmostEqual(all_positions['optionPnl'],137*one['optionPnl'],places=5)
+        self.assertAlmostEqual(many['metrics']['dollarDelta']['value'],137*single['metrics']['dollarDelta']['value'])
+
     def test_no_currency_aggregation_without_fx(self):
         out=analyze(inputs([contract(),contract(id='HK',currency='HKD')]))
         self.assertIsNone(out['metrics']['stressLoss']['value'])

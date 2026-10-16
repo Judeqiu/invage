@@ -34,7 +34,9 @@
     const body = await response.json();
     if (!response.ok) {
       if (response.status === 404) disable();
-      throw new Error(body.error || 'Risk analysis unavailable');
+      const error = new Error(body.error || 'Risk analysis unavailable');
+      error.retryable = response.status === 429 || response.status >= 500;
+      throw error;
     }
     return body;
   }
@@ -119,7 +121,7 @@
       if (['failed', 'cancelled'].includes(job.status)) { status((result ? 'Stale result retained · ' : '') + (job.error || 'Analysis cancelled. Retry.')); return; }
       status(`${result ? 'Stale result retained · ' : ''}${job.status === 'queued' ? 'Queued' : 'Running'}…`);
       timer = setTimeout(() => void poll(token), 2000);
-    } catch (e) { if (token === generation && e.name !== 'AbortError') status((result ? 'Stale result retained · ' : '') + e.message + ' · Retry available.'); }
+    } catch (e) { if (token === generation && e.name !== 'AbortError') status((result ? 'Stale result retained · ' : '') + e.message + (e.retryable === false ? '' : ' · Retry available.')); }
   }
   async function submit(refresh = false) {
     if (!enabled || !context?.isLive || !context.payload.analysisContextId || busy) return;
@@ -130,7 +132,7 @@
       if (token !== generation) return;
       job = next;
       if (job.result) render(job.result); else void poll(token);
-    } catch (e) { if (token === generation && e.name !== 'AbortError') status((result ? 'Stale result retained · ' : '') + e.message + ' · Retry available.'); }
+    } catch (e) { if (token === generation && e.name !== 'AbortError') status((result ? 'Stale result retained · ' : '') + e.message + (e.retryable === false ? '' : ' · Retry available.')); }
     finally { if (token === generation) busy = false; }
   }
   async function activate() {
@@ -146,7 +148,7 @@
       if (saved.job?.result) { job = saved.job; return render(saved.job.result); }
       if (!context.isLive) return status('No saved risk analysis for this date');
       void submit();
-    } catch (e) { if (token === generation && e.name !== 'AbortError') status((result ? 'Stale result retained · ' : '') + e.message + ' · Retry available.'); }
+    } catch (e) { if (token === generation && e.name !== 'AbortError') status((result ? 'Stale result retained · ' : '') + e.message + (e.retryable === false ? '' : ' · Retry available.')); }
   }
   window.OptionRiskView = { update(next) {
     const key = JSON.stringify([next.payload.analysisContextId, next.payload.generatedAt, next.channel, next.date, next.hasOptions]);

@@ -16,7 +16,7 @@ function result(account = 'ibkr') {
     contributors: [], payoffBounds: [], funding: [], actions: [], assumptions: ['Conditional scenario'] };
 }
 it.skipIf(!existsSync(executable))('isolates tabs, loads lazily, rejects late account responses and handles live disabling', async () => {
-  const root = resolve('webui'); let enabled = false, loads = 0, posts = 0, latest = 0, capabilities = 0, hold = false, failJobs = false;
+  const root = resolve('webui'); let enabled = false, loads = 0, posts = 0, latest = 0, capabilities = 0, hold = false, failJobs = false, failJobStatus = 503;
   const waiting: (() => void)[] = [];
   let holdCapabilities = false;
   const capabilityWaiting: (() => void)[] = [];
@@ -34,7 +34,7 @@ it.skipIf(!existsSync(executable))('isolates tabs, loads lazily, rejects late ac
     if (url.pathname.endsWith('/dashboard')) { loads++; return json({ empty: false, displayName: 'Test', productProfile: 'consultant', generatedAt: '2026-10-16T10:00:00Z', model, analysisContextId: contextId, dashboardConfig: { showOptionRiskModelView: enabled } }); }
     if (url.pathname.endsWith('/capabilities')) { capabilities++; if (holdCapabilities) await new Promise<void>(r => capabilityWaiting.push(r)); return json({ enabled, available: true }); }
     if (url.pathname.endsWith('/latest')) { latest++; const account = JSON.parse(url.searchParams.get('accountIds')!)[0] || 'merged'; if (hold) await new Promise<void>(r => waiting.push(r)); return json({ job: null, stale: false, account }); }
-    if (url.pathname.endsWith('/jobs')) { posts++; if (failJobs) return json({ error:'Worker fixture unavailable' },503); let raw=''; for await (const chunk of req) raw+=chunk; const data=JSON.parse(raw); const value=result(data.accountScope.accountIds[0] || 'merged'); if (missingInputs) Object.assign(value,{status:'unavailable',marketSnapshotId:'unavailable',marketAsOf:null,scenarios:[],coverage:{totalContracts:24,supportedContracts:0,totalQuantity:45,supportedQuantity:0,exclusions:[{id:'AAPL-P',quantity:2,reason:'Validated contract metadata and market snapshot unavailable'}]}}); return json({ id:'job', status:'complete', result:value }); }
+    if (url.pathname.endsWith('/jobs')) { posts++; if (failJobs) return json({ error:'Worker fixture unavailable' },failJobStatus); let raw=''; for await (const chunk of req) raw+=chunk; const data=JSON.parse(raw); const value=result(data.accountScope.accountIds[0] || 'merged'); if (missingInputs) Object.assign(value,{status:'unavailable',marketSnapshotId:'unavailable',marketAsOf:null,scenarios:[],coverage:{totalContracts:24,supportedContracts:0,totalQuantity:45,supportedQuantity:0,exclusions:[{id:'AAPL-P',quantity:2,reason:'Validated contract metadata and market snapshot unavailable'}]}}); return json({ id:'job', status:'complete', result:value }); }
     if (url.pathname.endsWith('/option-history')) return json({ episodes: [], connections: [], gaps: [], next_offset: null });
     const file=resolve(root,'.'+url.pathname);
     if (!file.startsWith(root+'/') || !existsSync(file)) { res.writeHead(404); return res.end(); }
@@ -73,6 +73,10 @@ it.skipIf(!existsSync(executable))('isolates tabs, loads lazily, rejects late ac
     await page.waitForFunction(()=>document.getElementById('optionRiskStatus')!.textContent!.includes('Stale result retained'));
     await page.waitForFunction(()=>document.getElementById('optionRiskStatus')!.textContent!.includes('Worker fixture unavailable'));
     expect(await page.$eval('#optionRiskOutput',e=>e.textContent)).toContain('100 USD');
+    expect(await page.$eval('#optionRiskStatus',e=>e.textContent)).toContain('Retry available.');
+    failJobStatus=400; await page.click('#optionRiskRun');
+    await page.waitForFunction(()=>document.getElementById('optionRiskStatus')!.textContent!.includes('Worker fixture unavailable'));
+    expect(await page.$eval('#optionRiskStatus',e=>e.textContent)).not.toContain('Retry available.');
     failJobs=false;
     const dashboardLoads=loads, submissions=posts;
     await page.click('#section01ExistingTab'); await page.click('#section01RiskTab');
