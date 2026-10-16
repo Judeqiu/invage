@@ -68,12 +68,34 @@ async function limitedMap<T, R>(items: T[], fn: (item:T) => Promise<R>): Promise
 /** Uses only this investor's connected source, including for their other custodians.
  * Network collection runs in the leased queue, never in dashboard rendering. */
 export async function collectConnectedRiskMarket(snapshot: InvestorSnapshot, accountIds: string[], options: {
-  fetchImpl?: typeof fetch; now?: number;
+  fetchImpl?: typeof fetch; now?: number; requestSpacingMs?: number;
 } = {}): Promise<RiskMarketSnapshot> {
   const now = options.now ?? Date.now(), baseFetch = options.fetchImpl ?? fetch;
-  const deadline = AbortSignal.timeout(45_000);
+  const deadline = AbortSignal.timeout(360_000);
+  const spacing = options.requestSpacingMs ?? 700;
+  let nextRequest = 0, nextChain = 0, gate = Promise.resolve();
   const fetchImpl: typeof fetch = async (url, init) => {
+    const broker = new URL(String(url)).hostname !== 'fred.stlouisfed.org';
+    const chain = String(url).includes('/option-chain');
+    const previous = gate; let unlock!: () => void;
+    gate = new Promise<void>(r => { unlock = r; });
+    await previous;
+    try {
+      deadline.throwIfAborted();
+      const delay = broker ? Math.max(0, nextRequest-Date.now(), chain ? nextChain-Date.now() : 0) : 0;
+      if (delay) await new Promise<void>((resolve,reject)=>{
+        const abort=()=>{clearTimeout(timer);reject(new Error('Market collection deadline exceeded'));};
+        const timer=setTimeout(()=>{deadline.removeEventListener('abort',abort);resolve();},delay);
+        deadline.addEventListener('abort',abort,{once:true});
+      });
+      deadline.throwIfAborted();
+      if(broker){nextRequest=Date.now()+spacing;if(chain)nextChain=Date.now()+(spacing ? 2100 : 0);}
+    } finally { unlock(); }
     const response = await baseFetch(url, { ...init, signal: AbortSignal.any([deadline, AbortSignal.timeout(10_000), ...(init?.signal ? [init.signal] : [])]) });
+    if (broker && [429,439].includes(response.status)) {
+      const retry=Number(response.headers.get('retry-after'));
+      nextRequest=Math.max(nextRequest,Date.now()+Math.min(60_000,Math.max(1000,Number.isFinite(retry)?retry*1000:30_000)));
+    }
     // Bound the provider's body before any JSON/CSV parsing.
     const reader = response.body?.getReader(); if (!reader) return response;
     const chunks: Uint8Array[] = []; let size = 0;
@@ -121,12 +143,24 @@ export async function collectConnectedRiskMarket(snapshot: InvestorSnapshot, acc
   } catch { eligible.forEach(([id])=>exclude(id,'Connected broker quotes or official interest-rate source unavailable')); market.id=digest(market); return market; }
   const unique = (rows:Row[], symbol:string) => { const found=rows.filter(r=>r.code===symbol);return found.length===1?found[0]:undefined; };
   const groups = [...new Set(eligible.map(([,h])=>`${h.option!.underlying}|${h.option!.expiry}`))];
-  const chains = new Map(await limitedMap(groups,async key => {
-    const [underlying,expiry]=key.split('|');
-    try {return [key,await query(`/api/v1.0/quote/US.${underlying}/option-chain`,undefined,{start:expiry,end:expiry})] as const;}
-    catch {return [key,null] as const;}
-  }));
   const names=[...new Set(eligible.map(([,h])=>h.option!.underlying))];
+  // Range queries share metadata across expiries. The provider returns at most
+  // 20 expiries, so advance to the first remaining requested date explicitly.
+  const chains = new Map<string,Row|null>();
+  await limitedMap(names,async underlying=>{
+    let pending=groups.filter(k=>k.startsWith(underlying+'|')).map(k=>k.split('|')[1]).sort();
+    while(pending.length){
+      const start=pending[0],end=pending.at(-1)!;
+      try {
+        const result=await query(`/api/v1.0/quote/US.${underlying}/option-chain`,undefined,{start,end});
+        const rows=Array.isArray(result.option_chain)?result.option_chain:[];
+        const last=rows.reduce((last:string,r:Row)=>typeof r.strike_time==='string'&&r.strike_time>=start&&r.strike_time<=end&&r.strike_time>last?r.strike_time:last,'');
+        if(!last){pending.forEach(d=>chains.set(`${underlying}|${d}`,null));break;}
+        for(const d of pending.filter(d=>d<=last))chains.set(`${underlying}|${d}`,{option_chain:rows.filter((r:Row)=>r.strike_time===d)});
+        pending=pending.filter(d=>d>last);
+      }catch{pending.forEach(d=>chains.set(`${underlying}|${d}`,null));break;}
+    }
+  });
   const dividends = new Map(await limitedMap(names,async name => {
     try {return [name,await query(`/api/v1.0/quote/US.${name}/corporate-actions/dividends`)] as const;}
     catch {return [name,null] as const;}

@@ -36,8 +36,8 @@ The server starts a two-second queue scan without putting numerical work on the
 Express event loop. PostgreSQL leases and a deployment-wide claim lock allow one
 worker at a time, one active job per investor, and up to 100 pending jobs
 deployment-wide. There is no portfolio position-count cap. Provider quote
-requests are batched without truncating the portfolio. Collection has a 45-second
-deadline, followed by a 60-second numerical worker deadline. Workers retain
+requests are batched without truncating the portfolio. Collection has a six-minute
+deadline with paced requests and expiry-range metadata queries, followed by a 60-second numerical worker deadline. Workers retain
 32 MiB input and 2 MiB output limits, five-second heartbeats, and at most one recovery
 attempt after a worker lease expires. Invalid financial
 inputs/model failures are not retried automatically. Browser requests return

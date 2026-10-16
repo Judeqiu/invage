@@ -39,7 +39,7 @@ function fixture(patch: { stock?:Record<string,unknown>; option?:Record<string,u
 afterEach(()=>vi.unstubAllEnvs());
 it('collects owner-connected quotes across custodians, verifies signed queries and preserves source timestamps/units',async()=>{
   vi.stubEnv('INVAGE_OPTION_RISK_CONTEXT_SECRET','test');const snapshot=investor(),before=JSON.stringify(snapshot),f=fixture();
-  const market=await collectConnectedRiskMarket(snapshot,['tiger'],{fetchImpl:f.fetchImpl,now});
+  const market=await collectConnectedRiskMarket(snapshot,['tiger'],{fetchImpl:f.fetchImpl,now,requestSpacingMs:0});
   expect(market.exclusions).toEqual([]);expect(market.contracts).toHaveLength(1);
   expect(market.contracts[0]).toMatchObject({id,spot:562.23,premiumPerContract:418,impliedVolatility:.58786,exerciseStyle:'american',multiplier:100,
     quoteAsOf:'2026-10-15T19:58:00.000Z',spotAsOf:'2026-10-15T20:00:00.000Z',expiryAt:'2026-12-18T16:00:00-05:00'});
@@ -56,12 +56,12 @@ it.each([
   {stock:{dividend_ttm:null}},
   {csv:'observation_date,DGS1\n2026-10-01,4.5\n'},
 ])('excludes unverifiable inputs instead of manufacturing values: %j',async patch=>{
-  const f=fixture(patch);const market=await collectConnectedRiskMarket(investor(),['tiger'],{fetchImpl:f.fetchImpl,now});
+  const f=fixture(patch);const market=await collectConnectedRiskMarket(investor(),['tiger'],{fetchImpl:f.fetchImpl,now,requestSpacingMs:0});
   expect(market.contracts).toHaveLength(0);expect(market.exclusions).toHaveLength(1);
 });
 it('does not use another scope or connect when no authorized source exists',async()=>{
   const s=investor();s.state.broker_connections={};s.state.broker_sources={};const f=fixture();
-  expect((await collectConnectedRiskMarket(s,['tiger'],{fetchImpl:f.fetchImpl,now})).contracts).toEqual([]);expect(f.seen).toEqual([]);
+  expect((await collectConnectedRiskMarket(s,['tiger'],{fetchImpl:f.fetchImpl,now,requestSpacingMs:0})).contracts).toEqual([]);expect(f.seen).toEqual([]);
 });
 it('selects only published, recent rate observations at or before the quote date',()=>{
   expect(fredRate('observation_date,DGS1\n2026-10-14,4.53\n2026-10-16,4.6\n','2026-10-15',now).percent).toBe(4.53);
@@ -80,7 +80,7 @@ it.each([
   {option:{data_time:at-7*86400000}},
   {fail:'dividends'},
 ])('includes previously filtered contracts with disclosed inputs: %j',async patch=>{
-  const f=fixture(patch);const market=await collectConnectedRiskMarket(investor(),['tiger'],{fetchImpl:f.fetchImpl,now});
+  const f=fixture(patch);const market=await collectConnectedRiskMarket(investor(),['tiger'],{fetchImpl:f.fetchImpl,now,requestSpacingMs:0});
   expect(market.contracts).toHaveLength(1);expect(market.exclusions).toEqual([]);
   if(patch.stock)expect(market.contracts[0].dividendYield).toBeCloseTo(patch.stock.dividend_ttm/562.23);
   if(patch.dividends)expect(market.contracts[0].dividends).toEqual([{date:'2026-11-01',amount:1}]);
@@ -117,9 +117,31 @@ it('collects all positions above 100 using bounded provider batches without losi
     }
     return Response.json(envelope);
   };
-  const market=await collectConnectedRiskMarket(s,['tiger'],{fetchImpl,now});
+  const market=await collectConnectedRiskMarket(s,['tiger'],{fetchImpl,now,requestSpacingMs:0});
   expect(market.exclusions).toEqual([]);
   expect(market.contracts.map(c=>c.id)).toEqual(specs.map(c=>c.id));
   expect(requested.length).toBeGreaterThanOrEqual(6);
   expect(new Set(requested.flat())).toEqual(new Set(['US.AMD',...specs.map(c=>c.code)]));
+});
+
+it('paginates expiry ranges after the provider 20-expiry ceiling without skipping requested dates',async()=>{
+  const s=investor(),h=s.state.portfolio![id],f=fixture();
+  const dates=Array.from({length:25},(_,i)=>`2027-01-${String(i+1).padStart(2,'0')}`);
+  s.state.portfolio=Object.fromEntries(dates.map((expiry,i)=>[`AMD-${i}@tiger`,{...h,option:{...h.option!,expiry}}]));
+  const starts:string[]=[];
+  const fetchImpl:typeof fetch=async(input,init)=>{
+    const u=new URL(String(input));if(!u.pathname.endsWith('option-chain'))return f.fetchImpl(input,init);
+    starts.push(u.searchParams.get('start')!);
+    return Response.json({ret_code:0,data:{option_chain:dates.filter(d=>d>=u.searchParams.get('start')!&&d<=u.searchParams.get('end')!).slice(0,20).map(strike_time=>({strike_time}))}});
+  };
+  const m=await collectConnectedRiskMarket(s,['tiger'],{fetchImpl,now,requestSpacingMs:0});
+  expect(starts).toEqual(['2027-01-01','2027-01-21']);
+  expect(m.contracts.length+m.exclusions!.length).toBe(25);
+});
+it('paces connected broker requests before sending concurrent batches',async()=>{
+  const f=fixture(),times:number[]=[];
+  const fetchImpl:typeof fetch=async(input,init)=>{if(new URL(String(input)).hostname!=='fred.stlouisfed.org')times.push(Date.now());return f.fetchImpl(input,init);};
+  await collectConnectedRiskMarket(investor(),['tiger'],{fetchImpl,now,requestSpacingMs:10});
+  expect(times.length).toBeGreaterThan(5);
+  for(let i=1;i<times.length;i++)expect(times[i]-times[i-1]).toBeGreaterThanOrEqual(8);
 });

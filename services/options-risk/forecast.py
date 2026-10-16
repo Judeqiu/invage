@@ -43,7 +43,8 @@ def filtered_residuals(returns):
     for row in returns[30:]:
         residuals.append(row / np.sqrt(variance))
         variance = LAMBDA * variance + (1 - LAMBDA) * row ** 2
-    return np.asarray(residuals), variance
+    residuals = np.asarray(residuals)
+    return residuals - residuals.mean(axis=0), variance
 
 
 def simulate(residuals, variance, horizon, paths, rng, spot_dimensions=0, record_steps=()):
