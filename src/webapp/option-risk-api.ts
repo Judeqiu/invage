@@ -53,7 +53,7 @@ export function createOptionRiskRouter() {
       // Live-only initial implementation: never supply a different-date result.
       const matching = !date || job?.result?.generatedAt.slice(0, 10) === date;
       if (matching && job?.result && job.result.model.version !== ENGINE_VERSION) throw new RiskError(409, 'Saved model version unsupported. Recalculate.');
-      res.json(matching ? { job, stale: !!job?.result && Date.now() - Date.parse(job.result.marketAsOf || job.result.generatedAt) > 900_000 } : { job: null, stale: false });
+      res.json(matching ? { job, stale: false } : { job: null, stale: false });
     } catch (e) { replyError(res, e); }
   });
   for (const path of ['/jobs/:id', '/results/:id']) router.get(path, async (req, res) => {

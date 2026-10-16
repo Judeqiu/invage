@@ -6,7 +6,7 @@ import sys
 import time
 import QuantLib as ql
 
-VERSION = 'conditional-ql-v2'
+VERSION = 'conditional-ql-v3'
 SCENARIOS = [('down-20', -.20, .20), ('down-10', -.10, .10),
              ('flat', 0., 0.), ('up-10', .10, -.05), ('up-20', .20, .05)]
 
@@ -31,7 +31,7 @@ def price(c, today, spot=None, vol=None, grid=200):
     dc = ql.Actual365Fixed()
     process = ql.BlackScholesMertonProcess(
         ql.QuoteHandle(ql.SimpleQuote(spot)),
-        ql.YieldTermStructureHandle(ql.FlatForward(today, 0., dc)),
+        ql.YieldTermStructureHandle(ql.FlatForward(today, c.get('dividendYield', 0.), dc)),
         ql.YieldTermStructureHandle(ql.FlatForward(today, c['rate'], dc)),
         ql.BlackVolTermStructureHandle(ql.BlackConstantVol(today, ql.NullCalendar(), max(.001, vol), dc)))
     dividends = [ql.FixedDividend(d['amount'], date(d['date'])) for d in c['dividends']
@@ -48,17 +48,10 @@ def analyze(inputs):
     contracts = inputs['contracts']
     if len(contracts) > 100:
         raise ValueError('Contract limit exceeded')
-    today = date(inputs['marketAsOf']) if inputs['marketAsOf'] else ql.Date.todaysDate()
+    today = date(inputs.get('valuationDate') or inputs['marketAsOf']) if inputs.get('valuationDate') or inputs['marketAsOf'] else ql.Date.todaysDate()
     end = horizon_date(today.ISO(), inputs['horizonTradingDays'])
     coverage = dict(inputs['coverage'])
     coverage['exclusions'] = list(coverage['exclusions'])
-    eligible = []
-    for c in contracts:
-        if end >= date(c['expiryAt']):
-            coverage['exclusions'].append(dict(id=c['id'], quantity=c['quantity'], reason='Horizon crosses expiry; exercise lifecycle unsupported'))
-        else:
-            eligible.append(c)
-    contracts = eligible
     coverage['supportedContracts'] = len(contracts)
     coverage['supportedQuantity'] = sum(c['quantity'] for c in contracts)
     currencies = sorted({c['currency'] for c in contracts})
@@ -98,10 +91,10 @@ def analyze(inputs):
                 if c['currency'] != currency:
                     continue
                 sign_qty = c['quantity'] * (1 if c['side'] == 'long' else -1)
-                value = checked_price(c, end, c['spot'] * (1 + shock), max(.001, c['impliedVolatility'] + iv)) * c['multiplier']
+                value = checked_price(c, min(end,date(c['expiryAt'])), c['spot'] * (1 + shock), max(.001, c['impliedVolatility'] + iv)) * c['multiplier']
                 option_pnl += (value - c['premiumPerContract']) * sign_qty
             stock_pnl = sum(c['shares'] * (c['spot'] * shock + sum(d['amount'] for d in c['dividends']
-                            if today < date(d['date']) <= end)) for c in shares.values() if c['currency'] == currency)
+                            if today < date(d['date']) <= end) + c['spot'] * c.get('dividendYield', 0.) * ((end-today)/365.)) for c in shares.values() if c['currency'] == currency)
             rows.append(dict(currency=currency, optionPnl=option_pnl, combinedPnl=option_pnl + stock_pnl))
         scenarios.append(dict(id=name, spotShock=shock, volatilityPointShock=iv * 100,
                               optionPnl=sum(r['optionPnl'] for r in rows) if len(currencies) == 1 else None,
@@ -142,14 +135,14 @@ def analyze(inputs):
                      expectedShortfall=dict(value=None, unit=currency, reason='Validated physical forecasts unavailable')),
         scenarios=scenarios if covered else [], contributors=contributors, funding=funding, actions=[],
         assumptions=['Conditional scenarios, without forecast probabilities.',
-          'European/American finite-difference pricing with explicit cash dividends; flat supplied rate and IV.',
-          'Signed P/L: ending liquidation value less observed starting mark. Includes related shares and their dividends once.',
+          'European/American finite-difference pricing with announced cash dividends or an estimated trailing distribution yield; flat supplied rate and IV.',
+          'Signed P/L: scenario option value less latest available starting mark. Includes related shares and announced or estimated distributions once.',
           'IV shocks are floored at 0.1% annual volatility; labels describe requested changes.',
           'Assumes no early assignment before horizon; gross assignment obligations are separate branches, not expected loss.',
           'Cash is unchanged: cash interest, transaction costs, borrow costs and hedges are unavailable. Hold scenarios only.',
           'All related shares affect P/L; only free shares cover delivery. Cash and delivery remain account-specific; no cross-account collateral netting.',
           'No cross-currency aggregation without a validated FX snapshot.',
-          'Daily pricing grid; intraday expiry precision is unsupported. Horizons crossing expiry are excluded.'] + inputs.get('providerAssumptions', []),
+          'Daily pricing grid; expiry-day Greeks use intrinsic value and omit remaining intraday time value. For contracts expiring by the horizon, the full spot shock applies at expiry and intrinsic cash-equivalent proceeds are held unchanged to the horizon; post-expiry delivery shares are not retained.'] + inputs.get('providerAssumptions', []),
         diagnostics=dict(maxPricingDifference=max_diff, grid=400, elapsedMs=round((time.monotonic() - started) * 1000)))
 
 

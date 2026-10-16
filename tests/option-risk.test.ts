@@ -54,9 +54,9 @@ it('normalizes risk-only units without mutating books or manufacturing cash', ()
   expect(result.accounts[0].cash).toBeNull();
   expect(JSON.stringify(snapshot)).toBe(before);
 });
-it('excludes mismatched, stale and missing dividend metadata', () => {
+it('excludes mismatched, invalid and missing dividend metadata', () => {
   vi.stubEnv('INVAGE_OPTION_RISK_CONTEXT_SECRET','test-only');
-  for (const patch of [{ multiplier: 10 }, { quoteAsOf: '2000-01-01' }, { dividendReference: '' }, { rate: NaN }]) {
+  for (const patch of [{ multiplier: 10 }, { quoteAsOf: 'invalid' }, { dividendYield: -.01 }, { dividendYield: NaN }, { dividendReference: '' }, { rate: NaN }]) {
     const m = market(); Object.assign(m.contracts[0], patch);
     expect(normalizeRiskInputs(snapshot, request(), m).coverage.supportedContracts).toBe(0);
   }
@@ -75,4 +75,20 @@ it.skipIf(!process.env.INVAGE_OPTION_RISK_PYTHON)('runs the real bounded portfol
   expect(result.coverage.supportedQuantity).toBe(2);
   expect(result.metrics.expectedShortfall.value).toBeNull();
   expect(result.funding[0].delivery[0]).toMatchObject({ underlying: 'AAPL', requiredShares: 200, availableShares: 100 });
+});
+
+it('uses older, unsynchronized quotes without age cutoffs while retaining source times',()=>{
+  vi.stubEnv('INVAGE_OPTION_RISK_CONTEXT_SECRET','test-only');
+  const m=market();m.capturedAt='2026-01-01T00:00:00Z';m.contracts[0].quoteAsOf='2026-01-01T00:00:00Z';
+  const result=normalizeRiskInputs(snapshot,request(),m);
+  expect(result.coverage.supportedContracts).toBe(1);
+  expect(result.contracts[0].quoteAsOf).toBe('2026-01-01T00:00:00Z');
+  expect(result.valuationDate).toBeDefined();
+});
+
+it('uses a stable New York valuation date independent of quote age',()=>{
+  vi.stubEnv('INVAGE_OPTION_RISK_CONTEXT_SECRET','test-only');
+  const a=normalizeRiskInputs(snapshot,request(),market(),Date.parse('2026-10-16T02:00:00Z'));
+  const b=normalizeRiskInputs(snapshot,request(),market(),Date.parse('2026-10-16T02:30:00Z'));
+  expect(a.valuationDate).toBe('2026-10-15');expect(b.valuationDate).toBe(a.valuationDate);
 });

@@ -52,14 +52,15 @@ submission returns immediately. The collected inputs are frozen using the active
 lease before the isolated QuantLib worker receives them. The worker never receives
 broker credentials or network access.
 
-The initial connected adapter deliberately admits standard USD, 100-share,
-physically settled US **stock** options only. It verifies exact underlying, strike,
+The connected adapter admits standard USD, 100-share,
+physically settled US stock and ETF options. It verifies exact underlying, strike,
 right and expiry against the option chain, STANDARD deliverables, and American
-exercise against the quote metadata. ETFs and adjusted contracts are excluded.
+exercise against the quote metadata. Adjusted contracts still require a deliverable-aware model.
 It pairs option last trades with regular-session underlying prices using actual
 `stock-quote.data_time` values; overnight snapshot update times are not substituted.
-Quotes must be no older than 24 hours and synchronized within 15 minutes. These
-are conditional valuation inputs, not executable bid/ask offers.
+Quote age and synchronization no longer exclude positions. Actual timestamps and
+ages remain visible. Valuation uses the current calculation date even when quotes
+are older. These are indicative conditional inputs, not executable bid/ask offers.
 
 The rate source is the Federal Reserve's DGS1 series published through FRED. The
 latest observation at or before the quote date must be within seven days. Its
@@ -67,14 +68,14 @@ one-year investment-basis Treasury yield is converted from semiannual to continu
 compounding and used as an explicitly disclosed **flat one-year proxy**, rather
 than a maturity-matched zero curve. Failure never becomes a zero rate.
 
-An empty forward dividend schedule is conditional on no unannounced future cash
-dividends. It is admitted only when the broker reports valid equity data, zero
-trailing cash dividends and yield, and a checked dividend history with no recent
-or announced future positive cash dividend. Dividend-paying stocks and ETFs are
-excluded until a verified forward schedule is implemented. The assumption and
-per-contract source, quote times, rate and dividend evidence are shown in the
-coverage disclosure. Missing or unsupported entries retain specific exclusions;
-partial coverage is labelled and never represented as whole-portfolio coverage.
+Dividend-paying stocks and ETFs are included. Announced future cash distributions
+are used when present; otherwise the reported TTM cash distribution amount divided
+by spot supplies an explicitly estimated continuous annual distribution yield.
+This trailing proxy is not a verified future cash schedule. The engine uses that
+yield for option pricing and a simple yield-times-spot-times-years estimate for
+related-share cash distributions; it does not double-count announced cash amounts.
+Missing distribution amounts and schedules remain missing. Exact contract terms,
+finite prices, IVs and genuine timestamps remain required.
 
 Recalculate collects fresh inputs. A private atomic snapshot is also saved at
 `$UTARUS_DATA_ROOT/option-risk/market/<digest>.json`, where `digest` is SHA-256 of
@@ -92,9 +93,10 @@ Provider references: [Futu quote API](https://open.futunn.com/api/quote/realtime
 [OCC equity option specifications](https://www.theocc.com/clearance-and-settlement/clearing/equity-options-product-specifications).
 
 The numerical engine uses calendar dates with the NYSE trading-day calendar.
-Contracts whose horizon reaches/crosses expiry are excluded because exercise,
-settlement and post-delivery lifecycle cash flows are not implemented. Interim
-scenarios explicitly condition on no early assignment. Funding branches show
+Contracts whose horizon reaches/crosses expiry are included at intrinsic value.
+The full scenario spot shock is assumed to occur by expiry; the cash-equivalent
+intrinsic proceeds remain unchanged until the selected horizon. Post-expiry
+delivery shares are not retained. Interim scenarios condition on no early assignment. Funding branches show
 full gross put cash and call shares, without assuming broker collateral netting
 or early-assignment probabilities. Cash interest, borrow/transaction costs,
 partial assignment paths and close/hedge action comparisons remain unavailable.

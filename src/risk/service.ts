@@ -41,7 +41,7 @@ export async function runRiskWorker(inputs: RiskInputs): Promise<Omit<RiskAnalys
   });
   return { ...(result as unknown as RiskAnalysis), analysisContextId: inputs.analysisContextId,
     portfolioRevision: inputs.portfolioRevision, generatedAt: new Date().toISOString(),
-    marketAsOf: inputs.marketAsOf, marketSnapshotId: inputs.marketSnapshotId, metadataVersion: inputs.metadataVersion,
+    marketAsOf: inputs.marketAsOf, valuationDate: inputs.valuationDate, marketSnapshotId: inputs.marketSnapshotId, metadataVersion: inputs.metadataVersion,
     inputEvidence:inputs.contracts.map(({id,source,quoteAsOf,spotAsOf,rateReference,dividendReference})=>({id,source,quoteAsOf,spotAsOf,rateReference,dividendReference})),
     coverage: (result.coverage as RiskInputs['coverage'] | undefined) ?? inputs.coverage,
     model: { id: 'quantlib-fd-cash-dividend', version: ENGINE_VERSION, measure: 'conditional' } };
@@ -91,10 +91,10 @@ export async function drainRiskQueue(): Promise<void> {
         if (market.contracts.length || !inputs.contracts.length) {
           inputs = normalizeRiskInputs(snapshot,request,market);
           inputs.providerAssumptions = [
-            'Connected broker last-trade option prices and regular-session underlying prices; quote timestamps are shown separately from fetch time.',
-            'Standard US stock options only; ETFs, adjusted contracts and unverifiable terms are excluded.',
+            'Latest available connected broker last-trade option and underlying prices are used without age or synchronization cutoffs. Quote times and ages remain visible; mismatched dates are indicative inputs, not synchronized executable prices.',
+            'Includes standard US stock and ETF options, including dividend-paying underlyings. Adjusted or unverifiable deliverables still require valid contract terms.',
             'Uses the published FRED DGS1 one-year Treasury yield as a flat-rate proxy, converted from semiannual to continuous compounding; not a maturity-matched zero curve.',
-            'Supports only underlying stocks with zero reported TTM cash dividends/yield and no recent or announced positive cash dividend in the provider history. Assumes no unannounced future dividends; dividend-paying stocks are excluded.',
+            'Uses announced cash dividends where available; otherwise estimates a continuous distribution yield from reported trailing-twelve-month cash distributions divided by spot. Trailing yields are estimates, not verified future cash schedules.',
           ];
           await writeRiskMarketSnapshot(job.owner_id,market);
         } else { inputs={...inputs};delete inputs.collectMarketData; }

@@ -8,6 +8,7 @@ import { moomooMarketData } from '../moomoo/moomoo-client.js';
 import { parseSignAlg } from '../moomoo/moomoo-sign.js';
 import type { MooMooCredentials } from '../moomoo/moomoo-client.js';
 import type { InvestorSnapshot } from '../state/investor-store.js';
+import { validDate } from '../brokers/option-executions.js';
 import { digest } from './context.js';
 import type { RiskMarketContract, RiskMarketSnapshot } from './types.js';
 
@@ -31,7 +32,7 @@ export function fredRate(csv: string, asOf: string, now = Date.now()): Rate {
     reference: `FRED DGS1 ${value.date}: ${value.percent}% investment-basis yield; semiannual-to-continuous flat 1-year proxy` };
 }
 
-/** NY offset at this date; this provider admits standard STOCK options only. */
+/** NY offset at this date; this provider admits standard stock/ETF options. */
 export function equityExpiry(date: string): string {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date))) throw new Error('Invalid expiry date');
   const part = new Intl.DateTimeFormat('en', { timeZone: 'America/New_York', timeZoneName: 'longOffset' })
@@ -39,13 +40,20 @@ export function equityExpiry(date: string): string {
   return date + 'T16:00:00' + part.replace('GMT','');
 }
 
-export function noCashDividends(stock: Row, data: Row, now: number): boolean {
-  if (stock.equity_valid !== true || stock.dividend_ttm !== 0 || stock.dividend_ratio_ttm !== 0 || !Array.isArray(data.dividend_list)) return false;
-  return data.dividend_list.every((d: Row) => {
-    if (typeof d.ex_date !== 'string' || !/^\d{4}\/\d{2}\/\d{2}$/.test(d.ex_date) || !Number.isFinite(d.dividend_per_share) || d.dividend_per_share < 0 || d.currency !== 'USD') return false;
-    const at = Date.parse(d.ex_date.replaceAll('/','-') + 'T00:00:00Z');
-    return Number.isFinite(at) && (d.dividend_per_share === 0 || at < now - 366 * day);
-  });
+/** Known forward cash amounts where available; otherwise a disclosed trailing-yield estimate. */
+export function cashDividendInputs(stock: Row, data: Row | null | undefined, spot: number, now: number) {
+  const today = new Date(now).toISOString().slice(0,10);
+  const announced = Array.isArray(data?.dividend_list) ? data.dividend_list.flatMap((d: Row) => {
+    const date = typeof d.ex_date === 'string' ? d.ex_date.replaceAll('/','-') : '';
+    return validDate(date) && date > today && Date.parse(date) <= now + 10*366*day && d.currency === 'USD' && Number.isFinite(d.dividend_per_share) && d.dividend_per_share > 0
+      ? [{date,amount:d.dividend_per_share as number}] : [];
+  }) : [];
+  // Duplicate corporate-action records cannot double the cash amount.
+  const dividends = [...new Map(announced.map((d: {date:string;amount:number}) => [JSON.stringify(d),d])).values()] as {date:string;amount:number}[];
+  if (dividends.length) return {dividends,dividendYield:0,reference:'Announced future cash dividends; assumes no additional unannounced distributions'};
+  if (!Number.isFinite(stock.dividend_ttm) || stock.dividend_ttm < 0 || stock.dividend_ttm > spot) return null;
+  const dividendYield = stock.dividend_ttm / spot;
+  return {dividends:[],dividendYield,reference:`Estimated continuous distribution yield ${(dividendYield*100).toFixed(6)}% from reported TTM cash distributions ${stock.dividend_ttm} USD / underlying price ${spot} USD; trailing proxy, not a verified forward schedule`};
 }
 
 async function limitedMap<T, R>(items: T[], fn: (item:T) => Promise<R>): Promise<R[]> {
@@ -75,7 +83,7 @@ export async function collectConnectedRiskMarket(snapshot: InvestorSnapshot, acc
   const holdings = Object.entries(getPortfolio(snapshot.state)).filter(([,h]) => h.instrument === 'option' && h.option && h.units !== 0 && accountIds.includes(h.channel || 'default'));
   if (holdings.length > 100) throw new Error('Too many option positions');
   const market: RiskMarketSnapshot = { id: '', portfolioRevision: snapshot.revision, capturedAt: new Date(now).toISOString(),
-    metadataVersion: 'futu-standard-us-equity-v1', contracts: [], exclusions: [] };
+    metadataVersion: 'futu-standard-us-equity-v2', contracts: [], exclusions: [] };
   const exclude = (id: string, reason: string) => market.exclusions!.push({ id, reason });
   const model = readBrokerAccountModel(snapshot.state);
   const source = Object.values(model.connections).find(c => c.enabled && ['futubull','moomoo'].includes(c.broker_id) && !!combinedCredentials(model,c).app_key && !!combinedCredentials(model,c).private_key);
@@ -122,24 +130,24 @@ export async function collectConnectedRiskMarket(snapshot: InvestorSnapshot, acc
     const chain=chains.get(`${o.underlying}|${o.expiry}`)?.option_chain;
     const matches=Array.isArray(chain)?chain.filter((r:Row)=>r.code===optionCode&&r.stock_owner===symbol&&r.strike_time===o.expiry&&r.strike_price===o.strike&&r.option_type===o.right.toUpperCase()):[];
     const terms=matches.length===1?matches[0]:undefined,ex=q?.option_ex_data;
-    if (!q || !spot || !stock || basic?.stock_type!=='STOCK' || !terms || terms.option_standard_type!=='STANDARD' || terms.lot_size!==100 || ex?.contract_size!==100 || ex.contract_multiplier!==100 || ex.option_area_type!=='AMERICAN' || ex.strike_price!==o.strike || ex.option_type!==o.right.toUpperCase()) {
+    if (!q || !spot || !stock || !['STOCK','ETF'].includes(basic?.stock_type) || !terms || terms.option_standard_type!=='STANDARD' || terms.lot_size!==100 || ex?.contract_size!==100 || ex.contract_multiplier!==100 || ex.option_area_type!=='AMERICAN' || ex.strike_price!==o.strike || ex.option_type!==o.right.toUpperCase()) {
       exclude(id,'Exact standard stock-option contract or exercise terms could not be verified');continue;
     }
     if (q.suspension || spot.suspension || ![q.data_time,spot.data_time,q.last_price,spot.last_price,ex.implied_volatility].every(Number.isFinite) || q.last_price<=0 || spot.last_price<=0 || ex.implied_volatility<1 || ex.implied_volatility>500 ||
-        Math.min(q.data_time,spot.data_time)<now-day || Math.max(q.data_time,spot.data_time)>now+60_000 || Math.abs(q.data_time-spot.data_time)>900_000) {
-      exclude(id,'Option and regular-session underlying quotes are stale or not synchronized within 15 minutes');continue;
+        Math.min(q.data_time,spot.data_time)<=0 || Math.max(q.data_time,spot.data_time)>now+60_000) {
+      exclude(id,'Option price, underlying price, implied volatility or quote timestamp is missing or invalid');continue;
     }
-    const div=dividends.get(o.underlying);
-    if (!div || !noCashDividends(stock,div,now)) {exclude(id,'Dividend-paying or unverified underlying needs a forward cash-dividend schedule; none was invented');continue;}
+    const dividend = cashDividendInputs(stock,dividends.get(o.underlying),spot.last_price,now);
+    if (!dividend) {exclude(id,'No announced dividend schedule or reported trailing cash-distribution amount is available');continue;}
     let rate:Rate;
-    try {rate=fredRate(csv,new Date(Math.min(q.data_time,spot.data_time)).toISOString().slice(0,10),now);}
-    catch {exclude(id,'A recent official rate observation at or before the quotes is unavailable');continue;}
+    try {rate=fredRate(csv,new Date(now).toISOString().slice(0,10),now);}
+    catch {exclude(id,'A recent official rate observation at or before valuation is unavailable');continue;}
     const contract: RiskMarketContract = { id, underlying:o.underlying,right:o.right,strike:o.strike,multiplier:100,currency:'USD',exerciseStyle:'american',
       expiryAt:equityExpiry(o.expiry),expiryTimezone:'America/New_York',deliverable:'standard-shares',spot:spot.last_price,
-      premiumPerContract:q.last_price*100,impliedVolatility:ex.implied_volatility/100,rate:rate.rate,dividends:[],
+      premiumPerContract:q.last_price*100,impliedVolatility:ex.implied_volatility/100,rate:rate.rate,dividends:dividend.dividends,dividendYield:dividend.dividendYield,
       quoteAsOf:new Date(q.data_time).toISOString(),spotAsOf:new Date(spot.data_time).toISOString(),
       source:`${source.broker_id} Cloud stock-quote last trade; exact option-chain STANDARD + AMERICAN; OCC stock-option settlement/cutoff`,
-      rateReference:rate.reference,dividendReference:`${source.broker_id} snapshot TTM cash dividends/yield both zero + dividend history checked ${market.capturedAt}; assumes no unannounced future cash dividends` };
+      rateReference:rate.reference,dividendReference:`${source.broker_id} ${dividend.reference}; checked ${market.capturedAt}` };
     market.contracts.push(contract);
   }
   market.id=digest(market);return market;

@@ -58,12 +58,12 @@ export function normalizeRiskInputs(snapshot: InvestorSnapshot, request: RiskReq
   const selected = request.accountScope.kind === 'all' ? accounts : request.accountScope.accountIds;
   const entries = Object.entries(portfolio).filter(([, h]) => h.instrument === 'option' && h.option && h.units !== 0 && selected.includes(h.channel || 'default'));
   if (entries.length > 100) throw new RiskError(400, 'Analysis supports at most 100 contract positions');
-  const recent = (s: unknown) => typeof s === 'string' && Number.isFinite(Date.parse(s)) && Date.parse(s) <= now + 60_000 && now - Date.parse(s) <= 24 * 3600_000;
+  const validTimestamp = (s: unknown) => typeof s === 'string' && Number.isFinite(Date.parse(s)) && Date.parse(s) <= now + 60_000;
   const usable = market && typeof market.id === 'string' && !!market.id && typeof market.metadataVersion === 'string' && !!market.metadataVersion &&
-    market.portfolioRevision === snapshot.revision && recent(market.capturedAt) && Array.isArray(market.contracts);
+    market.portfolioRevision === snapshot.revision && validTimestamp(market.capturedAt) && Array.isArray(market.contracts);
   const inputs: RiskInputs = { analysisContextId: request.analysisContextId, portfolioRevision: String(snapshot.revision),
     marketSnapshotId: usable ? market.id : 'unavailable', metadataVersion: usable ? market.metadataVersion : 'unavailable',
-    marketAsOf: usable ? market.capturedAt : null, accountIds: selected, horizonTradingDays: request.horizonTradingDays, contracts: [], accounts: [],
+    marketAsOf: usable ? market.capturedAt : null, valuationDate: new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York',year:'numeric',month:'2-digit',day:'2-digit'}).format(now), accountIds: selected, horizonTradingDays: request.horizonTradingDays, contracts: [], accounts: [],
     coverage: { totalContracts: entries.length, supportedContracts: 0, totalQuantity: entries.reduce((s, [, h]) => s + Math.abs(h.units), 0), supportedQuantity: 0, exclusions: [] } };
   for (const [id, h] of entries) {
     const o = h.option!;
@@ -74,11 +74,12 @@ export function normalizeRiskInputs(snapshot: InvestorSnapshot, request: RiskReq
     else if (!/^[A-Z]{3}$/.test(c.currency || '') || c.underlying !== o.underlying || c.right !== o.right || c.strike !== o.strike || c.multiplier !== o.multiplier || c.currency !== h.currency ||
       c.expiryAt?.slice(0, 10) !== o.expiry || c.deliverable !== 'standard-shares' || c.multiplier !== 100 || o.settlement !== 'physical' ||
       c.expiryTimezone !== 'America/New_York' || !['american', 'european'].includes(c.exerciseStyle)) reason = 'Unsupported or mismatched contract metadata/deliverable';
-    else if (!recent(c.quoteAsOf) || !recent(c.spotAsOf) || Math.abs(Date.parse(c.quoteAsOf) - Date.parse(c.spotAsOf)) > 900_000 ||
+    else if (!validTimestamp(c.quoteAsOf) || !validTimestamp(c.spotAsOf) ||
       !Number.isFinite(Date.parse(c.expiryAt)) || Date.parse(c.expiryAt) <= now ||
-      ![c.source, c.rateReference, c.dividendReference].every(v => typeof v === 'string' && v.trim().length > 0 && v.length <= 500) || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/.test(c.expiryAt)) reason = 'Missing or stale quote, rate, dividend or expiry provenance';
+      ![c.source, c.rateReference, c.dividendReference].every(v => typeof v === 'string' && v.trim().length > 0 && v.length <= 500) || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/.test(c.expiryAt)) reason = 'Missing or invalid quote, rate, dividend or expiry provenance';
     else if (![c.spot, c.premiumPerContract, c.impliedVolatility, c.rate, h.units].every(Number.isFinite) || c.spot <= 0 || c.premiumPerContract < 0 ||
       Date.parse(c.expiryAt) - now > 10 * 366 * 86400_000 || c.impliedVolatility < 0.01 || c.impliedVolatility > 5 || Math.abs(c.rate) > 0.5 || !Number.isSafeInteger(h.units) || h.units <= 0 || h.units > 1_000_000 ||
+      (c.dividendYield !== undefined && (!Number.isFinite(c.dividendYield) || c.dividendYield < 0 || c.dividendYield > 1)) ||
       !Array.isArray(c.dividends) || c.dividends.length > 100 || c.dividends.some(d => !d || !validDate(d.date) || !Number.isFinite(d.amount) || d.amount < 0)) reason = 'Invalid financial inputs';
     if (reason || !c) { inputs.coverage.exclusions.push({ id, quantity: Math.abs(h.units), reason }); continue; }
     // All related shares affect wealth; only free shares can cover delivery in this account.
@@ -90,7 +91,7 @@ export function normalizeRiskInputs(snapshot: InvestorSnapshot, request: RiskReq
     inputs.contracts.push({ id, underlying: c.underlying, right: c.right, strike: c.strike, multiplier: c.multiplier,
       currency: c.currency, exerciseStyle: c.exerciseStyle, expiryAt: c.expiryAt, expiryTimezone: c.expiryTimezone,
       deliverable: c.deliverable, spot: c.spot, premiumPerContract: c.premiumPerContract, impliedVolatility: c.impliedVolatility,
-      rate: c.rate, dividends: c.dividends.map(d => ({ date: d.date, amount: d.amount })), quoteAsOf: c.quoteAsOf,
+      rate: c.rate, dividendYield: c.dividendYield, dividends: c.dividends.map(d => ({ date: d.date, amount: d.amount })), quoteAsOf: c.quoteAsOf,
       spotAsOf: c.spotAsOf, source: c.source, rateReference: c.rateReference, dividendReference: c.dividendReference,
       accountId: h.channel || 'default', quantity: h.units, side: o.side, shares, freeShares });
   }

@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { verify, createPublicKey } from 'node:crypto';
-import { collectConnectedRiskMarket, equityExpiry, fredRate, noCashDividends } from '../src/risk/market-provider.js';
+import { collectConnectedRiskMarket, equityExpiry, fredRate, cashDividendInputs } from '../src/risk/market-provider.js';
 import { analysisContext, normalizeRiskInputs } from '../src/risk/context.js';
 import { moomooMarketData } from '../src/moomoo/moomoo-client.js';
 import { moomooSignContent } from '../src/moomoo/moomoo-sign.js';
@@ -17,7 +17,7 @@ function investor(): InvestorSnapshot {
     broker_connections:{c:{broker_id:'futubull',source_id:'f',channel:'futubull',label:'Futu',account_id:'A1',config:{acc_id:'A1'},enabled:true}},
   }} as unknown as InvestorSnapshot;
 }
-function fixture(patch: { stock?:Record<string,unknown>; option?:Record<string,unknown>; chain?:Record<string,unknown>; dividends?:unknown[]; fail?:string; csv?:string }={}) {
+function fixture(patch: { stock?:Record<string,unknown>; option?:Record<string,unknown>; chain?:Record<string,unknown>; dividends?:unknown[]; fail?:string; csv?:string; basic?:Record<string,unknown> }={}) {
   const seen: string[]=[];
   const fetchImpl:typeof fetch=async (input,init)=>{
     const url=new URL(String(input));seen.push(url.toString());
@@ -30,7 +30,7 @@ function fixture(patch: { stock?:Record<string,unknown>; option?:Record<string,u
     if(url.pathname.endsWith('stock-quote'))data={quote_list:[{code:'US.AMD',data_time:at,last_price:562.23},
       {code,data_time:at-120000,last_price:4.18,option_ex_data:{contract_size:100,contract_multiplier:100,option_area_type:'AMERICAN',option_type:'PUT',strike_price:400,implied_volatility:58.786},...patch.option}]};
     if(url.pathname.endsWith('/snapshot'))data={snapshot_list:[{code:'US.AMD',equity_valid:true,dividend_ttm:0,dividend_ratio_ttm:0,...patch.stock}]};
-    if(url.pathname.endsWith('stock-basicinfo'))data={basic_list:[{code:'US.AMD',stock_type:'STOCK'}]};
+    if(url.pathname.endsWith('stock-basicinfo'))data={basic_list:[{code:'US.AMD',stock_type:'STOCK',...patch.basic}]};
     if(url.pathname.endsWith('option-chain')){expect(url.searchParams.get('start')).toBe('2026-12-18');data={option_chain:[{code,stock_owner:'US.AMD',strike_time:'2026-12-18',strike_price:400,option_type:'PUT',lot_size:100,option_standard_type:'STANDARD',...patch.chain}]};}
     if(url.pathname.endsWith('dividends'))data={dividend_list:patch.dividends??[]};
     return Response.json({ret_code:0,data});
@@ -43,19 +43,17 @@ it('collects owner-connected quotes across custodians, verifies signed queries a
   expect(market.exclusions).toEqual([]);expect(market.contracts).toHaveLength(1);
   expect(market.contracts[0]).toMatchObject({id,spot:562.23,premiumPerContract:418,impliedVolatility:.58786,exerciseStyle:'american',multiplier:100,
     quoteAsOf:'2026-10-15T19:58:00.000Z',spotAsOf:'2026-10-15T20:00:00.000Z',expiryAt:'2026-12-18T16:00:00-05:00'});
-  expect(market.contracts[0].rate).toBeCloseTo(2*Math.log1p(.0453/2));expect(market.contracts[0].dividendReference).toContain('unannounced');
+  expect(market.contracts[0].rate).toBeCloseTo(2*Math.log1p(.0453/2));expect(market.contracts[0].dividendReference).toContain('trailing proxy');
   const inputs=normalizeRiskInputs(snapshot,{analysisContextId:analysisContext(snapshot)!,accountScope:{kind:'selected',accountIds:['tiger']},horizonTradingDays:5,scenarioSet:'equity-options-standard-v1',mode:'conditional',refresh:false},market,now);
   expect(inputs.coverage.supportedContracts).toBe(1);expect(JSON.stringify(snapshot)).toBe(before);
   expect(JSON.stringify(market)).not.toContain('PRIVATE KEY');expect(JSON.stringify(inputs)).not.toContain('test-key');
 });
 it.each([
-  {stock:{dividend_ttm:1,dividend_ratio_ttm:.4}},
-  {dividends:[{ex_date:'2026/11/01',currency:'USD',dividend_per_share:1}]},
   {chain:{option_standard_type:'NON_STANDARD'}},
   {chain:{stock_owner:'US.OTHER'}},
-  {option:{data_time:at-3600_000}},
   {option:{last_price:0}},
-  {fail:'dividends'},
+  {option:{data_time:now+3600000}},
+  {stock:{dividend_ttm:null}},
   {csv:'observation_date,DGS1\n2026-10-01,4.5\n'},
 ])('excludes unverifiable inputs instead of manufacturing values: %j',async patch=>{
   const f=fixture(patch);const market=await collectConnectedRiskMarket(investor(),['tiger'],{fetchImpl:f.fetchImpl,now});
@@ -69,8 +67,27 @@ it('selects only published, recent rate observations at or before the quote date
   expect(fredRate('observation_date,DGS1\n2026-10-14,4.53\n2026-10-16,4.6\n','2026-10-15',now).percent).toBe(4.53);
   expect(()=>fredRate('observation_date,DGS1\n2026-10-15,\n','2026-10-15',now)).toThrow();
   expect(equityExpiry('2026-07-17')).toBe('2026-07-17T16:00:00-04:00');
-  expect(noCashDividends({equity_valid:true,dividend_ttm:0,dividend_ratio_ttm:0},{dividend_list:[{ex_date:'2024/01/01',currency:'USD',dividend_per_share:.1}]},now)).toBe(true);
+  expect(cashDividendInputs({dividend_ttm:0},null,100,now)?.dividendYield).toBe(0);
 });
 it('rejects trade/write paths before transmitting a credential',async()=>{
   const fetchImpl=vi.fn();await expect(moomooMarketData({path:'/api/v1.0/trade/place-order',credentials,body:{},fetchImpl})).rejects.toThrow('Unsupported read-only');expect(fetchImpl).not.toHaveBeenCalled();
+});
+
+it.each([
+  {basic:{stock_type:'ETF'},stock:{equity_valid:false,dividend_ttm:1.93}},
+  {stock:{dividend_ttm:2.54}},
+  {dividends:[{ex_date:'2026/11/01',currency:'USD',dividend_per_share:1}]},
+  {option:{data_time:at-7*86400000}},
+  {fail:'dividends'},
+])('includes previously filtered contracts with disclosed inputs: %j',async patch=>{
+  const f=fixture(patch);const market=await collectConnectedRiskMarket(investor(),['tiger'],{fetchImpl:f.fetchImpl,now});
+  expect(market.contracts).toHaveLength(1);expect(market.exclusions).toEqual([]);
+  if(patch.stock)expect(market.contracts[0].dividendYield).toBeCloseTo(patch.stock.dividend_ttm/562.23);
+  if(patch.dividends)expect(market.contracts[0].dividends).toEqual([{date:'2026-11-01',amount:1}]);
+});
+it('uses announced cash only once and never invents a missing trailing yield',()=>{
+  expect(cashDividendInputs({dividend_ttm:2},null,100,now)).toMatchObject({dividendYield:.02,dividends:[]});
+  const d={ex_date:'2026/11/01',currency:'USD',dividend_per_share:1};
+  expect(cashDividendInputs({dividend_ttm:2},{dividend_list:[d,d]},100,now)).toMatchObject({dividendYield:0,dividends:[{date:'2026-11-01',amount:1}]});
+  expect(cashDividendInputs({},null,100,now)).toBeNull();
 });

@@ -1,5 +1,5 @@
 /** Risk-only DTOs. Portfolio premium units remain dollars per contract. */
-export const ENGINE_VERSION = 'conditional-ql-v2';
+export const ENGINE_VERSION = 'conditional-ql-v3';
 export const SCENARIO_SET = 'equity-options-standard-v1';
 export type Horizon = 1 | 5 | 21;
 export interface RiskRequest {
@@ -27,6 +27,8 @@ export interface RiskMarketContract {
   impliedVolatility: number;
   rate: number;
   dividends: { date: string; amount: number }[];
+  /** Continuous annual cash-distribution yield proxy when no forward schedule exists. */
+  dividendYield?: number;
   quoteAsOf: string;
   spotAsOf: string;
   source: string;
@@ -59,6 +61,8 @@ export interface RiskInputs {
   marketSnapshotId: string;
   metadataVersion: string;
   marketAsOf: string | null;
+  /** New York calendar date; stable within the day for request deduplication. */
+  valuationDate?: string;
   accountIds: string[];
   horizonTradingDays: Horizon;
   contracts: RiskContract[];
@@ -80,7 +84,7 @@ export interface Funding {
 export interface RiskAnalysis {
   inputEvidence?: Array<Pick<RiskMarketContract,'id'|'source'|'quoteAsOf'|'spotAsOf'|'rateReference'|'dividendReference'>>;
   id: string; status: 'ready' | 'partial' | 'unavailable'; analysisContextId: string;
-  portfolioRevision: string; generatedAt: string; marketAsOf: string | null;
+  portfolioRevision: string; generatedAt: string; marketAsOf: string | null; valuationDate?: string;
   marketSnapshotId: string; metadataVersion: string;
   model: { id: string; version: string; measure: 'conditional' };
   scope: { accountIds: string[]; currencies: string[]; horizonTradingDays: Horizon };

@@ -86,12 +86,34 @@ class EngineTests(unittest.TestCase):
         data=inputs([contract(side='short',right='put')]);data['accounts'][0]['cash']=3000
         self.assertEqual(analyze(data)['funding'][0]['fundingGap'],7000)
 
-    def test_cross_expiry_excluded_and_empty_is_unavailable(self):
+    def test_cross_expiry_uses_intrinsic_and_keeps_every_contract(self):
         c=contract(expiryAt='2026-10-19T16:00:00-04:00')
         out=analyze(inputs([c,contract(id='other')]))
-        self.assertEqual(out['status'],'partial')
-        self.assertEqual(out['coverage']['supportedQuantity'],1)
-        self.assertEqual(analyze(inputs([c]))['status'],'unavailable')
+        self.assertEqual(out['status'],'ready')
+        self.assertEqual(out['coverage']['supportedQuantity'],2)
+        only=analyze(inputs([c]))
+        self.assertAlmostEqual(only['scenarios'][0]['optionPnl'],-500)
+        self.assertAlmostEqual(only['scenarios'][-1]['optionPnl'],1500)
+        self.assertEqual(len(only['contributors']),1)
+
+    def test_trailing_distribution_yield_matches_analytic_call(self):
+        c=contract(dividendYield=.03)
+        today=date('2026-10-16');t=(date(c['expiryAt'])-today)/365
+        d1=(math.log(c['spot']/c['strike'])+(c['rate']-.03+.5*c['impliedVolatility']**2)*t)/(c['impliedVolatility']*math.sqrt(t))
+        d2=d1-c['impliedVolatility']*math.sqrt(t)
+        normal=lambda x:.5*(1+math.erf(x/math.sqrt(2)))
+        exact=c['spot']*math.exp(-.03*t)*normal(d1)-c['strike']*math.exp(-c['rate']*t)*normal(d2)
+        self.assertAlmostEqual(price(c,today,grid=400),exact,delta=.005)
+        out=analyze(inputs([dict(c,shares=100)]))
+        days=horizon_date('2026-10-16',5)-today
+        flat=out['scenarios'][2]
+        self.assertAlmostEqual(flat['combinedPnl']-flat['optionPnl'],100*100*.03*days/365)
+
+    def test_old_quotes_do_not_move_the_valuation_clock_backwards(self):
+        c=contract(expiryAt='2026-10-19T16:00:00-04:00')
+        data=inputs([c]);data['marketAsOf']='2026-09-01T20:00:00Z';data['valuationDate']='2026-10-16'
+        out=analyze(data)
+        self.assertAlmostEqual(out['scenarios'][2]['optionPnl'],-500)
 
     def test_no_currency_aggregation_without_fx(self):
         out=analyze(inputs([contract(),contract(id='HK',currency='HKD')]))
