@@ -13,7 +13,7 @@ export function createOptionRiskRouter() {
     try {
       await loadSessionState(req);
       res.json({ enabled: riskEnabled(), available: riskConfigured(), engineVersion: ENGINE_VERSION,
-        capabilities: { stress: true, greeks: true, forecast: false, actions: false },
+        capabilities: { stress: true, greeks: true, forecast: true, actions: true },
         reason: riskConfigured() ? null : 'Analysis service is not configured.' });
     } catch { res.status(401).json({ error: 'Registered session required. Private/session-only analyses are not persisted.' }); }
   });

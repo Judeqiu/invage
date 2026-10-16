@@ -1,3 +1,4 @@
+import { collectAdvancedMarket } from './advanced-market.js';
 import { mkdir, rename, writeFile, unlink, readdir, stat } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
@@ -156,6 +157,7 @@ export async function collectConnectedRiskMarket(snapshot: InvestorSnapshot, acc
       rateReference:rate.reference,dividendReference:`${source.broker_id} ${dividend.reference}; checked ${market.capturedAt}` };
     market.contracts.push(contract);
   }
+  await collectAdvancedMarket(market,query,chains,now,new Set(holdings.filter(([,h])=>h.option!.side==='short').map(([id])=>id)));
   market.id=digest(market);return market;
 }
 

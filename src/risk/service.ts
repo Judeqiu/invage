@@ -51,12 +51,33 @@ export function validateWorkerOutput(r: any): void {
     Array.isArray(v) ? v.every(finiteTree) : v && typeof v === 'object' ? Object.values(v).every(finiteTree) : true;
   if (!r || !['ready', 'partial', 'unavailable'].includes(r.status) || !r.capabilities ||
       typeof r.capabilities.stress !== 'boolean' || typeof r.capabilities.greeks !== 'boolean' ||
-      r.capabilities.forecast !== false || r.capabilities.actions !== false ||
+      typeof r.capabilities.forecast !== 'boolean' || typeof r.capabilities.actions !== 'boolean' ||
       !r.scope || !Array.isArray(r.scope.accountIds) || !Array.isArray(r.scope.currencies) || ![1,5,21].includes(r.scope.horizonTradingDays) ||
       !r.metrics || ['stressLoss', 'dollarDelta', 'expectedShortfall'].some(k => !r.metrics[k] ||
         !(r.metrics[k].value === null || typeof r.metrics[k].value === 'number') || typeof r.metrics[k].unit !== 'string') ||
-      r.metrics.expectedShortfall.value !== null || !Array.isArray(r.scenarios) || !Array.isArray(r.contributors) || !Array.isArray(r.funding) ||
-      !Array.isArray(r.payoffBounds) || !Array.isArray(r.actions) || r.actions.length || !Array.isArray(r.assumptions) || !r.assumptions.every((x: unknown) => typeof x === 'string') || !finiteTree(r)) throw new Error('Malformed worker result');
+      !Array.isArray(r.scenarios) || !Array.isArray(r.contributors) || !Array.isArray(r.funding) ||
+      !Array.isArray(r.payoffBounds) || !Array.isArray(r.actions) || !Array.isArray(r.assumptions) || !r.assumptions.every((x: unknown) => typeof x === 'string') || !finiteTree(r)) throw new Error('Malformed worker result');
+  const f = r.forecast;
+  const metric = (m: any) => m && typeof m.currency === 'string' &&
+    ['var','expectedShortfall','expectedPnl'].every(k => typeof m[k] === 'number') &&
+    m.probabilityOfProfit >= 0 && m.probabilityOfProfit <= 1 && m.confidenceLevel > 0 && m.confidenceLevel < 1 &&
+    m.horizonTradingDays === r.scope.horizonTradingDays && m.samplingInterval &&
+    typeof m.samplingInterval.lower === 'number' && typeof m.samplingInterval.upper === 'number' &&
+    m.samplingInterval.lower <= m.samplingInterval.upper && m.samplingInterval.confidence === .95 && typeof m.samplingInterval.method === 'string';
+  if (!f || !['ready','partial','unavailable'].includes(f.status) || typeof f.reason !== 'string' ||
+    f.model?.measure !== 'physical' || !f.validation || !['passed','failed','insufficient'].includes(f.validation.status) ||
+    !f.coverage || !Array.isArray(f.coverage.exclusions) || !Array.isArray(f.metrics) || !f.metrics.every(metric) ||
+    !Array.isArray(f.assumptions) || r.capabilities.forecast !== !!f.metrics.length ||
+    (f.metrics.length && (f.validation.status !== 'passed' || f.status === 'unavailable')) ||
+    (r.metrics.expectedShortfall.value !== null && (f.status !== 'ready' || f.metrics.length !== 1 || r.metrics.expectedShortfall.value !== f.metrics[0].expectedShortfall))) throw new Error('Malformed forecast');
+  for (const a of r.actions) if (!['hold','close','hedge'].includes(a.kind) || !['ready','unavailable'].includes(a.status) ||
+    typeof a.id !== 'string' || typeof a.label !== 'string' || typeof a.reason !== 'string' || typeof a.currency !== 'string' ||
+    !['sufficient','insufficient','unknown','not-required'].includes(a.funding) || !['sufficient','insufficient','unknown'].includes(a.liquidity) ||
+    a.costModel?.basis !== 'estimate' || ![a.costModel.feePerContract,a.costModel.minimumOrderFee,a.costModel.slippageBps].every(v=>typeof v==='number' && v>=0) ||
+    !Array.isArray(a.scenarios) || a.scenarios.some((v:any)=>typeof v.id!=='string'||typeof v.pnl!=='number') ||
+    (a.forecast !== null && !metric(a.forecast)) ||
+    (a.status==='ready' && (![a.initialCashFlow,a.estimatedInitialFees,a.stressLoss].every(v=>typeof v==='number') || (a.kind!=='hold' && !a.quote)))) throw new Error('Malformed comparison');
+  if(r.capabilities.actions !== r.actions.some((a:any)=>a.kind!=='hold'&&a.status==='ready')) throw new Error('Inconsistent comparisons');
   if (!r.coverage || ![r.coverage.totalContracts, r.coverage.supportedContracts, r.coverage.totalQuantity, r.coverage.supportedQuantity].every(x => typeof x === 'number' && Number.isFinite(x) && x >= 0) || !Array.isArray(r.coverage.exclusions)) throw new Error('Malformed coverage');
   for (const f of r.funding) if (typeof f.accountId !== 'string' || typeof f.currency !== 'string' || !Array.isArray(f.delivery) ||
     ![f.grossPutFunding, f.callShares, f.availableShares].every(x => typeof x === 'number') || !(f.cash === null || typeof f.cash === 'number') ||

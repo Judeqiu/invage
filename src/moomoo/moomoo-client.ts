@@ -105,8 +105,8 @@ export async function moomooMarketData(args: {
   path: string; query?: string; body?: Record<string, unknown>;
   credentials: MooMooCredentials; fetchImpl?: typeof fetch;
 }): Promise<Record<string, any>> {
-  const post = ['/api/v1.0/quote/snapshot', '/api/v1.0/quote/stock-quote', '/api/v1.0/quote/stock-basicinfo'].includes(args.path);
-  const get = /^\/api\/v1\.0\/quote\/US\.[A-Z][A-Z0-9.]*\/(?:option-chain|corporate-actions\/dividends)$/.test(args.path);
+  const post = ['/api/v1.0/quote/snapshot', '/api/v1.0/quote/stock-quote', '/api/v1.0/quote/stock-basicinfo', '/api/v1.0/quote/combo-option-quote'].includes(args.path);
+  const get = /^\/api\/v1\.0\/quote\/US\.[A-Z][A-Z0-9.]*\/(?:option-chain|history-kline|option-volatility|corporate-actions\/dividends)$/.test(args.path);
   if (!post && !get || post !== (args.body !== undefined)) throw new Error('Unsupported read-only market-data request');
   const fetchImpl = args.fetchImpl ?? fetch;
   const request = { path: args.path, query: args.query, method: post ? 'POST' as const : 'GET' as const,

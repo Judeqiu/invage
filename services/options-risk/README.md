@@ -4,8 +4,7 @@ The management boolean `show_option_risk_model_view` defaults false. Only the
 `consultant` product profile advertises the second view. The expiry/assignment
 renderer and its quote math are unchanged. Refreshing starts on that view.
 
-This is the initial conditional engine, not completion of every delivery stage in
-the design. It prices validated standard 100-share physically settled options,
+The conditional engine prices validated standard 100-share physically settled options,
 including American exercise and explicit discrete dividends, using QuantLib 1.40.
 It provides signed stress P/L, numerical Greeks, account-specific gross assignment
 branches, and exact standalone expiry payoff bounds for legs grouped by account,
@@ -39,7 +38,7 @@ worker at a time, one active job per investor, and up to 100 pending jobs
 deployment-wide. There is no portfolio position-count cap. Provider quote
 requests are batched without truncating the portfolio. Collection has a 45-second
 deadline, followed by a 60-second numerical worker deadline. Workers retain
-2 MiB input/output limits, five-second heartbeats, and at most one recovery
+32 MiB input and 2 MiB output limits, five-second heartbeats, and at most one recovery
 attempt after a worker lease expires. Invalid financial
 inputs/model failures are not retried automatically. Browser requests return
 queued status promptly. The claimed worker handles the whole portfolio.
@@ -101,9 +100,7 @@ The full scenario spot shock is assumed to occur by expiry; the cash-equivalent
 intrinsic proceeds remain unchanged until the selected horizon. Post-expiry
 delivery shares are not retained. Interim scenarios condition on no early assignment. Funding branches show
 full gross put cash and call shares, without assuming broker collateral netting
-or early-assignment probabilities. Cash interest, borrow/transaction costs,
-partial assignment paths and close/hedge action comparisons remain unavailable.
-No forecast, VaR, ES, probability-of-profit or action-ranking capability is claimed.
+or early-assignment probabilities. Cash interest, borrow costs and partial assignment paths remain excluded. Forecasts and read-only comparisons have the separate evidence requirements below.
 
 ### Connected-broker assessment (16 October 2026)
 
@@ -172,9 +169,7 @@ INVAGE_OPTION_RISK_PYTHON=/opt/invage-risk-venv/bin/python \
 Queue integration tests require `UTARUS_TEST_DATABASE_URL` explicitly naming the
 isolated `utarus_test_admin` database. The helper creates/drops disposable DBs;
 never point tests at an application DB. Benchmark the actual deployment before
-increasing the single-worker pool or enabling this feature. Forecast calibration,
-FX aggregation, quoted action comparisons and complete assignment lifecycle
-handling remain later delivery stages.
+increasing the single-worker pool or enabling this feature. FX aggregation and complete assignment lifecycle handling remain unavailable.
 
 Local fixture benchmark (2026-10-16, this development host): 1 / 25 / 100
 European contract positions took 0.090 / 2.186 / 9.280 seconds respectively;
@@ -183,3 +178,66 @@ result payloads were 3.5 / 7.2 / 18.6 KB. Maximum 200-vs-400 grid difference was
 production capacity or validate every instrument. With the feature disabled,
 the legacy dashboard adds only a false capability flag and null context; no
 model calculation or market-provider request runs in its loading path.
+
+## Physical forecasts and read-only comparisons
+
+The v4 worker collects completed daily underlying closes and exact-contract
+observed implied volatility from the same investor-owned Cloud connection.
+Historical requests are unadjusted daily bars, paginated backward across up to
+five years; missing IV is never interpolated from stock volatility. A synchronized
+contiguous NYSE trading-date intersection is required. Unresolved stock price
+jumps above 50% invalidate forecasts rather than truncating tails. This guard is
+not a complete corporate-action adjustment service. Short-lived option contracts
+will often have insufficient history. A separate licensed historical IV surface
+provider would be needed for broader practical coverage.
+
+Joint filtered historical simulation uses EWMA lambda 0.94 and synchronized
+five-day residual blocks, zero log drift, a deterministic context-derived seed,
+and 8,192 paths. No forecast probability is attached to a conditional shock.
+Forecast qualification requires at least 252 daily pairs and 126 training returns
+plus 60 non-overlapping horizon outcomes: 40 validation and 20 final holdout
+origins. Each origin fits only its past. Fixed checks cover 50/80/95% interval
+coverage, 95% VaR exceedances/clustering, a joint VaR/ES identification moment,
+and an unfiltered historical challenger. Rejection thresholds are 1% for coverage
+and independence diagnostics and 2.58 for the tail moment, with a challenger
+comparison. These are risk-factor and equal-weight factor-basket checks, **not
+validation of historical trading-strategy returns or every portfolio tail**.
+The final holdout is never used to fit or select parameters. Passing a diagnostic
+is not a statistical guarantee. The validation report is stored with the result.
+
+Each joint path reprices the options and related shares; ES is computed from the
+aggregate currency loss distribution, never by adding standalone ES. American
+and discrete-dividend prices use a checked finite-difference correction grid,
+refined through 5/9/17 points per dimension, with direct 400-grid checks at
+stratified/tail points (0.5% relative price tolerance). Failure suppresses the
+forecast only. Expiries settle at their simulated expiry spot into cash-equivalent
+proceeds; early assignment remains excluded. The 95% ES sampling interval uses
+128 percentile bootstrap resamples of simulated paths; it measures Monte Carlo
+error only, not parameter/model uncertainty. A width above max($1, 50% of absolute
+ES) suppresses publication. Forecast coverage is distinct from stress coverage;
+headline ES requires complete priced-scope coverage in a single currency.
+
+Comparisons show hold and each individual close, plus a nearest further-OTM
+same-expiry long option for shorts when verified terms and indicative bid/ask
+are available. Quotes come from exact single-leg combo quotes, in batches of 20;
+this endpoint supplies no exchange timestamp, so collection time and that
+limitation are explicit. Displayed depth and account-specific cash are checked
+independently; unknown cash/depth is never treated as sufficient. These are
+read-only analysis candidates, not orders or guaranteed executable combinations.
+
+Management exposes estimated USD fee per contract (default 0.65), minimum fee
+per order (1.00), and adverse slippage (25 basis points beyond bid/ask). These
+are generic configurable assumptions, not verified broker charges. Changes
+invalidate the analysis context. All comparisons use terminal **marked wealth**,
+with initial execution fees/slippage charged once, without future liquidation,
+settlement fees, interest, borrow costs, or reuse of historical entry cost basis.
+Close removes the selected leg's terminal wealth and records its cash flow once;
+hedge adds its terminal value and deducts entry cost once. Comparisons retain
+related shares. They are per-leg changes to the covered currency portfolio,
+not optimized multi-leg strategies. Probabilistic close comparisons reuse exactly
+the hold paths and require full currency coverage. Hedge probabilistic comparisons join the same calibrated paths only when exact
+hedge-IV history covers every held-portfolio date; otherwise hedge ES remains
+unavailable and is never assigned zero. Costs are explicitly estimated throughout the UI and discussion.
+
+References: [Cloud historical bars](https://open.moomoo.com/api/quote/basic-data/history-kline)
+and [Cloud indicative combo quotes](https://open.moomoo.com/api/quote/derivatives/combo-option-quote).

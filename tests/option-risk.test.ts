@@ -107,3 +107,16 @@ it('includes every position above the former 100-row cap without truncating quan
   expect(missing.coverage.exclusions).toHaveLength(1001);
   expect(missing.coverage.totalContracts).toBe(1001);
 });
+
+it('binds configured estimated costs to the context and filters future history and stale action quotes',()=>{
+  vi.stubEnv('INVAGE_OPTION_RISK_CONTEXT_SECRET','test-only');
+  const before=analysisContext(snapshot);mkdirSync(join(file,'..'),{recursive:true});
+  writeFileSync(file,JSON.stringify({risk_estimated_fee_per_contract:2,risk_estimated_minimum_order_fee:3,risk_estimated_slippage_bps:10}));
+  expect(analysisContext(snapshot)).not.toBe(before);
+  const m=market();m.histories=[{key:'AAPL|call|100|2027-01-15',dates:['2099-01-01'],spots:[100],ivs:[.2],source:'test'}];
+  m.executionQuotes=[{contractId:m.contracts[0].id,quote:{bid:4,ask:5,bidSize:null,askSize:null,fetchedAt:'2020-01-01',quoteAsOf:null,source:'test'}}];
+  const normalized=normalizeRiskInputs(snapshot,request(),m);
+  expect(normalized.costModel).toMatchObject({basis:'estimate',feePerContract:2,minimumOrderFee:3,slippageBps:10});
+  expect(normalized.histories).toEqual([]);expect(normalized.executionQuotes).toEqual([]);
+  expect(normalized.contracts).toHaveLength(1);
+});

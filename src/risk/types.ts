@@ -1,5 +1,5 @@
 /** Risk-only DTOs. Portfolio premium units remain dollars per contract. */
-export const ENGINE_VERSION = 'conditional-ql-v3';
+export const ENGINE_VERSION = 'risk-ql-fhs-v4';
 export const SCENARIO_SET = 'equity-options-standard-v1';
 export type Horizon = 1 | 5 | 21;
 export interface RiskRequest {
@@ -43,6 +43,9 @@ export interface RiskMarketSnapshot {
   capturedAt: string;
   contracts: RiskMarketContract[];
   exclusions?: { id: string; reason: string }[];
+  histories?: RiskHistorySeries[];
+  executionQuotes?: { contractId: string; quote: RiskExecutionQuote }[];
+  hedges?: RiskHedgeCandidate[];
 }
 export interface RiskContract extends RiskMarketContract {
   accountId: string;
@@ -55,6 +58,10 @@ export interface Exclusion { id: string; quantity: number; reason: string }
 export interface RiskInputs {
   /** Queue-only collection marker; removed before inputs are frozen/priced. */
   collectMarketData?: true;
+  costModel?: RiskCostModel;
+  histories?: RiskHistorySeries[];
+  executionQuotes?: { contractId: string; quote: RiskExecutionQuote }[];
+  hedges?: RiskHedgeCandidate[];
   providerAssumptions?: string[];
   analysisContextId: string;
   portfolioRevision: string;
@@ -88,15 +95,64 @@ export interface RiskAnalysis {
   marketSnapshotId: string; metadataVersion: string;
   model: { id: string; version: string; measure: 'conditional' };
   scope: { accountIds: string[]; currencies: string[]; horizonTradingDays: Horizon };
-  capabilities: { stress: boolean; greeks: boolean; forecast: false; actions: false };
+  capabilities: { stress: boolean; greeks: boolean; forecast: boolean; actions: boolean };
   coverage: RiskInputs['coverage'];
   metrics: { stressLoss: Metric; dollarDelta: Metric; expectedShortfall: Metric };
   payoffBounds: { accountId: string; currency: string; underlying: string; expiryAt: string; minPnl: number | null; maxPnl: number | null; unlimitedLoss: boolean; unlimitedGain: boolean }[];
   scenarios: Scenario[]; contributors: Contributor[]; funding: Funding[];
-  actions: never[]; assumptions: string[];
+  forecast: RiskForecast;
+  actions: RiskAction[]; assumptions: string[];
   diagnostics: { maxPricingDifference: number; grid: number; elapsedMs: number } | null;
 }
 export interface RiskJob {
   id: string; status: 'queued' | 'running' | 'complete' | 'failed' | 'cancelled';
   result?: RiskAnalysis; error?: string;
 }
+
+/** Explicit estimates approved for comparisons, never presented as broker charges. */
+export interface RiskCostModel {
+  basis: 'estimate'; currency: 'USD'; feePerContract: number; minimumOrderFee: number;
+  slippageBps: number; reference: string;
+}
+export interface RiskExecutionQuote {
+  bid: number; ask: number; bidSize: number | null; askSize: number | null;
+  fetchedAt: string; quoteAsOf: string | null; source: string;
+}
+/** One observed spot/IV series per exact contract, shared across custody lots. */
+export interface RiskHistorySeries {
+  key: string; dates: string[]; spots: number[]; ivs: number[]; source: string;
+}
+export interface RiskHedgeCandidate {
+  forContractId: string; contract: RiskMarketContract; quote: RiskExecutionQuote;
+}
+export interface ForecastValidation {
+  status: 'passed' | 'failed' | 'insufficient'; reason: string;
+  observations: number; trainingObservations: number; validationCases: number; holdoutCases: number;
+  intervalCoverage: { level: number; observed: number; cases: number }[];
+  varExceedanceRate: number | null; varIndependencePValue: number | null;
+  jointTailScore: number | null; baselineTailScore: number | null;
+  calibrationTarget: string;
+}
+export interface ForecastMetric {
+  currency: string; var: number; expectedShortfall: number; probabilityOfProfit: number;
+  expectedPnl: number; confidenceLevel: number; horizonTradingDays: Horizon;
+  samplingInterval: { lower: number; upper: number; confidence: number; method: string };
+}
+export interface RiskForecast {
+  status: 'ready' | 'partial' | 'unavailable'; reason: string;
+  model: { id: string; measure: 'physical'; version: string }; seed: number; paths: number;
+  coverage: { totalPositions: number; supportedPositions: number; exclusions: { id: string; reason: string }[] };
+  validation: ForecastValidation; metrics: ForecastMetric[]; assumptions: string[];
+}
+export interface RiskAction {
+  id: string; kind: 'hold' | 'close' | 'hedge'; status: 'ready' | 'unavailable'; label: string;
+  accountId: string | null; contractId: string | null; currency: string;
+  reason: string; initialCashFlow: number | null; estimatedInitialFees: number | null;
+  funding: 'sufficient' | 'insufficient' | 'unknown' | 'not-required';
+  liquidity: 'sufficient' | 'insufficient' | 'unknown';
+  quote: RiskExecutionQuote | null; costModel: RiskCostModel;
+  scenarios: { id: string; pnl: number }[]; stressLoss: number | null;
+  forecast: ForecastMetric | null;
+}
+export const riskContractKey = (c: Pick<RiskMarketContract,'underlying'|'right'|'strike'|'expiryAt'>) =>
+  `${c.underlying}|${c.right}|${c.strike}|${c.expiryAt.slice(0,10)}`;

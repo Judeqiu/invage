@@ -20,7 +20,7 @@ it.skipIf(!existsSync(executable))('isolates tabs, loads lazily, rejects late ac
   const waiting: (() => void)[] = [];
   let holdCapabilities = false;
   const capabilityWaiting: (() => void)[] = [];
-  let missingInputs = false;
+  let missingInputs = false, advanced = false;
   const prompts: string[] = [];
   const option = { right: 'put' as const, side: 'long' as const, strike: 100, expiry: '2027-01-15', multiplier: 100, underlying: 'AAPL', settlement: 'physical' as const, mark: 300 };
   const model = buildDashboardModel(buildLivePositions({
@@ -34,7 +34,10 @@ it.skipIf(!existsSync(executable))('isolates tabs, loads lazily, rejects late ac
     if (url.pathname.endsWith('/dashboard')) { loads++; return json({ empty: false, displayName: 'Test', productProfile: 'consultant', generatedAt: '2026-10-16T10:00:00Z', model, analysisContextId: contextId, dashboardConfig: { showOptionRiskModelView: enabled } }); }
     if (url.pathname.endsWith('/capabilities')) { capabilities++; if (holdCapabilities) await new Promise<void>(r => capabilityWaiting.push(r)); return json({ enabled, available: true }); }
     if (url.pathname.endsWith('/latest')) { latest++; const account = JSON.parse(url.searchParams.get('accountIds')!)[0] || 'merged'; if (hold) await new Promise<void>(r => waiting.push(r)); return json({ job: null, stale: false, account }); }
-    if (url.pathname.endsWith('/jobs')) { posts++; if (failJobs) return json({ error:'Worker fixture unavailable' },failJobStatus); let raw=''; for await (const chunk of req) raw+=chunk; const data=JSON.parse(raw); const value=result(data.accountScope.accountIds[0] || 'merged'); if (missingInputs) Object.assign(value,{status:'unavailable',marketSnapshotId:'unavailable',marketAsOf:null,scenarios:[],coverage:{totalContracts:24,supportedContracts:0,totalQuantity:45,supportedQuantity:0,exclusions:[{id:'AAPL-P',quantity:2,reason:'Validated contract metadata and market snapshot unavailable'}]}}); return json({ id:'job', status:'complete', result:value }); }
+    if (url.pathname.endsWith('/jobs')) { posts++; if (failJobs) return json({ error:'Worker fixture unavailable' },failJobStatus); let raw=''; for await (const chunk of req) raw+=chunk; const data=JSON.parse(raw); const value=result(data.accountScope.accountIds[0] || 'merged'); if(advanced) Object.assign(value,{
+      forecast:{status:'ready',reason:'Qualified fixture',coverage:{totalPositions:1,supportedPositions:1,exclusions:[]},validation:{status:'passed',reason:'Fixture checks',observations:450,validationCases:40,holdoutCases:20,calibrationTarget:'Risk factors, not strategy backtest'},metrics:[{currency:'USD',var:90,expectedShortfall:120,probabilityOfProfit:.6,expectedPnl:20,samplingInterval:{lower:110,upper:130}}],assumptions:['Sampling error only']},
+      actions:[{label:'Close fixture',accountId:'ibkr',currency:'USD',initialCashFlow:-501,estimatedInitialFees:1,stressLoss:1,forecast:null,funding:'unknown',liquidity:'insufficient',reason:'Indicative quote, costs estimated',costModel:{feePerContract:.65,minimumOrderFee:1,slippageBps:25},quote:{bid:4,ask:5,fetchedAt:'2026-10-16',source:'No exchange timestamp'}}]
+    }); if (missingInputs) Object.assign(value,{status:'unavailable',marketSnapshotId:'unavailable',marketAsOf:null,scenarios:[],coverage:{totalContracts:24,supportedContracts:0,totalQuantity:45,supportedQuantity:0,exclusions:[{id:'AAPL-P',quantity:2,reason:'Validated contract metadata and market snapshot unavailable'}]}}); return json({ id:'job', status:'complete', result:value }); }
     if (url.pathname.endsWith('/option-history')) return json({ episodes: [], connections: [], gaps: [], next_offset: null });
     const file=resolve(root,'.'+url.pathname);
     if (!file.startsWith(root+'/') || !existsSync(file)) { res.writeHead(404); return res.end(); }
@@ -96,6 +99,16 @@ it.skipIf(!existsSync(executable))('isolates tabs, loads lazily, rejects late ac
     await page.screenshot({path:'/tmp/invage-option-risk-mobile.png',fullPage:true});
     await page.setViewport({width:1440,height:1000});
     await (await page.$('#expiryBlock'))!.screenshot({path:'/tmp/invage-option-risk-desktop.png'});
+    advanced=true;await page.click('#optionRiskRun');
+    await page.waitForFunction(()=>document.getElementById('optionRiskOutput')!.textContent!.includes('Close fixture'));
+    const text=await page.$eval('#optionRiskOutput',e=>e.textContent);
+    expect(text).toContain('120 USD');expect(text).toContain('60.0%');expect(text).toContain('unknown / insufficient');
+    expect(text).not.toContain('Expected shortfall is unavailable');
+    await page.setViewport({width:390,height:844});
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+    await page.screenshot({path:'/tmp/invage-option-risk-advanced-mobile.png',fullPage:true});
+    await page.setViewport({width:1440,height:1000});
+    advanced=false;
     missingInputs=true; await page.click('#optionRiskRun');
     await page.waitForSelector('[data-option-risk-empty]');
     expect(await page.$eval('#optionRiskOutput',e=>e.textContent)).toContain('Market data is not connected');

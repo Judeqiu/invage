@@ -4,12 +4,12 @@ import { join, isAbsolute } from 'node:path';
 import { accessSync, constants } from 'node:fs';
 import { validDate } from '../brokers/option-executions.js';
 import { resolveDataRoot } from 'utarus';
-import { readDashboardConfig } from '../webapp/dashboard-config.js';
+import { readDashboardConfig, readOptionRiskCostModel } from '../webapp/dashboard-config.js';
 import { readProductProfile } from '../agents/roster.js';
 import { holdingBaseKey } from '../market/position-value.js';
 import { getCashes, getPortfolio } from '../state/portfolio-state.js';
 import type { InvestorSnapshot } from '../state/investor-store.js';
-import { ENGINE_VERSION, SCENARIO_SET, type RiskInputs, type RiskMarketSnapshot, type RiskRequest } from './types.js';
+import { ENGINE_VERSION, SCENARIO_SET, riskContractKey, type RiskInputs, type RiskMarketSnapshot, type RiskRequest } from './types.js';
 
 export const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 export const riskEnabled = () => readDashboardConfig().showOptionRiskModelView && readProductProfile() === 'consultant';
@@ -21,7 +21,7 @@ export function riskConfigured(): boolean {
 export function analysisContext(snapshot: InvestorSnapshot): string | null {
   const secret = process.env.INVAGE_OPTION_RISK_CONTEXT_SECRET;
   if (!secret) return null;
-  return createHmac('sha256', secret).update(JSON.stringify([snapshot.state.user.id, snapshot.revision, ENGINE_VERSION])).digest('hex');
+  return createHmac('sha256', secret).update(JSON.stringify([snapshot.state.user.id, snapshot.revision, ENGINE_VERSION, readOptionRiskCostModel()])).digest('hex');
 }
 export class RiskError extends Error {
   constructor(public status: number, message: string) { super(message); }
@@ -46,7 +46,7 @@ export async function readRiskMarketSnapshot(userId: string): Promise<RiskMarket
   try {
     const path = join(resolveDataRoot(), 'option-risk', 'market', digest(userId) + '.json');
     const { stat } = await import('node:fs/promises');
-    if ((await stat(path)).size > 2 * 1024 * 1024) return null;
+    if ((await stat(path)).size > 32 * 1024 * 1024) return null;
     return JSON.parse(await readFile(path, 'utf8'));
   } catch { return null; }
 }
@@ -101,6 +101,33 @@ export function normalizeRiskInputs(snapshot: InvestorSnapshot, request: RiskReq
     const balances = getCashes(snapshot.state).filter(c => (c.channel || 'default') === accountId && c.currency === currency);
     inputs.accounts.push({ accountId, currency, cash: balances.length ? balances.reduce((s, c) => s + c.amount, 0) : null,
       cashAsOf: balances.length ? balances.map(c => c.updated_at).sort()[0] : null });
+  }
+  inputs.costModel = readOptionRiskCostModel();
+  if (usable) {
+    const validQuote=(q: import('./types.js').RiskExecutionQuote) => q&&[q.bid,q.ask].every(Number.isFinite)&&q.bid>=0&&q.ask>0&&q.ask>=q.bid&&
+      [q.bidSize,q.askSize].every(v=>v===null||Number.isFinite(v)&&v>=0)&&validTimestamp(q.fetchedAt)&&now-Date.parse(q.fetchedAt)<=900000&&
+      (q.quoteAsOf===null||validTimestamp(q.quoteAsOf))&&typeof q.source==='string'&&q.source.length>0&&q.source.length<=1000;
+    const quoteCopy=(q: import('./types.js').RiskExecutionQuote) => ({bid:q.bid,ask:q.ask,bidSize:q.bidSize,askSize:q.askSize,fetchedAt:q.fetchedAt,quoteAsOf:q.quoteAsOf,source:q.source});
+    const quotes=market.executionQuotes??[];
+    inputs.executionQuotes=quotes.filter(e=>inputs.contracts.some(c=>c.id===e.contractId)&&quotes.filter(x=>x.contractId===e.contractId).length===1&&validQuote(e.quote))
+      .map(e=>({contractId:e.contractId,quote:quoteCopy(e.quote)}));
+    inputs.hedges=(market.hedges??[]).flatMap(h=>{
+      const held=inputs.contracts.find(c=>c.id===h.forContractId),c=h.contract;
+      if(!held||held.side!=='short'||!c||!validQuote(h.quote)||c.underlying!==held.underlying||c.right!==held.right||c.expiryAt!==held.expiryAt||
+        c.currency!==held.currency||c.multiplier!==held.multiplier||c.exerciseStyle!==held.exerciseStyle||c.deliverable!==held.deliverable||
+        !Number.isFinite(c.strike)||c.strike<=0||!(held.right==='put'?c.strike<held.strike:c.strike>held.strike)||
+        !Number.isFinite(c.impliedVolatility)||c.impliedVolatility<.01||c.impliedVolatility>5||!Number.isFinite(c.premiumPerContract)||c.premiumPerContract<0||!validTimestamp(c.quoteAsOf))return [];
+      // Rate/dividend/spot inputs are inherited from the verified same underlying.
+      return [{forContractId:held.id,contract:{...held,id:c.id,strike:c.strike,impliedVolatility:c.impliedVolatility,premiumPerContract:c.premiumPerContract,quoteAsOf:c.quoteAsOf},quote:quoteCopy(h.quote)}];
+    });
+    const keys=new Set([...inputs.contracts,...(inputs.hedges??[]).map(h=>h.contract)].map(riskContractKey));
+    const histories=market.histories??[];
+    inputs.histories=histories.filter(h=>h&&keys.has(h.key)&&histories.filter(x=>x?.key===h.key).length===1&&
+      typeof h.source==='string'&&h.source.length>0&&h.source.length<=1000&&Array.isArray(h.dates)&&Array.isArray(h.spots)&&Array.isArray(h.ivs)&&
+      h.dates.length===h.spots.length&&h.dates.length===h.ivs.length&&h.dates.every((d,i)=>validDate(d)&&d<inputs.valuationDate!&&(i===0||d>h.dates[i-1]))&&
+      h.spots.every(v=>Number.isFinite(v)&&v>0)&&h.ivs.every(v=>Number.isFinite(v)&&v>=.01&&v<=5))
+      .map(h=>({key:h.key,dates:[...h.dates],spots:[...h.spots],ivs:[...h.ivs],source:h.source}));
+
   }
   return inputs;
 }
