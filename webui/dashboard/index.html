@@ -67,6 +67,11 @@
       <div class="kpi-row" id="kpiRow"></div>
 
       <div id="expiryBlock">
+      <div id="section01ViewTabs" class="option-risk-tabs hidden" role="tablist" aria-label="Section 01 view">
+        <button id="section01ExistingTab" type="button" role="tab" aria-controls="section01ExistingPanel" aria-selected="true" tabindex="0" class="chip-btn on">Expiry &amp; assignment</button>
+        <button id="section01RiskTab" type="button" role="tab" aria-controls="section01RiskPanel" aria-selected="false" tabindex="-1" class="chip-btn">Risk &amp; scenarios</button>
+      </div>
+      <div id="section01ExistingPanel" role="tabpanel" aria-labelledby="section01ExistingTab">
       <div class="section-gap">
         <div class="label-eyebrow" style="color:var(--brand)">Section 01</div>
         <h2 id="expiryTitle"><span class="bar"></span>Expiry calendar &amp; assignment risk</h2>
@@ -76,6 +81,17 @@
       </div>
       <div class="kpi-row" id="expiryRow"></div>
       <div id="expiryTable" style="margin-top:1rem"></div>
+      </div>
+      <div id="section01RiskPanel" class="option-risk hidden" role="tabpanel" aria-labelledby="section01RiskTab">
+        <div class="section-gap"><div class="label-eyebrow">Section 01</div><h2>Risk &amp; scenarios</h2>
+        <p>Long and short options, relevant underlying shares, and recorded account cash. Conditional scenarios have no forecast probabilities.</p></div>
+        <div class="option-risk-controls">
+          <label>Horizon <select id="optionRiskHorizon"><option value="1">1 trading day</option><option value="5" selected>5 trading days</option><option value="21">21 trading days</option></select></label>
+          <button id="optionRiskRun" class="chip-btn" type="button">Run analysis</button>
+        </div>
+        <p id="optionRiskStatus" role="status" aria-live="polite"></p>
+        <div id="optionRiskOutput"></div>
+      </div>
       </div>
 
       <div id="premiumBlock">
@@ -160,6 +176,7 @@
   <footer>Live data · Yahoo Finance · Broker snapshots · Not financial advice</footer>
   <script src="../report.js"></script>
   <script src="./option-timeline.js"></script>
+  <script src="./option-risk.js"></script>
   <script src="./app.js"></script>
 </body>
 </html>

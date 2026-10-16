@@ -13,3 +13,8 @@ data/
 
 # Local ops backups (user data — never commit)
 backups/
+
+# Numerical worker bytecode / local virtual environments
+__pycache__/
+*.pyc
+.venv/

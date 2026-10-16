@@ -7,12 +7,14 @@
   "scripts": {
     "dev": "NODE_OPTIONS=--no-deprecation npx tsx src/index.ts",
     "webapp": "NODE_OPTIONS=--no-deprecation npx tsx src/webapp/server.ts",
-    "build": "tsc && cp src/futubull/opend_bridge.py dist/futubull/opend_bridge.py",
+    "build": "tsc && cp src/futubull/opend_bridge.py dist/futubull/opend_bridge.py && mkdir -p dist/risk && cp src/risk/schema.sql dist/risk/schema.sql",
     "start": "node dist/index.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "books:migrate": "tsx src/books/migrate.ts",
-    "books:test": "vitest run tests/books-ledger.test.ts"
+    "books:test": "vitest run tests/books-ledger.test.ts",
+    "risk:migrate": "tsx src/risk/migrate.ts",
+    "risk:test": "python3 -m unittest discover -s services/options-risk -p \"test_*.py\""
   },
   "keywords": [
     "ai",

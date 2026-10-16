@@ -378,3 +378,13 @@ footer { text-align: center; font-size: 0.72rem; color: var(--muted-foreground);
 .card-explain[aria-expanded="true"] { background: color-mix(in oklab, var(--brand) 12%, var(--card)); }
 .card-explain:focus-visible { outline: 2px solid var(--brand); outline-offset: -3px; }
 .card-explain:disabled { opacity: 0.6; cursor: wait; }
+
+/* Section 01 risk model is independent of the existing radar and Section 03. */
+.option-risk-tabs, .option-risk-controls { display:flex; flex-wrap:wrap; gap:.65rem; margin:1rem 0; align-items:center; }
+.option-risk { min-width:0; }
+.option-risk p, .option-risk li { overflow-wrap:anywhere; }
+.option-risk .metric-value { font-size:clamp(1rem,2.2vw,1.6rem); }
+.option-risk table { min-width:540px; }
+.option-risk .kpi-row { grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr)); }
+.option-risk details { margin:1rem 0; }
+.option-risk-controls label { display:flex; gap:.5rem; align-items:center; }

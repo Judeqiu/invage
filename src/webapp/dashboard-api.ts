@@ -3,6 +3,8 @@
  * Mounted by DomainExtension.webUi at /api/domain/invage (auth: user).
  */
 
+import { analysisContext, riskEnabled } from '../risk/context.js';
+import { createOptionRiskRouter } from './option-risk-api.js';
 import { readDashboardConfig } from './dashboard-config.js';
 import { Router, type Request, type Response } from 'express';
 import { loadSessionState, targetUserId, type AuthUser } from 'utarus';
@@ -26,6 +28,7 @@ import { saveInvestor } from '../state/investor-store.js';
 
 export function createDashboardApiRouter(): Router {
   const router = Router();
+  router.use('/option-risk', createOptionRiskRouter());
   // Persist only derived dashboard fields, partitioned by the authorized target UUID.
   // Account revisions and configuration invalidate previews; prices always refresh.
   async function snapshotContext(slug: string) {
@@ -308,7 +311,8 @@ export function createDashboardApiRouter(): Router {
             created.progress = progress;
             for (const listener of listeners) listener(progress);
           }, { snapshot: context.snapshot, refreshHistory, startedAt: context.startedAt });
-          const body = { ...payload, dashboardConfig: readDashboardConfig() };
+          const body = { ...payload, dashboardConfig: { ...readDashboardConfig(), showOptionRiskModelView: riskEnabled() },
+            analysisContextId: riskEnabled() ? analysisContext(context.snapshot) : null };
           writeDashboardCache('snapshots', slug, context.fingerprint, body);
           return body;
         }).finally(() => { pending.delete(key); });

@@ -14,6 +14,9 @@ export const dashboardConfig: AgentConfigDefinition = {
     id: 'show_recorded_pnl_by_month', type: 'boolean', label: 'Show Recorded P&L by Month', default: false,
     description: 'Show monthly profit or loss from recorded completed option trades in the dashboard.',
   }, {
+    id: 'show_option_risk_model_view', type: 'boolean', label: 'Show Risk & scenarios view in Section 01', default: false,
+    description: 'Adds a second options risk view. The existing expiry and assignment view remains available.',
+  }, {
     id: 'option_view', type: 'select', label: 'Option positions default view', default: 'open',
     options: [
       { value: 'open', label: 'Open positions table' },
@@ -28,6 +31,7 @@ export function readDashboardConfig() {
   const config = readAgentConfig(dashboardConfig);
   return {
     optionView: config.option_view,
+    showOptionRiskModelView: config.show_option_risk_model_view === true,
     showTotalPremium: config.show_total_premium,
     showRealizedPnl: config.show_realized_pnl,
     showRecordedPnlByMonth: config.show_recorded_pnl_by_month,

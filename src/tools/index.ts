@@ -1,3 +1,4 @@
+import { createOptionRiskResultTool } from './option_risk_result.js';
 import { createOptionQuotesTool } from './option_quotes.js';
 import { createDataQueryTools } from './data_query.js';
 import type { AgentTool } from '@earendil-works/pi-agent-core';
@@ -59,6 +60,7 @@ import { createListOptionTradesTool } from './option_trades.js';
  */
 export function createInvageTools(): AgentTool[] {
   return [
+    createOptionRiskResultTool(),
     createGetPortfolioTool(),
     createListOptionTradesTool(),
     createQuoteTool(),
@@ -136,6 +138,7 @@ export function createInvestmentAdvisorTools(): AgentTool[] {
  */
 export function createOptionsExpertTools(): AgentTool[] {
   return [
+    createOptionRiskResultTool(),
     ...createDataQueryTools(),
     createGetPortfolioTool(),
     createListOptionTradesTool(),

@@ -1712,9 +1712,9 @@ function prepareCardExplanation(button) {
 }
 
 document.addEventListener('click', event => {
-  const button = event.target.closest('[data-card-explain]');
+  const button = event.target.closest('[data-card-explain], [data-option-risk-discuss]');
   if (!button) return;
-  prepareCardExplanation(button);
+  if (button.hasAttribute('data-card-explain')) prepareCardExplanation(button);
   void startOptionDiscussion(button);
 });
 
@@ -1843,6 +1843,7 @@ function renderExpiryRisk(view, asOf) {
   if (!el.expiryRow) return;
   const hasOptions = (view.optionCount || 0) > 0;
   if (el.expiryBlock) el.expiryBlock.classList.toggle('hidden', !hasOptions);
+  window.OptionRiskView?.update({ payload, hasOptions, channel: selectedChannel, date: selectedDate, isLive: view.isLive });
   if (el.expiryTitle) {
     const consultant = payload.productProfile === 'consultant';
     el.expiryTitle.innerHTML = consultant
@@ -2899,6 +2900,7 @@ function initDashboard(preserveSelection = false) {
 }
 
 function renderEmpty(body) {
+  window.OptionRiskView?.update({ payload: body, hasOptions: false, channel: selectedChannel, date: selectedDate, isLive: true });
   el.subtitle.textContent = `${body.displayName || body.slug} · empty portfolio`;
   el.error.classList.add('hidden');
   el.dashboard.classList.remove('hidden');

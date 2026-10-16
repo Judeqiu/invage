@@ -1,7 +1,7 @@
 # Velovest Section 01: existing risk view and new model view
 
 Date: 2026-10-16
-Status: Engineering design; implementation and deployment not performed.
+Status: Initial conditional implementation added on `main`; disabled by default, not deployed. See [implementation and runtime notes](../../services/options-risk/README.md) for supported inputs, verification and deferred delivery stages.
 Source branch: `main`.
 Related research: [Options risk, strategy, and simulation](../deep-research-options-risk-strategy-simulation.md).
 
