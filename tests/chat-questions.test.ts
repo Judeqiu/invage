@@ -5,7 +5,7 @@ import { createInvageWebUi } from '../src/webapp/invage-webui.js';
 import { prepareQuestion, sourceCatalog } from '../node_modules/utarus/dist/question-library/spec.js';
 
 describe('Lovable chat question library', () => {
-  it('exposes all four groups through the persistent composer library', () => {
+  it('exposes all five groups through the persistent composer library', () => {
     const config = createInvageWebUi().chatQuestionLibrary;
     const catalog = sourceCatalog(config);
     expect(catalog.enabled).toBe(true);
@@ -13,11 +13,11 @@ describe('Lovable chat question library', () => {
     expect(catalog.generation.enabled).toBe(false);
     expect(catalog.categories.map((category) => category.label)).toEqual([
       'Setup & strike selection', 'Technical analysis',
-      'Assignment, rolls & wheel', 'Psychology & review',
+      'Assignment, rolls & wheel', 'Psychology & review', 'Reports',
     ]);
     expect(catalog.categories.map((category) =>
       catalog.presets.filter((preset) => preset.categoryId === category.id).length,
-    )).toEqual([5, 6, 3, 4]);
+    )).toEqual([5, 6, 3, 4, 1]);
   });
 
   it('requires a ticker for every ticker question and expands it into the draft', () => {

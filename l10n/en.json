@@ -89,5 +89,8 @@
   "chat.empty.starter.question_setup_win_rate.message": "Which technical setup in my journal had the highest win rate?",
   "chat.empty.starter.question_profitable_thesis.label": "What technical notes in my thesis were most often followed by profitable exits?",
   "chat.empty.starter.question_profitable_thesis.description": "Psychology & review",
-  "chat.empty.starter.question_profitable_thesis.message": "What technical notes in my thesis were most often followed by profitable exits?"
+  "chat.empty.starter.question_profitable_thesis.message": "What technical notes in my thesis were most often followed by profitable exits?",
+  "chat.empty.starter.question_risk_scenarios_report.label": "Create my Risk & scenarios report for all accounts with a 5-trading-day horizon and show it in the sidebar.",
+  "chat.empty.starter.question_risk_scenarios_report.description": "Reports",
+  "chat.empty.starter.question_risk_scenarios_report.message": "Create my Risk & scenarios report for all accounts with a 5-trading-day horizon and show it in the sidebar."
 }

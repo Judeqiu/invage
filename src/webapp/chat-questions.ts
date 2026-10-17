@@ -46,6 +46,13 @@ const GROUPS = [
       ['profitable_thesis', 'Technical notes before profitable exits', 'What technical notes in my thesis were most often followed by profitable exits?'],
     ],
   },
+  {
+    id: 'reports',
+    label: 'Reports',
+    questions: [
+      ['risk_scenarios_report', 'Create my Risk & scenarios report', 'Create my Risk & scenarios report for all accounts with a 5-trading-day horizon and show it in the sidebar.'],
+    ],
+  },
 ] as const;
 
 /** Empty-chat cards share the composer presets; ticker selection happens in chat. */
