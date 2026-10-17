@@ -1,3 +1,4 @@
+import { createOptionRiskReportTool } from './option_risk_report.js';
 import { createOptionRiskResultTool } from './option_risk_result.js';
 import { createOptionQuotesTool } from './option_quotes.js';
 import { createDataQueryTools } from './data_query.js';
@@ -61,6 +62,7 @@ import { createListOptionTradesTool } from './option_trades.js';
 export function createInvageTools(): AgentTool[] {
   return [
     createOptionRiskResultTool(),
+    createOptionRiskReportTool(),
     createGetPortfolioTool(),
     createListOptionTradesTool(),
     createQuoteTool(),
@@ -139,6 +141,7 @@ export function createInvestmentAdvisorTools(): AgentTool[] {
 export function createOptionsExpertTools(): AgentTool[] {
   return [
     createOptionRiskResultTool(),
+    createOptionRiskReportTool(),
     ...createDataQueryTools(),
     createGetPortfolioTool(),
     createListOptionTradesTool(),

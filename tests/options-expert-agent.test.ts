@@ -16,10 +16,11 @@ describe('OptionsExpert local agent', () => {
         'portfolio_analyzer',
         'options_insight',
         'get_option_risk_result',
+        'create_option_risk_report',
         'save_report',
       ]),
     );
-    expect(names).toHaveLength(10);
+    expect(names).toHaveLength(11);
     const set = new Set(names);
     for (const forbidden of [
       'add_holding',

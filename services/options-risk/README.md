@@ -241,3 +241,31 @@ unavailable and is never assigned zero. Costs are explicitly estimated throughou
 
 References: [Cloud historical bars](https://open.moomoo.com/api/quote/basic-data/history-kline)
 and [Cloud indicative combo quotes](https://open.moomoo.com/api/quote/derivatives/combo-option-quote).
+
+## Standalone report in chat
+
+Users can ask “Create my Risk & scenarios report” or “Create a 21-day risk report
+for my IBKR account.” The host and OptionsExpert expose
+`create_option_risk_report`, using the same feature gate, runtime, owner-scoped
+repository, connected market collection and numerical worker as Section 01.
+No dashboard visit is required. Default scope is all accounts and five trading
+days; optional `account_ids` and `horizon_trading_days` select the scope.
+
+The tool queues a fresh analysis and waits briefly for completion. A pending
+response supplies `result_id`; subsequent calls with that ID resume waiting and
+publish when complete. Existing dashboard result IDs can also be exported.
+Saved-result calls must not supply a different horizon or accounts. Failed jobs,
+missing results and unsupported engine versions do not produce report links.
+
+Completed results are rendered as a static, self-contained HTML report with
+scenario P/L by currency, exposures, assignment funding, payoff bounds, physical
+forecast availability and validation, action comparisons, assumptions and source
+evidence. Missing inputs remain explicit; old prices and changed portfolio
+revisions are flagged. Reports are snapshots, not a live dashboard.
+
+Publishing uses Utarus `publishReportHtml`, which saves the private BinDrive file
+and registers a Web run HTML asset for the existing sidebar. The agent includes
+the durable authenticated session URL as a Markdown link; signed links remain
+available for other channels. Incognito runs cannot persist reports. Runtime
+also needs `UTARUS_REPORTS_URL`, as for other Utarus reports. This feature adds no
+trading or ledger writes and needs no new database migration.

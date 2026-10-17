@@ -468,6 +468,7 @@ const reports = (): string =>
     '',
     '*What to say*',
     '• "Save an analysis report to my drive" (`save_report` kind=analysis)',
+    '• "Create a Risk & scenarios report" (`create_option_risk_report`): engine-backed HTML in the sidebar; continue pending jobs with result_id and include the durable report URL verbatim.',
     '• "Show my portfolio dashboard" / "Save a value-change dashboard" (`save_report` kind=dashboard)',
     '• WebUI: open the **Dashboard** tab (live value + history; refresh for new prices)',
     '• "Save this value screen / undervalued short list as HTML"',
