@@ -176,7 +176,9 @@ export function createInvageWebUi(): DomainWebUiExtension {
       {
         path: '/dashboard',
         pageKind: 'iframe',
-        iframeSrc: '/domain-assets/invage/dashboard/index.html',
+        iframeSrc: readDashboardConfig().dashboardVersion === 'v2'
+          ? '/domain-assets/invage/dashboard/v2.html'
+          : '/domain-assets/invage/dashboard/index.html',
         title: 'Portfolio Dashboard',
       },
       {

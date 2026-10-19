@@ -200,14 +200,14 @@ function recordedPremiumForView(view, date) {
     totalReason: conflictingRecords ? 'Conflicting broker records need reconciliation' : 'No recorded option cash flow or currencies cannot be combined without FX' };
 }
 
-function recordedRealizedForView(view, date) {
+function recordedRealizedForView(view, date, from = '') {
   const channels = selectedTradeChannels(view);
   const historyGaps = (payload?.optionHistoryGaps || []).filter(g => channels.includes(g.channel));
   if (historyGaps.some(g => g.blocksTotals)) {
     return { value: null, reason: 'Conflicting broker records need reconciliation' };
   }
-  const rows = (payload?.optionAnalytics?.profits || []).filter(r => channels.includes(r.channel) && r.date <= date);
-  const gaps = (payload?.optionAnalytics?.gaps || []).filter(g => channels.includes(g.channel) && g.date <= date);
+  const rows = (payload?.optionAnalytics?.profits || []).filter(r => channels.includes(r.channel) && r.date >= from && r.date <= date);
+  const gaps = (payload?.optionAnalytics?.gaps || []).filter(g => channels.includes(g.channel) && g.date >= from && g.date <= date);
   const basis = rows.length ? rows.every(r => r.net != null) ? 'net'
     : rows.every(r => r.gross != null) ? 'gross' : 'mixed' : null;
   let value = null, excluded = gaps.length;
@@ -1665,9 +1665,100 @@ function renderOverview(view) {
   installCardExplainButtons();
 }
 
+// V2 is a presentation of the same calculated view, not a second data pipeline.
+function renderV2Overview() {
+  const summary = document.getElementById('v2Summary');
+  if (!summary) return;
+  const copy = node => {
+    if (!node || node.classList.contains('hidden')) return '';
+    const clone = node.cloneNode(true);
+    clone.querySelectorAll('[id]').forEach(item => item.removeAttribute('id'));
+    clone.removeAttribute('id');
+    clone.querySelectorAll('[data-card-explain]').forEach(item => item.remove());
+    return clone.outerHTML;
+  };
+  const kpis = [...el.kpiRow.children];
+  const stat = (node, label) => {
+    if (!node || node.classList.contains('hidden')) return '';
+    const clone = node.cloneNode(true);
+    clone.querySelectorAll('[data-card-explain]').forEach(item => item.remove());
+    clone.removeAttribute('id');
+    clone.querySelectorAll('[id]').forEach(item => item.removeAttribute('id'));
+    clone.className = 'v2-stat';
+    if (label) clone.querySelector('.label-eyebrow').textContent = label;
+    return clone.outerHTML;
+  };
+  const group = (title, content, className = '') => `<section class="v2-group ${className}"><h2 class="label-eyebrow">${title}</h2><div class="v2-group-body">${content}</div></section>`;
+  const premium = `<div class="metric-card v2-premium-card"><div class="label-eyebrow">Premium cash flow</div>${stat(kpis[0])}${stat(kpis[1])}${stat(el.totalPremiumCard, 'Total premium · Net')}${kpis[2] ? `<p class="metric-sub v2-fees">${escapeHtml([...kpis[2].querySelectorAll('.label-eyebrow, .metric-value, .metric-sub')].map(node => node.textContent.trim()).join(' · '))}</p>` : ''}</div>`;
+  let earnings = '';
+  if (!el.realizedPnlCard.classList.contains('hidden')) {
+    const view = payload?.model ? buildView(selectedDate, selectedChannel) : null;
+    const date = view?.isLive ? (payload.generatedAt || '').slice(0, 10) : view?.label;
+    const premiumData = view ? recordedPremiumForView(view, date) : null;
+    const period = (label, from) => {
+      const result = view ? recordedRealizedForView(view, date, from) : { value: null, reason: 'No recorded completed results' };
+      const html = metricCardHtml(label, result.value == null ? '—' : fmtPrettyMoney(result.value, reportingCcyCode(view), 0),
+        escapeHtml(`${from ? optionDateLabel(from) : ''} – ${date ? optionDateLabel(date) : ''} · ${result.reason}`), '', result.value > 0 ? 'up' : result.value < 0 ? 'down' : '');
+      const node = document.createElement('div'); node.innerHTML = html;
+      return stat(node.firstElementChild);
+    };
+    earnings = `<div class="metric-card v2-premium-card"><div class="label-eyebrow">Earned premium · Realized P&amp;L</div>${period('Earned premium · Daily', premiumData?.dailyFrom)}${period('Earned premium · MTD', date?.slice(0, 7) + '-01')}${stat(el.realizedPnlCard, 'Earned premium · Total')}</div>`;
+  }
+  const funds = kpis.slice(5).map(copy).join('') || metricCardHtml('Fund assets · Broker', '—',
+    'No separate broker fund balance reported in this view. Recorded fund holdings remain included in NAV.',
+    'This card shows a separately reported broker fund balance when available. An unavailable balance is not zero. Itemized fund holdings are already included in NAV; do not add them again.');
+  summary.innerHTML = group('Premium & earnings', premium + earnings, 'v2-earnings') +
+    group('Account value', copy(el.navValue.closest('.metric-card')) + funds) +
+    group('Cash & obligations', copy(kpis[3]) + copy(kpis[4]));
+}
+
+function cardExplanationTargets(card) {
+  const stats = [...card.querySelectorAll('.v2-stat')];
+  if (stats.length) return stats.map(node => [...node.querySelectorAll('.label-eyebrow, .metric-value')].map(part => part.textContent.trim()).join(' — '));
+  const bars = [...card.querySelectorAll('.bar-meta')];
+  if (bars.length) return bars.map(node => [...node.children].map(part => part.textContent.trim()).join(' — '));
+  const rows = [...card.querySelectorAll('tbody tr')].filter(row => row.cells.length > 1);
+  const headers = [...card.querySelectorAll('thead th')].map(cell => cell.textContent.replace(/\s+/g, ' ').trim());
+  return rows.flatMap(row => {
+    const label = row.cells[0].cloneNode(true);
+    label.querySelectorAll('button').forEach(button => button.remove());
+    return [...row.cells].slice(1).flatMap((cell, i) => {
+      const value = cell.textContent.replace(/\s+/g, ' ').trim();
+      return /[0-9]/.test(value) || value === '—'
+        ? [`${label.textContent.replace(/\s+/g, ' ').trim()} · ${headers[i + 1] || 'Value'} — ${value}`] : [];
+    });
+  });
+}
+
+function chooseCardExplanation(button) {
+  const targets = cardExplanationTargets(button.closest('.metric-card'));
+  if (targets.length < 2) { prepareCardExplanation(button); void startOptionDiscussion(button); return; }
+  let dialog = document.getElementById('explainChoice');
+  if (!dialog) {
+    dialog = document.createElement('dialog');
+    dialog.id = 'explainChoice';
+    dialog.className = 'explain-choice';
+    dialog.setAttribute('aria-labelledby', 'explainChoiceTitle');
+    dialog.innerHTML = '<form method="dialog"><h2 id="explainChoiceTitle">Which number would you like explained?</h2><p>Choose a figure from this section so the explanation focuses on what you need.</p><label for="explainMetric">Dashboard figure</label><select id="explainMetric" required></select><div class="explain-choice-actions"><button value="cancel" class="chip-btn">Cancel</button><button value="explain" class="chip-btn on">Explain this number</button></div></form>';
+    document.body.appendChild(dialog);
+  }
+  dialog.querySelector('select').replaceChildren(...targets.map((label, i) => new Option(label, String(i))));
+  dialog.onclose = () => {
+    if (dialog.returnValue === 'explain') {
+      prepareCardExplanation(button, targets[Number(dialog.querySelector('select').value)]);
+      void startOptionDiscussion(button);
+    }
+    button.focus();
+  };
+  dialog.returnValue = 'cancel';
+  dialog.showModal();
+}
+
 // Read the rendered values so the explanation matches the current dashboard filters.
 function installCardExplainButtons() {
+  renderV2Overview();
   el.dashboard.querySelectorAll('.metric-card').forEach(card => {
+    if (card.closest('[inert]')) return;
     const heading = card.querySelector('.label-eyebrow, h3');
     if (!heading) return;
     const existing = card.querySelector('[data-card-explain]');
@@ -1677,7 +1768,7 @@ function installCardExplainButtons() {
     button.className = 'card-explain';
     button.dataset.cardExplain = '';
     button.textContent = 'Explain';
-    button.setAttribute('aria-label', `Explain ${heading.textContent.trim()}`);
+    button.setAttribute('aria-label', `Explain ${card.classList.contains('risk-card') ? 'Expiry & assignment' : heading.textContent.trim()}`);
     button.setAttribute('aria-expanded', 'false');
     card.appendChild(button);
     prepareCardExplanation(button);
@@ -1686,9 +1777,9 @@ function installCardExplainButtons() {
   highlightOptionDiscussion();
 }
 
-function prepareCardExplanation(button) {
+function prepareCardExplanation(button, selectedFigure) {
   const card = button.closest('.metric-card');
-  const title = card.querySelector('.label-eyebrow, h3').textContent.trim();
+  const title = card.classList.contains('risk-card') ? 'Expiry & assignment' : card.querySelector('.label-eyebrow, h3').textContent.trim();
   const content = card.cloneNode(true);
   content.querySelectorAll('button, svg, summary').forEach(node => node.remove());
   content.querySelectorAll('div, p, td, th, li, span').forEach(node => node.append(' '));
@@ -1700,6 +1791,9 @@ function prepareCardExplanation(button) {
   const prompt = [
     `Explain the number${card.querySelector('.metric-value') ? '' : 's'} on my dashboard card "${title}" in plain language.`,
     `Displayed card: ${values}`,
+    selectedFigure ? `Selected figure to explain: ${selectedFigure}. Focus on this figure.`
+      : cardExplanationTargets(card).length > 1 || !cardExplanationTargets(card).length && !card.querySelector('.metric-value')
+        ? 'This section contains multiple numbers. FIRST ask me which specific number or labeled figure I want explained, and wait for my answer before explaining or reconciling any figures.' : '',
     `Selected dashboard: ${context}. Reporting currency: ${payload?.model ? reportingCcyCode(buildView(selectedDate, selectedChannel)) : 'unavailable'}.`,
     `Broker snapshot dates: ${JSON.stringify(selectedDate === 'live' ? payload?.brokerAsOf || {} : payload?.model?.history?.find(row => row.date === selectedDate)?.brokerAsOf || {})}.`,
     notes ? `Calculation notes: ${notes}` : '',
@@ -1714,7 +1808,7 @@ function prepareCardExplanation(button) {
 document.addEventListener('click', event => {
   const button = event.target.closest('[data-card-explain], [data-option-risk-discuss]');
   if (!button) return;
-  if (button.hasAttribute('data-card-explain')) prepareCardExplanation(button);
+  if (button.hasAttribute('data-card-explain')) { chooseCardExplanation(button); return; }
   void startOptionDiscussion(button);
 });
 

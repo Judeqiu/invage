@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Wheel Desk · Options portfolio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../report.css" />
+  <link rel="stylesheet" href="./page.css" />
+  <link rel="stylesheet" href="./v2.css" />
+
+</head>
+<body data-dashboard-version="v2">
+  <div class="page">
+  <div class="crumb label-eyebrow">Workspace / Options intelligence</div>
+
+  <section id="loading" class="loading hidden" aria-label="Dashboard loading">
+    <div class="load-heading"><strong id="loadStage" role="status">Reading your portfolio records</strong><span id="loadElapsed">0s elapsed</span></div>
+    <div id="loadProgress" class="load-progress" role="progressbar" aria-label="Dashboard loading steps" aria-valuemin="0" aria-valuemax="8" aria-valuenow="0"><div id="loadProgressFill"></div></div>
+    <p id="loadStep">Step 1 of 8</p>
+    <p id="loadInsights">Preparing your dashboard…</p>
+    <p id="loadHint">Progress advances as each step finishes.</p>
+  </section>
+  <div id="error" class="error-box hidden"><p id="dashboardErrorMessage">Failed to load data.</p><button id="dashboardRetry" type="button" class="chip-btn">Retry loading</button></div>
+  <div class="dashboard-actions">
+    <button id="dashboardSync" type="button" class="chip-btn" disabled>Sync brokers</button>
+    <button id="dashboardRefresh" type="button" class="chip-btn">Refresh portfolio</button>
+  </div>
+  <section id="brokerSyncPanel" class="loading hidden" aria-label="Broker sync progress">
+    <strong id="brokerSyncStatus" role="status" aria-live="polite"></strong>
+    <progress id="brokerSyncProgress" max="100" value="0" aria-label="Sync brokers and refresh dashboard"></progress>
+    <p id="brokerSyncDetails"></p>
+  </section>
+  <p class="status-line" id="status"></p>
+  <p id="optionChatStatus" class="option-chat-status" role="status" aria-live="polite"></p>
+
+  <div id="dashboard" class="hidden" aria-busy="true">
+
+      <section class="hero-row" aria-label="Portfolio snapshot">
+        <div class="hero-copy">
+          <div class="label-eyebrow" id="deskEyebrow">Multi-broker</div>
+          <h1>Wheel Desk<br /><span class="muted" id="heroDate">—</span></h1>
+          <p class="lead" id="heroLead">Unified view across connected brokers.</p>
+          <div class="broker-pills" id="channelPills"></div>
+        </div>
+        <div class="hero-metrics" inert aria-hidden="true">
+          <div class="metric-card nav-card">
+            <div class="metric-head">
+              <div class="label-eyebrow" id="navLabel">Net asset value (NAV)</div>
+              <button type="button" class="help-dot" aria-label="Explanation" data-help="An estimate of what your recorded portfolio is worth now: cash, shares, funds, long options and fixed deposits, minus the amount needed to buy back short options. Missing cash balances or prices can make this total incomplete.">?</button>
+            </div>
+            <div class="metric-value" id="navValue">—</div>
+            <div class="metric-sub" id="navDelta"></div>
+          </div>
+          <div class="metric-card nav-card hidden" id="totalPremiumCard">
+            <div class="metric-head">
+              <div class="label-eyebrow">Total premium</div>
+              <button type="button" class="help-dot" aria-label="Explanation" data-help="Money received from selling options, minus money paid to buy options. Includes recorded opening and closing trades for long and short options, before brokerage fees. Fees appear separately. The recorded date range is shown below the amount. This is cash flow, not profit; missing trade history makes it incomplete.">?</button>
+            </div>
+            <div class="metric-value" id="totalPremiumValue">—</div>
+            <div class="metric-sub" id="totalPremiumMeta"></div>
+          </div>
+          <div class="metric-card nav-card hidden" id="realizedPnlCard">
+            <div class="metric-head">
+              <div class="label-eyebrow">Earned premium · Realized P&amp;L</div>
+              <button type="button" class="help-dot" aria-label="Explain earned premium" data-help="Cumulative recorded option profit or loss from contracts that have closed, expired or settled, through the dashboard date. Closing results match the opening cost or credit to the closing proceeds or cost. Open contracts contribute no realized profit. Includes long and short options; excludes stock gains and losses. Assignment and exercise require broker-reported option P&amp;L. The fee basis and any incomplete history are shown below the amount.">?</button>
+            </div>
+            <div class="metric-value" id="realizedPnlValue">—</div>
+            <div class="metric-sub" id="realizedPnlMeta"></div>
+          </div>
+        </div>
+      </section>
+
+      <div class="kpi-row" id="kpiRow" inert aria-hidden="true"></div>
+      <section id="v2Summary" class="v2-summary" aria-label="Portfolio overview"></section>
+      <nav class="v2-jump" aria-label="Dashboard sections"><a href="#expiryBlock">01 <span>Expiry &amp; assignment</span></a><a href="#premiumBlock">02 <span>Premium engine</span></a><a href="#optionsWorkspace">03 <span>Positions &amp; rolls</span></a></nav>
+
+      <div id="expiryBlock">
+      <div id="section01ViewTabs" class="option-risk-tabs hidden" role="tablist" aria-label="Section 01 view">
+        <button id="section01ExistingTab" type="button" role="tab" aria-controls="section01ExistingPanel" aria-selected="true" tabindex="0" class="risk-view-tab on"><span class="risk-view-title">Expiry &amp; assignment</span><span class="risk-view-description">Review upcoming expiries and short-option obligations</span></button>
+        <button id="section01RiskTab" type="button" role="tab" aria-controls="section01RiskPanel" aria-selected="false" tabindex="-1" class="risk-view-tab"><span class="risk-view-title">Risk &amp; scenarios</span><span class="risk-view-description">Explore price shocks, option exposures and funding needs</span></button>
+      </div>
+      <div id="section01ExistingPanel" role="tabpanel" aria-labelledby="section01ExistingTab">
+      <div class="section-gap">
+        <div class="label-eyebrow" style="color:var(--brand)">Section 01</div>
+        <h2 id="expiryTitle"><span class="bar"></span>Expiry calendar &amp; assignment risk</h2>
+        <p id="expiryLead">
+          Short option assignment size from books (strike × multiplier × contracts). Assignment probability is not modeled — high-risk here means in-the-money vs a live underlying quote, or unknown if that quote is missing.
+        </p>
+      </div>
+      <div class="kpi-row" id="expiryRow"></div>
+      <div id="expiryTable" style="margin-top:1rem"></div>
+      </div>
+      <div id="section01RiskPanel" class="option-risk hidden" role="tabpanel" aria-labelledby="section01RiskTab">
+        <div class="section-gap"><div class="label-eyebrow">Section 01</div><h2>Risk &amp; scenarios</h2>
+        <p>Long and short options, relevant underlying shares, and recorded account cash. Conditional scenarios have no forecast probabilities.</p></div>
+        <div class="option-risk-controls">
+          <label>Horizon <select id="optionRiskHorizon"><option value="1">1 trading day</option><option value="5" selected>5 trading days</option><option value="21">21 trading days</option></select></label>
+          <button id="optionRiskRun" class="chip-btn" type="button">Run analysis</button>
+        </div>
+        <p id="optionRiskStatus" role="status" aria-live="polite"></p>
+        <div id="optionRiskOutput"></div>
+      </div>
+      </div>
+
+      <div id="premiumBlock">
+      <div class="section-gap" id="premiumHead"></div>
+      <div class="grid-2" id="premiumEngine"></div>
+      </div>
+
+      <section id="optionsWorkspace" class="options-workspace" aria-label="Option position history">
+        <div class="options-workspace-head">
+          <div>
+            <div class="label-eyebrow">Section 03</div>
+            <h2>Option positions &amp; rolls</h2>
+          </div>
+          <div class="option-view-tabs" role="group" aria-label="Option position view">
+            <button type="button" class="chip-btn on" id="optionOpenTab" aria-pressed="true">Open</button>
+            <button type="button" class="chip-btn" id="optionTimelineTab" aria-pressed="false">Timeline</button>
+            <button type="button" class="chip-btn" id="optionHistoryTab" aria-pressed="false">History</button>
+            <button type="button" class="chip-btn" id="optionRollsTab" aria-pressed="false">Rolls</button>
+          </div>
+        </div>
+        <p id="optionFreshness" class="option-freshness"></p>
+        <div id="optionOpenEmpty" class="metric-card empty hidden">No open option positions in this view.</div>
+        <div id="optionTimelinePanel" class="hidden">
+          <div class="option-ledger-filters history-filters">
+            <label>Contract <input id="timelineSearch" type="search" placeholder="Ticker, strike, expiry" /></label>
+            <label>Right <select id="timelineRight"><option value="">All rights</option><option value="put">Put</option><option value="call">Call</option></select></label>
+            <button type="button" class="chip-btn" id="timelineExpand">Expand all</button>
+            <button type="button" class="chip-btn" id="timelineCollapse">Collapse all</button>
+            <button type="button" class="chip-btn" id="timelineRefresh">Refresh timeline</button>
+          </div>
+          <p class="option-freshness">Expand a stock to see its individual contracts and roll arrows. Select a contract to highlight its roll chain; press Escape to clear the selection. A dashed lead-in before the first recorded point means earlier history is unavailable. Solid bars show recorded opening-to-close trades or position observations; dashed extensions show time remaining to expiry and do not confirm a position is still open. Dots show recorded opens and closes. Roll arrows retain the broker evidence level; possible links are dashed.</p>
+          <p id="timelineStatus" class="option-freshness" role="status" aria-live="polite"></p>
+          <div id="timelineChart"></div>
+          <div id="timelineDetail"></div>
+        </div>
+        <div id="optionHistoryPanel" class="hidden">
+          <div class="option-ledger-filters history-filters">
+            <label>Broker <select id="historyBroker"><option value="">All brokers</option></select></label>
+            <label>Right <select id="historyRight"><option value="">All rights</option><option value="put">Put</option><option value="call">Call</option></select></label>
+            <label>Status <select id="historyStatus"><option value="historical">Historical</option><option value="all">All</option><option value="closed_by_fills">Closed by fills</option><option value="expired">Expired</option><option value="assigned">Assigned</option><option value="exercised">Exercised</option><option value="cash_settled">Cash settled</option><option value="mixed_outcomes">Mixed outcomes</option><option value="partially_explained">Partly explained</option><option value="no_longer_observed">No longer observed</option><option value="unverified">Unverified</option></select></label>
+            <label>From <input id="historyFrom" type="date" /></label>
+            <label>To <input id="historyTo" type="date" /></label>
+            <label>Contract <input id="historySearch" type="search" placeholder="Ticker, strike, expiry" /></label>
+          </div>
+          <div id="optionHistoryTable"></div>
+          <div id="optionHistoryDetail"></div>
+          <button type="button" class="chip-btn hidden" id="historyMore">Show older records</button>
+        </div>
+        <div id="optionRollsPanel" class="hidden">
+          <div class="option-ledger-filters roll-filters">
+            <label>Broker / account <select id="rollBroker"><option value="">All accounts</option></select></label>
+            <label>Contract <input id="rollSearch" type="search" placeholder="Ticker, strike, expiry" /></label>
+            <label>Evidence <select id="rollEvidence"><option value="">All evidence</option><option value="order">Order-linked</option><option value="execution">Execution-linked</option><option value="possible">Possible</option><option value="review">Needs review</option></select></label>
+            <label>From <input id="rollFrom" type="date" /></label>
+            <label>To <input id="rollTo" type="date" /></label>
+            <button type="button" class="chip-btn" id="rollExpand">Expand groups</button>
+            <button type="button" class="chip-btn" id="rollCollapse">Collapse all</button>
+          </div>
+          <p class="option-freshness">Expand a contract group to view its roll history. The latest replacement shown is based on trade records and does not confirm that the position is still open. Cash received or paid during a roll is not the same as realized profit.</p>
+          <p id="rollStatus" class="option-freshness" role="status" aria-live="polite"></p>
+          <button type="button" class="chip-btn hidden" id="rollRetry">Retry</button>
+          <div id="rollGroups"></div>
+          <button type="button" class="chip-btn hidden" id="rollMore">Show older groups</button>
+        </div>
+      </section>
+
+      <div id="openOptionsBlock">
+      <div class="section-gap" id="openOptionsHead"></div>
+      <div id="openOptions"></div>
+      </div>
+
+      <select id="dateSelect" class="controls-hidden" aria-hidden="true"></select>
+      <select id="channelSelect" class="controls-hidden" aria-hidden="true"></select>
+      <span id="statusBadge" class="controls-hidden"></span>
+      <span id="subtitle" class="controls-hidden"></span>
+      <div id="kpiGrid" class="controls-hidden"></div>
+      <div id="channelStrip" class="controls-hidden"></div>
+      <p id="overviewMeta" class="controls-hidden"></p>
+
+    </div>
+  </div>
+  <footer>Live data · Yahoo Finance · Broker snapshots · Not financial advice</footer>
+  <script src="../report.js"></script>
+  <script src="./option-timeline.js"></script>
+  <script src="./option-risk.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>

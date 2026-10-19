@@ -5,6 +5,10 @@ export const dashboardConfig: AgentConfigDefinition = {
   title: 'Portfolio dashboard',
   description: 'Dashboard metrics, option positions view and standalone calculator visibility.',
   fields: [{
+    id: 'dashboard_version', type: 'select', label: 'Dashboard version', default: 'v1',
+    description: 'Choose the classic dashboard or the new Wheel Desk. Both use the same portfolio calculations, cache and broker data. Refresh the app after changing this setting.',
+    options: [{ value: 'v1', label: 'V1 — Classic dashboard' }, { value: 'v2', label: 'V2 — Wheel Desk' }],
+  }, {
     id: 'show_total_premium', type: 'boolean', label: 'Show total premium beside NAV', default: true,
     description: 'Recorded short-option sales minus closing costs across open and closed positions, before brokerage fees.',
   }, {
@@ -41,6 +45,7 @@ export const dashboardConfig: AgentConfigDefinition = {
 export function readDashboardConfig() {
   const config = readAgentConfig(dashboardConfig);
   return {
+    dashboardVersion: config.dashboard_version === 'v2' ? 'v2' : 'v1',
     optionView: config.option_view,
     riskCostModel: projectRiskCostModel(config),
     showOptionRiskModelView: config.show_option_risk_model_view === true,

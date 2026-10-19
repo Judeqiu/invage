@@ -1,0 +1,108 @@
+/* Wheel Desk: isolated visual tokens; all data and interaction logic is shared with V1. */
+:root {
+  color-scheme: dark;
+  --background: #10131c;
+  --foreground: #e5e8f0;
+  --ink: #f5f6fa;
+  --card: #191e2b;
+  --muted: #252c3d;
+  --muted-foreground: #a3adc1;
+  --border: #343d52;
+  --brand: #b1a0ff;
+  --brand-2: #64d5e5;
+  --success: #67dba1;
+  --warning: #edc274;
+  --danger: #ff8598;
+  --shadow-card: 0 2px 3px #0002, 0 12px 28px -20px #0008;
+  --shadow-glow: 0 0 0 1px #b1a0ff55;
+}
+body { background-image: radial-gradient(ellipse at 4% 0, #7760b014, transparent 42%), radial-gradient(ellipse at 95% 0, #64d5e50a, transparent 40%); }
+.page { max-width: 1760px; padding-top: 1.1rem; }
+.crumb { font-size: .6rem; letter-spacing: .1em; margin-bottom: .75rem; }
+.dashboard-actions { justify-content: flex-end; }
+.status-line { text-align: right; }
+.hero-row { display: block; margin: .5rem 0 1.1rem; }
+.hero-copy { max-width: none; }
+.hero-copy h1 { font-size: clamp(2.2rem, 4vw, 3rem); line-height: 1.05; margin: .4rem 0 .65rem; }
+.hero-copy h1 br { display: none; }
+#heroDate { display: inline-block; font: .75rem var(--font-mono); margin-left: 1rem; letter-spacing: 0; vertical-align: middle; }
+#heroLead { max-width: 75rem; font-size: .75rem; line-height: 1.7; }
+.broker-pills { margin-top: .85rem; }
+.hero-metrics, #kpiRow { display: none !important; }
+.v2-summary { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); gap: 1rem; }
+.v2-group { min-width: 0; }
+.v2-group > h2 { margin: 0 0 .65rem; font-weight: 500; font-size: .65rem; }
+.v2-group-body { display: grid; gap: .65rem; height: calc(100% - 1.65rem); grid-auto-rows: 1fr; }
+.v2-earnings .v2-group-body { grid-template-columns: 1fr 1fr; }
+.v2-summary .metric-card { border-radius: .55rem; min-width: 0; display: flex; flex-direction: column; padding: 1rem; }
+.v2-summary .metric-value { font-size: clamp(1.65rem, 2.1vw, 2.3rem); line-height: 1.15; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.v2-summary .metric-sub { font-size: .66rem; line-height: 1.65; }
+.v2-summary .label-eyebrow { letter-spacing: .035em; font-size: .6rem; }
+.v2-stat { padding-top: .85rem; }
+.v2-stat + .v2-stat { border-top: 1px solid var(--border); margin-top: .85rem; }
+.v2-stat .metric-value { margin-top: .35rem; }
+.v2-fees { border-top: 1px solid var(--border); padding-top: .75rem; margin-top: .85rem; }
+.v2-summary .metric-card:has(> .card-explain) { padding-bottom: 3.6rem; }
+.v2-summary .card-explain { border-radius: 0 0 .5rem .5rem; }
+.v2-jump { display: flex; flex-wrap: wrap; gap: 1.5rem; border-bottom: 1px solid var(--border); padding: 1.25rem 0 .9rem; }
+.v2-jump a { text-decoration: none; color: var(--brand); font: .65rem var(--font-mono); }
+.v2-jump span { color: var(--muted-foreground); margin-left: .35rem; font: .75rem var(--font-sans); }
+.v2-jump a:hover span { color: var(--foreground); }
+.section-gap { margin-top: 2rem; }
+.section-gap h2, .options-workspace-head h2 { font-size: 1.65rem; }
+.section-gap p { font-size: .76rem; max-width: 75rem; line-height: 1.7; }
+.metric-card { border-radius: .55rem; }
+.metric-card:hover { box-shadow: var(--shadow-card); border-color: #776f9d; }
+.kpi-row { gap: .65rem; }
+.kpi-row .metric-value { font-size: 1.8rem; }
+.chip-btn { background: var(--card); border-color: var(--border); color: var(--muted-foreground); border-radius: .4rem; }
+.chip-btn:hover { color: var(--ink); border-color: var(--brand); }
+.chip-btn.on { background: #b1a0ff20; color: var(--brand); border-color: #b1a0ff65; }
+.chip-btn:disabled { opacity: .5; cursor: wait; }
+.card-explain { color: var(--brand); }
+.help-dot { color: var(--muted-foreground); border-color: var(--border); background: transparent; }
+.table-scroll { scrollbar-color: #515e7d var(--card); }
+table.report tbody tr:hover td { background-color: #252c3d; }
+.option-month-row td { background: #252c3d !important; }
+.option-ledger th { font-size: .6rem; letter-spacing: .04em; }
+.option-ledger td { font-size: .73rem; font-variant-numeric: tabular-nums; }
+.option-ledger-card { overflow: hidden; }
+.option-freshness, .option-ledger-filters { font-size: .73rem; }
+.option-ledger-filters input, .option-ledger-filters select, select { background: var(--card); color: var(--foreground); border-color: var(--border); }
+.bar-track { background: var(--muted); }
+.loading { background: var(--card); }
+.error-box { color: var(--danger); }
+footer { color: var(--muted-foreground); border-color: var(--border); font-size: .65rem; }
+:focus-visible { outline: 2px solid var(--brand-2); outline-offset: 4px; }
+@media (max-width: 1100px) {
+  .v2-summary { grid-template-columns: 1fr 1fr; }
+  .v2-earnings { grid-column: 1 / -1; }
+}
+@media (max-width: 600px) {
+  .page { padding: 1rem .85rem 2rem; }
+  .v2-summary { grid-template-columns: minmax(0, 1fr); }
+  .v2-earnings { grid-column: auto; }
+  .v2-earnings .v2-group-body { grid-template-columns: minmax(0, 1fr); }
+  .v2-group-body { height: auto; grid-auto-rows: auto; }
+  .v2-group { margin-bottom: .35rem; }
+  .v2-summary .metric-value { font-size: 2rem; }
+  #heroDate { margin: .6rem 0 0; display: block; }
+  .v2-jump { gap: .85rem; }
+  .v2-jump a { padding: .3rem 0; }
+  .option-view-tabs { flex-wrap: wrap; }
+  .section-gap h2 { font-size: 1.4rem; }
+}
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+/* Keep secondary views and their evidence details readable on the desk palette. */
+.badge-type-equity, .badge-channel { background: #b1a0ff20; color: var(--brand); }
+.badge-type-option { background: #ff859820; color: var(--danger); }
+.badge-type-fund { background: #64d5e520; color: var(--brand-2); }
+.badge-type-cash { background: #67dba120; color: var(--success); }
+.badge-cost, .badge-matured { background: #edc27420; color: var(--warning); }
+.risk-search input { color: var(--foreground); }
+.timeline-tooltip { background: var(--card); color: var(--foreground); border-color: var(--border); }
+.timeline-tooltip dt, .timeline-tooltip-source { color: var(--muted-foreground); }
+.timeline-group-lane { fill: var(--muted); }
+[data-timeline-group]:hover .timeline-group-lane, [data-timeline-group]:focus .timeline-group-lane { fill: #353c56; }
+.timeline-group-label { fill: var(--foreground); }
+.timeline-group-range { stroke: #626b89; }

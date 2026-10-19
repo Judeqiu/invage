@@ -5,7 +5,7 @@ import { resolve, extname } from 'node:path';
 import puppeteer from 'puppeteer-core';
 import { buildDashboardModel, buildLivePositions } from '../src/report/dashboard-model.js';
 const chrome = process.env.CHROME_BINARY || '/usr/bin/chromium';
-it.skipIf(!existsSync(chrome))('shows streamed progress, becomes usable before history finishes, and recovers from failures', async () => {
+it.skipIf(!existsSync(chrome)).each(['index.html', 'v2.html'])('%s shows streamed progress, becomes usable before history finishes, and recovers from failures', async (dashboardFile) => {
   const root = resolve('webui');
   let mode = 'held';
   let stream: ServerResponse | undefined;
@@ -41,7 +41,7 @@ it.skipIf(!existsSync(chrome))('shows streamed progress, becomes usable before h
     const origin = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
     await page.setRequestInterception(true);
     page.on('request', request => request.url().startsWith(origin) ? request.continue() : request.abort());
-    await page.goto(origin + '/dashboard/index.html');
+    await page.goto(origin + '/dashboard/' + dashboardFile);
     await page.waitForFunction(() => document.getElementById('loadProgress')!.getAttribute('aria-valuenow') === '1');
     expect(await page.$eval('#loadInsights', node => node.textContent)).toContain('1,577 option trade records');
     await page.waitForFunction(() => document.getElementById('loadElapsed')!.textContent!.includes('1s'));
@@ -83,7 +83,7 @@ it.skipIf(!existsSync(chrome))('shows streamed progress, becomes usable before h
   } finally { await browser.close(); server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); }
 }, 20000);
 
-it.skipIf(!existsSync(chrome))('renders the saved snapshot during revalidation and keeps it visible if refresh fails', async () => {
+it.skipIf(!existsSync(chrome)).each(['index.html', 'v2.html'])('%s renders the saved snapshot during revalidation and keeps it visible if refresh fails', async (dashboardFile) => {
   const root = resolve('webui');
   const cached = { empty: false, displayName: 'Cached account', generatedAt: '2026-10-14T10:00:00Z',
     model: buildDashboardModel(buildLivePositions({ AAPL: { units: 2, avg_price: 100, currency: 'USD', channel: 'ibkr' } }, { AAPL: 110 }), []) };
@@ -116,7 +116,7 @@ it.skipIf(!existsSync(chrome))('renders the saved snapshot during revalidation a
     const origin = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
     await page.setRequestInterception(true);
     page.on('request', request => request.url().startsWith(origin) ? request.continue() : request.abort());
-    await page.goto(origin + '/dashboard/index.html');
+    await page.goto(origin + '/dashboard/' + dashboardFile);
     await page.waitForFunction(() => document.getElementById('status')!.textContent!.includes('Updating prices'));
     expect(await page.$eval('#subtitle', node => node.textContent)).toContain('Cached account');
     expect(await page.$eval('#status', node => node.textContent)).toContain('Snapshot');
@@ -138,7 +138,7 @@ it.skipIf(!existsSync(chrome))('renders the saved snapshot during revalidation a
     expect(await page.$eval('#optionHistoryTab', node => node.getAttribute('aria-pressed'))).toBe('true');
     // A cache miss still finishes through the same streamed request.
     previewAvailable = false; stream = undefined; historyChannels.length = 0;
-    await page.goto(origin + '/dashboard/index.html?channel=ibkr');
+    await page.goto(origin + '/dashboard/' + dashboardFile + '?channel=ibkr');
     await waitForStream();
     stream!.end(`data: ${JSON.stringify({ type: 'result', payload: cached })}\n\n`);
     await page.waitForFunction(() => document.getElementById('status')!.textContent!.includes('Last refresh'));
