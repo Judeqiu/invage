@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Option risk calculator</title>
+  <link rel="stylesheet" href="../report.css" />
+  <link rel="stylesheet" href="page.css" />
+</head>
+<body>
+<main class="page">
+  <div class="breadcrumb label-eyebrow">Tools / Option risk</div>
+  <header class="hero">
+    <div class="label-eyebrow">Standalone option · Manual inputs</div>
+    <h1>Put a number on the downside.</h1>
+    <p>Reprice a vanilla call or put across price and volatility shocks. The stress index is the worst loss in this grid as a percentage of account equity.</p>
+  </header>
+  <div class="layout">
+    <form id="calculator" class="panel">
+      <h2>Your option</h2>
+      <p class="hint">Enter current values, not the original trade cost. All money inputs must use the same currency. Nothing is saved or sent to a broker.</p>
+      <div class="fields">
+        <label>Underlying (optional)<input name="symbol" placeholder="e.g. AAPL" maxlength="30" autocomplete="off" /></label>
+        <label>Currency label<input name="currency" value="USD" maxlength="8" required /></label>
+        <label>Option type<select name="right"><option value="put">Put</option><option value="call">Call</option></select></label>
+        <label>Position<select name="side"><option value="short">Short / sold</option><option value="long">Long / bought</option></select></label>
+        <label>Exercise style<select name="style"><option value="american">American</option><option value="european">European</option></select></label>
+        <label>Contracts<input name="contracts" type="number" min="1" max="1000000" step="1" required /></label>
+        <label>Underlying price<input name="spot" type="number" min="0.01" max="10000000" step="any" required /></label>
+        <label>Strike price<input name="strike" type="number" min="0.01" max="10000000" step="any" required /></label>
+        <label>Current premium / share<input name="premium" type="number" min="0.0001" max="10000000" step="any" required /></label>
+        <label>Contract multiplier<input name="multiplier" type="number" value="100" min="1" max="1000000" step="1" required /></label>
+        <label>Calendar days to expiry<input name="days" type="number" min="1" max="1825" step="1" required /></label>
+        <label>Implied volatility (%)<input name="iv" type="number" min="1" max="500" step="any" required /></label>
+        <label>Account equity<input name="equity" type="number" min="0.01" max="1000000000000000" step="any" required /></label>
+        <label>Total estimated exit costs<input name="exitCost" type="number" value="0" min="0" max="1000000000" step="any" required /></label>
+      </div>
+      <h2 class="assumption-title">Scenario assumptions</h2>
+      <div class="fields">
+        <label>Horizon (calendar days)<input name="horizon" type="number" value="5" min="1" max="1825" step="1" required /></label>
+        <label>Underlying shock ± (%)<input name="spotShock" type="number" value="30" min="1" max="95" step="any" required /></label>
+        <label>IV shock ± (percentage points)<input name="ivShock" type="number" value="20" min="0" max="200" step="any" required /></label>
+        <label>Annual interest rate (%)<input name="rate" type="number" min="-5" max="20" step="any" required /></label>
+        <label>Annual dividend yield (%)<input name="dividendYield" type="number" min="0" max="50" step="any" required /></label>
+      </div>
+      <p class="hint">Shock sizes are editable test assumptions, not forecast ranges. IV is floored at 1%. Horizon stops at expiry.</p>
+      <div class="actions"><button type="submit" class="primary">Calculate index</button><button type="button" id="example">Load example</button></div>
+      <p id="error" role="alert" hidden></p>
+    </form>
+    <section class="results" aria-label="Risk calculation">
+      <p id="status" role="status" aria-live="polite">Enter an option, or load an illustrative example.</p>
+      <div id="output" hidden>
+        <div class="panel score-card">
+          <div class="label-eyebrow">Stress-loss index · % of account equity</div>
+          <div id="score" class="score"></div>
+          <p id="interpretation"></p>
+          <p class="hint">An index of 12 means a modeled loss equal to 12% of equity. It is not a probability, a 0–100 safety rating, or a maximum-loss guarantee. Values can exceed 100.</p>
+        </div>
+        <div class="grid-2 metrics">
+          <div class="metric-card"><div class="label-eyebrow">Worst grid loss</div><div id="loss" class="metric-value"></div><p id="worst" class="metric-sub"></p></div>
+          <div class="metric-card"><div class="label-eyebrow">Expiry maximum loss</div><div id="maximum" class="metric-value"></div><p class="metric-sub">From current premium, plus entered costs; option leg only.</p></div>
+        </div>
+        <div id="warnings" class="panel notice"></div>
+        <div class="panel"><h2>Scenario losses and gains</h2><p class="hint">Signed P/L against the entered current premium, after total estimated exit costs. Each row uses the stated effective horizon.</p><div class="table-wrap"><table><thead><tr><th>Underlying move</th><th>IV change (pp)</th><th>Option / share</th><th>Position P/L</th></tr></thead><tbody id="scenarios"></tbody></table></div></div>
+        <button type="button" id="download">Download calculation (JSON)</button>
+      </div>
+    </section>
+  </div>
+  <details class="panel methodology"><summary>How this index is calculated</summary>
+    <p><strong>Index = 100 × max(0, worst grid loss) / account equity.</strong> The grid combines five underlying moves (−shock, −half shock, unchanged, +half shock, +shock) with three IV shifts (−shock, unchanged, +shock). Price and IV shocks occur jointly at the horizon.</p>
+    <p>European contracts use Black–Scholes with continuous dividend yield. American contracts use a 200-step Jarrow–Rudd binomial approximation with early exercise; this is an estimate, not the connected portfolio QuantLib engine. Discrete dividends, adjusted deliverables, futures options, exotic payoffs and multi-leg hedges are outside scope. Exercise or assignment can create stock positions whose subsequent risk is outside the option payoff.</p>
+    <p>The current entered premium is compared directly with each theoretical scenario price. A quote/model mismatch can materially affect results. Prices are manual and not verified live. Costs are a fixed user estimate, not a liquidity model. Portfolio offsets, margin calls, volatility skew dynamics, extreme moves outside the grid and parameter uncertainty are not captured.</p>
+    <p>Expected Shortfall and probability of profit are unavailable: this grid has no calibrated real-world probabilities. A zero score only means none of these scenarios produced a loss. No universal low/medium/high thresholds have been validated.</p>
+    <p>Method references: <a href="https://www.cmegroup.com/clearing/risk-management/span-overview/span-2-methodology.html" target="_blank" rel="noreferrer">CME scenario risk</a> · <a href="https://www.optionseducation.org/advancedconcepts/volatility-the-greeks" target="_blank" rel="noreferrer">OCC option sensitivities</a> · <a href="https://www.finra.org/investors/insights/trading-options-understanding-assignment" target="_blank" rel="noreferrer">FINRA assignment risks</a>. This simplified index is not an exchange margin model.</p>
+  </details>
+</main>
+<script type="module" src="app.js"></script>
+</body>
+</html>

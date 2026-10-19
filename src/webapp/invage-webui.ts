@@ -145,6 +145,13 @@ export function createInvageWebUi(): DomainWebUiExtension {
         order: 11,
       },
       {
+        id: 'option-risk',
+        label: 'Option risk',
+        path: '/option-risk',
+        icon: 'calculator',
+        order: 12,
+      },
+      {
         id: 'trades',
         label: 'Trades',
         path: '/trades',
@@ -160,6 +167,12 @@ export function createInvageWebUi(): DomainWebUiExtension {
       },
     ],
     routes: [
+      {
+        path: '/option-risk',
+        pageKind: 'iframe',
+        iframeSrc: '/domain-assets/invage/option-risk/index.html',
+        title: 'Option risk calculator',
+      },
       {
         path: '/dashboard',
         pageKind: 'iframe',

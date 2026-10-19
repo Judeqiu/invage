@@ -14,7 +14,8 @@
     "books:migrate": "tsx src/books/migrate.ts",
     "books:test": "vitest run tests/books-ledger.test.ts",
     "risk:migrate": "tsx src/risk/migrate.ts",
-    "risk:test": "python3 -m unittest discover -s services/options-risk -p \"test_*.py\""
+    "risk:test": "python3 -m unittest discover -s services/options-risk -p \"test_*.py\"",
+    "risk:index:test": "node --test tests/option-risk-calculator.numeric.mjs tests/option-risk-calculator.browser.mjs"
   },
   "keywords": [
     "ai",
