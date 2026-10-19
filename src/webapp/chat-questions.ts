@@ -51,15 +51,16 @@ const GROUPS = [
     label: 'Reports',
     questions: [
       ['risk_scenarios_report', 'Create my Risk & scenarios report', 'Create my Risk & scenarios report for all accounts with a 5-trading-day horizon and show it in the sidebar.'],
+      ['option_index_report', 'Options with calculated risk indexes', 'Create an options risk-index report for all my recorded open option positions. Automatically fetch the market inputs, calculate an index for each contract using its recorded side, show contract counts, stress losses, quote dates and any unavailable scores, and open the report in the sidebar. Do not ask me to fill in a calculator.'],
     ],
   },
 ] as const;
 
 /** Empty-chat cards share the composer presets; ticker selection happens in chat. */
 export function createInvageChatQuestionStarters(): ChatEmptyStarter[] {
-  return GROUPS.flatMap((group) => group.questions.map(([id, , template]) => ({
+  return GROUPS.flatMap((group) => group.questions.map(([id, title, template]) => ({
     id: `question_${id}`,
-    label: template.replaceAll('{ticker}', '[ticker]'),
+    label: id === 'option_index_report' ? title : template.replaceAll('{ticker}', '[ticker]'),
     description: group.label,
     message: template.includes('{ticker}')
       ? `${template.replaceAll('{ticker}', 'the ticker I choose')} First ask me which ticker to use.`
@@ -91,7 +92,9 @@ export function createInvageChatQuestionLibrary(): ChatQuestionLibraryConfig {
       id,
       categoryId: group.id,
       title,
-      description: template.replaceAll('{ticker}', '[ticker]'),
+      description: id === 'option_index_report'
+        ? 'Automatically score recorded open options and show their calculated indexes, stress losses, quote dates and data gaps in a sidebar report.'
+        : template.replaceAll('{ticker}', '[ticker]'),
       template,
       capabilityIds: ['options_journal.read'],
       ...(template.includes('{ticker}') ? {

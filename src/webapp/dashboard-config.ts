@@ -14,8 +14,8 @@ export const dashboardConfig: AgentConfigDefinition = {
     id: 'show_recorded_pnl_by_month', type: 'boolean', label: 'Show Recorded P&L by Month', default: false,
     description: 'Show monthly profit or loss from recorded completed option trades in the dashboard.',
   }, {
-    id: 'show_option_risk_calculator', type: 'boolean', label: 'Show option risk calculator', default: false,
-    description: 'Show the standalone calculator in navigation and app routes. Refresh Velovest after changing this setting.',
+    id: 'show_option_risk_calculator', type: 'boolean', label: 'Show option risk index page', default: false,
+    description: 'Show automatic option index lookup in navigation and app routes. Chat index requests remain available. Refresh Velovest after changing this setting.',
   }, {
     id: 'show_option_risk_model_view', type: 'boolean', label: 'Show Risk & scenarios view in Section 01', default: false,
     description: 'Adds a second options risk view. The existing expiry and assignment view remains available.',

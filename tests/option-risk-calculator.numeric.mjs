@@ -32,6 +32,12 @@ describe('standalone option stress calculator', () => {
     assert.equal(r.grossPutFunding, 9500);
     assert.equal(r.expectedShortfall, null);
   });
+  it('handles fractional remaining days without rounding a same-day option up to one day', () => {
+    const r = calculateRisk({ ...base, days: 0.01, horizon: 5 });
+    assert.equal(r.horizon, 0.01);
+    assert.equal(r.worst.price, 30);
+    assert.equal(r.stressLoss, 2500);
+  });
   it('reverses long/short P&L, applies costs once and scales with size and equity', () => {
     const short = calculateRisk(base), long = calculateRisk({ ...base, side: 'long' });
     assert.equal(short.scenarios.length, 15);

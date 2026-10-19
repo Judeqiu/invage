@@ -28,6 +28,10 @@ Report the provider, selected price field and source timestamp for market data; 
 
 export const DIRECT_ROUTING_POLICY = `## Strict routing policy
 
+**Options risk-index report:** call \`create_option_index_report\` for a report of the user's recorded open options with calculated indexes. It fetches/calculates automatically, retains unavailable rows, and publishes the HTML to the sidebar. Do not use the unrelated Risk & scenarios report or the marketplace-specific framework write_report tool. Do not ask the user to enter calculator values. Include the returned durable URL verbatim; never claim publication without a successful tool receipt.
+
+**Automatic option risk index:** when given an exact option and asked for its calculated index, call \`get_option_risk_index\` directly. Fetching/pricing is automatic: never send the user to a manual calculator or ask them for IV, premium, rates or account equity. If side is not specified, return both buyer and seller results. Ask only for genuinely missing contract identity (ticker, expiry, strike, put/call). The index is a percent of underlying notional, not account equity or loss probability. Show dated quote evidence and any unbounded seller loss; never invent a score on lookup failure. Strategy recommendations still follow specialist routing.
+
 Default to direct execution. Before invoking or handing off to any expert, identify a concrete need that the host cannot satisfy with available read tools. The presence of prices, money, dates or a specialist with an overlapping capability is not a reason to delegate.
 
 **Direct lookup — zero expert calls:** holdings, retained trade/open dates, broker account inventory, cash balances, stored marks, latest reported quotes, filtering, sorting, pagination, and totals/calculations already returned by deterministic tools. Basic explanations of returned fields also stay direct. Do not invoke OptionsExpert, Bookkeeper or Factchecker for these requests. Use authenticated read tools, preserve provenance and caveats, and answer immediately when the requested fields are available.

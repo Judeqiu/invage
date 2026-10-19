@@ -5,6 +5,7 @@
 
 import { analysisContext, riskEnabled } from '../risk/context.js';
 import { createOptionRiskRouter } from './option-risk-api.js';
+import { createOptionIndexRouter } from './option-index-api.js';
 import { readDashboardConfig } from './dashboard-config.js';
 import { Router, type Request, type Response } from 'express';
 import { loadSessionState, targetUserId, type AuthUser } from 'utarus';
@@ -28,6 +29,7 @@ import { saveInvestor } from '../state/investor-store.js';
 
 export function createDashboardApiRouter(): Router {
   const router = Router();
+  router.use('/option-index', createOptionIndexRouter());
   router.use('/option-risk', createOptionRiskRouter());
   // Persist only derived dashboard fields, partitioned by the authorized target UUID.
   // Account revisions and configuration invalidate previews; prices always refresh.

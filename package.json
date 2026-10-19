@@ -15,7 +15,7 @@
     "books:test": "vitest run tests/books-ledger.test.ts",
     "risk:migrate": "tsx src/risk/migrate.ts",
     "risk:test": "python3 -m unittest discover -s services/options-risk -p \"test_*.py\"",
-    "risk:index:test": "node --test tests/option-risk-calculator.numeric.mjs tests/option-risk-calculator.browser.mjs",
+    "risk:index:test": "node --import tsx --test tests/option-risk-calculator.numeric.mjs tests/option-risk-calculator.browser.mjs tests/option-index.check.mjs tests/option-index-report.check.mjs tests/option-risk-visibility.check.mjs",
     "risk:visibility:test": "node --import tsx --test tests/option-risk-visibility.check.mjs"
   },
   "keywords": [

@@ -17,7 +17,7 @@ describe('Lovable chat question library', () => {
     ]);
     expect(catalog.categories.map((category) =>
       catalog.presets.filter((preset) => preset.categoryId === category.id).length,
-    )).toEqual([5, 6, 3, 4, 1]);
+    )).toEqual([5, 6, 3, 4, 2]);
   });
 
   it('requires a ticker for every ticker question and expands it into the draft', () => {

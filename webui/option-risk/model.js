@@ -35,7 +35,7 @@ export function calculateRisk(input) {
   const p = { ...input };
   for (const [key, min, max] of [
     ['spot', 0.01, 1e7], ['strike', 0.01, 1e7], ['premium', 0.0001, 1e7],
-    ['contracts', 1, 1e6], ['multiplier', 1, 1e6], ['days', 1, 1825],
+    ['contracts', 1, 1e6], ['multiplier', 1, 1e6], ['days', 0.000001, 1825],
     ['horizon', 1, 1825], ['iv', 0.01, 5], ['rate', -0.05, 0.2],
     ['dividendYield', 0, 0.5], ['equity', 0.01, 1e15], ['spotShock', 0.01, 0.95],
     ['ivShock', 0, 2], ['exitCost', 0, 1e9],
@@ -45,8 +45,8 @@ export function calculateRisk(input) {
   }
   if (!['call', 'put'].includes(p.right) || !['long', 'short'].includes(p.side) || !['american', 'european'].includes(p.style))
     throw new Error('Choose a valid option type, side and exercise style.');
-  if (![p.contracts, p.multiplier, p.days, p.horizon].every(Number.isInteger))
-    throw new Error('Contracts, multiplier and days must be whole numbers.');
+  if (![p.contracts, p.multiplier, p.horizon].every(Number.isInteger))
+    throw new Error('Contracts, multiplier and horizon must be whole numbers.');
   const size = p.contracts * p.multiplier, sign = p.side === 'long' ? 1 : -1;
   const horizon = Math.min(p.horizon, p.days), modelPrice = priceOption(p);
   const scenarios = [];

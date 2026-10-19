@@ -171,7 +171,7 @@ export function createInvageWebUi(): DomainWebUiExtension {
         path: '/option-risk',
         pageKind: 'iframe',
         iframeSrc: '/domain-assets/invage/option-risk/index.html',
-        title: 'Option risk calculator',
+        title: 'Option risk index',
       },
       {
         path: '/dashboard',
