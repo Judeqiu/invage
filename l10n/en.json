@@ -1,6 +1,7 @@
 {
   "nav.dashboard": "Dashboard",
   "nav.positions": "Positions",
+  "nav.option-risk": "Option risk",
   "nav.book": "Book",
   "nav.watchlist": "Watch List",
   "nav.trades": "Trades",
@@ -12,6 +13,7 @@
   "settings.brokers.description": "Connect read-only brokerage channels",
   "page.dashboard": "Portfolio Dashboard",
   "page.positions": "Positions",
+  "page.option-risk": "Option risk calculator",
   "page.book": "Book",
   "page.watchlist": "Watch List",
   "page.trades": "Trades",
