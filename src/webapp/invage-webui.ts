@@ -129,7 +129,7 @@ export function createInvageWebUi(): DomainWebUiExtension {
     hiddenNav: ['workflows'],
     chatEmptyState: empty,
     chatQuestionLibrary: createInvageChatQuestionLibrary(),
-    nav: [
+    get nav() { return [
       {
         id: 'dashboard',
         label: 'Dashboard',
@@ -165,8 +165,8 @@ export function createInvageWebUi(): DomainWebUiExtension {
         icon: 'sparkles',
         order: 14,
       },
-    ],
-    routes: [
+    ].filter(item => item.id !== 'option-risk' || readDashboardConfig().showOptionRiskCalculator); },
+    get routes() { return ([
       {
         path: '/option-risk',
         pageKind: 'iframe',
@@ -223,7 +223,7 @@ export function createInvageWebUi(): DomainWebUiExtension {
         iframeSrc: '/domain-assets/invage/brokers/retired/index.html',
         title: 'Brokers',
       },
-    ],
+    ] satisfies NonNullable<DomainWebUiExtension['routes']>).filter(route => route.path !== '/option-risk' || readDashboardConfig().showOptionRiskCalculator); },
     settingsSections: [
       {
         id: 'portfolio',

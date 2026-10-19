@@ -4,6 +4,12 @@ Velovest navigation: **Option risk**, app route `/option-risk`.
 The iframe uses `index.html`, `app.js` and the pure browser-native `model.js`.
 There are no new endpoints, saved records, credentials or service dependencies.
 
+Management → Agent configuration → Portfolio dashboard → **Show option risk
+calculator** controls its navigation entry and app route. It defaults to hidden.
+The manifest reads this setting on each request; refresh the app after saving.
+This is a UI visibility control, not an authorization boundary for static assets.
+Run `npm run risk:visibility:test` to check default, show/hide and localization.
+
 The user supplies current per-share option premium, underlying price, strike,
 calendar days remaining, IV, rate, continuous dividend yield, side, exercise
 style, quantity, multiplier, account equity and a fixed total exit-cost estimate.
