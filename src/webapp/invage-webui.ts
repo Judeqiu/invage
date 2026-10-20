@@ -212,7 +212,9 @@ export function createInvageWebUi(): DomainWebUiExtension {
       {
         path: '/insights',
         pageKind: 'iframe',
-        iframeSrc: '/domain-assets/invage/insights/index.html',
+        iframeSrc: readDashboardConfig().insightsVersion === 'v2'
+          ? '/domain-assets/invage/insights/v2.html'
+          : '/domain-assets/invage/insights/index.html',
         title: 'Insights',
       },
       // Utarus matchRoute returns the first prefix hit (`path.startsWith(route + '/')`).

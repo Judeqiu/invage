@@ -17,6 +17,10 @@ export const dashboardConfig: AgentConfigDefinition = {
     description: 'Choose the classic execution journal or the new open options journal and history. Independent of Dashboard and Positions. Refresh the app after changing this setting.',
     options: [{ value:'v1', label:'V1 — Classic trades' }, { value:'v2', label:'V2 — Open options journal & history' }],
   }, {
+    id: 'insights_version', type: 'select', label: 'Insights page version', default: 'v1',
+    description: 'Choose the classic briefing or the new portfolio insights and review priorities. Independent of Dashboard, Positions and Trades. Refresh the app after changing this setting.',
+    options: [{ value:'v1', label:'V1 — Classic insights' }, { value:'v2', label:'V2 — Portfolio briefing' }],
+  }, {
     id: 'show_total_premium', type: 'boolean', label: 'Show total premium beside NAV', default: true,
     description: 'Recorded short-option sales minus closing costs across open and closed positions, before brokerage fees.',
   }, {
@@ -56,6 +60,7 @@ export function readDashboardConfig() {
     dashboardVersion: config.dashboard_version === 'v2' ? 'v2' : 'v1',
     positionsVersion: config.positions_version === 'v2' ? 'v2' : 'v1',
     tradesVersion: config.trades_version === 'v2' ? 'v2' : 'v1',
+    insightsVersion: config.insights_version === 'v2' ? 'v2' : 'v1',
     optionView: config.option_view,
     riskCostModel: projectRiskCostModel(config),
     showOptionRiskModelView: config.show_option_risk_model_view === true,
