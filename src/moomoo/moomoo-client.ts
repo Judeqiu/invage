@@ -140,10 +140,18 @@ async function fetchOptionBasicInfo(
   for (let start = 0; start < codes.length; start += 400) {
     const args = { path: '/api/v1.0/quote/stock-basicinfo', method: 'POST' as const,
       body: JSON.stringify({ code_list: codes.slice(start, start + 400) }), credentials, fetchImpl };
-    let raw = await moomooRequest(args) as Record<string, unknown>;
-    if (raw?.errcode === CLOCK_SKEW) {
-      const timestampMs = await serverTimeMs(fetchImpl, credentials);
-      if (timestampMs) raw = await moomooRequest({ ...args, timestampMs }) as Record<string, unknown>;
+    let raw: Record<string, unknown>;
+    try {
+      raw = await moomooRequest(args) as Record<string, unknown>;
+      if (raw?.errcode === CLOCK_SKEW) {
+        const timestampMs = await serverTimeMs(fetchImpl, credentials);
+        if (timestampMs) raw = await moomooRequest({ ...args, timestampMs }) as Record<string, unknown>;
+      }
+    } catch (error) {
+      // Quote permissions are separate from trading-history access. Historical
+      // fills can retain unknown size; the mapper still rejects missing held size.
+      if (error instanceof BrokerHttpError && ['403','404'].includes(error.vendorCode ?? '')) continue;
+      throw error;
     }
     const data = raw?.data as { basic_list?: unknown } | undefined;
     // Expired instruments can disappear from the quote directory. Preserve their fills.
@@ -207,7 +215,7 @@ async function fetchHistory(accId: string, credentials: MooMooCredentials, fetch
       for (let attempt = 0; ; attempt++) {
         try { env = await getWithSkewRetry(args); failIfError(env,resource); break; }
         catch (error) {
-          if (!(error instanceof BrokerHttpError) || error.vendorCode !== '429' || attempt >= 3) throw error;
+          if (!(error instanceof BrokerHttpError) || !['429','-12011'].includes(error.vendorCode ?? '') || attempt >= 3) throw error;
           await new Promise(resolve => setTimeout(resolve, 1000 * 2 ** attempt));
         }
       }
@@ -248,7 +256,7 @@ async function fetchOrderDetails(accId: string, orders: Record<string, unknown>[
             }
             failIfError(env,'orders/detail'); result = env; break;
           } catch (error) {
-            if (!(error instanceof BrokerHttpError) || error.vendorCode !== '429' || attempt === 3) throw error;
+            if (!(error instanceof BrokerHttpError) || !['429','-12011'].includes(error.vendorCode ?? '') || attempt === 3) throw error;
             await new Promise(resolve => setTimeout(resolve,1000 * 2 ** attempt));
           }
         }
@@ -271,7 +279,10 @@ async function fetchOrderFees(accId: string, orders: Record<string, unknown>[], 
   const rows: Record<string, unknown>[] = [], gaps: NonNullable<MooMooRawBundle['fee_gaps']> = [];
   const ids = [...new Set([...fills, ...orders.filter(o => Number(o.dealt_qty) > 0)]
     .flatMap(row => typeof row.order_id === 'string' && row.order_id.trim() ? [row.order_id] : []))];
-  for (const id of ids) {
+  for (const [index,id] of ids.entries()) {
+    // Cloud quota is 100 requests/minute per IP. Leave headroom for history
+    // requests, and handle the HTTP-200 rate-limit envelope as well as HTTP 429.
+    if (index) await new Promise(resolve => setTimeout(resolve,650));
     try {
       let env: MooMooEnvelope;
       for (let attempt = 0; ; attempt++) {
@@ -280,7 +291,7 @@ async function fetchOrderFees(accId: string, orders: Record<string, unknown>[], 
             credentials, fetchImpl });
           failIfError(env, 'order fees'); break;
         } catch (error) {
-          if (!(error instanceof BrokerHttpError) || error.vendorCode !== '429' || attempt >= 3) throw error;
+          if (!(error instanceof BrokerHttpError) || !['429','-12011'].includes(error.vendorCode ?? '') || attempt >= 3) throw error;
           await new Promise(resolve => setTimeout(resolve, 1000 * 2 ** attempt));
         }
       }

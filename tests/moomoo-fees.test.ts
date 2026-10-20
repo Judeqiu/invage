@@ -143,6 +143,15 @@ describe('Moomoo fee fetching', () => {
     expect(raw.fee_gaps).toEqual([]);
     expect(history(raw).orders[0].fees?.currency).toBe('USD');
   });
+  it.each([403,404])('retains historical fees without quote metadata permission (HTTP %s)', async status => {
+    const t=transport();
+    const raw=await fetchMooMooRawBundle(credentials,{fetchImpl:(url,init)=>String(url).endsWith('/stock-basicinfo')?Promise.resolve(new Response('',{status})):t.fetchImpl(url,init)});
+    const h=history(raw);
+    expect(h.executions).toHaveLength(3);
+    expect(h.executions.every(e=>e.multiplier===null&&e.gross_cash===null&&e.fee_cash!==null)).toBe(true);
+    expect(h.orders[0].fees?.total).toBe('3.88');
+    expect(h.sync.status).toBe('partial');
+  });
   it('fetches once per referenced parent, signs the read-only GET, and retains raw breakdowns', async () => {
     const t = transport(), raw = await fetchMooMooRawBundle(credentials,t);
     const requests = t.requests.filter(r => r.url.pathname.endsWith('/fees'));
@@ -166,12 +175,28 @@ describe('Moomoo fee fetching', () => {
     expect(history(raw).sync).toMatchObject({status:'partial',fees:'unavailable'});
     expect(history(raw).executions).toHaveLength(3);
   });
-  it('retries rate-limited fee requests without duplicating a charge', async () => {
+  it('paces repeated parent fee queries below the Cloud request quota', async () => {
+    vi.useFakeTimers();
+    try {
+      const t=transport(),raw=bundle(),times:number[]=[];
+      const pending=fetchMooMooRawBundle(credentials,{fetchImpl:async (url,init)=>{
+        const u=new URL(String(url));
+        if(u.pathname.endsWith('/fills_history'))return Response.json({s:'ok',d:{completed:true,order_fills:u.searchParams.get('trd_market')==='US'?[raw.fills_history!.rows[0],{...raw.fills_history!.rows[0],deal_id:'second',order_id:'second'}]:[]}});
+        if(u.pathname.endsWith('/orders/detail'))return Response.json({s:'ok',d:[...raw.orders_history!.rows,{...raw.orders_history!.rows[0],order_id:'second'}]});
+        if(u.pathname.endsWith('/fees')){times.push(Date.now());return Response.json({s:'ok',d:{...fees(),order_id:u.pathname.includes('/second/')?'second':'parent'}});}
+        return t.fetchImpl(url,init);
+      }});
+      await vi.runAllTimersAsync();
+      expect((await pending).orders_fees).toHaveLength(2);
+      expect(times[1]-times[0]).toBeGreaterThanOrEqual(650);
+    } finally {vi.useRealTimers();}
+  });
+  it.each(['http','envelope'])('retries %s rate-limited fee requests without duplicating a charge', async kind => {
     vi.useFakeTimers();
     try {
       const t = transport(); let attempts = 0;
       const pending = fetchMooMooRawBundle(credentials,{fetchImpl:async (url,init) => String(url).endsWith('/fees') && ++attempts === 1
-        ? new Response('',{status:429}) : t.fetchImpl(url,init)});
+        ? kind==='http'?new Response('',{status:429}):Response.json({s:'error',errcode:-12011}) : t.fetchImpl(url,init)});
       await vi.runAllTimersAsync();
       expect((await pending).orders_fees).toHaveLength(1); expect(attempts).toBe(2);
     } finally { vi.useRealTimers(); }

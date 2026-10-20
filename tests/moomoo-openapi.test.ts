@@ -324,11 +324,12 @@ describe('MooMoo fetchRaw', () => {
     { ret_code: -7, ret_msg: 'invalid_symbol' },
     { s: 'error', errcode: -1200 },
     { ret_code: 0, data: {} },
+    new Response('',{status:403}),
   ])('fails before applying a snapshot when metadata cannot be fetched (%j)', async response => {
     await expect((async () => {
       const raw = await fetchMooMooRawBundle({ app_key: 'ak', private_key: ED, sign_alg: 'Ed25519' },
       { fetchImpl: async (url, init) => String(url).endsWith('/quote/stock-basicinfo')
-        ? Response.json(response)
+        ? response instanceof Response ? response.clone() : Response.json(response)
         : mockFetch({ authorized: AUTHORIZED, funds: FUNDS,
           positions: { s: 'ok', d: [{ code: 'US.PATH270319P15000',qty:'1',currency:'USD',nominal_price:'1',cost_price:'2',cost_price_valid:true }] } })(url, init) },
     );
