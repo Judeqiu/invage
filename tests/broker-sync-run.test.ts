@@ -124,3 +124,34 @@ it('keeps a completed sync successful when notification delivery fails', async (
   expect(notices.failure).not.toHaveBeenCalled();
   expect(log).toHaveBeenCalledWith('[broker/sync-notification] comparison failed:', expect.any(Error));
 });
+
+const emptyReport = `<FlexQueryResponse><FlexStatements count="1"><FlexStatement accountId="U1" fromDate="20260930" toDate="20261001"><OpenPositions/><CashReport><CashReportCurrency accountId="U1" currency="USD" endingCash="100"/></CashReport></FlexStatement></FlexStatements></FlexQueryResponse>`;
+
+it('reloads the profile after a long fetch and preserves concurrent settings edits', async () => {
+  const snapshot={state:structuredClone(stored),revision};
+  vi.spyOn(adapters.ibkr,'fetchRaw').mockImplementation(async()=>{
+    stored.profile.display_name='Updated during fetch';
+    patchBrokerAccount(stored,id,{label:'Renamed during fetch',sync_frequency:null});
+    revision++;
+    return {kind:'xml',body:Buffer.from(emptyReport)};
+  });
+  mocks.save.mockImplementation(async current=>{
+    expect(current.revision).toBe(revision);
+    stored=structuredClone(current.state);current.revision=++revision;
+  });
+  await syncBrokerAccount(snapshot,id);
+  expect(snapshot.state.profile.display_name).toBe('Updated during fetch');
+  expect(readBrokerAccountModel(stored).connections[id]).toMatchObject({label:'Renamed during fetch',last_sync:{ok:true}});
+  expect(readBrokerAccountModel(stored).connections[id].sync_schedule).toBeUndefined();
+});
+
+it.each([{enabled:false},{account_id:'U2'}])('rejects a connection changed during the fetch: %j', async patch=>{
+  vi.spyOn(adapters.ibkr,'fetchRaw').mockImplementation(async()=>{
+    patchBrokerAccount(stored,id,patch);revision++;
+    return {kind:'xml',body:Buffer.from(emptyReport)};
+  });
+  await expect(syncBrokerAccount({state:structuredClone(stored),revision},id)).rejects.toThrow('connection changed during synchronization');
+  expect(stored.log).toEqual([]);
+  expect(stored.option_observations).toBeUndefined();
+  expect(readBrokerAccountModel(stored).connections[id]).toMatchObject(patch);
+});

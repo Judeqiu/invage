@@ -152,6 +152,15 @@ describe('Moomoo fee fetching', () => {
     expect(h.orders[0].fees?.total).toBe('3.88');
     expect(h.sync.status).toBe('partial');
   });
+  it('captures current balances after historical fee queries finish', async () => {
+    const t=transport();let settled=false;
+    const raw=await fetchMooMooRawBundle(credentials,{fetchImpl:async(url,init)=>{
+      if(String(url).endsWith('/fees'))settled=true;
+      if(new URL(String(url)).pathname.endsWith('/funds'))return Response.json({s:'ok',d:{us_cash:settled?'2000':'1000'}});
+      return t.fetchImpl(url,init);
+    }});
+    expect(raw.funds.d).toEqual({us_cash:'2000'});
+  });
   it('fetches once per referenced parent, signs the read-only GET, and retains raw breakdowns', async () => {
     const t = transport(), raw = await fetchMooMooRawBundle(credentials,t);
     const requests = t.requests.filter(r => r.url.pathname.endsWith('/fees'));
@@ -161,6 +170,22 @@ describe('Moomoo fee fetching', () => {
     expect(headers.get('Authorization')).toBe(signMooMooRequest(moomooSignContent({timestampMs:headers.get('X-Timestamp')!,method:'GET',path:requests[0].url.pathname,query:''}),credentials.private_key,'Ed25519'));
     expect(raw.orders_fees).toEqual([fees()]); expect(raw.fee_gaps).toEqual([]);
     expect(history(raw).sync.fees).toBe('available');
+  });
+  it('signs the decoded canonical path while encoding legacy order IDs in the URL', async () => {
+    const t=transport(),raw=bundle(),id='v3_20240507_account_/legacy+id==';let checked=false;
+    const result=await fetchMooMooRawBundle(credentials,{fetchImpl:async(url,init)=>{
+      const u=new URL(String(url));
+      if(u.pathname.endsWith('/fills_history'))return Response.json({s:'ok',d:{completed:true,order_fills:u.searchParams.get('trd_market')==='US'?raw.fills_history!.rows.map(r=>({...r,order_id:id})):[]}});
+      if(u.pathname.endsWith('/orders/detail'))return Response.json({s:'ok',d:raw.orders_history!.rows.map(r=>({...r,order_id:id}))});
+      if(u.pathname.endsWith('/fees')){
+        checked=true;expect(u.pathname).toContain(encodeURIComponent(id));
+        const headers=new Headers(init?.headers);
+        expect(headers.get('Authorization')).toBe(signMooMooRequest(moomooSignContent({timestampMs:headers.get('X-Timestamp')!,method:'GET',path:decodeURIComponent(u.pathname),query:'',body:undefined}),credentials.private_key,'Ed25519'));
+        return Response.json({s:'ok',d:{...fees(),order_id:id}});
+      }
+      return t.fetchImpl(url,init);
+    }});
+    expect(checked).toBe(true);expect(result.fee_gaps).toEqual([]);expect(result.orders_fees![0].order_id).toBe(id);
   });
   it('re-signs fee requests on clock skew', async () => {
     const t = transport(undefined,true), raw = await fetchMooMooRawBundle(credentials,t);

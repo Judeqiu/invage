@@ -505,7 +505,7 @@ function archive(slug: string, conn: BrokerAccountConnection, raw: Buffer, asOf:
 }
 export async function syncBrokerAccount(snapshot: InvestorSnapshot, id: string, transport?: AdapterTransport,
   trigger: 'manual' | 'scheduled' = 'manual', full = false): Promise<{ applied: BrokerApplyResult }> {
-  const state = snapshot.state;
+  let state = snapshot.state;
   const model = readBrokerAccountModel(state);
   const conn = model.connections[id];
   if (!conn) throw new Error('Unknown broker connection.');
@@ -534,10 +534,24 @@ export async function syncBrokerAccount(snapshot: InvestorSnapshot, id: string, 
       if (!statement) throw new Error(`Broker statement account mismatch: expected ${conn.account_id}.`);
       archivePath = archive(state.user.id, conn, fetched.raw, statement.as_of, true);
       archiveHistoryAttachments(state.user.id,conn.channel,fetched.payload);
+      // Network/backfill work can take minutes. Apply against the latest
+      // revision so unrelated profile edits survive, while rejecting rebinding
+      // or pausing the selected account during the fetch.
+      const latest = await loadInvestor(state.user.id);
+      const latestModel = readBrokerAccountModel(latest.state);
+      const selected = latestModel.connections[id];
+      if (!selected?.enabled || selected.broker_id !== conn.broker_id ||
+          selected.channel !== conn.channel || selected.account_id !== conn.account_id ||
+          selected.source_id !== conn.source_id) {
+        throw new Error('Broker account connection changed during synchronization; retry.');
+      }
+      snapshot.state = latest.state;
+      snapshot.revision = latest.revision;
+      state = snapshot.state;
       // A legacy connector-keyed connection is normalized in memory by
       // readBrokerAccountModel(). Persist that canonical shape before the apply
       // layer verifies the selected account and channel against stored state.
-      if (!state.broker_sources) persistBrokerAccountModel(state, model);
+      if (!state.broker_sources) persistBrokerAccountModel(state, latestModel);
       applied = await applyBrokerStatement(snapshot, id, statement, fetched.raw, result => {
         const current = readBrokerAccountModel(state);
         current.connections[id].last_sync = { at, ok: true, as_of: result.asOf, account_id: result.accountId,

@@ -60,7 +60,9 @@ async function moomooRequest(args: {
   const content = moomooSignContent({
     timestampMs,
     method,
-    path: args.path,
+    // Cloud verifies the decoded path, including slashes inside legacy IDs.
+    // The request URL must keep those IDs percent-encoded as one path segment.
+    path: decodeURIComponent(args.path),
     query,
     body: args.body,
   });
@@ -410,6 +412,15 @@ export async function fetchMooMooRawBundle(
   const fetchImpl = opts?.fetchImpl ?? fetch;
   const authorized = await fetchAuthorizedEnvelope(credentials, fetchImpl);
   const acc_id = pickAccId(authorized, credentials.acc_id);
+  const plan = opts?.history ?? { mode:'full', from:'2000-01-01T00:00:00.000Z', through:new Date().toISOString() };
+  const fills_history = await fetchHistory(acc_id, credentials, fetchImpl, plan, 'fills_history');
+  const orders_history = await fetchHistory(acc_id, credentials, fetchImpl, plan, 'orders_history');
+  // Recent fills may belong to orders created before the incremental window.
+  const parents = [...orders_history.rows, ...fills_history.rows.filter(row => row.order_id != null)];
+  const details = await fetchOrderDetails(acc_id, parents, credentials, fetchImpl);
+  const fees = await fetchOrderFees(acc_id,
+    [...orders_history.rows, ...details.rows], fills_history.rows, credentials, fetchImpl);
+  // Read the live snapshot after the potentially long historical fee backfill.
   const funds = await getWithSkewRetry({
     path: `/api/v1.0/accounts/${encodeURIComponent(acc_id)}/funds`,
     query: 'currency=USD',
@@ -423,14 +434,6 @@ export async function fetchMooMooRawBundle(
     fetchImpl,
   });
   failIfError(positions, 'positions');
-  const plan = opts?.history ?? { mode:'full', from:'2000-01-01T00:00:00.000Z', through:new Date().toISOString() };
-  const fills_history = await fetchHistory(acc_id, credentials, fetchImpl, plan, 'fills_history');
-  const orders_history = await fetchHistory(acc_id, credentials, fetchImpl, plan, 'orders_history');
-  // Recent fills may belong to orders created before the incremental window.
-  const parents = [...orders_history.rows, ...fills_history.rows.filter(row => row.order_id != null)];
-  const details = await fetchOrderDetails(acc_id, parents, credentials, fetchImpl);
-  const fees = await fetchOrderFees(acc_id,
-    [...orders_history.rows, ...details.rows], fills_history.rows, credentials, fetchImpl);
   const option_basicinfo = await fetchOptionBasicInfo(positions, credentials, fetchImpl, fills_history?.rows);
   return {
     schema: credentials.broker === 'futubull' ? 'invage.futubull.cloud.raw.v1' : 'invage.moomoo.raw.v1',
