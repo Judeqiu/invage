@@ -60,9 +60,9 @@ async function moomooRequest(args: {
   const content = moomooSignContent({
     timestampMs,
     method,
-    // Cloud verifies the decoded path, including slashes inside legacy IDs.
+    // Cloud verifies a decoded path with repeated slashes collapsed.
     // The request URL must keep those IDs percent-encoded as one path segment.
-    path: decodeURIComponent(args.path),
+    path: decodeURIComponent(args.path).replace(/\/+/g,'/'),
     query,
     body: args.body,
   });
