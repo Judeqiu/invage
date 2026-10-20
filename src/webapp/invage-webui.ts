@@ -115,21 +115,35 @@ export function chatEmptyStateFor(profile: ProductProfileId): ChatEmptyState {
   };
 }
 
+/** Match the visible framework Chat label to this product profile. */
+export function createInvageChromeCatalogs(profile: ProductProfileId = readProductProfile()): Record<string, Record<string, string>> {
+  const en = JSON.parse(readFileSync(new URL('../../l10n/en.json', import.meta.url), 'utf8')) as Record<string, string>;
+  return {en: {...en, 'nav.chat': profile === 'consultant' ? 'AI Chat' : 'Chat'}};
+}
+
 export function createInvageWebUi(): DomainWebUiExtension {
   readDashboardConfig();
   readFlexEgressIpv4();
+  const consultant = readProductProfile() === 'consultant';
   const empty = chatEmptyStateFor(readProductProfile());
   return {
     agentKey: 'invage',
     productName: productDisplayName(),
     version: appVersion,
     defaultPath: '/dashboard',
-    navLabels: { chat: readProductProfile() === 'consultant' ? 'Velovest AI' : 'Chat' },
+    navLabels: { chat: consultant ? 'AI Chat' : 'Chat' },
+    ...(consultant ? {shell: {
+      variant: 'trading' as const,
+      primaryNavIds: ['dashboard','positions','trades','insights','chat','brokers'],
+      workspaceLabel: 'Wheel · trader desk',
+      logo: 'velovest-wordmark.png',
+    }} : {}),
     navOrder: { chat: 15, notifications: 16, notes: 17, tasks: 18, settings: 19 },
     hiddenNav: ['workflows'],
     chatEmptyState: empty,
     chatQuestionLibrary: createInvageChatQuestionLibrary(),
     get nav() { return [
+      ...(consultant ? [{id:'brokers',label:'Brokers',path:'/settings/brokers',icon:'settings',order:15.5}] : []),
       {
         id: 'dashboard',
         label: 'Dashboard',

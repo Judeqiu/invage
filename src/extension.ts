@@ -6,8 +6,6 @@
  * Domain owns: portfolio tools, market analysis, investment skills, domain enrich.
  */
 
-import { dirname, resolve } from 'path';
-import { fileURLToPath } from 'url';
 import type { DomainExtension, EnrichMessageContext, Skill } from 'utarus';
 import {
   resolveUserBySlackUser,
@@ -35,7 +33,7 @@ import {
   type HouseholdInvestorState,
 } from './state/household-state.js';
 import { dashboardConfig } from './webapp/dashboard-config.js';
-import { createInvageWebUi } from './webapp/invage-webui.js';
+import { createInvageWebUi, createInvageChromeCatalogs } from './webapp/invage-webui.js';
 import { helpFirstAndAsyncTasks } from './agents/help-first.js';
 import { productDisplayName, productHostLabel } from './product-name.js';
 import {
@@ -46,9 +44,6 @@ import {
   readProductProfile,
   specialistTableMarkdown,
 } from './agents/roster.js';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
 
 const INVAGE_SKILLS: Skill[] = registerInvageSkills(readProductProfile());
 
@@ -164,7 +159,7 @@ export const invageExtension: DomainExtension = {
   l10n: {
     defaultLanguage: 'en',
     languages: ['en'],
-    catalogDir: resolve(__dirname, '../l10n'),
+    catalogs: createInvageChromeCatalogs(),
   },
 
   purpose: INVAGE_PURPOSE,
