@@ -127,6 +127,7 @@ export async function tigerExecute(args: {
   credentials: TigerCredentials;
   method: TigerHttpMethod;
   version?: string;
+  signal?: AbortSignal;
   biz: Record<string, unknown>;
   fetchImpl: typeof fetch;
   timestamp?: string;
@@ -149,6 +150,7 @@ export async function tigerExecute(args: {
   params.sign = signTigerRequest(params, args.credentials.private_key);
   const res = await args.fetchImpl(args.gateway, {
     method: 'POST',
+    signal: args.signal,
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
   });
@@ -350,15 +352,15 @@ export async function fetchTigerRawBundle(
   }
   const option_history = !opts?.history && hasOptions && account_kind !== 'global'
     ? await fetchOptionHistory({ gateway, credentials, fetchImpl, timestamp: opts?.timestamp }) : undefined;
-  // Category/item details are available only on single-order queries. Keep
-  // successful history if an older gateway cannot provide the optional details.
+  // The list already reports commission and GST. Query individual orders only
+  // to recover missing totals; avoid an extra request per historical fill.
   for (const h of [history, option_history]) if (h) {
     for (const order of h.orders) {
-      if (!(Number(order.filledQuantity) > 0) || Array.isArray(order.charges)) continue;
+      if (!(Number(order.filledQuantity) > 0) || order.commission != null && order.gst != null) continue;
       await new Promise(r => setTimeout(r, 550));
       try {
         const response = await tigerExecute({gateway,credentials,fetchImpl,method:'orders',
-          biz:{account,id:String(order.id),show_charges:true},timestamp:opts?.timestamp});
+          biz:{account,id:String(order.id),show_charges:true},timestamp:opts?.timestamp,signal:AbortSignal.timeout(15_000)});
         if (!envelopeOk(response)) throw new Error('Fee detail lookup failed');
         const data = response.data as Record<string,unknown>;
         const candidates = Array.isArray(data?.items) ? data.items : data?.id != null ? [data] : [];

@@ -60,6 +60,7 @@ export async function webullGet(args: {
   fetchImpl: typeof fetch;
   timestamp?: string;
   nonce?: string;
+  signal?: AbortSignal;
 }): Promise<unknown> {
   if (!WEBULL_ALLOW_HOSTS.has(args.host)) {
     throw new BrokerParseError(`Webull host "${args.host}" is not allow-listed.`);
@@ -92,7 +93,7 @@ export async function webullGet(args: {
     'x-version': 'v3',
   };
   if (args.credentials.access_token) headers['x-access-token'] = args.credentials.access_token;
-  const res = await args.fetchImpl(url, { method: 'GET', headers });
+  const res = await args.fetchImpl(url, { method: 'GET', headers, signal:args.signal });
   const text = await res.text();
   let json: unknown = text;
   try {
@@ -283,7 +284,7 @@ export async function fetchWebullRawBundle(
       await new Promise(resolve => setTimeout(resolve, 1000));
       try {
         const response = asRecord(await webullGet({host,path:'/trading/orders/get',
-          query:{account_id,client_order_id:clientId},credentials,fetchImpl}));
+          query:{account_id,client_order_id:clientId},credentials,fetchImpl,signal:AbortSignal.timeout(15_000)}));
         const detail = asRecord(response?.data ?? response);
         if (!detail || !Array.isArray(detail.orders) ||
             detail.client_order_id !== clientId ||

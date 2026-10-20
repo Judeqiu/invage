@@ -44,18 +44,18 @@ describe('Tiger stock and parent order fees', () => {
     expect(tigerCommissions(order,tigerFills(),at).size).toBe(0);
     expect(tigerCommissions(order,tigerFills(),at+86400000).size).toBe(2);
   });
-  it.each([false,true])('queries itemized single-order charges and survives optional lookup failure=%s', async fail => {
+  it.each([[false,true],[true,true],[false,false]])('recovers missing totals with optional lookup failure=%s, missing=%s', async (fail,missing) => {
     let queried=false;
     const raw=await fetchTigerRawBundle({account:'A',tiger_id:'1',license:'TBSG',private_key:readFileSync('tests/fixtures/tiger/test-private.pem','utf8')},
       {history:plan,gateway:'https://openapi.tigerfintech.com/hkg/gateway',fetchImpl:async (_url,init) => {
         const body=JSON.parse(String(init?.body??'{}')),biz=JSON.parse(body.biz_content??'{}');
         if(body.method==='orders'&&biz.id){queried=true;expect(biz).toMatchObject({account:'A',id:'o',show_charges:true});
           return Response.json(fail?{code:1}:{code:0,data:{items:[{...tigerOrder(),charges:[{details:[{type:'GST',afterDiscountAmount:'0.12'}]}]}]}});}
-        if(body.method==='orders')return Response.json({code:0,data:{items:[tigerOrder()]}});
+        if(body.method==='orders')return Response.json({code:0,data:{items:[{...tigerOrder(),gst:missing?undefined:'0.12'}]}});
         if(body.method==='order_transactions'||body.method==='positions')return Response.json({code:0,data:{items:[]}});
         return Response.json({code:0,data:[]});
       }});
-    expect(queried).toBe(true);
+    expect(queried).toBe(missing);
     expect(raw.history!.orders[0].commission).toBe('1.4');
     expect(raw.history!.gaps.length).toBe(fail?1:0);
   });
