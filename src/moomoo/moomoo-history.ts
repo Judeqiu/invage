@@ -5,6 +5,8 @@ import { assertBrokerHistory, type BrokerHistory, type BrokerHistoryGap, type Br
 import type { BrokerLot } from '../brokers/statement.js';
 import type { MooMooRawBundle } from './moomoo-types.js';
 import { BrokerParseError } from '../brokers/errors.js';
+import { allocateMooMooFees, parseMooMooOrderFees } from './moomoo-fees.js';
+import type { BrokerOrderFees, BrokerHistoryExecution } from '../brokers/history.js';
 
 function string(v: unknown): string {
   if (typeof v !== 'string' || !v.trim()) throw new BrokerParseError('Moomoo history identifier/text is missing');
@@ -86,7 +88,7 @@ export function mapMooMooHistory(bundle: MooMooRawBundle, lots: BrokerLot[], cha
   const gap = (kind: BrokerHistoryGap['kind'], reference: string | null, reason: string) => {
     if (!gaps.some(g => g.kind === kind && g.reference === reference)) gaps.push({ kind, reference, reason });
   };
-  const executions = bundle.fills_history.rows.map(row => {
+  const executions: BrokerHistoryExecution[] = bundle.fills_history.rows.map(row => {
     assertAccount(row);
     const code = string(row.code), market = code.slice(0,code.indexOf('.')), native = code.slice(code.indexOf('.')+1);
     if (!['US','HK'].includes(market) || !native) throw new BrokerParseError('Unsupported Moomoo history market');
@@ -109,6 +111,12 @@ export function mapMooMooHistory(bundle: MooMooRawBundle, lots: BrokerLot[], cha
       fee_cash:null, option:parsed && !('skip' in parsed) ? { right:parsed.right, expiry:parsed.expiry, strike:String(parsed.strike) } : null };
   });
   const orders = new Map<string, BrokerHistoryOrder>();
+  const fees = new Map<string, BrokerOrderFees>();
+  for (const row of bundle.orders_fees ?? []) {
+    const id = string(row.order_id);
+    if (fees.has(id)) throw new BrokerParseError('Duplicate Moomoo order fees');
+    fees.set(id, parseMooMooOrderFees(row, id, bundle.acc_id));
+  }
   for (const row of [...(bundle.orders_history?.rows ?? []), ...(bundle.orders_details ?? [])]) {
     assertAccount(row);
     const code = string(row.code), market = String(row.exchange ?? code.split('.')[0]);
@@ -122,15 +130,25 @@ export function mapMooMooHistory(bundle: MooMooRawBundle, lots: BrokerLot[], cha
     const prior = orders.get(mapped.id);
     if (!prior || mapped.updated_at >= prior.updated_at) orders.set(mapped.id,mapped);
   }
+  for (const order of orders.values()) {
+    const reported = fees.get(order.id);
+    if (reported) {
+      order.fees = reported;
+      allocateMooMooFees(order, executions.filter(e => e.order_id === order.id));
+    }
+  }
+  for (const id of fees.keys()) if (!orders.has(id)) gap('orders',id,'Reported fees retained in the raw archive; parent-order metadata unavailable.');
   for (const row of bundle.orders_details ?? []) {
     const info = row.multi_leg_info as { leg_infos?: unknown[] } | undefined;
     if (row.security_type === 'MULTILEG_OPTION' && !info?.leg_infos?.length) gap('orders',string(row.order_id),'Historical multi-leg order details have no leg metadata.');
   }
   if (!bundle.orders_history) gap('orders',null,'Historical parent orders have not been retrieved.');
   for (const problem of bundle.history_gaps ?? []) gap('orders',problem.reference,problem.reason);
+  for (const problem of bundle.fee_gaps ?? []) gap('coverage',problem.reference,problem.reason);
   const from = new Date(Number(BigInt(bundle.fills_history.start)/1000n)).toISOString();
   const through = new Date(Number(BigInt(bundle.fills_history.end)/1000n)).toISOString();
   const mode = bundle.history_mode ?? 'full';
   return assertBrokerHistory({ ...bound, executions, orders:[...orders.values()], sync:{ historical_imported:mode === 'full' && !bundle.history_gaps?.length, version:1, mode, from, through,
-    status:gaps.length ? 'partial' : 'complete', full_history_synced:mode === 'full' && !gaps.length, fees:'unavailable', gaps } });
+    status:gaps.length ? 'partial' : 'complete', full_history_synced:mode === 'full' && !gaps.length,
+    fees:executions.length && executions.every(e => e.fee_cash !== null) ? 'available' : fees.size ? 'partial' : 'unavailable', gaps } });
 }

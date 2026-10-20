@@ -7,6 +7,7 @@ import { openOptionTradeDetails } from './option-dashboard-data.js';
 import { buildOptionEpisodes } from '../brokers/option-history.js';
 import { canonicalOptionUnderlying } from '../brokers/option-symbol.js';
 import type { OptionRelationship } from '../brokers/option-relationships.js';
+import type { BrokerOrderFees } from '../brokers/history.js';
 
 export interface TradeJournalRow {
   id: string; optionId: string; underlying: string; right: 'call' | 'put'; side: 'short' | 'long' | 'unknown';
@@ -16,6 +17,7 @@ export interface TradeJournalRow {
   status: string; lastTrade: string | null; paidToClose: string | null; realizedPnl: string | null;
   feeBasis: 'net' | 'gross' | 'broker' | 'unknown'; brokerDate: string | null; observedSince: string | null;
   executions: Array<OptionExecution & { id: string; option_id: string }>;
+  orderFees: Array<BrokerOrderFees & { orderId: string }>;
   events: OptionLifecycleEvent[]; notes: string[]; rolled: boolean; thesis: string; noteUpdatedAt: string | null;
 }
 const neg = (v: string) => v.startsWith('-') ? v.slice(1) : `-${v}`;
@@ -26,8 +28,16 @@ function base(state: InvestorState, t: OptionIdentityTerms, side: TradeJournalRo
     strike:t.strike, expiry:t.expiry, multiplier:t.multiplier, currency:t.currency, channel:t.channel, accountId:t.account_id,
     entryDate:null, entryThrough:null, contracts:'0', premium:null, netCash:null, returnsPct:null,
     status:'Open', lastTrade:null, paidToClose:null, realizedPnl:null, feeBasis:'unknown', brokerDate:null, observedSince:null,
-    executions:[], events:[], notes:[], rolled:false, thesis:state.option_journal?.[pk]?.thesis ?? '',
+    executions:[], orderFees:[], events:[], notes:[], rolled:false, thesis:state.option_journal?.[pk]?.thesis ?? '',
     noteUpdatedAt:state.option_journal?.[pk]?.updated_at ?? null };
+}
+function attachOrderFees(state: InvestorState, row: TradeJournalRow) {
+  const ids = new Set(row.executions.map(e => e.execution_id));
+  for (const history of Object.values(state.broker_history ?? {})) {
+    if (history.channel !== row.channel || history.account_id !== row.accountId) continue;
+    const parents = new Set(history.executions.filter(e => ids.has(e.id)).map(e => e.order_id));
+    row.orderFees = history.orders.filter(o => parents.has(o.id) && o.fees).map(o => ({ ...o.fees!, orderId:o.id }));
+  }
 }
 function returns(row: TradeJournalRow): number | null {
   const denominator = Number(row.strike) * Number(row.contracts) * Number(row.multiplier);
@@ -72,6 +82,7 @@ export function tradesOpenBook(rawState: InvestorState) {
     if (row.entryDate && row.entryDate !== row.entryThrough) row.notes.push('Entry date spans multiple opening fills; the earliest confirmed date is shown.');
     if (!terms.currency) row.notes.push('Native currency is unknown; money totals exclude this row.');
     row.returnsPct = returns(row);
+    attachOrderFees(state, row);
     rows.push(row);
   }
   return { rows:rows.sort((a,b) => (b.entryDate ?? '').localeCompare(a.entryDate ?? '') || a.id.localeCompare(b.id)),
@@ -203,6 +214,7 @@ export function tradesHistory(rawState: InvestorState, relationships: OptionRela
     row.notes.push('Snapshot evidence only. First seen is not the entry date; disappearance does not prove a close or assignment.');
     rows.push(row);
   }
+  for (const row of rows) attachOrderFees(state, row);
   return { rows:rows.sort((a,b) => (b.lastTrade ?? b.brokerDate ?? '').localeCompare(a.lastTrade ?? a.brokerDate ?? '') || a.id.localeCompare(b.id)),
     available:state.option_executions !== undefined || events.length > 0 };
 }

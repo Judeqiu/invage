@@ -27,6 +27,7 @@ const executablePath = process.env.CHROME_BINARY || '/usr/bin/chromium';
 it.skipIf(!existsSync(executablePath))('renders both exact column sets, lazy history, filters, IDs, cash and accessible mobile details', async () => {
   const root = resolve('webui'), state = tradesFixture();
   const open = {...tradesOpenBook(state),revision:1};
+  open.rows[0].orderFees = [{orderId:'parent-1',currency:'USD',total:'3.88',items:[{type:'Platform Fee <img src=x onerror=alert(1)>',amount:'3.88'}]}];
   open.rows.push({...open.rows[0],id:'other-broker',optionId:'1648d3d4-f46f-8979-a9f3-7d76cefa9d15',channel:'tiger',underlying:'MSFT',currency:'HKD',premium:'500',netCash:'499'});
   open.rows.push({...open.rows[0],id:'unknown',optionId:'2648d3d4-f46f-8979-a9f3-7d76cefa9d15',underlying:'<IMG SRC=x ONERROR=alert(1)>',entryDate:null,entryThrough:null,premium:null,netCash:null});
   open.rows.push({...open.rows[0],id:'august',underlying:'NVDA',entryDate:'2026-08-20',entryThrough:'2026-08-20',premium:'200'});
@@ -75,6 +76,10 @@ it.skipIf(!existsSync(executablePath))('renders both exact column sets, lazy his
     await page.click('[data-detail]'); await page.waitForSelector('#tradeDetail[open]');
     expect(await page.$eval('#detailBody',n => n.textContent)).toContain(open.rows[0].optionId);
     expect(await page.$eval('#detailBody',n => n.textContent)).toContain('open-1');
+    expect(await page.$eval('#detailBody',n => n.textContent)).toContain('Reported order fees');
+    expect(await page.$eval('#detailBody',n => n.textContent)).toContain('parent-1 · Total 3.88 USD');
+    expect(await page.$eval('#detailBody',n => n.textContent)).toContain('Platform Fee <img');
+    expect(await page.$('#detailBody img')).toBeNull();
     expect(await page.$eval('#detailBody',n => n.textContent)).toContain(open.rows[0].executions[0].id);
     await page.type('#thesis','Private thesis <img src=x>');await page.click('#saveNote');
     await page.waitForFunction(() => document.getElementById('noteStatus')?.textContent?.includes('draft'));

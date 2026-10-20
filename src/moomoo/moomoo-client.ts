@@ -3,6 +3,7 @@ import { moomooNonce, moomooSignContent, parseSignAlg, signMooMooRequest, type M
 import { looksLikeOptionCode } from '../brokers/option-symbol.js';
 import { envelopeOk, type MooMooEnvelope, type MooMooRawBundle } from './moomoo-types.js';
 import type { BrokerHistorySyncPlan } from '../brokers/history.js';
+import { parseMooMooOrderFees } from './moomoo-fees.js';
 
 export const MOOMOO_HOST = 'webapi.moomoo.com';
 export const MOOMOO_ORIGIN = `https://${MOOMOO_HOST}`;
@@ -265,6 +266,35 @@ async function fetchOrderDetails(accId: string, orders: Record<string, unknown>[
   return { rows, gaps };
 }
 
+async function fetchOrderFees(accId: string, orders: Record<string, unknown>[], fills: Record<string, unknown>[],
+  credentials: MooMooCredentials, fetchImpl: typeof fetch) {
+  const rows: Record<string, unknown>[] = [], gaps: NonNullable<MooMooRawBundle['fee_gaps']> = [];
+  const ids = [...new Set([...fills, ...orders.filter(o => Number(o.dealt_qty) > 0)]
+    .flatMap(row => typeof row.order_id === 'string' && row.order_id.trim() ? [row.order_id] : []))];
+  for (const id of ids) {
+    try {
+      let env: MooMooEnvelope;
+      for (let attempt = 0; ; attempt++) {
+        try {
+          env = await getWithSkewRetry({ path:`/api/v1.0/accounts/${encodeURIComponent(accId)}/orders/${encodeURIComponent(id)}/fees`,
+            credentials, fetchImpl });
+          failIfError(env, 'order fees'); break;
+        } catch (error) {
+          if (!(error instanceof BrokerHttpError) || error.vendorCode !== '429' || attempt >= 3) throw error;
+          await new Promise(resolve => setTimeout(resolve, 1000 * 2 ** attempt));
+        }
+      }
+      if (!env.d || typeof env.d !== 'object' || Array.isArray(env.d)) throw new BrokerParseError('Missing order fees');
+      const row = env.d as Record<string, unknown>;
+      parseMooMooOrderFees(row, id, accId);
+      rows.push(row);
+    } catch {
+      gaps.push({ reference:id, reason:'Order fees unavailable or invalid; retry with a later sync (Full sync for older orders).' });
+    }
+  }
+  return { rows, gaps };
+}
+
 function failIfError(env: MooMooEnvelope, what: string): void {
   if (envelopeOk(env)) return;
   throw new BrokerHttpError(
@@ -385,6 +415,8 @@ export async function fetchMooMooRawBundle(
   // Recent fills may belong to orders created before the incremental window.
   const parents = [...orders_history.rows, ...fills_history.rows.filter(row => row.order_id != null)];
   const details = await fetchOrderDetails(acc_id, parents, credentials, fetchImpl);
+  const fees = credentials.broker === 'futubull' ? undefined : await fetchOrderFees(acc_id,
+    [...orders_history.rows, ...details.rows], fills_history.rows, credentials, fetchImpl);
   const option_basicinfo = await fetchOptionBasicInfo(positions, credentials, fetchImpl, fills_history?.rows);
   return {
     schema: credentials.broker === 'futubull' ? 'invage.futubull.cloud.raw.v1' : 'invage.moomoo.raw.v1',
@@ -399,5 +431,6 @@ export async function fetchMooMooRawBundle(
     orders_details:details.rows,
     history_mode:plan.mode,
     history_gaps:details.gaps,
+    ...(fees ? { orders_fees:fees.rows, fee_gaps:fees.gaps } : {}),
   };
 }

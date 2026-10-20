@@ -29,7 +29,12 @@ export const brokerHistoryDatasets: Record<string,Dataset> = {
     currency:text('Reported order currency.'),quantity:decimal('Requested parent quantity; null when omitted, including amount-based orders.'),limit_price:decimal('Signed parent limit price, possibly a spread credit/debit.'),
     filled_quantity:decimal('Reported cumulative parent filled quantity; null when unreported.'),filled_price:decimal('Reported average parent fill price.'),order_type:text('Broker order type.'),
     time_in_force:text('Reported time in force.'),session:text('Reported trading session.'),
-  },s=>histories(s).flatMap(h=>h.orders)),
+    fee_total:{ ...decimal('Reported parent-order charge; positive expense. Includes allocated execution fees: never sum both.',true), sum_group_by:['fee_currency'], comparison_group_by:['fee_currency'] },
+    fee_currency:text('Currency of the parent-order fee total, independent of order currency.'),
+  },s=>histories(s).flatMap(h=>h.orders.map(o=>({...o,fee_total:o.fees?.total,fee_currency:o.fees?.currency})))),
+  broker_order_fees: dataset('Broker-reported parent-order fee breakdown. Items are components of broker_orders.fee_total, not extra charges.',{
+    ...scope,order_id:text('Parent order identifier.'),currency:text('Reported fee currency.'),type:text('Broker fee item name.'),amount:decimal('Reported charge/rebate component; positive expense.',true),
+  },s=>histories(s).flatMap(h=>h.orders.flatMap(o=>(o.fees?.items ?? []).map(item=>({...scopeValues(h),order_id:o.id,currency:o.fees!.currency,...item}))))),
   broker_order_legs: dataset('Authoritative parent order legs; leg quantities are ratios, not independent fills.',{
     ...scope,order_id:text('Parent order identifier.'),native_symbol:text('Exact leg contract.'),side:text('buy or sell.'),effect:text('open, close or unknown.'),
     ratio:decimal('Positive leg ratio per parent contract.'),multiplier:decimal('Reported leg premium multiplier.'),

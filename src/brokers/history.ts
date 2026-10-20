@@ -12,11 +12,16 @@ export interface BrokerHistoryOrderLeg {
   native_symbol: string; side: 'buy' | 'sell'; effect: 'open' | 'close' | 'unknown';
   ratio: string; multiplier: string | null;
 }
+/** Broker-reported order charges, never additional execution cash flows. */
+export interface BrokerOrderFees {
+  currency: string; total: string; items: Array<{ type: string; amount: string }>;
+}
 export interface BrokerHistoryOrder extends BrokerHistoryScope {
   id: string; native_symbol: string; side: 'buy' | 'sell' | 'unknown'; status: string;
   created_at: string; updated_at: string; clock: string; currency: string | null;
   quantity: string | null; limit_price: string | null; filled_quantity: string | null; filled_price: string | null;
   order_type: string; time_in_force: string | null; session: string | null; legs: BrokerHistoryOrderLeg[];
+  fees?: BrokerOrderFees;
 }
 export interface BrokerHistoryGap {
   kind: 'metadata' | 'orders' | 'coverage'; reference: string | null; reason: string;
@@ -94,7 +99,17 @@ export function assertHistoryExecution(raw: unknown): BrokerHistoryExecution {
 }
 export function assertHistoryOrder(raw: unknown): BrokerHistoryOrder {
   const o = obj(raw);
-  keys(o, ['broker_id','channel','account_id','id','native_symbol','side','status','created_at','updated_at','clock','currency','quantity','limit_price','filled_quantity','filled_price','order_type','time_in_force','session','legs']);
+  keys(o, ['broker_id','channel','account_id','id','native_symbol','side','status','created_at','updated_at','clock','currency','quantity','limit_price','filled_quantity','filled_price','order_type','time_in_force','session','legs','fees']);
+  let fees: BrokerOrderFees | undefined;
+  if (o.fees !== undefined) {
+    const f = obj(o.fees); keys(f, ['currency','total','items']);
+    const denomination = currency(f.currency);
+    if (!denomination || !Array.isArray(f.items)) throw new Error('Invalid broker order fees');
+    fees = { currency:denomination, total:nonnegative(f.total), items:f.items.map((raw: unknown) => {
+      const item = obj(raw); keys(item, ['type','amount']);
+      return { type:text(item.type), amount:amount(item.amount) };
+    }) };
+  }
   if (!Array.isArray(o.legs)) throw new Error('Broker history order legs must be an array');
   const legs = o.legs.map((raw: unknown) => {
     const l = obj(raw); keys(l, ['native_symbol','side','effect','ratio','multiplier']);
@@ -103,7 +118,7 @@ export function assertHistoryOrder(raw: unknown): BrokerHistoryOrder {
   return { ...scope(o), id: text(o.id), native_symbol: text(o.native_symbol), side: choice(o.side, ['buy','sell','unknown']), status: text(o.status),
     created_at: stamp(o.created_at), updated_at: stamp(o.updated_at), clock: text(o.clock), currency: currency(o.currency),
     quantity: o.quantity === null ? null : nonnegative(o.quantity), limit_price: nullableAmount(o.limit_price), filled_quantity: o.filled_quantity === null ? null : nonnegative(o.filled_quantity),
-    filled_price: nullableAmount(o.filled_price), order_type: text(o.order_type), time_in_force: nullableText(o.time_in_force), session: nullableText(o.session), legs };
+    filled_price: nullableAmount(o.filled_price), order_type: text(o.order_type), time_in_force: nullableText(o.time_in_force), session: nullableText(o.session), legs, ...(fees ? { fees } : {}) };
 }
 export function assertBrokerHistory(raw: unknown): BrokerHistory {
   const o = obj(raw); keys(o, ['broker_id','channel','account_id','executions','orders','sync']);
@@ -150,17 +165,22 @@ export function mergeBrokerHistory(previous: BrokerHistory | undefined, incoming
   for (const row of [...(old?.orders ?? []), ...next.orders]) {
     const prior = orders.get(row.id);
     if (prior && (prior.native_symbol !== row.native_symbol || prior.side !== row.side)) throw new Error(`Conflicting broker history order ${row.id}`);
-    if (!prior || row.updated_at >= prior.updated_at) orders.set(row.id, { ...row, legs: row.legs.length ? row.legs : prior?.legs ?? [] });
+    const fees = row.fees ?? prior?.fees;
+    if (!prior || row.updated_at >= prior.updated_at) orders.set(row.id, { ...row, legs: row.legs.length ? row.legs : prior?.legs ?? [], ...(fees ? { fees } : {}) });
+    else if (fees) orders.set(row.id, { ...prior, fees });
   }
   const retainedGaps = next.sync.mode === 'incremental' ? [...(old?.sync.gaps ?? []), ...next.sync.gaps] : next.sync.gaps;
   const gaps = retainedGaps.filter((g,i,all) => all.findIndex(other => other.kind === g.kind && other.reference === g.reference && other.reason === g.reason) === i).filter(g => g.kind !== 'metadata' || !g.reference ||
     !([...executions.values()].some(r => r.native_symbol === g.reference) &&
-      [...executions.values()].filter(r => r.native_symbol === g.reference).every(r => r.multiplier !== null && r.symbol !== null)));
+      [...executions.values()].filter(r => r.native_symbol === g.reference).every(r => r.multiplier !== null && r.symbol !== null)))
+    .filter(g => !(g.kind === 'coverage' && g.reason.startsWith('Order fees unavailable or invalid;') && g.reference && orders.get(g.reference)?.fees));
   const status = gaps.length ? 'partial' : next.sync.status === 'partial' && next.sync.gaps.length ? 'complete' : next.sync.status;
   const full = next.sync.mode === 'full' ? status === 'complete' : old?.sync.full_history_synced === true;
   return { ...next, executions: [...executions.values()].sort((a,b) => a.executed_at.localeCompare(b.executed_at) || a.id.localeCompare(b.id)),
     orders: [...orders.values()].sort((a,b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id)),
-    sync: { ...next.sync, historical_imported: old?.sync.historical_imported === true || next.sync.historical_imported === true || old?.sync.full_history_synced === true, status, gaps, from: old && old.sync.from < next.sync.from ? old.sync.from : next.sync.from, full_history_synced: full } };
+    sync: { ...next.sync, ...(next.broker_id === 'moomoo' ? { fees: executions.size && [...executions.values()].every(e => e.fee_cash !== null)
+      ? 'available' as const : [...orders.values()].some(o => o.fees) ? 'partial' as const : 'unavailable' as const } : {}),
+      historical_imported: old?.sync.historical_imported === true || next.sync.historical_imported === true || old?.sync.full_history_synced === true, status, gaps, from: old && old.sync.from < next.sync.from ? old.sync.from : next.sync.from, full_history_synced: full } };
 }
 
 /** Existing option consumers share one projection; unpriced records remain in generic history. */

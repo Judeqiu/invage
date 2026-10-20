@@ -140,6 +140,7 @@ export const datasets: Record<string, Dataset> = {
 export const relationships = [
   { from: 'broker_executions', to: 'broker_orders', keys: ['broker_id', 'channel', 'account_id', 'order_id -> id'], meaning: 'Execution parent; orders are not extra cash flows.' },
   { from: 'broker_order_legs', to: 'broker_orders', keys: ['broker_id', 'channel', 'account_id', 'order_id -> id'], meaning: 'Exact parent legs and ratios; actual fills remain in broker_executions.' },
+  { from: 'broker_order_fees', to: 'broker_orders', keys: ['broker_id', 'channel', 'account_id', 'order_id -> id'], meaning: 'Components of the reported parent fee total; do not sum the total and its components or allocated execution fees.' },
   { from: 'broker_history_sync', to: 'broker_history_gaps', keys: ['broker_id', 'channel', 'account_id'], meaning: 'Check completeness and unresolved metadata before historical totals.' },
   { from: 'option_relationships', to: 'broker_accounts', keys: ['channel', 'account_id'], meaning: 'Both account keys must agree. Relationship evidence describes a close/replacement, not current holdings or profit.' },
   { from: 'option_relationship_fills', to: 'option_relationships', keys: ['relationship_id -> id', 'channel', 'account_id'], meaning: 'closing/replacement archived fill references; inspect effect before claiming a new opening. Normalized option_executions may omit these closed contracts.' },

@@ -70,6 +70,7 @@ describe('Moomoo historical data',()=>{
       if(u.pathname.endsWith('/authorized_trd_accs'))return Response.json({s:'ok',d:[{account_id:'A'}]});
       if(u.pathname.endsWith('/funds'))return Response.json(raw.funds);
       if(u.pathname.endsWith('/positions'))return Response.json(raw.positions);
+      if(u.pathname.endsWith('/fees'))return Response.json({s:'ok',d:{order_id:'parent',currency:'USD',total_fee:'3.88',fees:[{type:'Commission',amount:'3.88'}]}});
       if(u.pathname.endsWith('/fills_history'))return Response.json({s:'ok',d:{order_fills:u.searchParams.get('trd_market')==='US'?raw.fills_history!.rows:[],completed:true}});
       if(u.pathname.endsWith('/orders_history')){
         if(u.searchParams.get('trd_market')==='HK')return Response.json({s:'ok',d:{orders:[],completed:true}});

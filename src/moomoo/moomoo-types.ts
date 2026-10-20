@@ -18,6 +18,9 @@ export interface MooMooRawBundle {
   fills_history?: { start: string; end: string; rows: Record<string, unknown>[] };
   orders_history?: { start: string; end: string; rows: Record<string, unknown>[] };
   orders_details?: Record<string, unknown>[];
+  /** Order-scoped fee totals and breakdowns from the dedicated read-only endpoint. */
+  orders_fees?: Record<string, unknown>[];
+  fee_gaps?: Array<{ reference: string; reason: string }>;
   history_mode?: 'full' | 'incremental';
   history_gaps?: Array<{ reference: string | null; reason: string }>;
 }

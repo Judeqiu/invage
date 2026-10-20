@@ -1,0 +1,50 @@
+import { addDecimals, decimal } from '../brokers/option-executions.js';
+import type { BrokerHistoryExecution, BrokerHistoryOrder, BrokerOrderFees } from '../brokers/history.js';
+import { BrokerParseError } from '../brokers/errors.js';
+
+export function parseMooMooOrderFees(raw: Record<string, unknown>, orderId: string, accountId: string): BrokerOrderFees {
+  if (raw.order_id !== orderId || (raw.account_id ?? raw.acc_id ?? accountId) !== accountId) {
+    throw new BrokerParseError('Moomoo order fee account/order mismatch');
+  }
+  if (typeof raw.currency !== 'string' || !/^[A-Z]{3,4}$/.test(raw.currency) || !Array.isArray(raw.fees)) {
+    throw new BrokerParseError('Moomoo order fee currency/breakdown unavailable');
+  }
+  const total = decimal(raw.total_fee);
+  if (total.startsWith('-')) throw new BrokerParseError('Moomoo total fee cannot be negative');
+  const items = raw.fees.map(item => {
+    if (!item || typeof item !== 'object' || Array.isArray(item) || typeof item.type !== 'string' || !item.type.trim()) {
+      throw new BrokerParseError('Invalid Moomoo fee item');
+    }
+    return { type:item.type, amount:decimal(item.amount) };
+  });
+  // The reported total is authoritative; a breakdown need not include every charge.
+  return { currency:raw.currency, total, items };
+}
+
+/** Only final, single-contract orders with all fills present can be allocated.
+ * Combo charges stay on the parent: the API does not report leg-level fees. */
+export function allocateMooMooFees(order: BrokerHistoryOrder, fills: BrokerHistoryExecution[]): void {
+  if (!order.fees || !fills.length || order.legs.length > 1 ||
+      !['FILLED_ALL','CANCELLED_ALL','CANCELLED_PART','DELETED','FAILED','DISABLED'].includes(order.status) ||
+      order.filled_quantity === null || fills.some(f => f.native_symbol !== order.native_symbol ||
+        f.currency !== order.fees!.currency || order.currency !== null && f.currency !== order.currency) ||
+      new Set(fills.map(f => f.id)).size !== fills.length ||
+      new Set(fills.map(f => `${f.side}:${f.effect}`)).size !== 1) return;
+  const quantity = addDecimals(...fills.map(f => f.quantity));
+  if (/[1-9]/.test(addDecimals(quantity, `-${order.filled_quantity}`))) return;
+  const scale = Math.max(12, order.fees.total.split('.')[1]?.length ?? 0);
+  const qtyScale = Math.max(...fills.map(f => f.quantity.split('.')[1]?.length ?? 0));
+  const units = (value: string, precision: number) => {
+    const [whole, fraction = ''] = value.split('.');
+    return BigInt(whole + fraction.padEnd(precision, '0'));
+  };
+  const denominator = units(quantity, qtyScale), total = units(order.fees.total, scale);
+  let remaining = total;
+  // Stable order makes remainder assignment reproducible across repeated syncs.
+  for (const [i, fill] of [...fills].sort((a,b) => a.id.localeCompare(b.id)).entries()) {
+    const fee = i === fills.length - 1 ? remaining : total * units(fill.quantity, qtyScale) / denominator;
+    remaining -= fee;
+    const digits = fee.toString().padStart(scale + 1, '0');
+    fill.fee_cash = `${fee === 0n ? '' : '-'}${digits.slice(0,-scale)}.${digits.slice(-scale)}`;
+  }
+}
