@@ -119,6 +119,8 @@ const payload = {
           avgCost: 1700,
           price: 1500,
           brokerMark: 1500,
+          // Probability requires a matching quote pair, not a stored broker mark.
+          probabilityQuote: { spot: 150, mark: 1500, spotAsOf: '2026-09-16T20:00:00Z' },
           cost: -1700,
           value: -1500,
           pl: 200,
@@ -224,6 +226,7 @@ const files = new Map([
   ['/positions/app.js', 'webui/positions/app.js'],
   ['/insights/', 'webui/insights/index.html'],
   ['/insights/app.js', 'webui/insights/app.js'],
+  ['/option-probability.js', 'webui/option-probability.js'],
   ['/report.js', 'webui/report.js'],
   ['/report.css', 'webui/report.css'],
 ]);
@@ -287,6 +290,14 @@ const server = createServer(async (req, res) => {
       return;
     }
     if (url === '/api/domain/invage/dashboard') {
+      const query = new URL(req.url, 'http://localhost').searchParams;
+      if (cachedSnapshot && query.get('preview') === '1') {
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.write('data: ' + JSON.stringify({ type:'snapshot', payload:cachedSnapshot }) + '\n\n');
+        await new Promise(resolve => setTimeout(resolve, 250));
+        if (!res.destroyed) res.end('data: ' + JSON.stringify({ type:'result', payload }) + '\n\n');
+        return;
+      }
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify(payload));
       return;
@@ -702,6 +713,7 @@ try {
   assert.equal(await page.$eval('#openOptions .option-ledger-row td:nth-child(5)', cell => cell.textContent.trim()), '$151.23', 'Current Spot updates from the refreshed share quote without contract scaling');
 
   payload.equityPrices = {};
+  for (const position of payload.model.live.positions) delete position.probabilityQuote;
   await page.goto(`http://127.0.0.1:${port}/dashboard/`);
   await page.waitForFunction(() => document.getElementById('expiryTable')?.textContent?.includes('could not be scored'));
   assert.equal(await page.$$eval('#expiryTable .risk-row', (rows) => rows.length), 0, 'unscored contracts are excluded from the radar');
@@ -779,8 +791,8 @@ try {
   assert.equal(await visibleUnderlyingRows(), 5, 'underlying card initially shows five rows');
   assert.deepEqual(await page.$$eval('#underlyingPremiumCard > .bar-list .bar-meta > span:first-child', nodes => nodes.map(node => node.textContent)), ['NVDA', 'AMZN', 'GOOG', 'MSFT', 'META'], 'five highest premium amounts appear first');
   assert.equal(await page.$('#premiumEngine > div > .chart-help'), null, 'note is no longer outside the card');
-  assert.match(await page.$eval('#underlyingPremiumCard > :last-child', node => node.textContent), /Before fees/);
-  assert(await page.$('#underlyingPremiumCard > :last-child .help-dot'), 'help stays with the footer note');
+  assert.match(await page.$eval('#underlyingPremiumCard > .bar-caption', node => node.textContent), /Before fees/);
+  assert(await page.$('#underlyingPremiumCard > .bar-caption .help-dot'), 'help stays with the footer note');
   await page.hover('#underlyingPremiumCard .help-dot');
   await page.waitForSelector('#reportHelpTooltip:not([hidden])');
   await page.keyboard.press('Escape');
@@ -923,10 +935,11 @@ try {
   await page.waitForSelector('#table2 tbody');
   await page.goto(`http://127.0.0.1:${port}/dashboard/`);
   await page.waitForFunction(() => document.getElementById('status')?.textContent?.includes('Snapshot'));
-  assert.equal(dashboardRequests, beforeNavigation, 'navigation reuses snapshot without valuation reloads');
+  assert.equal(dashboardRequests, beforeNavigation + 2, 'dashboard navigation displays a snapshot while revalidating; positions reuses the private snapshot');
+  await page.waitForSelector('#dashboardRefresh:enabled');
   await page.click('#dashboardRefresh');
   await page.waitForFunction(() => document.getElementById('status')?.textContent?.includes('Loaded in'));
-  assert.equal(dashboardRequests, beforeNavigation + 1, 'explicit refresh fetches new valuation');
+  assert.equal(dashboardRequests, beforeNavigation + 3, 'explicit refresh fetches new valuation');
 
   await page.goto(`http://127.0.0.1:${port}/trades/`);
   await page.waitForSelector('#table tbody details');

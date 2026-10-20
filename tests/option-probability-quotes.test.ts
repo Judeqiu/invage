@@ -12,9 +12,8 @@ const row = { strike: 390, lastPrice: 25, bid: 24, ask: 28,
   lastTradeDate: new Date('2026-10-14T19:59:00Z'), expiration: '2026-10-16' };
 const quote = { regularMarketPrice: 370, regularMarketTime: new Date('2026-10-14T20:00:00Z'), preMarketPrice: 361 };
 const option = { right: 'put', side: 'short', strike: 390, expiry: '2026-10-16', multiplier: 100, underlying: 'TSLA', settlement: 'physical', mark: 1641 } as const;
-const app = readFileSync('webui/dashboard/app.js', 'utf8');
-const math = app.slice(app.indexOf('function daysToExpiry('), app.indexOf('function metricCardHtml('));
-const calculate = runInNewContext(math + '; optionFinishItmProbability');
+const math = readFileSync('webui/option-probability.js', 'utf8');
+const calculate = runInNewContext(math + '; OptionProbability.finishItmProbability');
 
 it('pairs last-session prices before market open and ignores premarket spot and untimestamped mid', () => {
   const pair = matchingProbabilityQuote(row, quote, 100, now)!;

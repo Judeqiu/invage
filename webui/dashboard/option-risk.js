@@ -54,7 +54,7 @@
     if (!context || document.hidden || checking) return;
     // A static/saved report must have neither an authenticated context nor access
     // to this controller through stale serialized report data.
-    if (!['/domain-assets/invage/dashboard/index.html', '/dashboard/', '/dashboard/index.html'].includes(location.pathname)) return disable();
+    if (!['/domain-assets/invage/dashboard/index.html', '/dashboard/', '/dashboard/index.html', '/domain-assets/invage/dashboard/v2.html', '/dashboard/v2.html'].includes(location.pathname)) return disable();
     if (!context.payload.dashboardConfig?.showOptionRiskModelView || context.payload.productProfile !== 'consultant') return disable();
     checking = true;
     const key = contextKey;

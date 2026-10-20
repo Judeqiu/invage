@@ -15,7 +15,7 @@ function result(account = 'ibkr') {
     scenarios: [{ id: 'down', spotShock: -.1, volatilityPointShock: 10, byCurrency: [{ currency: 'USD', optionPnl: -150, combinedPnl: -100 }] }],
     contributors: [], payoffBounds: [], funding: [], actions: [], assumptions: ['Conditional scenario'] };
 }
-it.skipIf(!existsSync(executable))('isolates tabs, loads lazily, rejects late account responses and handles live disabling', async () => {
+it.skipIf(!existsSync(executable)).each(['index.html', 'v2.html'])('%s isolates tabs, loads lazily, rejects late account responses and handles live disabling', async (dashboardFile) => {
   const root = resolve('webui'); let enabled = false, loads = 0, posts = 0, latest = 0, capabilities = 0, hold = false, failJobs = false, failJobStatus = 503;
   const waiting: (() => void)[] = [];
   let holdCapabilities = false;
@@ -47,7 +47,7 @@ it.skipIf(!existsSync(executable))('isolates tabs, loads lazily, rejects late ac
   const browser = await puppeteer.launch({ executablePath: executable, headless: true, args:['--no-sandbox'] });
   try {
     const page=await browser.newPage(), errors:string[]=[]; page.on('pageerror',e=>errors.push(e.message));
-    await page.goto(`http://127.0.0.1:${(server.address() as {port:number}).port}/dashboard/index.html`);
+    await page.goto(`http://127.0.0.1:${(server.address() as {port:number}).port}/dashboard/${dashboardFile}`);
     await page.waitForSelector('#loading.hidden');
     expect(await page.$eval('#section01ViewTabs',e=>e.classList.contains('hidden'))).toBe(true);
     expect(posts).toBe(0); expect(latest).toBe(0); expect(capabilities).toBe(0);

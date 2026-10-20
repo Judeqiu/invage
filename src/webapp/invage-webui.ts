@@ -184,7 +184,9 @@ export function createInvageWebUi(): DomainWebUiExtension {
       {
         path: '/positions',
         pageKind: 'iframe',
-        iframeSrc: '/domain-assets/invage/positions/index.html',
+        iframeSrc: readDashboardConfig().positionsVersion === 'v2'
+          ? '/domain-assets/invage/positions/v2.html'
+          : '/domain-assets/invage/positions/index.html',
         title: 'Positions',
       },
       {

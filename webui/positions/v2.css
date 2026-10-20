@@ -1,0 +1,54 @@
+.positions-header { display:flex; justify-content:space-between; align-items:center; gap:1rem; flex-wrap:wrap; }
+#positionsStatus { color:var(--muted-foreground); font-size:.75rem; margin:.7rem 0 .5rem; min-height:1.2em; }
+.positions-progress { height:3px; background:var(--muted); border-radius:2px; overflow:hidden; }
+.positions-progress > div { height:100%; width:0; background:var(--gradient-brand); transition:width .2s; }
+.positions-progress[hidden] { display:none; }
+.positions-error { padding:1rem; border:1px solid var(--danger); border-radius:.55rem; margin:1rem 0; color:var(--danger); }
+.positions-error p { margin:0 0 .75rem; }
+.positions-toolbar { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:.8rem; border-bottom:1px solid var(--border); padding:.8rem 1rem; font-size:.75rem; }
+#positionsFilters { display:flex; align-items:center; flex-wrap:wrap; gap:.45rem; }
+#positionsFilters .label-eyebrow { margin-right:.3rem; }
+#positionsFreshness { color:var(--muted-foreground); font-size:.7rem; overflow-wrap:anywhere; }
+.positions-table { min-width:1100px; width:100%; border-collapse:separate; border-spacing:0; font-size:.78rem; font-variant-numeric:tabular-nums; }
+.positions-table th, .positions-table td { padding:.9rem .85rem; border-bottom:1px solid var(--border); vertical-align:middle; text-align:right; white-space:nowrap; }
+.positions-table th { font:500 .62rem var(--font-mono); letter-spacing:.08em; text-transform:uppercase; color:var(--muted-foreground); background:var(--card); }
+.positions-table th:first-child, .positions-table td:first-child { position:sticky; left:0; text-align:left; z-index:2; background:var(--card); box-shadow:1px 0 var(--border); min-width:100px; }
+.positions-table thead th { position:sticky; top:0; z-index:3; box-shadow:0 1px var(--border); }
+.positions-table thead th:first-child { z-index:4; }
+.positions-table td:last-child { text-align:left; }
+.positions-table tbody tr:last-child td { border-bottom:0; }
+.positions-table tr:hover td { background:#22293b; }
+.positions-table .col-label { display:block; }
+.positions-table .column-total { display:block; width:fit-content; max-width:100%; margin:.65rem 0 0 auto; border:1px solid #59617a; border-radius:.25rem; padding:.3rem .4rem; font:.7rem var(--font-sans); text-transform:none; letter-spacing:0; color:var(--foreground); }
+.positions-table th:first-child .column-total { margin-left:0; }
+.positions-table .metric-sub { font-size:.65rem; white-space:normal; max-width:18rem; }
+.positions-table .up { color:var(--success); }
+.positions-table .down { color:var(--danger); }
+.positions-table .pill { font-size:.65rem; padding:.25rem .45rem; }
+.positions-table .risk-row td { background:color-mix(in oklab,var(--danger) 8%,var(--card)); }
+.positions-table td.empty { text-align:center; padding:2.5rem 1rem; color:var(--muted-foreground); white-space:normal; }
+.positions-note { color:var(--muted-foreground); font-size:.72rem; line-height:1.8; margin-top:1rem; }
+.positions-warnings { margin-top:1.3rem; padding:1rem; border:1px solid var(--border); border-radius:.55rem; color:var(--muted-foreground); font-size:.75rem; }
+.positions-warnings summary { cursor:pointer; color:var(--warning); }
+.positions-warnings ul { padding-left:1rem; margin-top:.75rem; }
+.positions-warnings li + li { margin-top:.6rem; }
+.table-scroll { max-width:100%; overflow:auto; max-height:70vh; scrollbar-gutter:stable; }
+.table-card { padding:0; overflow:hidden; }
+#fundsTable { overflow:auto; }
+h1 { font-size:clamp(1.8rem,3vw,2.2rem); color:var(--ink); margin-top:.25rem; }
+#positionsContent[aria-busy="true"] { opacity:.7; }
+button:focus-visible, [tabindex]:focus-visible { outline:2px solid var(--brand-2); outline-offset:3px; }
+@media (max-width:600px) {
+  .positions-header .label-eyebrow { font-size:.58rem; }
+  .positions-toolbar { padding:.75rem; }
+  .section-gap { margin-top:1.75rem; }
+  .positions-table th, .positions-table td { padding:.8rem .7rem; }
+}
+@media (prefers-reduced-motion:reduce) { .positions-progress > div { transition:none; } }
+
+.sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; border:0; }
+
+.positions-table th:last-child { text-align:left; }
+.positions-table .pill-warning { color:var(--warning); }
+.positions-table .pill-danger { color:var(--danger); }
+.positions-table .pill-success { color:var(--success); }
