@@ -74,6 +74,24 @@ it.skipIf(!existsSync(executablePath))('renders both exact column sets, lazy his
     await page.select('#ticker','AAPL'); await page.type('#openingCash','1000');
     expect(await page.$eval('#journalTable table',n => n.textContent)).toContain('$1,300.06');
     await page.click('[data-detail]'); await page.waitForSelector('#tradeDetail[open]');
+    expect(await page.$eval('#tradeDetail',n => n.matches(':modal'))).toBe(false);
+    expect(await page.$$('[data-row][data-selected]')).toHaveLength(1);
+    expect(await page.evaluate(() => {
+      const panel = document.getElementById('tradeDetail')!.getBoundingClientRect();
+      const journal = document.querySelector('main')!.getBoundingClientRect();
+      return panel.right <= innerWidth && journal.right <= panel.left;
+    })).toBe(true);
+    await page.type('#thesis','Draft kept through panel changes');
+    await page.click('#minimizeDetail');
+    expect(await page.$eval('#detailBody',n => n.hidden)).toBe(true);
+    expect(await page.$eval('body',n => n.classList.contains('detail-open'))).toBe(false);
+    await page.click('#minimizeDetail');
+    expect(await page.$eval('#thesis',n => (n as HTMLTextAreaElement).value)).toBe('Draft kept through panel changes');
+    await page.click('#maximizeDetail');
+    expect(await page.$eval('#tradeDetail',n => n.getBoundingClientRect().width)).toBe(1408);
+    await page.click('#maximizeDetail');
+    await page.screenshot({path:'/tmp/invage-trades-side-panel.png',fullPage:true});
+    await page.$eval('#thesis',n => { (n as HTMLTextAreaElement).value = ''; });
     expect(await page.$eval('#detailBody',n => n.textContent)).toContain(open.rows[0].optionId);
     expect(await page.$eval('#detailBody',n => n.textContent)).toContain('open-1');
     expect(await page.$eval('#detailBody',n => n.textContent)).toContain('Reported order fees');
@@ -91,6 +109,14 @@ it.skipIf(!existsSync(executablePath))('renders both exact column sets, lazy his
     expect(await page.$eval('#thesis',n => (n as HTMLTextAreaElement).value)).toBe('Private thesis <img src=x>');
     expect(await page.$('#detailBody img')).toBeNull();await page.keyboard.press('Escape');
     await page.click('#clear');
+    await page.click('[data-detail]');
+    await page.type('#thesis',' — unsaved');
+    const originalId = await page.$eval('[data-row][data-selected]',n => n.getAttribute('data-row'));
+    await page.$$eval('[data-row]',ns => (ns.find(n => !n.hasAttribute('data-selected'))!.querySelector('button') as HTMLButtonElement).click());
+    expect(await page.$eval('[data-row][data-selected]',n => n.getAttribute('data-row'))).not.toBe(originalId);
+    await page.evaluate(id => (document.querySelector(`[data-row="${CSS.escape(id!)}"] button`) as HTMLButtonElement).click(),originalId);
+    expect(await page.$eval('#thesis',n => (n as HTMLTextAreaElement).value)).toContain(' — unsaved');
+    await page.keyboard.press('Escape');
     await page.click('[data-channel="tiger"]');
     expect(new URL(page.url()).searchParams.get('channel')).toBe('tiger');
     expect(await page.$eval('#journalTable table',n => n.textContent)).toContain('HKD');
@@ -129,6 +155,13 @@ it.skipIf(!existsSync(executablePath))('renders both exact column sets, lazy his
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     }
     await page.setViewport({width:390,height:844});
+    await page.click('[data-detail]');
+    expect(await page.$eval('#tradeDetail',n => n.getBoundingClientRect().width)).toBe(390);
+    await page.screenshot({path:'/tmp/invage-trades-side-panel-mobile.png',fullPage:true});
+    await page.click('#minimizeDetail');
+    expect(await page.$eval('#tradeDetail',n => n.getBoundingClientRect().height)).toBeLessThan(180);
+    await page.click('#minimizeDetail');
+    await page.click('#closeDetail');
     await page.$eval('#journalTable',n => {n.scrollLeft = n.scrollWidth;});
     expect(await page.$eval('#journalTable',n => n.scrollLeft)).toBeGreaterThan(0);
     await page.screenshot({path:'/tmp/invage-trades-v2-mobile.png',fullPage:true});

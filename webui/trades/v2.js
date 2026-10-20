@@ -90,21 +90,55 @@
     if (!rows.length) body = `<tbody><tr><td class="empty" colspan="${columns.length}">${!loaded ? 'Loading journal records…' : dataRows().length ? 'No entries match these filters.' : state.view === 'open' ? 'No open options on the books.' : 'No completed contracts or unresolved history recorded yet.'}</td></tr></tbody>`;
     $('journalTable').innerHTML = `<table class="journal-table"><caption class="sr-only">${state.view === 'open' ? 'Open option book grouped by opening year and month' : 'Option history'} in each broker’s native currency</caption><thead><tr>${columns.map(c => `<th scope="col"><span class="col-label">${esc(c)}</span>${tips[c] ? help(c,tips[c]) : ''}</th>`).join('')}</tr></thead>${body}</table>`;
     $('journalTable').setAttribute('aria-busy',String(!loaded));
+    markSelection();
     $('entryCount').textContent = `${rows.length} ${rows.length === 1 ? 'entry' : 'entries'}`;
     $('totals').innerHTML = M.totals(rows).map(t => `<div><span class="label-eyebrow">${esc(t.currency)}</span><br>Contracts <strong>${num(t.contracts)}</strong> · Opening premium <strong>${esc(t.missing || t.currency === 'unknown' ? '—' : amt(t.premium,t.currency))}</strong>${t.missing ? `<br>${t.missing} rows lack opening cash; known subtotal ${esc(amt(t.premium,t.currency === 'unknown' ? '' : t.currency))}` : ''}${state.view === 'history' ? `<br>Realised P&L <strong>${esc(t.missingPnl || t.mixedBasis || t.currency === 'unknown' ? '—' : amt(t.pnl,t.currency))}</strong>${t.mixedBasis ? `<br>After-fee subtotal ${esc(amt(t.netSubtotal,t.currency))}<br>Before-fee subtotal ${esc(amt(t.grossSubtotal,t.currency))}${t.brokerPnl ? '<br>Broker-reported subtotal ' + esc(amt(t.brokerSubtotal,t.currency)) : ''}` : t.grossPnl ? ' · Before fees' : t.brokerPnl ? ' · Broker reported' : ''}${t.missingPnl ? `<br>${t.missingPnl} unresolved${t.mixedBasis ? '' : '; known subtotal ' + esc(amt(t.pnl,t.currency === 'unknown' ? '' : t.currency))}` : ''}` : ''}</div>`).join('');
     const gaps = state.history?.gaps || [];
     $('availability').hidden = !gaps.length;
     $('availability').querySelector('ul').innerHTML = [...new Set(gaps.map(g => `${name(g.channel)}: ${g.reason}`))].map(g => `<li>${esc(g)}</li>`).join('');
   }
-  let opener = null, detailOptionId = null, detailRevision = null;
+  let opener = null, detailOptionId = null, detailRevision = null, selectedRowId = null;
+  const drafts = new Map();
+  function rememberDraft() {
+    if (detailOptionId && $('thesis')) drafts.set(detailOptionId,$('thesis').value);
+  }
+  function markSelection() {
+    for (const row of $('journalTable').querySelectorAll('[data-row]')) {
+      const selected = $('tradeDetail').open && row.dataset.row === selectedRowId;
+      row.toggleAttribute('data-selected',selected);
+      const button = row.querySelector('[data-detail]');
+      button.setAttribute('aria-controls','tradeDetail');
+      button.setAttribute('aria-expanded',String(selected));
+    }
+  }
+  function panelMode(mode) {
+    $('tradeDetail').dataset.mode = mode;
+    $('detailBody').hidden = mode === 'minimized';
+    document.body.classList.toggle('detail-open',$('tradeDetail').open && mode === 'side');
+    const minimized = mode === 'minimized', maximized = mode === 'maximized';
+    $('minimizeDetail').setAttribute('aria-expanded',String(!minimized));
+    $('minimizeDetail').setAttribute('aria-label',minimized ? 'Restore trade details' : 'Minimize trade details');
+    $('minimizeDetail').title = minimized ? 'Restore' : 'Minimize';
+    $('minimizeDetail').firstElementChild.textContent = minimized ? '+' : '−';
+    $('maximizeDetail').setAttribute('aria-pressed',String(maximized));
+    $('maximizeDetail').setAttribute('aria-label',maximized ? 'Restore side panel' : 'Maximize trade details');
+    $('maximizeDetail').title = maximized ? 'Restore side panel' : 'Maximize';
+  }
   function showDetail(id, trigger) {
     const r = [...(state.open?.rows || []),...(state.history?.rows || [])].find(r => r.id === id); if (!r) return;
+    rememberDraft();
+    selectedRowId = id;
     opener = trigger; detailOptionId = r.optionId; detailRevision = state[state.view].revision;
-    $('detailTitle').textContent = `${r.underlying} · ${M.strategies(r)} · ${r.expiry}`;
+    $('detailTitle').textContent = `${r.underlying} · ${M.strategies(r)}`;
+    $('detailSubtitle').textContent = `${r.expiry} · ${name(r.channel)} · ${r.currency || 'Unknown currency'}`;
     const fact = (k,v) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`;
     $('detailBody').innerHTML = `<p class="detail-id">Option ID · ${esc(r.optionId)}</p><p>This option-book ID belongs to ${esc(name(r.channel))}${r.accountId ? ', account ' + esc(r.accountId) : ' · account identity unavailable'}. Each fill below retains both its broker ID and its own system ID. Reopened trades share the option-book ID and have different execution IDs.</p><dl class="detail-grid">${fact('Strike',amt(r.strike,r.currency))}${fact('Contracts / multiplier',`${num(r.contracts)} × ${num(r.multiplier)}`)}${fact('Status',r.rolled ? 'Rolled · confirmed links' : r.status)}${fact('Opening date',r.entryDate ? r.entryDate === r.entryThrough ? r.entryDate : `${r.entryDate} to ${r.entryThrough}` : 'Unavailable')}${fact('Opening premium · before fees',amt(r.premium,r.currency))}${fact('Opening cash · after fees',amt(r.netCash,r.currency))}${fact('Broker position date',r.brokerDate || 'Unavailable')}${fact('First observed',r.observedSince || 'Unavailable')}${fact('Currency',r.currency || 'Unknown')}</dl>${r.notes.length ? `<ul>${r.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}<h3>Source executions · ${r.executions.length}</h3>${r.executions.length ? `<div class="table-scroll" tabindex="0" role="region" aria-label="Source executions"><table><thead><tr><th>Executed · broker clock</th><th>Action</th><th>Contracts</th><th>Gross cash</th><th>Fees / rebate</th><th>Broker execution ID</th><th>System execution ID</th><th>Broker contract ID</th></tr></thead><tbody>${r.executions.map(e => `<tr><td>${esc(e.executed_at.replace('T',' '))}</td><td>${esc(e.side+' to '+e.effect)}</td><td>${esc(e.contracts)}</td><td>${esc(e.gross_premium)} ${esc(e.currency)}</td><td>${esc(e.commission ?? 'Unknown')}</td><td>${esc(e.execution_id)}</td><td>${esc(e.id)}</td><td>${esc(e.contract_id)}</td></tr>`).join('')}</tbody></table></div><p>Source fills show their full original quantities. Open-book premium allocates only the contracts that remain open.</p>` : '<p>No fully reconciled opening fills are available for this record.</p>'}${r.orderFees?.length ? `<h3>Reported order fees</h3><p>Each total covers the entire order, including any other fills or option legs. It may also appear on another trade. Allocated execution fees above are included in this total. Unknown leg fees remain unknown.</p><ul>${r.orderFees.map(f => `<li>Order ${esc(f.orderId)} · Total ${esc(f.total)} ${esc(f.currency ?? 'currency unknown')}${f.items.length ? `<ul>${f.items.map(i => `<li>${esc(i.type)}: ${esc(i.amount)} ${esc(f.currency ?? 'currency unknown')}</li>`).join('')}</ul>` : ''}</li>`).join('')}</ul>` : ''}${r.events.length ? `<h3>Explicit lifecycle events</h3><ul>${r.events.map(e => `<li>${esc(e.date)} · ${esc(e.kind.replaceAll('_',' '))} · ${esc(e.contracts)} contracts · Broker event ${esc(e.id)}${e.broker_realized_pl !== undefined ? ' · Reported option P&L ' + esc(e.broker_realized_pl) + ' ' + esc(e.currency) : ''}</li>`).join('')}</ul>` : ''}`;
-    $('detailBody').insertAdjacentHTML('beforeend',`<div class="note-editor"><label for="thesis">Option book thesis</label><p>Saved to this option-book ID across its fills and reopenings at this broker account.</p><textarea id="thesis" maxlength="8000" placeholder="Why this contract? Entry thesis, planned exit, and what would change your view…">${esc(r.thesis || '')}</textarea><button type="button" id="saveNote" class="chip-btn">Save note</button><p id="noteStatus" role="status" aria-live="polite">${r.noteUpdatedAt ? 'Last saved ' + esc(r.noteUpdatedAt) : 'Private to your account'}</p></div>`);
-    if (!$('tradeDetail').open) $('tradeDetail').showModal();
+    $('detailBody').insertAdjacentHTML('beforeend',`<div class="note-editor"><label for="thesis">Option book thesis</label><p>Saved to this option-book ID across its fills and reopenings at this broker account.</p><textarea id="thesis" maxlength="8000" placeholder="Why this contract? Entry thesis, planned exit, and what would change your view…">${esc(drafts.get(r.optionId) ?? r.thesis ?? '')}</textarea><button type="button" id="saveNote" class="chip-btn">Save note</button><p id="noteStatus" role="status" aria-live="polite">${r.noteUpdatedAt ? 'Last saved ' + esc(r.noteUpdatedAt) : 'Private to your account'}</p></div>`);
+    if (!$('tradeDetail').open) $('tradeDetail').show();
+    panelMode($('tradeDetail').dataset.mode === 'maximized' ? 'maximized' : 'side');
+    markSelection();
+    $('detailBody').scrollTop = 0;
+    $('tradeDetail').focus({preventScroll:true});
   }
   $('detailBody').addEventListener('click',async event => {
     if (!event.target.closest('#saveNote')) return;
@@ -122,8 +156,20 @@
     } catch(error) {if (detailOptionId === optionId) $('noteStatus').textContent = error.message || 'Could not save. Your draft is still shown.';}
     finally {button.disabled = false;}
   });
-  $('closeDetail').addEventListener('click',() => $('tradeDetail').close());
-  $('tradeDetail').addEventListener('close',() => { if (opener?.isConnected) opener.focus(); });
+  $('minimizeDetail').addEventListener('click',() => panelMode($('tradeDetail').dataset.mode === 'minimized' ? 'side' : 'minimized'));
+  $('maximizeDetail').addEventListener('click',() => panelMode($('tradeDetail').dataset.mode === 'maximized' ? 'side' : 'maximized'));
+  $('closeDetail').addEventListener('click',closeDetail);
+  document.addEventListener('keydown',event => {
+    if (event.key === 'Escape' && $('tradeDetail').open && !event.defaultPrevented) {
+      event.preventDefault(); closeDetail();
+    }
+  });
+  function closeDetail() {
+    $('tradeDetail').close();
+    rememberDraft(); document.body.classList.remove('detail-open'); markSelection();
+    const target = opener?.isConnected ? opener : [...$('journalTable').querySelectorAll('[data-detail]')].find(b => b.dataset.detail === selectedRowId);
+    target?.focus({preventScroll:true});
+  }
   $('journalTable').addEventListener('click',event => {
     const toggle = event.target.closest('[data-month-toggle]');
     if (toggle) {

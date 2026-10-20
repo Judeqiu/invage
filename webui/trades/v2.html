@@ -41,7 +41,17 @@
     <details class="journal-import"><summary>Import historical IBKR Flex XML</summary><p>Import execution history without replacing current holdings. Broker IDs are retained; system IDs are assigned automatically.</p><label>Flex XML file <input id="historyFile" type="file" accept=".xml,application/xml" /></label><p id="importStatus" role="status"></p></details>
     <footer>Recorded broker evidence · Read-only journal · Broker dates and gaps shown · Not financial advice</footer>
   </main>
-  <dialog id="tradeDetail" aria-labelledby="detailTitle"><div class="detail-top"><span class="label-eyebrow">Option journal / Broker facts</span><button type="button" id="closeDetail" class="chip-btn" aria-label="Close trade details">Close ×</button></div><h2 id="detailTitle"></h2><div id="detailBody"></div></dialog>
+  <dialog id="tradeDetail" aria-labelledby="detailTitle" tabindex="-1">
+    <header class="detail-header">
+      <div class="detail-top"><span class="label-eyebrow">Trade details</span><div class="detail-actions">
+        <button type="button" id="minimizeDetail" class="chip-btn" aria-label="Minimize trade details" title="Minimize" aria-expanded="true" aria-controls="detailBody"><span aria-hidden="true">−</span></button>
+        <button type="button" id="maximizeDetail" class="chip-btn" aria-label="Maximize trade details" title="Maximize" aria-pressed="false"><span aria-hidden="true">⛶</span></button>
+        <button type="button" id="closeDetail" class="chip-btn" aria-label="Close trade details" title="Close"><span aria-hidden="true">×</span></button>
+      </div></div>
+      <h2 id="detailTitle"></h2><p id="detailSubtitle"></p>
+    </header>
+    <div id="detailBody"></div>
+  </dialog>
   <script src="../report.js"></script>
   <script src="./model.js"></script>
   <script src="./v2.js"></script>
