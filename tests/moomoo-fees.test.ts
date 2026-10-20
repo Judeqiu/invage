@@ -73,6 +73,17 @@ describe('Moomoo order fees', () => {
     expect(history(raw).executions.every(e => e.fee_cash === null)).toBe(true);
     expect(history(raw).orders[0].fees?.currency).toBe('HKD');
   });
+  it('uses the confirmed parent currency for live responses that omit the documented field', () => {
+    const raw = bundle(); delete raw.orders_fees![0].currency;
+    const h = history(raw);
+    expect(h.orders[0].fees?.currency).toBe('USD');
+    expect(h.sync.fees).toBe('available');
+    expect(addDecimals(...h.executions.map(e => e.fee_cash!))).toBe('-3.880000000000');
+    // Keep the exact broker response in the archive.
+    expect(raw.orders_fees![0]).not.toHaveProperty('currency');
+    delete raw.orders_history!.rows[0].currency;
+    expect(() => history(raw)).toThrow(/currency/);
+  });
   it('supports stock fills and explicit zero fees', () => {
     const raw = bundle(); raw.fills_history!.rows.forEach(r => r.code = 'US.AAPL'); raw.orders_history!.rows[0].code = 'US.AAPL';
     raw.orders_fees![0].total_fee = '0'; raw.orders_fees![0].fees = [];
@@ -118,6 +129,13 @@ function transport(response: unknown = {s:'ok',d:fees()}, skew = false) {
   return {fetchImpl,requests};
 }
 describe('Moomoo fee fetching', () => {
+  it('accepts a missing fee currency only with matching parent-order evidence', async () => {
+    const row: Record<string,unknown> = fees(); delete row.currency;
+    const raw = await fetchMooMooRawBundle(credentials,transport({s:'ok',d:row}));
+    expect(raw.orders_fees).toEqual([row]);
+    expect(raw.fee_gaps).toEqual([]);
+    expect(history(raw).orders[0].fees?.currency).toBe('USD');
+  });
   it('fetches once per referenced parent, signs the read-only GET, and retains raw breakdowns', async () => {
     const t = transport(), raw = await fetchMooMooRawBundle(credentials,t);
     const requests = t.requests.filter(r => r.url.pathname.endsWith('/fees'));

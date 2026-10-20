@@ -112,11 +112,6 @@ export function mapMooMooHistory(bundle: MooMooRawBundle, lots: BrokerLot[], cha
   });
   const orders = new Map<string, BrokerHistoryOrder>();
   const fees = new Map<string, BrokerOrderFees>();
-  for (const row of bundle.orders_fees ?? []) {
-    const id = string(row.order_id);
-    if (fees.has(id)) throw new BrokerParseError('Duplicate Moomoo order fees');
-    fees.set(id, parseMooMooOrderFees(row, id, bundle.acc_id));
-  }
   for (const row of [...(bundle.orders_history?.rows ?? []), ...(bundle.orders_details ?? [])]) {
     assertAccount(row);
     const code = string(row.code), market = String(row.exchange ?? code.split('.')[0]);
@@ -129,6 +124,11 @@ export function mapMooMooHistory(bundle: MooMooRawBundle, lots: BrokerLot[], cha
       order_type:string(row.order_type), time_in_force:row.time_in_force == null ? null : string(row.time_in_force), session:row.session == null ? null : string(row.session), legs };
     const prior = orders.get(mapped.id);
     if (!prior || mapped.updated_at >= prior.updated_at) orders.set(mapped.id,mapped);
+  }
+  for (const row of bundle.orders_fees ?? []) {
+    const id = string(row.order_id);
+    if (fees.has(id)) throw new BrokerParseError('Duplicate Moomoo order fees');
+    fees.set(id, parseMooMooOrderFees(row, id, bundle.acc_id, orders.get(id)?.currency ?? undefined));
   }
   for (const order of orders.values()) {
     const reported = fees.get(order.id);

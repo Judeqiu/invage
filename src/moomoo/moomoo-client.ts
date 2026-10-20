@@ -286,7 +286,10 @@ async function fetchOrderFees(accId: string, orders: Record<string, unknown>[], 
       }
       if (!env.d || typeof env.d !== 'object' || Array.isArray(env.d)) throw new BrokerParseError('Missing order fees');
       const row = env.d as Record<string, unknown>;
-      parseMooMooOrderFees(row, id, accId);
+      const currencies = new Set(orders.filter(o => o.order_id === id && typeof o.currency === 'string' && o.currency.trim())
+        .map(o => String(o.currency)));
+      const orderCurrency = currencies.size === 1 ? [...currencies][0] : undefined;
+      parseMooMooOrderFees(row, id, accId, orderCurrency);
       rows.push(row);
     } catch {
       gaps.push({ reference:id, reason:'Order fees unavailable or invalid; retry with a later sync (Full sync for older orders).' });

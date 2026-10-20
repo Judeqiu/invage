@@ -2,11 +2,14 @@ import { addDecimals, decimal } from '../brokers/option-executions.js';
 import type { BrokerHistoryExecution, BrokerHistoryOrder, BrokerOrderFees } from '../brokers/history.js';
 import { BrokerParseError } from '../brokers/errors.js';
 
-export function parseMooMooOrderFees(raw: Record<string, unknown>, orderId: string, accountId: string): BrokerOrderFees {
+export function parseMooMooOrderFees(raw: Record<string, unknown>, orderId: string, accountId: string, orderCurrency?: string): BrokerOrderFees {
   if (raw.order_id !== orderId || (raw.account_id ?? raw.acc_id ?? accountId) !== accountId) {
     throw new BrokerParseError('Moomoo order fee account/order mismatch');
   }
-  if (typeof raw.currency !== 'string' || !/^[A-Z]{3,4}$/.test(raw.currency) || !Array.isArray(raw.fees)) {
+  // Live Cloud responses can omit currency despite the published response schema.
+  // Only an authoritative matching parent order can supply the missing field.
+  const currency = raw.currency === undefined ? orderCurrency : raw.currency;
+  if (typeof currency !== 'string' || !/^[A-Z]{3,4}$/.test(currency) || !Array.isArray(raw.fees)) {
     throw new BrokerParseError('Moomoo order fee currency/breakdown unavailable');
   }
   const total = decimal(raw.total_fee);
@@ -18,7 +21,7 @@ export function parseMooMooOrderFees(raw: Record<string, unknown>, orderId: stri
     return { type:item.type, amount:decimal(item.amount) };
   });
   // The reported total is authoritative; a breakdown need not include every charge.
-  return { currency:raw.currency, total, items };
+  return { currency, total, items };
 }
 
 /** Only final, single-contract orders with all fills present can be allocated.
