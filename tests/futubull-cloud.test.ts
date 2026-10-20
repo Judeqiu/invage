@@ -6,6 +6,7 @@ import { moomooAdapter } from '../src/moomoo/moomoo-adapter.js';
 import { addBrokerSource, addBrokerAccount, discoverBrokerAccounts, readBrokerAccountModel, publicBrokerAccounts } from '../src/brokers/accounts.js';
 import { getBrokerConnector } from '../src/brokers/catalog.js';
 import type { InvestorState } from '../src/state/portfolio-state.js';
+import { mergeBrokerHistory } from '../src/brokers/history.js';
 
 const private_key = generateKeyPairSync('ed25519').privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
 const credentials = { app_key: 'futu-key', private_key };
@@ -14,9 +15,11 @@ const plan = { mode: 'full' as const, from: '2026-01-01T00:00:00.000Z', through:
 function state(): InvestorState {
   return { user: { id: 'u1', slug: 'alice', created_at: '2026-01-01' }, profile: { display_name: 'Alice' }, log: [] } as InvestorState;
 }
-function transport() {
+function transport(options: { withOrder?: boolean; feeResponse?: unknown } = {}) {
   const urls: URL[] = [];
   let skewed = false;
+  const order = { order_id:'parent', code:'US.AAPL', exchange:'US', side:'BUY', order_status:'FILLED_ALL',
+    create_time:'1782971427455000', currency:'USD', qty:'1', price:'180', dealt_qty:'1', dealt_avg_price:'180', order_type:'LIMIT' };
   const fetch: typeof globalThis.fetch = async (input, init) => {
     const url = new URL(String(input));
     urls.push(url);
@@ -35,15 +38,45 @@ function transport() {
       const next = url.searchParams.get('page_flag');
       return Response.json({ s: 'ok', d: { completed: !us || !!next, page_flag: us && !next ? 'next' : '', order_fills: us && !next ? [{
         deal_id: 'deal1', code: 'US.AAPL', status: 'OK', trd_side: 'BUY', qty: '1', price: '180', create_time: '1782971427455000',
+        ...(options.withOrder ? { order_id:'parent' } : {}),
       }] : [] } });
     }
-    if (url.pathname.endsWith('/orders_history')) return Response.json({ s: 'ok', d: { orders: [], completed: true, page_flag: '' } });
+    if (url.pathname.endsWith('/orders_history')) return Response.json({ s: 'ok', d: { orders: options.withOrder && url.searchParams.get('trd_market') === 'US' ? [order] : [], completed: true, page_flag: '' } });
+    if (url.pathname.endsWith('/orders/detail')) return Response.json({ s:'ok',d:[order] });
+    if (url.pathname.endsWith('/orders/parent/fees')) return Response.json(options.feeResponse ?? { s:'ok',d:{ order_id:'parent',total_fee:'1.23',fees:[{type:'Commission',amount:'1.00'},{type:'Platform Fees',amount:'0.23'}] } });
     throw new Error(`Unexpected path ${url.pathname}`);
   };
   return { transport: { kind: 'http' as const, fetch }, urls };
 }
 
 describe('Futubull cloud access', () => {
+  it('fetches Futubull fees once per parent and records them using authoritative parent currency', async () => {
+    const mock = transport({withOrder:true});
+    const raw = await futubullAdapter.fetchRaw({...credentials,acc_id:accountId},{transport:mock.transport,history:plan});
+    const bundle = JSON.parse(raw.body.toString());
+    expect(bundle.orders_fees).toEqual([{order_id:'parent',total_fee:'1.23',fees:[{type:'Commission',amount:'1.00'},{type:'Platform Fees',amount:'0.23'}]}]);
+    expect(bundle.orders_fees[0]).not.toHaveProperty('currency');
+    const h = futubullAdapter.parseToStatement(raw,'futubull-c1').history!;
+    expect(h.orders[0].fees).toEqual({currency:'USD',total:'1.23',items:[{type:'Commission',amount:'1.00'},{type:'Platform Fees',amount:'0.23'}]});
+    expect(h.executions[0]).toMatchObject({broker_id:'futubull',channel:'futubull-c1',account_id:accountId,fee_cash:'-1.230000000000'});
+    expect(h.sync.fees).toBe('available');
+    expect(mock.urls.filter(url=>url.pathname.endsWith('/fees'))).toHaveLength(1);
+    const old = structuredClone(h); old.executions[0].fee_cash = null; delete old.orders[0].fees; old.sync.fees = 'unavailable';
+    expect(mergeBrokerHistory(old,h).sync.fees).toBe('available');
+    const incremental = structuredClone(h); incremental.sync.mode = 'incremental'; incremental.executions = []; incremental.orders = []; incremental.sync.fees = 'unavailable';
+    const merged = mergeBrokerHistory(h,incremental);
+    expect(merged.orders[0].fees?.total).toBe('1.23');
+    expect(merged.sync.fees).toBe('available');
+  });
+
+  it.each([{s:'error',errcode:-1200},{s:'ok',d:{order_id:'wrong',total_fee:'1.23',currency:'USD',fees:[]}}])('retains Futubull positions and history with an explicit fee gap on failed fee responses', async feeResponse => {
+    const mock = transport({withOrder:true,feeResponse});
+    const raw = await futubullAdapter.fetchRaw({...credentials,acc_id:accountId},{transport:mock.transport,history:plan});
+    const statement = futubullAdapter.parseToStatement(raw,'futubull-c1');
+    expect(statement.lots.length).toBeGreaterThan(0);
+    expect(statement.history?.executions[0].fee_cash).toBeNull();
+    expect(statement.history?.sync).toMatchObject({status:'partial',fees:'unavailable',gaps:[{kind:'coverage',reference:'parent'}]});
+  });
   it('discovers accounts using a Futu AppKey and retains exact account IDs', async () => {
     const s = state();
     const source = addBrokerSource(s, 'futubull', credentials);

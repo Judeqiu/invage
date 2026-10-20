@@ -418,7 +418,7 @@ export async function fetchMooMooRawBundle(
   // Recent fills may belong to orders created before the incremental window.
   const parents = [...orders_history.rows, ...fills_history.rows.filter(row => row.order_id != null)];
   const details = await fetchOrderDetails(acc_id, parents, credentials, fetchImpl);
-  const fees = credentials.broker === 'futubull' ? undefined : await fetchOrderFees(acc_id,
+  const fees = await fetchOrderFees(acc_id,
     [...orders_history.rows, ...details.rows], fills_history.rows, credentials, fetchImpl);
   const option_basicinfo = await fetchOptionBasicInfo(positions, credentials, fetchImpl, fills_history?.rows);
   return {
@@ -434,6 +434,7 @@ export async function fetchMooMooRawBundle(
     orders_details:details.rows,
     history_mode:plan.mode,
     history_gaps:details.gaps,
-    ...(fees ? { orders_fees:fees.rows, fee_gaps:fees.gaps } : {}),
+    orders_fees:fees.rows,
+    fee_gaps:fees.gaps,
   };
 }

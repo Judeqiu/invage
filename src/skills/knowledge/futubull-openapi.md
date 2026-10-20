@@ -27,9 +27,18 @@ Verified against Futu’s public documentation on 2026-10-14. Invage implements 
 
 Futubull uses its own broker ID and account channels. Sync does not move moomoo or manual `jude_futu` holdings. Invage never unlocks trading or submits orders. Never echo private keys. Existing saved OpenD connections and archived snapshots remain supported; cloud access can be configured through the AppKey fields.
 
+## Transaction fees
+
+A live Cloud fee response was verified on 2026-10-20: it returned the total and itemized charges without the documented currency field.
+
+Cloud sync requests `GET /api/v1.0/accounts/{acc_id}/orders/{order_id}/fees` on `https://webapi.futunn.com` once per filled parent. It archives the exact fee response and records the parent total and itemized breakdown in `broker_orders.fee_total` / `fee_currency` and `broker_order_fees`. Trades details show the reported parent charges.
+
+If the fee response omits its documented currency field, only the matching authoritative parent order may supply it. Final single-contract orders allocate the signed expense across fills only when complete quantities and currencies reconcile; combo and incomplete orders retain the parent charge without inventing leg fees. Never add parent totals to their breakdown or allocated execution fees. Failed or invalid fee responses leave fees unknown and record a coverage gap without dropping positions or trades. Incremental sync preserves older verified fees; use Full sync to fetch fees for older history. Legacy archives remain compatible. Saved OpenD sources retain their existing fee limitations; this fee fetch applies to Cloud AppKey connections.
+
 ## Sources and verification limits
 
 - [Futu Getting Started — API Key authentication, dashboard and algorithms](https://open.futunn.com/api/overview/getting-started)
+- [Futu order fees — totals, itemized charges and fee currency](https://open.futunn.com/api/trading/order/get-order-fees)
 - [Futu authorized trading accounts — account identifiers](https://open.futunn.com/api/trading/account/get-accounts)
 - [OpenSSL genpkey — key generation](https://docs.openssl.org/3.0/man1/openssl-genpkey/)
 - [OpenSSL pkey — public-key export](https://docs.openssl.org/3.0/man1/openssl-pkey/)
