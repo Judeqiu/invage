@@ -17,7 +17,7 @@ import {
   resolveUpsertHoldingKey,
   valuePosition,
 } from '../market/position-value.js';
-import { totalCashLive, totalDepositsLive } from '../market/sum-to-reporting.js';
+import { totalCashLive, totalDepositsLive, type LiveSumResult } from '../market/sum-to-reporting.js';
 import {
   booksAddDeposit,
   booksApplyCashDelta,
@@ -66,7 +66,7 @@ import {
   type FixedDeposit,
 } from '../state/portfolio-state.js';
 import {
-  getTreasury,
+  getReportingCurrency,
   type HouseholdInvestorState,
 } from '../state/household-state.js';
 import {
@@ -81,10 +81,8 @@ import {
 } from './coerce-tool-numbers.js';
 import { createListOptionTradesTool, optionTradeEvidence } from './option_trades.js';
 
-function reportingCurrencyOf(state: unknown): string | null {
-  const hh = state as HouseholdInvestorState;
-  const treasury = getTreasury(hh);
-  return treasury?.reporting_currency ?? null;
+function reportingCurrencyOf(state: unknown): string {
+  return getReportingCurrency(state as HouseholdInvestorState);
 }
 
 function ok<T>(text: string, details: T): AgentToolResult<T> {
@@ -205,15 +203,14 @@ function resolveChannelParam(
   return normalizeOptionalChannel(raw, 'channel');
 }
 
-async function formatPortfolio(
+function formatPortfolio(
   portfolio: Record<string, Holding>,
   cashes: CashBalance[],
   cashTargetPct: number,
-  deposits: FixedDeposit[] = [],
-  reportingCurrency: string | null = null,
-): Promise<string> {
-  const cashLive = await totalCashLive(cashes, reportingCurrency);
-  const depLive = await totalDepositsLive(deposits, reportingCurrency);
+  deposits: FixedDeposit[],
+  cashLive: LiveSumResult<CashBalance | null>,
+  depLive: LiveSumResult<{ amount: number; currency: string } | null>,
+): string {
   const cashFxNote = cashLive.fxApplied
     ? `live FX → ${cashLive.reportingCurrency}`
     : undefined;
@@ -2771,11 +2768,25 @@ export function createGetPortfolioTool(): AgentTool {
         const cashes = getCashes(state);
         const deposits = getDeposits(state);
         const rep = reportingCurrencyOf(state);
-        const cashLive = await totalCashLive(cashes, rep);
+        // A conversion failure must not hide the holdings or native balances.
+        // Resolve once so text and structured details use the same FX snapshot.
+        const [cashResult, depositResult] = await Promise.allSettled([
+          totalCashLive(cashes, rep), totalDepositsLive(deposits, rep),
+        ]);
+        const unavailable = { total: null, fxRates: {}, fxApplied: false, reportingCurrency: rep };
+        const cashLive = cashResult.status === 'fulfilled' ? cashResult.value : unavailable;
+        const depLive = depositResult.status === 'fulfilled' ? depositResult.value : unavailable;
+        const errorText = (error: unknown) => error instanceof Error ? error.message : String(error);
+        const cashError = cashResult.status === 'rejected' ? errorText(cashResult.reason) : null;
+        const depositError = depositResult.status === 'rejected' ? errorText(depositResult.reason) : null;
         const cashTargetPct = getPlaybook(state).allocation.cash_target_pct;
         const tradeEvidence = optionTradeEvidence(state, portfolio);
         return ok(
-          [await formatPortfolio(portfolio, cashes, cashTargetPct, deposits, rep),
+          [formatPortfolio(portfolio, cashes, cashTargetPct, deposits, cashLive, depLive),
+            `Reporting currency: ${rep} (saved preference, or USD default).`,
+            ...(cashError ? [`Cash total unavailable: ${cashError}. Native cash balances above remain available; do not assume zero cash.`] : []),
+            ...(depositError ? [`Deposit total unavailable: ${depositError}. Native deposit principals above remain available.`] : []),
+            'Cash totals are an account snapshot, not confirmed buying power. Assignment funding must use the relevant account and settlement currency; FX conversion does not transfer funds.',
             'Option opening dates (FIFO outstanding records reconciled to held quantity):',
             ...Object.entries(tradeEvidence.positions).map(([key, evidence]) => evidence.status === 'matched'
               ? `${key}: ${evidence.openedFrom} → ${evidence.openedTo}`
@@ -2787,8 +2798,11 @@ export function createGetPortfolioTool(): AgentTool {
             portfolio,
             option_trade_evidence: tradeEvidence,
             cash: cashLive.total,
+            cash_total_error: cashError,
             cashes,
             deposits,
+            deposit_total: depLive.total,
+            deposit_total_error: depositError,
             count: Object.keys(portfolio).length,
             deposit_count: deposits.length,
             fx_applied: cashLive.fxApplied,
