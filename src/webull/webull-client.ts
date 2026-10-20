@@ -279,12 +279,15 @@ export async function fetchWebullRawBundle(
         fee_gaps.push({kind:'coverage',reference:String(order.order_id),reason:'Webull fee detail requires the original client order ID.'});
         continue;
       }
-      if (requested.has(clientId)) continue;
-      requested.add(clientId);
+      // Platform-created orders can reuse a client ID. Bind both IDs and
+      // deduplicate only the broker's actual child order, including older orders.
+      const orderId = String(order.order_id);
+      if (requested.has(orderId)) continue;
+      requested.add(orderId);
       await new Promise(resolve => setTimeout(resolve, 1000));
       try {
         const response = asRecord(await webullGet({host,path:'/trading/orders/get',
-          query:{account_id,client_order_id:clientId},credentials,fetchImpl,signal:AbortSignal.timeout(15_000)}));
+          query:{account_id,client_order_id:clientId,order_id:orderId},credentials,fetchImpl,signal:AbortSignal.timeout(15_000)}));
         const detail = asRecord(response?.data ?? response);
         if (!detail || !Array.isArray(detail.orders) ||
             detail.client_order_id !== clientId ||

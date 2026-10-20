@@ -95,6 +95,22 @@ describe('Webull actual order fees',()=>{
     (raw.order_details![0] as any).orders[0].order_id='sibling';
     expect(mapWebullHistory(raw,'webull')!.orders[0].fees).toBeUndefined();
   });
+  it('retrieves separate broker orders even when the platform reuses a client ID', async () => {
+    const ids:string[]=[];
+    const raw=await fetchWebullRawBundle({app_key:'ak',app_secret:'sk',region:'sg',account_id:'A'},{history:plan,fetchImpl:async url=>{
+      const u=new URL(String(url));
+      if(u.pathname==='/trading/accounts/list')return Response.json([{account_id:'A'}]);
+      if(u.pathname==='/trading/orders/historical-orders/list')return Response.json({data:[{orders:['a','b'].map(order_id=>({...webullOrder(),order_id}))}]});
+      if(u.pathname==='/trading/orders/get'){
+        const id=u.searchParams.get('order_id')!;ids.push(id);
+        expect(u.searchParams.get('client_order_id')).toBe('client');
+        return Response.json({client_order_id:'client',orders:[{...webullOrder(),order_id:id,...actualFees()}]});
+      }
+      return Response.json([]);
+    }});
+    expect(ids).toEqual(['a','b']);
+    expect(mapWebullHistory(raw,'webull')!.orders.every(o=>o.fees?.total==='0.110')).toBe(true);
+  });
   it.each([false,true])('fetches details by client order ID; optional failure=%s preserves history',async fail=>{
     let queried=false;
     const raw=await fetchWebullRawBundle({app_key:'ak',app_secret:'sk',region:'hk',account_id:'A'}, {history:plan,fetchImpl:async url=>{
@@ -102,7 +118,7 @@ describe('Webull actual order fees',()=>{
       if(u.pathname==='/trading/accounts/list')return Response.json([{account_id:'A'}]);
       if(u.pathname==='/trading/orders/historical-orders/list')return Response.json({data:[{client_order_id:'client',orders:[webullOrder()]}]});
       if(u.pathname==='/trading/orders/get'){
-        queried=true;expect(u.searchParams.get('client_order_id')).toBe('client');expect(u.searchParams.get('account_id')).toBe('A');
+        queried=true;expect(u.searchParams.get('order_id')).toBe('o');expect(u.searchParams.get('client_order_id')).toBe('client');expect(u.searchParams.get('account_id')).toBe('A');
         return fail?new Response('unavailable',{status:503}):Response.json({client_order_id:'client',orders:[{...webullOrder(),...actualFees()}]});
       }
       return Response.json([]);
