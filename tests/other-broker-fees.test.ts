@@ -24,6 +24,15 @@ describe('Tiger stock and parent order fees', () => {
     expect(addDecimals(...fees.values())).toBe('-1.520000000000');
     expect([...fees.values()]).toEqual(['-0.380000000000','-1.140000000000']);
   });
+  it('assigns rounding remainders chronologically regardless of gateway response order', () => {
+    const order={...tigerOrder(),filledQuantity:'3',commission:'1',gst:'0'};
+    const fills=['a','b','c'].map((id,i)=>({...tigerFills()[0],id,filledQuantity:'1',transactionTime:at+i}));
+    const forward=tigerCommissions(order,fills,at+86400000);
+    const reverse=tigerCommissions(order,[...fills].reverse(),at+86400000);
+    expect([...reverse]).toEqual([...forward]);
+    expect(forward.get('c')).toBe('-0.333333333334');
+    expect(addDecimals(...reverse.values())).toBe('-1.000000000000');
+  });
   it('does not allocate across incomplete fills, currencies, instruments or combo legs', () => {
     expect(tigerCommissions(tigerOrder(),tigerFills().slice(0,1),at).size).toBe(0);
     for (const patch of [{currency:'USD'},{symbol:'OTHER'},{secType:'OPT'}]) {

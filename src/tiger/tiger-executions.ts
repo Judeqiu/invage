@@ -83,7 +83,10 @@ export function tigerCommissions(order: Record<string, unknown>, rows: Record<st
   if (denominator <= 0n) throw new Error('Non-positive Tiger filled quantity');
   let remaining = asUnits(fee, scale);
   const totalFee = remaining;
-  for (const [index, row] of rows.entries()) {
+  // Match the legacy importer's chronological order. The gateway can reverse
+  // fills between requests; only this stable order may receive the remainder.
+  const ordered = [...rows].sort((a,b) => Number(a.transactionTime)-Number(b.transactionTime) || String(a.id).localeCompare(String(b.id)));
+  for (const [index, row] of ordered.entries()) {
     const amount = index === rows.length - 1 ? remaining : totalFee * asUnits(quantity(row), qtyScale) / denominator;
     remaining -= amount;
     result.set(String(row.id), fixed(-amount, scale));
