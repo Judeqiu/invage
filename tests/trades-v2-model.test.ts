@@ -19,3 +19,23 @@ it('keeps subtotal currencies and P&L fee bases separate, with weighted nonannua
   expect(totals[1]).toMatchObject({premium:50,returnsPct:.5});
   expect(model.totals([row(),row({premium:null})])[0]).toMatchObject({missing:1,returnsPct:null});
 });
+it('groups descending opening years and months, with deterministic row order and undated entries last', () => {
+  const rows = [row({id:'old',entryDate:'2025-12-31'}),row({id:'b',entryDate:'2026-10-01'}),
+    row({id:'unknown',entryDate:null}),row({id:'aug',entryDate:'2026-08-20'}),row({id:'a',entryDate:'2026-10-01'})];
+  const before = JSON.stringify(rows),years = model.groups(rows);
+  expect(years.map((y: any) => [y.year,y.count])).toEqual([['2026',3],['2025',1],['Unknown',1]]);
+  expect(years[0].months.map((m: any) => m.month)).toEqual(['2026-10','2026-08']);
+  expect(years[0].months[0].entries.map((r: any) => r.id)).toEqual(['a','b']);
+  expect(years[2].months[0].entries[0].id).toBe('unknown');
+  expect(JSON.stringify(rows)).toBe(before);
+});
+it('summarizes each month by currency, with weighted returns and the last chronological running cash', () => {
+  const rows = [row({id:'prior',entryDate:'2026-09-01',entryThrough:'2026-09-01',premium:'100'}),
+    row({id:'a',premium:'200'}),row({id:'z',premium:'300',contracts:'2',strike:'200',multiplier:'10'})];
+  const balances = model.cashBalances(rows,1000),october = rows.slice(1);
+  expect(model.monthTotals(october,balances)[0]).toMatchObject({currency:'USD',contracts:3,premium:500,netCash:1600});
+  expect(model.monthTotals(october,balances)[0].returnsPct).toBeCloseTo(500/14000*100);
+  expect(model.monthTotals([...october,row({id:'hkd',currency:'HKD'})],balances)).toHaveLength(2);
+  expect(model.monthTotals([row({id:'missing',premium:null})],new Map())[0]).toMatchObject({missing:1,returnsPct:null,netCash:null});
+  expect(model.monthTotals([row({entryDate:null})],balances)[0].netCash).toBeNull();
+});

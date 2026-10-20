@@ -1,6 +1,6 @@
 (() => {
   const $ = id => document.getElementById(id), M = globalThis.TradesV2;
-  const state = { open:null, history:null, view:'open', busy:false, channel:channelFromQuery(), strategy:'all', status:'all' };
+  const state = { open:null, history:null, view:'open', busy:false, channel:channelFromQuery(), strategy:'all', status:'all', collapsedMonths:new Set() };
   if (state.channel === 'merged') state.channel = 'all';
   const name = ch => ({ all:'All platforms', ibkr:'IBKR', moomoo:'MooMoo', tiger:'Tiger', webull:'Webull', default:'Unassigned' })[ch] || ch;
   const num = v => v == null || !Number.isFinite(Number(v)) ? '—' : Number(v).toLocaleString('en-US',{ maximumFractionDigits:4 });
@@ -55,25 +55,40 @@
   }
   function render() {
     controls();
-    const rows = M.filter(dataRows(),filters()), currencies = [...new Set(rows.map(r => r.currency))];
+    const selected = filters(), rows = M.filter(dataRows(),selected);
+    // Calendar filters only change visibility; keep earlier opening cash in the running balance.
+    const balanceRows = M.filter(dataRows(),{...selected,year:'all',month:'all'});
+    const currencies = [...new Set(balanceRows.map(r => r.currency))];
     $('openingCash').disabled = currencies.length !== 1 || !currencies[0];
     $('seedLabel').firstChild.textContent = currencies.length === 1 && currencies[0] ? `Opening cash (${currencies[0]}) ` : 'Opening cash (choose currency) ';
     const seed = $('openingCash').value.trim() === '' || $('openingCash').disabled ? null : Number($('openingCash').value);
-    const balances = M.cashBalances(rows,seed);
+    const balances = M.cashBalances(balanceRows,seed);
     const columns = state.view === 'open' ? M.openColumns : M.historyColumns;
     const tips = { ID:'Application-owned option-book ID, scoped to broker channel, account and contract terms. It stays the same across partial fills and repeated trades. Each execution has its own immutable system ID in details.',
       'Returns %':'Opening premium before fees divided by strike × remaining contracts × contract multiplier, for short options. Not annualized, collateral return, or realized P&L.',
-      'Net cash':'Opening cash plus the visible dated entries’ opening premiums, before fees. A single native currency is required. Same-day rows use stable ID order, not execution time. Missing cash or multiple opening dates make subsequent balances unavailable.',
+      'Net cash':'Opening cash plus dated opening premiums in the selected broker, strategy, ticker, right and currency scope, before fees. Year/month filters and collapsed months retain earlier cash carry. A single native currency is required. Same-day rows use stable ID order, not execution time. Missing cash or multiple opening dates make subsequent balances unavailable.',
       'Premium in':'Signed opening option cash before fees. Long option purchases are negative. Snapshot cost is never substituted for missing fills.' };
     let body = '';
-    if (state.view === 'history') body = rows.map(historyRow).join('');
-    else for (const group of M.groups(rows)) {
-      const title = group.month === 'Unknown' ? 'Entry date unavailable' : new Date(group.month+'-01T12:00:00Z').toLocaleDateString('en-US',{month:'long',year:'numeric',timeZone:'UTC'});
-      body += `<tr class="group"><th colspan="11" scope="rowgroup"><span>${esc(title)} · ${group.entries.length} entries</span></th></tr>` + group.entries.map(r => openRow(r,balances)).join('');
-      for (const total of M.totals(group.entries)) body += `<tr class="subtotal"><td>${esc(total.currency)} subtotal</td><td></td><td></td><td></td><td></td><td></td><td>${num(total.contracts)}</td><td>${esc(total.missing ? '—' : amt(total.premium,total.currency === 'unknown' ? '' : total.currency))}${total.missing ? `<small>${total.missing} unavailable</small>` : ''}</td><td>${esc(pct(total.returnsPct))}</td><td></td><td></td></tr>`;
+    if (state.view === 'history') body = `<tbody>${rows.map(historyRow).join('')}</tbody>`;
+    else for (const year of M.groups(rows)) {
+      const count = n => `${n} ${n === 1 ? 'entry' : 'entries'}`;
+      body += `<tbody class="year-group"><tr class="group"><th colspan="11" scope="rowgroup"><span>${esc(year.year === 'Unknown' ? 'Entry date unavailable' : year.year)} <span class="group-count">· ${count(year.count)}</span></span></th></tr></tbody>`;
+      for (const group of year.months) {
+        if (group.month === 'Unknown') {body += `<tbody aria-label="Entries with no confirmed opening date">${group.entries.map(r => openRow(r,balances)).join('')}</tbody>`;continue;}
+        const title = new Date(group.month+'-01T12:00:00Z').toLocaleDateString('en-US',{month:'short',timeZone:'UTC'}).toUpperCase()+'-'+year.year;
+        const expanded = !state.collapsedMonths.has(group.month), bodyId = 'month-entries-'+group.month;
+        const totals = M.monthTotals(group.entries,balances);
+        body += `<tbody class="month-summary-group" aria-label="${esc(title)} totals">` + totals.map((total,i) => {
+          const currency = total.currency === 'unknown' ? '' : total.currency;
+          const heading = i === 0 ? `<button type="button" class="month-toggle" data-month-toggle="${esc(group.month)}" aria-expanded="${expanded}" aria-controls="${bodyId}"><span class="month-chevron" aria-hidden="true">${expanded ? '▾' : '▸'}</span>${esc(title)} <span class="group-count">· ${count(group.entries.length)}</span></button>` : '<span class="currency-label">Currency subtotal</span>';
+          return `<tr class="month-summary"><th colspan="6" scope="rowgroup">${heading}${totals.length > 1 || !currency ? `<span class="currency-label">${esc(total.currency)}</span>` : ''}</th><td title="Total contracts · ${esc(total.currency)}">${num(total.contracts)}</td><td title="Total premium before fees · ${esc(total.currency)}">${esc(total.missing ? '—' : amt(total.premium,currency))}${total.missing ? `<small>${total.missing} unavailable</small>` : ''}</td><td title="Blended returns: premium divided by strike × contracts × multiplier">${esc(pct(total.returnsPct))}</td><td title="Final net cash for this month, before fees">${esc(amt(total.netCash,currency))}</td><td></td></tr>`;
+        }).join('') + '</tbody>';
+        body += `<tbody id="${bodyId}" data-month-entries="${esc(group.month)}" aria-label="${esc(title)} entries"${expanded ? '' : ' hidden'}>${group.entries.map(r => openRow(r,balances)).join('')}</tbody>`;
+      }
     }
     const loaded = state.view === 'open' ? state.open : state.history;
-    $('journalTable').innerHTML = `<table class="journal-table"><caption class="sr-only">${state.view === 'open' ? 'Open option book' : 'Option history'} in each broker’s native currency</caption><thead><tr>${columns.map(c => `<th scope="col"><span class="col-label">${esc(c)}</span>${tips[c] ? help(c,tips[c]) : ''}</th>`).join('')}</tr></thead><tbody>${body || `<tr><td class="empty" colspan="${columns.length}">${!loaded ? 'Loading journal records…' : dataRows().length ? 'No entries match these filters.' : state.view === 'open' ? 'No open options on the books.' : 'No completed contracts or unresolved history recorded yet.'}</td></tr>`}</tbody></table>`;
+    if (!rows.length) body = `<tbody><tr><td class="empty" colspan="${columns.length}">${!loaded ? 'Loading journal records…' : dataRows().length ? 'No entries match these filters.' : state.view === 'open' ? 'No open options on the books.' : 'No completed contracts or unresolved history recorded yet.'}</td></tr></tbody>`;
+    $('journalTable').innerHTML = `<table class="journal-table"><caption class="sr-only">${state.view === 'open' ? 'Open option book grouped by opening year and month' : 'Option history'} in each broker’s native currency</caption><thead><tr>${columns.map(c => `<th scope="col"><span class="col-label">${esc(c)}</span>${tips[c] ? help(c,tips[c]) : ''}</th>`).join('')}</tr></thead>${body}</table>`;
     $('journalTable').setAttribute('aria-busy',String(!loaded));
     $('entryCount').textContent = `${rows.length} ${rows.length === 1 ? 'entry' : 'entries'}`;
     $('totals').innerHTML = M.totals(rows).map(t => `<div><span class="label-eyebrow">${esc(t.currency)}</span><br>Contracts <strong>${num(t.contracts)}</strong> · Opening premium <strong>${esc(t.missing || t.currency === 'unknown' ? '—' : amt(t.premium,t.currency))}</strong>${t.missing ? `<br>${t.missing} rows lack opening cash; known subtotal ${esc(amt(t.premium,t.currency === 'unknown' ? '' : t.currency))}` : ''}${state.view === 'history' ? `<br>Realised P&L <strong>${esc(t.missingPnl || t.mixedBasis || t.currency === 'unknown' ? '—' : amt(t.pnl,t.currency))}</strong>${t.mixedBasis ? `<br>After-fee subtotal ${esc(amt(t.netSubtotal,t.currency))}<br>Before-fee subtotal ${esc(amt(t.grossSubtotal,t.currency))}${t.brokerPnl ? '<br>Broker-reported subtotal ' + esc(amt(t.brokerSubtotal,t.currency)) : ''}` : t.grossPnl ? ' · Before fees' : t.brokerPnl ? ' · Broker reported' : ''}${t.missingPnl ? `<br>${t.missingPnl} unresolved${t.mixedBasis ? '' : '; known subtotal ' + esc(amt(t.pnl,t.currency === 'unknown' ? '' : t.currency))}` : ''}` : ''}</div>`).join('');
@@ -110,6 +125,14 @@
   $('closeDetail').addEventListener('click',() => $('tradeDetail').close());
   $('tradeDetail').addEventListener('close',() => { if (opener?.isConnected) opener.focus(); });
   $('journalTable').addEventListener('click',event => {
+    const toggle = event.target.closest('[data-month-toggle]');
+    if (toggle) {
+      const month = toggle.dataset.monthToggle, expanded = state.collapsedMonths.has(month);
+      if (expanded) state.collapsedMonths.delete(month);else state.collapsedMonths.add(month);
+      $(toggle.getAttribute('aria-controls')).hidden = !expanded;
+      toggle.setAttribute('aria-expanded',String(expanded));toggle.querySelector('.month-chevron').textContent = expanded ? '▾' : '▸';
+      return;
+    }
     if (event.target.closest('.help-dot')) return;
     const row = event.target.closest('[data-row]');
     if (row) showDetail(row.dataset.row,row.querySelector('[data-detail]'));

@@ -24,13 +24,23 @@
     return result;
   }
   function groups(rows) {
-    const map = new Map();
+    const years = new Map();
     for (const r of [...rows].sort((a,b) => (b.entryDate ?? '').localeCompare(a.entryDate ?? '') || a.id.localeCompare(b.id))) {
-      const key = r.entryDate?.slice(0,7) || 'Unknown';
-      if (!map.has(key)) map.set(key,[]);
-      map.get(key).push(r);
+      const year = r.entryDate?.slice(0,4) || 'Unknown', month = r.entryDate?.slice(0,7) || 'Unknown';
+      if (!years.has(year)) years.set(year,new Map());
+      const months = years.get(year);
+      if (!months.has(month)) months.set(month,[]);
+      months.get(month).push(r);
     }
-    return [...map].map(([month, entries]) => ({ month, entries }));
+    return [...years].map(([year,months]) => ({year,count:[...months.values()].reduce((n,entries) => n+entries.length,0),
+      months:[...months].map(([month,entries]) => ({month,entries}))}));
+  }
+  function monthTotals(rows,balances) {
+    return totals(rows).map(total => {
+      const last = [...rows].filter(r => (r.currency || 'unknown') === total.currency && r.entryDate)
+        .sort((a,b) => a.entryDate.localeCompare(b.entryDate) || a.id.localeCompare(b.id)).at(-1);
+      return {...total,netCash:last ? balances.get(last.id) ?? null : null};
+    });
   }
   function totals(rows) {
     const byCurrency = new Map();
@@ -48,5 +58,5 @@
     }
     return [...byCurrency.values()].map(t => ({ ...t, mixedBasis:[t.grossPnl,t.netPnl,t.brokerPnl].filter(Boolean).length > 1, returnsPct:!t.missing && t.shortOnly && t.denominator > 0 ? t.premium / t.denominator * 100 : null }));
   }
-  globalThis.TradesV2 = { openColumns, historyColumns, strategies, isOpen, filter, cashBalances, groups, totals };
+  globalThis.TradesV2 = { openColumns, historyColumns, strategies, isOpen, filter, cashBalances, groups, monthTotals, totals };
 })();

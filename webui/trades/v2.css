@@ -27,9 +27,15 @@
 .journal-table .row-link.mono { display:block; max-width:200px; overflow-wrap:anywhere; white-space:normal; text-align:left; line-height:1.6; }
 .journal-table .ticker-name { display:block; max-width:90px; overflow:hidden; text-overflow:ellipsis; }
 .journal-table .group th { background:#202637; padding:.7rem .85rem; text-align:left; position:static; font-size:.75rem; }
-.journal-table .group th span { position:sticky; left:.85rem; }
-.journal-table .subtotal td { background:#151a26; color:var(--muted-foreground); font-size:.68rem; border-bottom:1px solid #46516b; }
-.journal-table .subtotal td:first-child { background:#151a26; }
+.journal-table .group th > span { position:sticky; left:.85rem; }
+.journal-table .group-count { color:var(--muted-foreground); font-weight:400; margin-left:.3rem; }
+.journal-table .month-summary :is(th,td) { background:#171d2a; padding:.65rem .85rem; font-size:.68rem; border-bottom:1px solid #3a455e; }
+.journal-table .month-summary th { position:static; text-align:left; box-shadow:none; }
+.journal-table .month-summary td { font-family:var(--font-mono); text-align:right; }
+.journal-table .month-toggle { position:sticky; left:.5rem; display:inline-flex; align-items:center; gap:.4rem; padding:.3rem .4rem; border:0; border-radius:.3rem; background:none; color:var(--foreground); font:500 .72rem var(--font-sans); cursor:pointer; }
+.journal-table .month-toggle:hover { background:#293248; }
+.journal-table .month-chevron { color:var(--brand); width:.7rem; text-align:center; }
+.journal-table .currency-label { display:inline-block; margin-left:.7rem; color:var(--muted-foreground); font:.64rem var(--font-mono); }
 .journal-table .empty { padding:3rem 1rem; text-align:center; color:var(--muted-foreground); }
 .journal-table small { display:block; font-size:.6rem; color:var(--muted-foreground); margin-top:.25rem; }
 .up { color:var(--success); }.down { color:var(--danger); }
