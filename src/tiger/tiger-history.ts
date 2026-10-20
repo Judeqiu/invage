@@ -5,6 +5,7 @@ import { historyText as text, historyAmount as amount, optionalHistoryAmount as 
 import type { BrokerLot } from '../brokers/statement.js';
 import type { TigerRawBundle } from './tiger-types.js';
 import { tigerCommissions } from './tiger-executions.js';
+import { tigerOrderFees } from './tiger-fees.js';
 import { BrokerParseError } from '../brokers/errors.js';
 type Row = Record<string,unknown>;
 function normalizeHistoryRow(row:Row):Row {
@@ -50,7 +51,7 @@ export function mapTigerHistory(bundle:TigerRawBundle,lots:BrokerLot[],channel:s
  for(const row of h.orders){account(row);if(row.secType==='OPT')putHistoryMultiplier(metadata,identity(row),row.multiplier);for(const leg of Array.isArray(row.legs)?row.legs as Row[]:[])if(leg.secType==='OPT')putHistoryMultiplier(metadata,identity(leg),leg.multiplier);}
  const ordersById=new Map(h.orders.map(row=>[text(row.id),row]));const byOrder=new Map<string,Row[]>();
  for(const row of h.transactions){account(row);const id=text(row.orderId);byOrder.set(id,[...(byOrder.get(id)??[]),row]);}
- const fees=new Map<string,string>();for(const [id,rows]of byOrder){const parent=ordersById.get(id);if(parent&&rows.every(r=>r.secType==='OPT'))for(const [fill,fee]of tigerCommissions(parent,rows,h.end))fees.set(fill,fee);}
+ const fees=new Map<string,string>();for(const [id,rows]of byOrder){const parent=ordersById.get(id);if(parent)for(const [fill,fee]of tigerCommissions(parent,rows,h.end))fees.set(fill,fee);}
  const executions=h.transactions.flatMap(row=>{
   const parent=ordersById.get(text(row.orderId));
   if(parent&&Array.isArray(parent.attrList)&&parent.attrList.some(attr=>['ASSIGNMENT','EXERCISE','EXPIRE','CASH_SETTLE'].includes(String(attr)))){gaps.push({kind:'coverage',reference:text(row.id),reason:'Lifecycle delivery retained in raw evidence; not counted as a second cash execution.'});return [];}
@@ -68,10 +69,11 @@ export function mapTigerHistory(bundle:TigerRawBundle,lots:BrokerLot[],channel:s
    side:direction,effect:isOption&&parent?.secType==='OPT'?effect(parent):'unknown' as const,executed_at:tigerHistoryTime(row.transactionTime,clock),clock,currency:text(row.currency),
    quantity:qty,price,multiplier,gross_cash:gross===null?null:direction==='buy'?`-${gross}`:gross,fee_cash:fees.get(text(row.id))??null,option:t?.option??null}];
  });
- const orders:BrokerHistoryOrder[]=h.orders.map(row=>{const clock=clockFor(row);return {...scope,id:text(row.id),native_symbol:row.secType==='MLEG'?`tiger:order:${text(row.id)}`:identity(row),side:row.action==='BUY'?'buy':row.action==='SELL'?'sell':'unknown',status:text(row.status),
+ const orders:BrokerHistoryOrder[]=h.orders.map(row=>{const clock=clockFor(row),fees=tigerOrderFees(row,h.end);return {...scope,id:text(row.id),native_symbol:row.secType==='MLEG'?`tiger:order:${text(row.id)}`:identity(row),side:row.action==='BUY'?'buy':row.action==='SELL'?'sell':'unknown',status:text(row.status),
   created_at:tigerHistoryTime(row.openTime,clock),updated_at:tigerHistoryTime(row.updateTime??row.latestTime??row.openTime,clock),clock,currency:row.currency==null?null:text(row.currency),
   quantity:row.totalQuantity==null?null:quantity(row.totalQuantity,row.totalQuantityScale??0),limit_price:optional(row.limitPrice),filled_quantity:row.filledQuantity==null?null:quantity(row.filledQuantity,row.filledQuantityScale??0),filled_price:optional(row.avgFillPrice),
   order_type:text(row.orderType),time_in_force:row.timeInForce==null?null:text(row.timeInForce),session:row.tradingSessionType==null?null:text(row.tradingSessionType),
+  ...(fees ? {fees} : {}),
   legs:(Array.isArray(row.legs)?row.legs as Row[]:[]).map(l=>({native_symbol:identity(l),side:side(l),effect:effect(l),ratio:amount(l.ratio),multiplier:optional(l.multiplier)}))};});
- return assertBrokerHistory({...scope,executions,orders,sync:{historical_imported:h.mode==='full',version:1,mode:h.mode,from:new Date(h.start).toISOString(),through:new Date(h.end).toISOString(),status:gaps.length?'partial':'complete',full_history_synced:h.mode==='full'&&!gaps.length,fees:executions.some(e=>e.fee_cash!==null)?'partial':'unavailable',gaps}});
+ return assertBrokerHistory({...scope,executions,orders,sync:{historical_imported:h.mode==='full',version:1,mode:h.mode,from:new Date(h.start).toISOString(),through:new Date(h.end).toISOString(),status:gaps.length?'partial':'complete',full_history_synced:h.mode==='full'&&!gaps.length,fees:executions.length&&executions.every(e=>e.fee_cash!==null)?'available':orders.some(o=>o.fees)?'partial':'unavailable',gaps}});
 }

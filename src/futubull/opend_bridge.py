@@ -6,6 +6,7 @@ No trading unlock or order method is called here.
 
 import json
 import sys
+import time
 from datetime import datetime, timezone
 
 MARKER = "INVAGE_FUTU_JSON:"
@@ -13,11 +14,14 @@ MARKER = "INVAGE_FUTU_JSON:"
 
 def rows(frame):
     # pandas' JSON encoder handles numpy values and nulls consistently.
-    exact_fields = ["acc_id", "deal_id", "order_id", "qty", "price", "dealt_qty", "dealt_avg_price", "contract_size", "lot_size", "multiplier"]
+    exact_fields = ["acc_id", "deal_id", "order_id", "qty", "price", "dealt_qty", "dealt_avg_price", "contract_size", "lot_size", "multiplier", "fee_amount"]
     frame = frame.copy()
     for field in exact_fields:
         if field in frame.columns:
             frame[field] = frame[field].map(lambda value: None if value is None or str(value) == "nan" else str(value))
+    if "fee_details" in frame.columns:
+        frame["fee_details"] = frame["fee_details"].map(
+            lambda value: [[str(label), str(amount)] for label, amount in value] if isinstance(value, (list, tuple)) else None)
     if "acc_id" in frame.columns:
         frame = frame.copy()
         frame["acc_id"] = frame["acc_id"].astype(str)
@@ -33,6 +37,23 @@ def require_ok(result, label, futu):
     if status != futu.RET_OK:
         raise RuntimeError(f"OpenD {label} failed: {data}")
     return rows(data)
+
+
+def fetch_order_fees(context, deals, account, futu):
+    ids = sorted({str(row["order_id"]) for row in deals if row.get("order_id") is not None})
+    fees, fee_gaps = [], []
+    for offset in range(0, len(ids), 400):
+        if offset:
+            time.sleep(3.1)  # SDK limit: ten queries per thirty seconds.
+        batch = ids[offset:offset + 400]
+        try:
+            fees.extend(require_ok(context.order_fee_query(order_id_list=batch,
+                acc_id=account, trd_env=futu.TrdEnv.REAL), "order fees", futu))
+        except Exception:
+            fee_gaps.extend({"kind": "coverage", "reference": order_id,
+                "reason": "OpenD order fees unavailable on this account/gateway; missing charges remain unknown."}
+                for order_id in batch)
+    return fees, fee_gaps
 
 
 def main():
@@ -68,7 +89,11 @@ def main():
                           "trd_env": futu.TrdEnv.REAL, "acc_id": account}
                 deals = require_ok(context.history_deal_list_query(**bounds), "historical deals", futu)
                 orders = require_ok(context.history_order_list_query(**bounds), "historical orders", futu)
-                output["history"] = {"plan": plan, "deals": deals, "orders": orders}
+                # Read-only settled fee query, available on supported REAL gateways.
+                # Request only parents with observed fills; never invent zero fees.
+                fees, fee_gaps = fetch_order_fees(context, deals, account, futu)
+                output["history"] = {"plan": plan, "deals": deals, "orders": orders,
+                                     "order_fees": fees, "fee_gaps": fee_gaps}
         print(MARKER + json.dumps(output, separators=(",", ":")))
     finally:
         context.close()

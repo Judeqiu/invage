@@ -14,7 +14,7 @@ export interface BrokerHistoryOrderLeg {
 }
 /** Broker-reported order charges, never additional execution cash flows. */
 export interface BrokerOrderFees {
-  currency: string; total: string; items: Array<{ type: string; amount: string }>;
+  currency: string | null; total: string; items: Array<{ type: string; amount: string }>;
 }
 export interface BrokerHistoryOrder extends BrokerHistoryScope {
   id: string; native_symbol: string; side: 'buy' | 'sell' | 'unknown'; status: string;
@@ -104,7 +104,7 @@ export function assertHistoryOrder(raw: unknown): BrokerHistoryOrder {
   if (o.fees !== undefined) {
     const f = obj(o.fees); keys(f, ['currency','total','items']);
     const denomination = currency(f.currency);
-    if (!denomination || !Array.isArray(f.items)) throw new Error('Invalid broker order fees');
+    if (!Array.isArray(f.items)) throw new Error('Invalid broker order fees');
     fees = { currency:denomination, total:nonnegative(f.total), items:f.items.map((raw: unknown) => {
       const item = obj(raw); keys(item, ['type','amount']);
       return { type:text(item.type), amount:amount(item.amount) };
@@ -178,8 +178,8 @@ export function mergeBrokerHistory(previous: BrokerHistory | undefined, incoming
   const full = next.sync.mode === 'full' ? status === 'complete' : old?.sync.full_history_synced === true;
   return { ...next, executions: [...executions.values()].sort((a,b) => a.executed_at.localeCompare(b.executed_at) || a.id.localeCompare(b.id)),
     orders: [...orders.values()].sort((a,b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id)),
-    sync: { ...next.sync, ...(['moomoo','futubull'].includes(next.broker_id) ? { fees: executions.size && [...executions.values()].every(e => e.fee_cash !== null)
-      ? 'available' as const : [...orders.values()].some(o => o.fees) ? 'partial' as const : 'unavailable' as const } : {}),
+    sync: { ...next.sync, ...(['moomoo','futubull','tiger','webull'].includes(next.broker_id) ? { fees: executions.size && [...executions.values()].every(e => e.fee_cash !== null)
+      ? 'available' as const : [...executions.values()].some(e => e.fee_cash !== null) || [...orders.values()].some(o => o.fees) ? 'partial' as const : 'unavailable' as const } : {}),
       historical_imported: old?.sync.historical_imported === true || next.sync.historical_imported === true || old?.sync.full_history_synced === true, status, gaps, from: old && old.sync.from < next.sync.from ? old.sync.from : next.sync.from, full_history_synced: full } };
 }
 

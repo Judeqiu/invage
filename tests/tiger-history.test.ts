@@ -1,3 +1,4 @@
+import { mergeBrokerHistory } from '../src/brokers/history.js';
 import { describe, expect, it } from 'vitest';
 import { mapTigerHistory } from '../src/tiger/tiger-history.js';
 import type { TigerRawBundle } from '../src/tiger/tiger-types.js';
@@ -34,6 +35,15 @@ describe('Tiger regional history', () => {
       expect(raw).toEqual(before);
     },
   );
+
+  it('records stock order charges and keeps their availability after incremental merges', () => {
+    const raw=bundle();Object.assign(raw.history!.orders[0], {filledQuantity:'100',commission:'1.4',gst:'0.12'});
+    const h=mapTigerHistory(raw,[],'tiger')!;
+    expect(h.executions[0].fee_cash).toBe('-1.520000000000');
+    expect(h.orders[0].fees).toMatchObject({total:'1.52',currency:'SGD'});
+    const empty=structuredClone(h);empty.executions=[];empty.orders=[];empty.sync.mode='incremental';empty.sync.fees='unavailable';
+    expect(mergeBrokerHistory(h,empty).sync.fees).toBe('available');
+  });
 
   it('retains unfamiliar markets in UTC with native identity and an explicit partial-coverage gap', () => {
     const raw = bundle('FUTURE_MARKET', 'ABC');

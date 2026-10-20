@@ -1,3 +1,4 @@
+import { webullOrderWithDetails, webullOrderFees } from './webull-fees.js';
 import { BrokerParseError } from '../brokers/errors.js';
 import type { BrokerLot } from '../brokers/statement.js';
 import { assertOptionExecution, decimal, mergeOptionExecutions, type OptionExecution } from '../brokers/option-executions.js';
@@ -29,7 +30,7 @@ function executedAt(value: unknown): string {
   return `${p('year')}-${p('month')}-${p('day')}T${p('hour')}:${p('minute')}:${p('second')}`;
 }
 
-/** Webull exposes cumulative order fills, not individual executions or fees.
+/** Webull exposes cumulative order fills, not individual executions.
  * Import only terminal single-leg orders; retain unknown fees explicitly. */
 export function mapWebullOptionHistory(bundle: WebullRawBundle, lots: BrokerLot[], channel: string): OptionExecution[] | undefined {
   if (!bundle.option_history) return undefined;
@@ -43,7 +44,7 @@ export function mapWebullOptionHistory(bundle: WebullRawBundle, lots: BrokerLot[
       const group = record(raw);
       if (!Array.isArray(group.orders)) throw new Error('Webull history missing orders');
       for (const rawOrder of group.orders) {
-        const order = record(rawOrder);
+        const order = webullOrderWithDetails(bundle, record(rawOrder));
         if (order.instrument_type !== 'OPTION' || Number(order.filled_quantity ?? 0) === 0) continue;
         if (typeof order.order_id !== 'string' || !order.order_id) throw new Error('Missing Webull order ID');
         const prior = orders.get(order.order_id);
@@ -80,10 +81,12 @@ export function mapWebullOptionHistory(bundle: WebullRawBundle, lots: BrokerLot[
       if (Number(qty) <= 0 || effect === 'close' && Number(qty) > Math.abs(balance)) throw new Error('Webull fill cannot reconcile with earlier history');
       const gross = product(decimal(String(order.filled_price)), qty, String(o.multiplier));
       if (gross.startsWith('-')) throw new Error('Negative Webull fill price');
+      const fees = webullOrderFees(order);
+      const commission = fees?.currency === lot.currency ? (/[1-9]/.test(fees.total) ? `-${fees.total}` : '0') : null;
       executions.push(assertOptionExecution({ channel, account_id: bundle.account_id, execution_id: `order:${order.order_id}`,
         contract_id: `webull:${key}`, executed_at: executedAt(order.filled_time_at ?? order.filled_time),
         underlying, right: o.right, expiry: o.expiry, strike: String(o.strike), multiplier: String(o.multiplier),
-        contracts: qty, side, effect, currency: lot.currency, gross_premium: side === 'buy' ? `-${gross}` : gross, commission: null }));
+        contracts: qty, side, effect, currency: lot.currency, gross_premium: side === 'buy' ? `-${gross}` : gross, commission }));
       balances.set(key, balance + (side === 'buy' ? Number(qty) : -Number(qty)));
     }
     return mergeOptionExecutions([], executions);

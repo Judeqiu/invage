@@ -157,7 +157,7 @@ export async function tigerExecute(args: {
   }
   const history = args.method === 'orders' || args.method === 'order_transactions';
   const exactFields = new Set(['id', 'orderId', 'accountId', 'filledQuantity', 'filledPrice',
-    'filledAmount', 'commission', 'gst', 'avgFillPrice', 'avgFilledPrice', 'limitPrice', 'totalQuantity', 'ratio', 'strike', 'multiplier']);
+    'filledAmount', 'commission', 'gst', 'avgFillPrice', 'avgFilledPrice', 'limitPrice', 'totalQuantity', 'ratio', 'strike', 'multiplier', 'total', 'originalAmount', 'afterDiscountAmount']);
   const parse = (text: string) => JSON.parse(text, (key, value, context?: { source?: string }) => {
     if (!history || !exactFields.has(key) || typeof value !== 'number') return value;
     if (context?.source && /^-?\d+(?:\.\d+)?$/.test(context.source)) return context.source;
@@ -350,6 +350,26 @@ export async function fetchTigerRawBundle(
   }
   const option_history = !opts?.history && hasOptions && account_kind !== 'global'
     ? await fetchOptionHistory({ gateway, credentials, fetchImpl, timestamp: opts?.timestamp }) : undefined;
+  // Category/item details are available only on single-order queries. Keep
+  // successful history if an older gateway cannot provide the optional details.
+  for (const h of [history, option_history]) if (h) {
+    for (const order of h.orders) {
+      if (!(Number(order.filledQuantity) > 0) || Array.isArray(order.charges)) continue;
+      await new Promise(r => setTimeout(r, 550));
+      try {
+        const response = await tigerExecute({gateway,credentials,fetchImpl,method:'orders',
+          biz:{account,id:String(order.id),show_charges:true},timestamp:opts?.timestamp});
+        if (!envelopeOk(response)) throw new Error('Fee detail lookup failed');
+        const data = response.data as Record<string,unknown>;
+        const candidates = Array.isArray(data?.items) ? data.items : data?.id != null ? [data] : [];
+        const detail = candidates.find(row => String(row.id) === String(order.id));
+        if (!detail || String(detail.accountId ?? detail.account) !== account) throw new Error('Fee detail account/order mismatch');
+        for (const field of ['commission','gst','commissionCurrency','charges']) if (detail[field] != null) order[field] = detail[field];
+      } catch {
+        if (history && h === history) history.gaps.push({kind:'coverage',reference:String(order.id),reason:'Tiger order fee itemization unavailable; reported order totals retained when present.'});
+      }
+    }
+  }
   return {
     schema: 'invage.tiger.raw.v1',
     fetched_at,

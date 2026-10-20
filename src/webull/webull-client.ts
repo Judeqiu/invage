@@ -1,3 +1,4 @@
+import { webullOrderFees } from './webull-fees.js';
 import { randomBytes } from 'node:crypto';
 import type { BrokerHistorySyncPlan } from '../brokers/history.js';
 import { BrokerHttpError, BrokerParseError } from '../brokers/errors.js';
@@ -264,6 +265,35 @@ export async function fetchWebullRawBundle(
     if (typeof next !== 'string' || seen.has(next)) throw new BrokerParseError('Webull history pagination did not advance.');
     seen.add(next); pagination_key = next;
   }
+  const order_details: unknown[] = [];
+  const fee_gaps: import('../brokers/history.js').BrokerHistoryGap[] = [];
+  const requested = new Set<string>();
+  for (const raw of option_history) {
+    const group = asRecord(raw);
+    for (const value of Array.isArray(group?.orders) ? group.orders : []) {
+      const order = asRecord(value);
+      if (!order || !(Number(order.filled_quantity) > 0) || webullOrderFees(order)) continue;
+      const clientId = order.client_order_id ?? group?.client_order_id;
+      if (typeof clientId !== 'string' || !clientId) {
+        fee_gaps.push({kind:'coverage',reference:String(order.order_id),reason:'Webull fee detail requires the original client order ID.'});
+        continue;
+      }
+      if (requested.has(clientId)) continue;
+      requested.add(clientId);
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      try {
+        const response = asRecord(await webullGet({host,path:'/trading/orders/get',
+          query:{account_id,client_order_id:clientId},credentials,fetchImpl}));
+        const detail = asRecord(response?.data ?? response);
+        if (!detail || !Array.isArray(detail.orders) ||
+            detail.client_order_id !== clientId ||
+            detail.account_id != null && String(detail.account_id) !== account_id) throw new Error('Fee detail binding missing');
+        order_details.push(detail);
+      } catch {
+        fee_gaps.push({kind:'coverage',reference:String(order.order_id),reason:'Webull order fee details unavailable; missing amounts remain unknown.'});
+      }
+    }
+  }
   return {
     schema: 'invage.webull.raw.v1',
     fetched_at: new Date().toISOString(),
@@ -274,6 +304,8 @@ export async function fetchWebullRawBundle(
     balances,
     positions,
     option_history,
+    order_details,
+    fee_gaps,
     history_plan:opts?.history,
   };
 }

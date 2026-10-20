@@ -36,6 +36,7 @@ function attachOrderFees(state: InvestorState, row: TradeJournalRow) {
   for (const history of Object.values(state.broker_history ?? {})) {
     if (history.channel !== row.channel || history.account_id !== row.accountId) continue;
     const parents = new Set(history.executions.filter(e => ids.has(e.id)).map(e => e.order_id));
+    if (history.broker_id === 'webull') for (const id of ids) if (id.startsWith('order:')) parents.add(id.slice(6));
     row.orderFees = history.orders.filter(o => parents.has(o.id) && o.fees).map(o => ({ ...o.fees!, orderId:o.id }));
   }
 }

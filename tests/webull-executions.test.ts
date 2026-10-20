@@ -24,6 +24,12 @@ describe('Webull historical option orders', () => {
     portfolio['AAPL-C-200-20260918-L@webull'].broker_ref!.native_id = 'a-new-position-cycle';
     expect(openOptionTradeDetails(portfolio, repeat, { webull: 'account' })['AAPL-C-200-20260918-L@webull']).toBeDefined();
   });
+  it('uses actual fees on legacy single-leg orders only with verified matching currency', () => {
+    const raw=bundle([order()]);raw.order_details=[{orders:[order({currency:'USD',commission:{actual_commission:'1.21'},fees:[{type:'SEC',actual_value:'0.09'}]})]}];
+    expect(mapWebullBundleToStatement(raw,'webull').option_executions![0].commission).toBe('-1.30');
+    delete (raw.order_details[0] as any).orders[0].currency;
+    expect(mapWebullBundleToStatement(raw,'webull').option_executions![0].commission).toBeNull();
+  });
   it('infers an opening and closing from complete chronology and matches only the outstanding quantity', () => {
     const s = mapWebullBundleToStatement(bundle([order({ filled_quantity: '3', position_intent: undefined }),
       order({ order_id: 'close', side: 'SELL', filled_quantity: '1', position_intent: undefined,

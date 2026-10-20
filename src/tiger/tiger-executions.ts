@@ -3,7 +3,7 @@ import { BrokerParseError } from '../brokers/errors.js';
 import { addDecimals, assertOptionExecution, decimal, mergeOptionExecutions, type OptionExecution } from '../brokers/option-executions.js';
 import { assertOptionLifecycleEvent, mergeOptionLifecycleEvents, type OptionLifecycleEvent } from '../brokers/option-events.js';
 import { canonicalOptionUnderlying } from '../brokers/option-symbol.js';
-import { tigerYahooSymbol, tigerMarketClock, tigerHistoryTime } from './tiger-markets.js';
+import { tigerYahooSymbol, tigerMarketClock, tigerHistoryTime, tigerMarket, tigerNativeSymbol } from './tiger-markets.js';
 import type { TigerRawBundle } from './tiger-types.js';
 
 function fixed(value: bigint, scale: number): string {
@@ -55,15 +55,17 @@ function lifecycleKind(order: Record<string, unknown>): OptionLifecycleEvent['ki
   return kinds[0];
 }
 
-/** Fees are allocated among same-contract fills only when every fill in a final
+/** Fees are allocated among same-instrument fills only when every fill in a final
  * order reconciles. Combo-order per-leg fees remain unknown. */
 export function tigerCommissions(order: Record<string, unknown>, rows: Record<string, unknown>[], cutoff: number): Map<string, string> {
   const result = new Map<string, string>();
-  if (order.secType !== 'OPT' || order.commission == null || order.gst == null ||
+  if (!['STK','OPT'].includes(String(order.secType)) || order.commission == null || order.gst == null ||
       !['filled', 'cancelled', 'expired', 'rejected'].includes(String(order.status).toLowerCase())) return result;
   const totalQty = addDecimals(...rows.map(quantity));
-  if (Number(totalQty) !== Number(quantity(order)) || rows.some(row =>
-    row.currency !== order.currency || contractKey(row) !== contractKey(order)) ||
+  const instrument = (row: Record<string, unknown>) => row.secType === 'OPT' ? contractKey(row)
+    : JSON.stringify([row.secType,tigerMarket(row.market),tigerNativeSymbol(tigerMarket(row.market),String(row.symbol))]);
+  if (/[1-9]/.test(addDecimals(totalQty, `-${quantity(order)}`)) || rows.some(row =>
+    row.secType !== order.secType || row.currency !== order.currency || instrument(row) !== instrument(order)) ||
     order.commissionCurrency != null && order.commissionCurrency !== order.currency) return result;
   const fee = addDecimals(decimal(String(order.commission)), decimal(String(order.gst)));
   if (fee.startsWith('-')) throw new Error('Negative Tiger order fee');
