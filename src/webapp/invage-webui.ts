@@ -204,7 +204,9 @@ export function createInvageWebUi(): DomainWebUiExtension {
       {
         path: '/trades',
         pageKind: 'iframe',
-        iframeSrc: '/domain-assets/invage/trades/index.html',
+        iframeSrc: readDashboardConfig().tradesVersion === 'v2'
+          ? '/domain-assets/invage/trades/v2.html'
+          : '/domain-assets/invage/trades/index.html',
         title: 'Trades',
       },
       {

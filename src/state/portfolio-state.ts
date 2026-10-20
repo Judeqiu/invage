@@ -296,6 +296,10 @@ export interface BrokerAccountConnection {
 }
 
 export interface InvestorState extends UserState {
+  /** Application-owned option-book and fill primary keys; additive, versioned identity index. */
+  option_identities?: import('../brokers/option-identities.js').OptionIdentityIndex;
+  /** User-authored thesis, keyed by the stable option-book primary key. */
+  option_journal?: Record<string, { thesis: string; updated_at: string }>;
   /** Account-scoped executions, orders, explicit gaps and reusable history sync checkpoints. */
   broker_history?: Record<string, import('../brokers/history.js').BrokerHistory>;
   /** Imported execution history, independent of the current holdings snapshot. */

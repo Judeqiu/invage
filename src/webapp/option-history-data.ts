@@ -90,5 +90,5 @@ export function optionHistoryForState(state: InvestorState, now = new Date()) {
   }
   const events = mergeOptionLifecycleEvents(state.option_events ?? [], archivedEvents);
   const episodes = buildOptionEpisodes({ ...state, option_observations: observations, option_events: events }, now);
-  return { episodes, observations, gaps };
+  return { episodes, observations, gaps, events };
 }

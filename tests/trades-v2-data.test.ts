@@ -1,0 +1,64 @@
+import { expect, it } from 'vitest';
+import { tradesOpenBook, tradesHistory } from '../src/webapp/trades-v2-data.js';
+import { optionFill, tradesFixture } from './helpers/trades-fixture.js';
+import type { OptionLifecycleEvent } from '../src/brokers/option-events.js';
+const event = (patch: Partial<OptionLifecycleEvent> = {}): OptionLifecycleEvent => ({ id:'expiry',broker_id:'ibkr',channel:'ibkr',account_id:'U1',underlying:'AAPL',right:'put',strike:'150',expiry:'2027-01-15',multiplier:'100',date:'2027-01-15',kind:'expiration',settlement:'physical',contracts:'1',currency:'USD',source:'ibkr_flex',fees:'0',...patch });
+
+it('reconciles still-open premium and dates, never substitutes book cost for missing fills', () => {
+  const state = tradesFixture(), row = tradesOpenBook(state).rows[0];
+  expect(row).toMatchObject({entryDate:'2026-09-10',contracts:'1',premium:'300.06172839',netCash:'299.01172839'});
+  expect(row.returnsPct).toBeCloseTo(2.0004115226);
+  expect(row.executions).toHaveLength(1);
+  delete state.option_executions;
+  expect(tradesOpenBook(state).rows[0]).toMatchObject({entryDate:null,premium:null,netCash:null,returnsPct:null});
+});
+it('separates partial closes and same-contract reopenings, with exact decimal money and stable fill IDs', () => {
+  const s = tradesFixture();
+  s.option_executions!.push(optionFill({execution_id:'close-2',executed_at:'2026-10-02T10:00:00',side:'buy',effect:'close',contracts:'1',gross_premium:'-49.99',commission:'-1.05'}));
+  const closed = tradesHistory(s).rows[0];
+  expect(closed).toMatchObject({status:'Closed',contracts:'2',premium:'600.12345678',paidToClose:'100.00',realizedPnl:'495.92345678',feeBasis:'net'});
+  s.option_executions!.push(optionFill({execution_id:'reopen',executed_at:'2026-10-02T11:00:00',contracts:'1',gross_premium:'100'}));
+  const rows = tradesHistory(s).rows;
+  expect(rows).toHaveLength(2);
+  expect(new Set(rows.map(r => r.id)).size).toBe(2);
+  expect(new Set(rows.map(r => r.optionId)).size).toBe(1);
+  expect(rows.find(r => r.status === 'Closed')!.executions).toEqual(closed.executions);
+});
+it('withholds profit for unmatched closes, physical assignment and absent settlement proceeds', () => {
+  const s = tradesFixture(); s.portfolio = {}; s.option_executions = [optionFill({contracts:'1',gross_premium:'100'})];
+  s.option_events = [event({kind:'assignment'})];
+  expect(tradesHistory(s).rows[0]).toMatchObject({status:'Assigned',realizedPnl:null});
+  s.option_events = [event({kind:'assignment',broker_realized_pl:'87.12345'})];
+  expect(tradesHistory(s).rows[0]).toMatchObject({status:'Assigned',realizedPnl:'87.12345',feeBasis:'broker'});
+  s.option_events = [event({kind:'cash_settlement',settlement:'cash'})];
+  expect(tradesHistory(s).rows[0]).toMatchObject({status:'Cash settled',realizedPnl:null});
+  s.option_events = []; s.option_executions = [optionFill({side:'buy',effect:'close',gross_premium:'-10'})];
+  expect(tradesHistory(s).rows[0]).toMatchObject({status:'Incomplete history',entryDate:null,realizedPnl:null,netCash:null});
+});
+it('uses explicit expiration and shows gross profit when commission evidence is incomplete', () => {
+  const s = tradesFixture(); s.portfolio = {}; s.option_executions = [optionFill({contracts:'1',gross_premium:'100',commission:null})];
+  s.option_events = [event()];
+  expect(tradesHistory(s).rows[0]).toMatchObject({status:'Expired',realizedPnl:'100',feeBasis:'gross'});
+  s.option_events = [];
+  expect(tradesHistory(s).rows[0]).toMatchObject({status:'Unverified',realizedPnl:null});
+});
+it('does not promote timing-only roll candidates into confirmed rolls', () => {
+  const s = tradesFixture(); s.option_executions = [optionFill({contracts:'1'}),optionFill({execution_id:'close',contracts:'1',side:'buy',effect:'close',gross_premium:'-10',executed_at:'2026-10-01T10:00:00'})];
+  const relation: any = {channel:'ibkr',account_id:'U1',side:'short',closing_fills:['close'],evidence:'possible'};
+  expect(tradesHistory(s,[relation]).rows[0].rolled).toBe(false);
+  expect(tradesHistory(s,[{...relation,evidence:'order'}]).rows[0].rolled).toBe(true);
+});
+it('withholds profit when closing and reopening ordering is ambiguous at the same timestamp', () => {
+  const s = tradesFixture();s.option_executions = [optionFill({contracts:'1'}),
+    optionFill({execution_id:'close',contracts:'1',executed_at:'2026-10-01T10:00:00',side:'buy',effect:'close',gross_premium:'-10'}),
+    optionFill({execution_id:'reopen',contracts:'1',executed_at:'2026-10-01T10:00:00',gross_premium:'200'})];
+  expect(tradesHistory(s).rows.every(r => r.realizedPnl === null)).toBe(true);
+});
+it('keeps date-only lifecycle events separate from same-day fills without inventing their ordering', () => {
+  const s = tradesFixture();s.portfolio = {};s.option_executions = [optionFill({contracts:'1',executed_at:'2027-01-15T10:00:00'})];
+  s.option_events = [event()];
+  const rows = tradesHistory(s).rows;
+  expect(rows).toHaveLength(2);
+  expect(rows.every(r => r.realizedPnl === null)).toBe(true);
+  expect(rows.some(r => r.status === 'Expired')).toBe(true);
+});

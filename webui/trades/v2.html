@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Trades · Open options journal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../report.css" />
+  <link rel="stylesheet" href="../dashboard/v2.css" />
+  <link rel="stylesheet" href="./v2.css" />
+</head>
+<body>
+  <main class="page">
+    <header class="journal-header"><div class="label-eyebrow">Trades / All imported activity</div><button id="refresh" type="button" class="chip-btn">Refresh journal</button></header>
+    <div class="journal-hero">
+      <div><div class="journal-tabs" role="group" aria-label="Journal view"><button id="openTab" type="button" class="chip-btn on" aria-pressed="true">Open book</button><button id="historyTab" type="button" class="chip-btn" aria-pressed="false">History</button></div>
+        <h1 id="journalTitle">Every open contract, journaled.</h1><p id="description">Your recorded option book, across every broker. Open a row to inspect its system ID, source fills and broker facts.</p>
+      </div>
+      <div class="hero-filters"><div id="strategyFilters" class="pill-row" role="group" aria-label="Strategy filter"></div><div id="brokerFilters" class="pill-row" role="group" aria-label="Broker filter"></div></div>
+    </div>
+    <p id="status" class="journal-status" role="status" aria-live="polite">Reading your option book…</p>
+    <div id="error" class="journal-error" role="alert" hidden><p></p><button id="retry" class="chip-btn" type="button">Retry loading</button></div>
+    <section aria-label="Option journal">
+      <div id="filters" class="journal-filters">
+        <label>Ticker <select id="ticker"><option value="all">All tickers</option></select></label>
+        <label>Right <select id="right"><option value="all">All rights</option><option value="put">PUT</option><option value="call">CALL</option></select></label>
+        <label>Year <select id="year"><option value="all">All years</option></select></label>
+        <label>Month <select id="month"><option value="all">All months</option></select></label>
+        <label>Currency <select id="currency"><option value="all">All currencies</option></select></label>
+        <label id="seedLabel">Opening cash <input id="openingCash" inputmode="decimal" type="number" step="0.01" placeholder="—" aria-describedby="cashHint" /></label>
+        <button id="clear" type="button" class="chip-btn">Clear filters</button><span id="entryCount" aria-live="polite"></span>
+      </div>
+      <p id="cashHint" class="journal-note">Net cash is an illustrative running balance for visible dated entries, before fees. Enter opening cash for a single currency. It is separate from your broker’s cash balance.</p>
+      <div class="metric-card journal-card"><div id="journalTable" class="table-scroll" role="region" aria-label="Option journal table" tabindex="0" aria-busy="true"><p class="empty">Preparing your journal…</p></div></div>
+      <div id="totals" class="journal-totals" aria-live="polite"></div>
+      <p id="basis" class="journal-note">Premium is reconciled opening cash for the remaining open contracts, before fees. Returns % = premium ÷ strike notional; it is not annualized or a return on collateral. Entry dates are confirmed from fills; missing evidence remains unavailable.</p>
+    </section>
+    <details id="availability" class="availability" hidden><summary>Data availability</summary><ul></ul></details>
+    <details class="journal-import"><summary>Import historical IBKR Flex XML</summary><p>Import execution history without replacing current holdings. Broker IDs are retained; system IDs are assigned automatically.</p><label>Flex XML file <input id="historyFile" type="file" accept=".xml,application/xml" /></label><p id="importStatus" role="status"></p></details>
+    <footer>Recorded broker evidence · Read-only journal · Broker dates and gaps shown · Not financial advice</footer>
+  </main>
+  <dialog id="tradeDetail" aria-labelledby="detailTitle"><div class="detail-top"><span class="label-eyebrow">Option journal / Broker facts</span><button type="button" id="closeDetail" class="chip-btn" aria-label="Close trade details">Close ×</button></div><h2 id="detailTitle"></h2><div id="detailBody"></div></dialog>
+  <script src="../report.js"></script>
+  <script src="./model.js"></script>
+  <script src="./v2.js"></script>
+</body>
+</html>

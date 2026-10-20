@@ -25,10 +25,72 @@ import { fetchHistoricalCloses } from '../market/fetch-history.js';
 import { openOptionTradeDetails } from './option-dashboard-data.js';
 import { canonicalOptionUnderlying } from '../brokers/option-symbol.js';
 import { getTreasury, getReportingCurrency, setTreasury, type HouseholdInvestorState } from '../state/household-state.js';
-import { saveInvestor } from '../state/investor-store.js';
+import { saveInvestor, saveOptionJournalMetadata } from '../state/investor-store.js';
+import { tradesOpenBook, tradesHistory } from './trades-v2-data.js';
+import { buildOptionIdentityIndex } from '../brokers/option-identities.js';
 
 export function createDashboardApiRouter(): Router {
   const router = Router();
+  router.put('/trades-v2/:optionId/note', async (req: Request, res: Response) => {
+    res.setHeader('Cache-Control','private, no-store');
+    try {
+      const user = (req as Request & { user?: AuthUser }).user;
+      if (!user?.userId) { res.status(401).json({error:'unauthorized'}); return; }
+      const id = String(req.params.optionId), text = req.body?.text, revision = req.body?.revision;
+      if (!/^[a-f0-9]{8}-[a-f0-9]{4}-8[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(id) ||
+        typeof text !== 'string' || text.length > 8000 || !Number.isSafeInteger(revision) || revision < 0) {
+        res.status(400).json({error:'invalid_note',message:'Use a valid option ID and a note of at most 8,000 characters.'}); return;
+      }
+      const snapshot = await loadInvestor(await targetUserId(req,user));
+      if (snapshot.revision !== revision) { res.status(409).json({error:'revision_conflict',message:'The journal changed. Refresh it, then reopen this option before saving your note. Your draft is still shown.'}); return; }
+      let identities = buildOptionIdentityIndex(snapshot.state);
+      if (!Object.values(identities.options).includes(id)) {
+        const evidence = optionHistoryForState(snapshot.state);
+        identities = buildOptionIdentityIndex({...snapshot.state,option_observations:evidence.observations,option_events:evidence.events});
+      }
+      if (!Object.values(identities.options).includes(id)) {res.status(404).json({error:'option_not_found'});return;}
+      snapshot.state.option_identities = identities;
+      const updatedAt = new Date().toISOString();
+      snapshot.state.option_journal = {...snapshot.state.option_journal,[id]:{thesis:text,updated_at:updatedAt}};
+      await saveOptionJournalMetadata(snapshot);
+      res.json({revision:snapshot.revision,text,updatedAt});
+    } catch (error) {
+      const conflict = error instanceof Error && /revision|changed during/.test(error.message);
+      res.status(conflict ? 409 : 500).json({error:conflict ? 'revision_conflict' : 'note_failed',message:conflict ? 'The journal changed. Refresh and reopen this option before saving. Your draft is still shown.' : 'Could not save the note. Your draft is still shown.'});
+    }
+  });
+  router.get(['/trades-v2', '/trades-v2/history'], async (req: Request, res: Response) => {
+    res.setHeader('Cache-Control', 'private, no-store');
+    try {
+      const user = (req as Request & { user?: AuthUser }).user;
+      if (!user?.userId) { res.status(401).json({ error:'unauthorized' }); return; }
+      const snapshot = await loadInvestor(await targetUserId(req,user));
+      const history = req.path.endsWith('/history');
+      const fingerprint = cacheFingerprint([snapshot.revision, history]);
+      const namespace = history ? 'trades-history' : 'trades-open';
+      // Quotes are not needed for this journal. Revision-bound private caches never mix users.
+      const cached = req.query.refresh === '1' ? null : readDashboardCache(namespace, snapshot.state.user.id, fingerprint, 60_000);
+      if (cached) { res.json(cached); return; }
+      let payload;
+      if (history) {
+        const evidence = optionHistoryForState(snapshot.state);
+        const relationships = optionRelationshipsForState(snapshot.state, {});
+        const journal = tradesHistory({ ...snapshot.state, option_observations:evidence.observations, option_events:evidence.events }, relationships.groups.flatMap(g => g.relationships));
+        const conflicts = new Set(relationships.historyGaps.filter(g => 'blocksTotals' in g && g.blocksTotals).map(g => g.channel));
+        for (const row of journal.rows) if (conflicts.has(row.channel)) {
+          row.premium = row.netCash = row.realizedPnl = row.returnsPct = null;
+          row.notes.push('Conflicting archived execution evidence needs reconciliation. Cash and profit figures are withheld.');
+        }
+        payload = { ...journal,
+          gaps:[...evidence.gaps, ...relationships.historyGaps], revision:snapshot.revision };
+      } else payload = { ...tradesOpenBook(snapshot.state), revision:snapshot.revision };
+      writeDashboardCache(namespace, snapshot.state.user.id, fingerprint, payload);
+      res.json(payload);
+    } catch (error) {
+      console.error('Trades v2 failed:', error);
+      res.status(500).json({ error:'trades_failed', message:'Could not load the option journal. Please retry.' });
+    }
+  });
   router.use('/option-index', createOptionIndexRouter());
   router.use('/option-risk', createOptionRiskRouter());
   // Persist only derived dashboard fields, partitioned by the authorized target UUID.

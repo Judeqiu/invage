@@ -3,6 +3,8 @@ import type { InvestorState } from './portfolio-state.js';
 import { isBooksEnabled, withHouseholdPostCommit } from '../books/db.js';
 import { ensureBooksSeeded, householdContextFromState } from '../books/service.js';
 import { reconcileInvestorBooks } from '../books/state-reconcile.js';
+import { buildOptionIdentityIndex } from '../brokers/option-identities.js';
+import { isDeepStrictEqual } from 'node:util';
 
 /** A database read and its concurrency token travel together through mutations. */
 export interface InvestorSnapshot {
@@ -17,7 +19,25 @@ export async function loadInvestor(slug: string): Promise<InvestorSnapshot> {
   return { state: snapshot.state as InvestorState, revision: snapshot.revision };
 }
 
+/** Identity/thesis writes never seed or reconcile financial books, even on an unseeded account. */
+export async function saveOptionJournalMetadata(snapshot: InvestorSnapshot): Promise<void> {
+  const persisted = await loadStateById(snapshot.state.user.id);
+  if (persisted.revision !== snapshot.revision) throw new Error('Investor state changed during this update; reload before saving.');
+  const evidence = (state: InvestorState) => {
+    const { option_identities, option_journal, ...rest } = state;
+    return rest;
+  };
+  if (!isDeepStrictEqual(evidence(persisted.state as InvestorState),evidence(snapshot.state))) {
+    throw new Error('Option journal metadata save cannot change financial or source evidence.');
+  }
+  snapshot.state.option_identities = buildOptionIdentityIndex(snapshot.state);
+  await saveState(snapshot.state,snapshot.revision);
+  snapshot.revision += 1;
+}
+
 export async function saveInvestor(snapshot: InvestorSnapshot): Promise<void> {
+  const identities = buildOptionIdentityIndex(snapshot.state);
+  if (snapshot.state.option_identities || Object.keys(identities.options).length) snapshot.state.option_identities = identities;
   if (isBooksEnabled()) {
     // Seed from the persisted revision, then hold one household lock until
     // books have committed and the optimistic state update has completed.
