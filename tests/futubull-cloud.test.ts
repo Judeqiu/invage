@@ -69,7 +69,17 @@ describe('Futubull cloud access', () => {
     expect(merged.sync.fees).toBe('available');
   });
 
-  it.each([{s:'error',errcode:-1200},{s:'ok',d:{order_id:'wrong',total_fee:'1.23',currency:'USD',fees:[]}}])('retains Futubull positions and history with an explicit fee gap on failed fee responses', async feeResponse => {
+  it('records an explicit zero total with a null breakdown without inventing a missing fee', async () => {
+    const mock = transport({withOrder:true,feeResponse:{s:'ok',d:{order_id:'parent',total_fee:'0',fees:null}}});
+    const raw = await futubullAdapter.fetchRaw({...credentials,acc_id:accountId},{transport:mock.transport,history:plan});
+    expect(JSON.parse(raw.body.toString()).orders_fees[0].fees).toBeNull();
+    const h = futubullAdapter.parseToStatement(raw,'futubull-c1').history!;
+    expect(h.sync.fees).toBe('available');
+    expect(h.orders[0].fees).toEqual({currency:'USD',total:'0',items:[]});
+    expect(Number(h.executions[0].fee_cash)).toBe(0);
+  });
+
+  it.each([{s:'error',errcode:-1200},{s:'ok',d:{order_id:'wrong',total_fee:'1.23',currency:'USD',fees:[]}},{s:'ok',d:{order_id:'parent',total_fee:'1',fees:null}}])('retains Futubull positions and history with an explicit fee gap on failed fee responses', async feeResponse => {
     const mock = transport({withOrder:true,feeResponse});
     const raw = await futubullAdapter.fetchRaw({...credentials,acc_id:accountId},{transport:mock.transport,history:plan});
     const statement = futubullAdapter.parseToStatement(raw,'futubull-c1');

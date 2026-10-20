@@ -89,6 +89,13 @@ describe('Moomoo order fees', () => {
     raw.orders_fees![0].total_fee = '0'; raw.orders_fees![0].fees = [];
     expect(history(raw).executions.every(e => e.instrument === 'security' && Number(e.fee_cash) === 0)).toBe(true);
   });
+  it('accepts a null breakdown only when the broker explicitly reports a zero total', () => {
+    const raw = bundle(); raw.orders_fees![0].total_fee = '0.00'; raw.orders_fees![0].fees = null;
+    expect(history(raw).orders[0].fees).toEqual({currency:'USD',total:'0.00',items:[]});
+    expect(history(raw).executions.every(e => e.fee_cash !== null && Number(e.fee_cash) === 0)).toBe(true);
+    raw.orders_fees![0].total_fee = '0.01';
+    expect(() => history(raw)).toThrow(/breakdown/);
+  });
   it('enriches legacy null fees, preserves them on incremental omission and clears a recovered fee gap', () => {
     const raw = bundle(); delete raw.orders_fees;
     raw.fee_gaps = [{reference:'parent',reason:'Order fees unavailable or invalid; retry with a later sync (Full sync for older orders).'}];

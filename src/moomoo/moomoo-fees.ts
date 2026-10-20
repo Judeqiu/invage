@@ -9,12 +9,15 @@ export function parseMooMooOrderFees(raw: Record<string, unknown>, orderId: stri
   // Live Cloud responses can omit currency despite the published response schema.
   // Only an authoritative matching parent order can supply the missing field.
   const currency = raw.currency === undefined ? orderCurrency : raw.currency;
-  if (typeof currency !== 'string' || !/^[A-Z]{3,4}$/.test(currency) || !Array.isArray(raw.fees)) {
-    throw new BrokerParseError('Moomoo order fee currency/breakdown unavailable');
+  if (typeof currency !== 'string' || !/^[A-Z]{3,4}$/.test(currency)) {
+    throw new BrokerParseError('Moomoo order fee currency unavailable');
   }
   const total = decimal(raw.total_fee);
   if (total.startsWith('-')) throw new BrokerParseError('Moomoo total fee cannot be negative');
-  const items = raw.fees.map(item => {
+  // Futubull reports a null breakdown when the explicitly reported total is zero.
+  const detail = raw.fees === null && !/[1-9]/.test(total) ? [] : raw.fees;
+  if (!Array.isArray(detail)) throw new BrokerParseError('Moomoo order fee breakdown unavailable');
+  const items = detail.map(item => {
     if (!item || typeof item !== 'object' || Array.isArray(item) || typeof item.type !== 'string' || !item.type.trim()) {
       throw new BrokerParseError('Invalid Moomoo fee item');
     }
