@@ -51,7 +51,7 @@ const GROUPS = [
     id: 'reports',
     label: 'Reports',
     questions: [
-      ['stock_research_report', 'Stock research report', 'Generate an HTML stock research report for {ticker} using the stock-research-report workflow. Include company and financial data, valuation, a transparent peer ranking, catalysts, risks, sources and dates, and open it in the side panel.'],
+      ['stock_research_report', 'Stock research report', 'Generate an HTML stock research report for {ticker}. Include company and financial data, valuation, a transparent peer ranking, catalysts, risks, sources and dates. Deliver the report link here in chat so I can open it in the side panel.'],
       ['risk_scenarios_report', 'Create my Risk & scenarios report', 'Create my Risk & scenarios report for all accounts with a 5-trading-day horizon and show it in the sidebar.'],
       ['option_index_report', 'Options with calculated risk indexes', 'Create an options risk-index report for all my recorded open option positions. Automatically fetch the market inputs, calculate an index for each contract using its recorded side, show contract counts, stress losses, quote dates and any unavailable scores, and open the report in the sidebar. Do not ask me to fill in a calculator.'],
     ],

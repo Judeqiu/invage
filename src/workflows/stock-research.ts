@@ -23,7 +23,7 @@ export function createStockResearchWorkflow(dependencies: {
 } = {}): DomainWorkflowDefinition {
   return {
     id: 'stock-research-report', name: 'Stock research report',
-    description: 'Research a listed company and publish a sourced HTML equity report that opens in the chat side panel. Covers business and competition, dated annual financials, valuation and analyst expectations, a transparent comparison with named peers, recent developments, catalysts, risks and evidence gaps. Uses public data without requiring holdings or broker access. A company researcher and independent evidence reviewer check the report; financial summaries and rankings are calculated directly from retrieved figures.',
+    description: 'Research a listed company and publish a sourced HTML equity report that opens in the chat side panel. Covers business and competition, dated annual financials, valuation and analyst expectations, a transparent comparison with named peers, recent developments, catalysts, risks and evidence gaps. Uses public data without requiring holdings or broker access. After starting, keep progress updates in the current chat; the completed report link is delivered there automatically. Do not send the user to a Workflows page. A company researcher and independent evidence reviewer check the report; financial summaries and rankings are calculated directly from retrieved figures.',
     agent_budget: 2, workerToolNames: ['moli_browser', 'firecrawl'], inputSchema,
     async run(ctx) {
       if (!Value.Check(inputSchema, ctx.input)) throw new Error('Stock research requires a valid ticker and optional peer list.');
