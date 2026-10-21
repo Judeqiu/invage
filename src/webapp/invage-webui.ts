@@ -17,7 +17,7 @@ import { type ProductProfileId, readProductProfile } from '../agents/roster.js';
 import { readFlexEgressIpv4 } from '../brokers/egress.js';
 import { createBrokerConnectionsRouter } from './broker-api.js';
 import { createDashboardApiRouter } from './dashboard-api.js';
-import { createInvageChatQuestionLibrary, sampleInvageChatQuestionStarters } from './chat-questions.js';
+import { assertInvageChatQuestionCatalog, createInvageChatQuestionLibrary, sampleInvageChatQuestionStarters } from './chat-questions.js';
 import { readDashboardConfig } from './dashboard-config.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -118,6 +118,7 @@ export function chatEmptyStateFor(profile: ProductProfileId): ChatEmptyState {
 /** Match the visible framework Chat label to this product profile. */
 export function createInvageChromeCatalogs(profile: ProductProfileId = readProductProfile()): Record<string, Record<string, string>> {
   const en = JSON.parse(readFileSync(new URL('../../l10n/en.json', import.meta.url), 'utf8')) as Record<string, string>;
+  assertInvageChatQuestionCatalog(en, profile);
   return {en: {...en, 'nav.chat': profile === 'consultant' ? 'AI Chat' : 'Chat'}};
 }
 

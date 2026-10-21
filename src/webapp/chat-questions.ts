@@ -1,5 +1,5 @@
 import { randomInt } from 'node:crypto';
-import { readProductProfile } from '../agents/roster.js';
+import { readProductProfile, type ProductProfileId } from '../agents/roster.js';
 import type { ChatEmptyStarter, ChatQuestionLibraryConfig, QuestionPreset } from 'utarus';
 
 // Preset wording and grouping from https://velovest-ai.lovable.app/chat.
@@ -58,14 +58,14 @@ const GROUPS = [
   },
 ] as const;
 
-function questionGroups() {
+function questionGroups(profile: ProductProfileId = readProductProfile()) {
   return GROUPS.map(group => ({ ...group, questions: group.questions.filter(([id]) =>
-    id !== 'stock_research_report' || readProductProfile() === 'consultant') }));
+    id !== 'stock_research_report' || profile === 'consultant') }));
 }
 
 /** Empty-chat cards share the composer presets; ticker selection happens in chat. */
-export function createInvageChatQuestionStarters(): ChatEmptyStarter[] {
-  return questionGroups().flatMap((group) => group.questions.map(([id, title, template]) => ({
+export function createInvageChatQuestionStarters(profile: ProductProfileId = readProductProfile()): ChatEmptyStarter[] {
+  return questionGroups(profile).flatMap((group) => group.questions.map(([id, title, template]) => ({
     id: `question_${id}`,
     label: id === 'option_index_report' || id === 'stock_research_report' ? title : template.replaceAll('{ticker}', '[ticker]'),
     description: group.label,
@@ -73,6 +73,19 @@ export function createInvageChatQuestionStarters(): ChatEmptyStarter[] {
       ? `${template.replaceAll('{ticker}', 'the ticker I choose')} First ask me which ticker to use.`
       : template,
   })));
+}
+
+/** Startup must check every possible card, before manifest sampling hides any. */
+export function assertInvageChatQuestionCatalog(
+  catalog: Record<string, string>,
+  profile: ProductProfileId = readProductProfile(),
+): void {
+  const missing = createInvageChatQuestionStarters(profile).flatMap(starter =>
+    ['label', 'description', 'message'].map(field => `chat.empty.starter.${starter.id}.${field}`),
+  ).filter(key => typeof catalog[key] !== 'string' || !catalog[key].trim());
+  if (missing.length) {
+    throw new Error(`Missing chat question catalog entries for ${profile}: ${missing.join(', ')}`);
+  }
 }
 
 /** Sample four distinct questions each time a page requests its WebUI manifest. */

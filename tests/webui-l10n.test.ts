@@ -4,11 +4,15 @@ import { buildWebUiManifest } from 'utarus';
 import { assertL10nConfig } from '../node_modules/utarus/dist/l10n/validate.js';
 import { createInvageChatQuestionStarters } from '../src/webapp/chat-questions.js';
 import { localizeEmptyStarters } from '../node_modules/utarus/web/src/lib/empty-hero.js';
+import * as dashboardConfig from '../src/webapp/dashboard-config.js';
 
 process.env.UTARUS_LOADED_BY_HOST = '1';
 
-const { createInvageWebUi, chatEmptyStateFor } = await import('../src/webapp/invage-webui.js');
-afterEach(() => vi.unstubAllEnvs());
+const { createInvageWebUi, createInvageChromeCatalogs, chatEmptyStateFor } = await import('../src/webapp/invage-webui.js');
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.restoreAllMocks();
+});
 
 describe('WebUI chrome localization', () => {
   it('has catalog keys for every Settings section', () => {
@@ -22,6 +26,19 @@ describe('WebUI chrome localization', () => {
   it('passes the framework WebUI manifest validation', () => {
     const webUi = createInvageWebUi();
     expect(() => buildWebUiManifest({ webUi } as never)).not.toThrow();
+  });
+
+  it.each(['full', 'consultant'] as const)('validates all chrome with optional navigation enabled for %s', profile => {
+    vi.stubEnv('INVAGE_PRODUCT_PROFILE', profile);
+    const config = dashboardConfig.readDashboardConfig();
+    vi.spyOn(dashboardConfig, 'readDashboardConfig').mockReturnValue({ ...config, showOptionRiskCalculator: true });
+    const webUi = createInvageWebUi();
+    const manifest = buildWebUiManifest({ webUi } as never);
+    expect(manifest.nav.some(item => item.id === 'option-risk')).toBe(true);
+    expect(() => assertL10nConfig({
+      webUi,
+      l10n: { languages: ['en'], defaultLanguage: 'en', catalogs: createInvageChromeCatalogs(profile) },
+    } as never, 'invage')).not.toThrow();
   });
 
   it.each(['full', 'consultant'] as const)('localizes every possible question card for %s', (profile) => {

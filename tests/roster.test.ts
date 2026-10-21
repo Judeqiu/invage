@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'fs';
 import {
   HOST_AGENT_ID,
@@ -13,7 +13,10 @@ import {
 import { buildFrameworkAgentList } from '../src/agents/framework-agents.js';
 import { buildHostPurpose } from '../src/extension.js';
 import { chatEmptyStateFor } from '../src/webapp/invage-webui.js';
+import { createInvageChatQuestionStarters } from '../src/webapp/chat-questions.js';
 import { helpFirstAndAsyncTasks } from '../src/agents/help-first.js';
+
+afterEach(() => vi.unstubAllEnvs());
 
 describe('INVAGE_PRODUCT_PROFILE roster', () => {
   it('fails fast on missing or unknown profile', () => {
@@ -101,15 +104,19 @@ describe('INVAGE_PRODUCT_PROFILE roster', () => {
   });
 
   it('shows option shortcut cards on an empty Victor chat', () => {
+    vi.stubEnv('INVAGE_PRODUCT_PROFILE', 'consultant');
     const empty = chatEmptyStateFor('consultant');
+    // Read the getter once: every access intentionally draws a new sample.
+    const starters = empty.starters ?? [];
+    const pool = createInvageChatQuestionStarters();
     const catalog = JSON.parse(readFileSync(new URL('../l10n/en.json', import.meta.url), 'utf8')) as Record<string, string>;
     expect(empty.startersVariant).toBe('cards');
     expect(empty.startersPlacement).toBe('above');
-    expect(empty.starters?.map((starter) => starter.id)).toEqual([
-      'review_options', 'explore_chain', 'covered_call', 'cash_secured_put', 'protective_put',
-    ]);
-    expect(empty.starters?.every((starter) => starter.message && starter.description)).toBe(true);
-    for (const starter of empty.starters ?? []) {
+    expect(starters).toHaveLength(4);
+    expect(new Set(starters.map(starter => starter.id)).size).toBe(4);
+    expect(starters.every(starter => pool.some(candidate => candidate.id === starter.id))).toBe(true);
+    expect(starters.every((starter) => starter.message && starter.description)).toBe(true);
+    for (const starter of starters) {
       for (const field of ['label', 'description', 'message'] as const) {
         expect(catalog[`chat.empty.starter.${starter.id}.${field}`]).toBe(starter[field]);
       }
