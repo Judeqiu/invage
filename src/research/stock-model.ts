@@ -9,12 +9,12 @@ export const claimSchema = Type.Object({
   text: Type.String({ minLength: 1, maxLength: 1600 }),
   sourceIds: Type.Array(Type.String({ minLength: 1, maxLength: 60 }), { minItems: 1, maxItems: 8 }),
 }, { additionalProperties: false });
-const claims = () => Type.Array(claimSchema, { maxItems: 6 });
+const claims = () => Type.Array(claimSchema, { maxItems: 12 });
 export const discoverySchema = Type.Object({
   sources: Type.Array(sourceSchema, { maxItems: 12 }),
   business: claims(), competition: claims(), developments: claims(),
   peers: Type.Array(Type.Object({ ticker: Type.String({ minLength: 1, maxLength: 20 }),
-    rationale: Type.String({ minLength: 1, maxLength: 400 }) }, { additionalProperties: false }), { maxItems: 6 }),
+    rationale: Type.String({ minLength: 1, maxLength: 400 }) }, { additionalProperties: false }), { maxItems: 12 }),
   gaps: Type.Array(Type.String({ maxLength: 500 }), { maxItems: 12 }),
 }, { additionalProperties: false });
 export const analysisSchema = Type.Object({

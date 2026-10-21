@@ -128,6 +128,16 @@ describe('stock research workflow publication', () => {
     }
     expect(collect).not.toHaveBeenCalled();
   });
+  it('accepts bounded extra findings and caps collected peer proposals at six', async () => {
+    const collect = vi.fn(async (ticker: string) => fixture(ticker));
+    const publish = vi.fn().mockResolvedValue({ filename: 'stock.html', sessionUrl: 'https://test.example.com/api/files/stock.html/view' });
+    const def = createStockResearchWorkflow({ collect, publish, now: () => now }); const ctx = context();
+    vi.mocked(ctx.worker).mockReset().mockResolvedValueOnce({ ...discovery,
+      business: Array(8).fill(claim), peers: Array.from({ length: 9 }, (_, i) => ({ ticker: `PEER${i}`, rationale: 'Business comparison.' })) }).mockResolvedValueOnce(analysis);
+    await def.run(ctx);
+    expect(collect).toHaveBeenCalledTimes(7);
+    expect(publish).toHaveBeenCalledOnce();
+  });
   it('escapes untrusted company and model text and rejects unsafe source links', async () => {
     const stock = await fixture(); stock.name = '<script>alert(1)</script>'; stock.description = '<img src=x onerror=alert(1)>';
     const sources = [{ id: 'data:TEST', title: '<bad>', url: 'https://example.com/filing', date: '2026-10-20', evidence: 'Source evidence.' }];
