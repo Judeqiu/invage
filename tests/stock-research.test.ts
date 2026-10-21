@@ -140,6 +140,20 @@ describe('stock research workflow publication', () => {
     expect(collect).toHaveBeenCalledTimes(7);
     expect(publish).toHaveBeenCalledOnce();
   });
+  it('evaluates later peer quotes against the current clock after slow issuer research', async () => {
+    let current = now;
+    const collect = vi.fn(async (ticker: string, options?: { now?: Date }) => {
+      const s = await fixture(ticker); s.quote!.asOf = options!.now!.toISOString(); s.fetchedAt = options!.now!.toISOString(); return s;
+    });
+    const publish = vi.fn().mockResolvedValue({ filename: 'stock.html', sessionUrl: 'https://test.example.com/api/files/stock.html/view' });
+    const def = createStockResearchWorkflow({ collect, publish, now: () => current }); const ctx = context();
+    vi.mocked(ctx.worker).mockReset().mockImplementationOnce(async () => {
+      current = new Date(now.getTime() + 180_000); return structuredClone(discovery);
+    }).mockResolvedValueOnce(analysis);
+    const result = await def.run(ctx);
+    expect(collect.mock.calls.slice(1).every(([, options]) => options?.now === current)).toBe(true);
+    expect(result.details?.peerRank).toBe(1);
+  });
   it('escapes untrusted company and model text and rejects unsafe source links', async () => {
     const stock = await fixture(); stock.name = '<script>alert(1)</script>'; stock.description = '<img src=x onerror=alert(1)>';
     const sources = [{ id: 'data:TEST', title: '<bad>', url: 'https://example.com/filing', date: '2026-10-20', evidence: 'Source evidence.' }];

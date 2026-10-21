@@ -30,7 +30,8 @@ export function createStockResearchWorkflow(dependencies: {
       const requestedPeers = (ctx.input.peers as string[] | undefined)?.map(stockTicker);
       if (requestedPeers && (new Set(requestedPeers).size !== requestedPeers.length || requestedPeers.includes(ticker)))
         throw new Error('Comparison tickers must be unique and different from the target.');
-      const now = (dependencies.now ?? (() => new Date()))();
+      const clock = dependencies.now ?? (() => new Date());
+      const now = clock();
       const collect = dependencies.collect ?? collectStockData;
       ctx.log(`Collecting public company data for ${ticker}.`);
       const target = await collect(ticker, { now, signal: ctx.signal });
@@ -53,12 +54,12 @@ export function createStockResearchWorkflow(dependencies: {
       await Promise.all(Array.from({ length: Math.min(3, peers.length) }, async () => {
         for (;;) {
           ctx.signal.throwIfAborted(); const i = next++; if (i >= peers.length) return;
-          try { peerData[i] = await collect(peers[i], { now, signal: ctx.signal }); }
+          try { peerData[i] = await collect(peers[i], { now: clock(), signal: ctx.signal }); }
           catch (e) { ctx.signal.throwIfAborted(); discovery.gaps.push(`${peers[i]}: public peer data unavailable; excluded from the ranking.`); }
         }
       }));
       stocks.push(...peerData.filter((s): s is StockData => s !== null));
-      const ranking = rankStockPeers(stocks, now);
+      const ranking = rankStockPeers(stocks, clock());
       const sources = [...dataSources(stocks), ...discovery.sources];
       const discoveryClaims = [...discovery.business, ...discovery.competition, ...discovery.developments];
       assertResearchReferences(discoveryClaims, sources);
@@ -73,7 +74,7 @@ export function createStockResearchWorkflow(dependencies: {
         task: `${RULES}\nIndependently review this proposed stock report. Re-read material issuer sources using the browser tools. Check numerical claims against the host data, including quote time, financial periods, annual versus quarterly data, currencies and analyst estimates. Check the disclosed peer universe and the ranking methodology; do not infer a wider market rank or treat the score as a recommendation. A source URL or excerpt in the bundle is not proof it was actually read. Confirm material news on its page. Reject unsupported or misleading material claims by setting approved=false with specific findings. Empty or inaccessible issuer evidence must remain an explicit limitation, not a claim of verification. Approve honest partial coverage only if the remaining conclusions are supported.\nPROPOSED REPORT:\n${JSON.stringify({ stocks, ranking, discovery, analysis, sources })}` }]);
       if (!Value.Check(auditSchema, audit) || !audit.approved) throw new Error('Research evidence review did not approve publication. ' + (Value.Check(auditSchema, audit) ? audit.findings.join('; ') : 'Invalid review response.'));
       ctx.signal.throwIfAborted();
-      const generatedAt = (dependencies.now ?? (() => new Date()))().toISOString();
+      const generatedAt = clock().toISOString();
       const html = buildStockResearchReport({ generatedAt, stocks, ranking, discovery, analysis, sources, auditFindings: audit.findings });
       const filename = `stock-research-${ticker.replace(/[^A-Z0-9.-]/g, '-')}-${ctx.runId}.html`;
       const report = await (dependencies.publish ?? publishReportHtml)({ ownerUserId: ctx.ownerUserId, filename, html, displayName: `${ticker} stock research` });
