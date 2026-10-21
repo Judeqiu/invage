@@ -36,6 +36,7 @@ import { dashboardConfig } from './webapp/dashboard-config.js';
 import { createInvageWebUi, createInvageChromeCatalogs } from './webapp/invage-webui.js';
 import { helpFirstAndAsyncTasks } from './agents/help-first.js';
 import { productDisplayName, productHostLabel } from './product-name.js';
+import { stockResearchWorkflow } from './workflows/stock-research.js';
 import {
   type ProductProfileId,
   hostNeverDoYourself,
@@ -61,6 +62,10 @@ ${DIRECT_ROUTING_POLICY}
 
 ${PUBLIC_FINANCIAL_DATA_POLICY}
 
+${profile === 'consultant' ? `## Stock research report workflow
+
+For a requested HTML company research report with financial analysis, valuation and peer ranking, use \`list_workflows\` then \`start_workflow\` with \`workflow_id="stock-research-report"\` and input \`{ticker, peers?}\`. This is a supported standalone equity research capability, even without holdings or an options position. The compiled workflow collects public data, researches issuer sources, computes a disclosed peer screen, independently reviews evidence and publishes a private HTML report. Do not substitute expert consultation, a portfolio report or the marketplace write_report tool. Ask only for a missing ticker; peers are optional. Do not promise publication until the workflow completes successfully. Return its durable report URL verbatim as a Markdown link; it opens in the side panel. Keep ordinary stock/option lookups direct. If the workflow catalog is unavailable, state that it is unavailable rather than silently substituting another process.` : ''}
+
 ## Response presentation
 
 Lead with a short, plain-language answer and prefer concise bullet points for findings and actions. Explain financial terms when needed. Keep essential uncertainty, data sources and material risks in the visible summary. For a longer supporting explanation in WebUI, put it after a level-two heading exactly named "Detailed explanation"; the chat renders that section behind an expandable control. Do not put the only answer or important risk information in that section. On Telegram and Slack, keep the explanation concise without relying on an expand control. Option cash flow and realized P&L are different: daily and MTD premium means recorded STO minus BTC before fees, with brokerage fees separately. Roll premium is the latest replacement STO minus old-contract BTC, not cumulative chain profit.
@@ -75,7 +80,7 @@ When delegation is necessary, ${HANDOFF_MODE ? 'use handoff_to_agent on Web for 
 
 ${hostNeverDoYourself(profile)}
 
-${profile === 'consultant' ? 'Keep the conversation focused on listed calls and puts, their broker records and public research about the underlying that supports the options analysis. For unrelated requests, give a brief scope redirect. Never execute a trade.' : `In scope: ${hostScopeIn(profile)}. Out of scope: ${hostScopeOut(profile)}.`}
+${profile === 'consultant' ? 'Keep the conversation focused on listed calls and puts, their broker records, public research about the underlying, and the stock research report workflow described above. For unrelated requests, give a brief scope redirect. Never execute a trade.' : `In scope: ${hostScopeIn(profile)}. Out of scope: ${hostScopeOut(profile)}.`}
 
 Portfolio state contains holdings, retained broker executions and lifecycle events. Accounting journals contain recorded cash and position movements; their posting dates are not execution dates or NAV history. Market tools supply timestamped quotes. Do not treat stored marks as fresh quotes, sync times as fill dates, or missing history as no activity. Performance analysis requires period-boundary valuations and dated external flows; incomplete evidence cannot establish time-weighted returns.
 
@@ -166,6 +171,8 @@ export const invageExtension: DomainExtension = {
   managementConfig: dashboardConfig,
 
   tools: () => createInvageTools(),
+
+  workflows: readProductProfile() === 'consultant' ? [stockResearchWorkflow] : [],
 
   skills: INVAGE_SKILLS,
 

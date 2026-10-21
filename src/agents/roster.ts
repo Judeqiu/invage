@@ -186,14 +186,14 @@ export function hostNeverDoYourself(profile: ProductProfileId): string {
     '- Do not provide specialist judgment yourself when the requested outcome requires it; routine sourced lookups remain direct',
   );
   if (profile === 'consultant') {
-    lines.push('- Keep the conversation on listed options. For unrelated requests, give a brief scope redirect.');
+    lines.push('- Keep the conversation on listed options, supporting company research and the stock research report workflow. For unrelated requests, give a brief scope redirect.');
   }
   return lines.join('\n');
 }
 
 export function hostScopeIn(profile: ProductProfileId): string {
   if (profile === 'consultant') {
-    return 'listed options research, strategy and risk; option lots, fills, broker sync and assignment cash via Bookkeeper; Factchecker; options follow-ups via `create_task`';
+    return 'listed options research, strategy and risk; public company HTML research reports through the stock research report workflow; option lots, fills, broker sync and assignment cash via Bookkeeper; Factchecker; options follow-ups via `create_task`';
   }
   return (
     'craft peers + Factchecker + residual host tools (books, payments, securities research, physical RE, non-property cash path, playbook config) + **scheduled follow-ups** via `create_task` when work needs time'
@@ -202,7 +202,7 @@ export function hostScopeIn(profile: ProductProfileId): string {
 
 export function hostScopeOut(profile: ProductProfileId): string {
   if (profile === 'consultant') {
-    return 'stock picking, general portfolio research, household planning, property, debt optimization, Aideal production, tax/licensed advice, and trade execution. Briefly redirect unrelated requests.';
+    return 'trade execution, unsupported stock-picking instructions, general portfolio research outside the company report workflow, household planning, property, debt optimization, Aideal production, and tax/licensed advice. Briefly redirect unrelated requests.';
   }
   return 'tax/licensed advice as advice; trade execution; multi-unit listing shopping packs (offer single-unit path); topics with no household/market/property link. Everything else → action plan, not a brush-off.';
 }

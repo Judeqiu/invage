@@ -1,4 +1,5 @@
 import { randomInt } from 'node:crypto';
+import { readProductProfile } from '../agents/roster.js';
 import type { ChatEmptyStarter, ChatQuestionLibraryConfig, QuestionPreset } from 'utarus';
 
 // Preset wording and grouping from https://velovest-ai.lovable.app/chat.
@@ -50,15 +51,21 @@ const GROUPS = [
     id: 'reports',
     label: 'Reports',
     questions: [
+      ['stock_research_report', 'Stock research report', 'Generate an HTML stock research report for {ticker} using the stock-research-report workflow. Include company and financial data, valuation, a transparent peer ranking, catalysts, risks, sources and dates, and open it in the side panel.'],
       ['risk_scenarios_report', 'Create my Risk & scenarios report', 'Create my Risk & scenarios report for all accounts with a 5-trading-day horizon and show it in the sidebar.'],
       ['option_index_report', 'Options with calculated risk indexes', 'Create an options risk-index report for all my recorded open option positions. Automatically fetch the market inputs, calculate an index for each contract using its recorded side, show contract counts, stress losses, quote dates and any unavailable scores, and open the report in the sidebar. Do not ask me to fill in a calculator.'],
     ],
   },
 ] as const;
 
+function questionGroups() {
+  return GROUPS.map(group => ({ ...group, questions: group.questions.filter(([id]) =>
+    id !== 'stock_research_report' || readProductProfile() === 'consultant') }));
+}
+
 /** Empty-chat cards share the composer presets; ticker selection happens in chat. */
 export function createInvageChatQuestionStarters(): ChatEmptyStarter[] {
-  return GROUPS.flatMap((group) => group.questions.map(([id, title, template]) => ({
+  return questionGroups().flatMap((group) => group.questions.map(([id, title, template]) => ({
     id: `question_${id}`,
     label: id === 'option_index_report' ? title : template.replaceAll('{ticker}', '[ticker]'),
     description: group.label,
@@ -83,12 +90,15 @@ export function createInvageChatQuestionLibrary(): ChatQuestionLibraryConfig {
   return {
     enabled: true,
     mode: 'preset',
-    categories: GROUPS.map(({ id, label }) => ({ id, label })),
+    categories: questionGroups().map(({ id, label }) => ({ id, label })),
     capabilities: [{
       id: 'options_journal.read',
       description: 'Review the user’s recorded option trades, journal notes, positions, and sourced market data. Call out missing history or data; never invent outcomes or execute trades.',
-    }],
-    presets: GROUPS.flatMap((group) => group.questions.map(([id, title, template]): QuestionPreset => ({
+    }, ...(readProductProfile() === 'consultant' ? [{
+      id: 'stock_research.public',
+      description: 'Generate a sourced public company research report with dated financials and a disclosed peer-screen methodology through the stock research workflow. No broker or private account records are needed.',
+    }] : [])],
+    presets: questionGroups().flatMap((group) => group.questions.map(([id, title, template]): QuestionPreset => ({
       id,
       categoryId: group.id,
       title,
@@ -96,7 +106,7 @@ export function createInvageChatQuestionLibrary(): ChatQuestionLibraryConfig {
         ? 'Automatically score recorded open options and show their calculated indexes, stress losses, quote dates and data gaps in a sidebar report.'
         : template.replaceAll('{ticker}', '[ticker]'),
       template,
-      capabilityIds: ['options_journal.read'],
+      capabilityIds: [id === 'stock_research_report' ? 'stock_research.public' : 'options_journal.read'],
       ...(template.includes('{ticker}') ? {
         fields: [{ id: 'ticker', type: 'text', label: 'Ticker (e.g. TSLA)', required: true, maxLength: 12 }],
       } : {}),
