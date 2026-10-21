@@ -12,7 +12,7 @@ export const claimSchema = Type.Object({
 const claims = () => Type.Array(claimSchema, { maxItems: 12 });
 export const discoverySchema = Type.Object({
   sources: Type.Array(sourceSchema, { maxItems: 12 }),
-  business: claims(), competition: claims(), developments: claims(),
+  business: claims(), competition: claims(), developments: claims(), thesis: claims(), catalysts: claims(), risks: claims(),
   peers: Type.Array(Type.Object({ ticker: Type.String({ minLength: 1, maxLength: 20 }),
     rationale: Type.String({ minLength: 1, maxLength: 400 }) }, { additionalProperties: false }), { maxItems: 12 }),
   gaps: Type.Array(Type.String({ maxLength: 500 }), { maxItems: 12 }),

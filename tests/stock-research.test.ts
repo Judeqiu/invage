@@ -6,6 +6,7 @@ import { collectStockData, rankStockPeers, rankingValues, type ResearchProvider,
 import { assertResearchReferences, type ResearchAnalysis, type ResearchDiscovery } from '../src/research/stock-model.js';
 import { buildStockResearchReport } from '../src/report/stock-research-template.js';
 import { createStockResearchWorkflow } from '../src/workflows/stock-research.js';
+import { summarizeStockFinancials } from '../src/research/stock-analysis.js';
 import { bindWorkflowCatalog, clearWorkflowCatalogForTests } from '../node_modules/utarus/dist/workflows/catalog.js';
 import { bindWorkflowRuntime, startWorkflowRuntime, stopWorkflowRuntime, stopWorkflowRuntimeForTests } from '../node_modules/utarus/dist/workflows/runtime.js';
 import { createWorkflowsRouter } from '../node_modules/utarus/dist/webapp/workflows-router.js';
@@ -30,7 +31,7 @@ async function fixture(ticker = 'TEST'): Promise<StockData> {
 }
 const claim = { text: 'Company evidence supports further investigation.', sourceIds: ['data:TEST'] };
 const discovery: ResearchDiscovery = { sources: [], business: [claim], competition: [], developments: [],
-  peers: ['AAA', 'BBB', 'CCC'].map(ticker => ({ ticker, rationale: 'Software business comparison.' })), gaps: [] };
+  thesis: [claim], catalysts: [], risks: [claim], peers: ['AAA', 'BBB', 'CCC'].map(ticker => ({ ticker, rationale: 'Software business comparison.' })), gaps: [] };
 const analysis: ResearchAnalysis = { conclusion: claim, thesis: [], financials: [claim], valuation: [], catalysts: [], risks: [claim], gaps: [] };
 
 describe('stock research data and peer screen', () => {
@@ -90,14 +91,23 @@ describe('stock research data and peer screen', () => {
     const stale = await fixture(); stale.quote!.asOf = '2026-10-01T20:00:00Z';
     expect(rankStockPeers([stale], now).rows[0].reason).toContain('Quote timestamp');
   });
+  it('summarizes reported figures without labeling zero cash flow as positive or inventing valuation', async () => {
+    const stock = await fixture(); stock.trailingPE = null;
+    const result = summarizeStockFinancials(stock, rankStockPeers([stock], now), discovery);
+    expect(result.financials.map(c => c.text).join(' ')).toContain('100.0%');
+    expect(result.financials.map(c => c.text).join(' ')).toContain('Zero free cash flow');
+    expect(result.financials.map(c => c.text).join(' ')).not.toContain('Positive free cash flow');
+    expect(result.valuation[0].text).toContain('unavailable or not meaningful');
+    expect(result.risks).toEqual(discovery.risks);
+  });
 });
 
 describe('stock research workflow publication', () => {
   function context(approved = true): WorkflowRunContext {
     return { runId: 'run-123', ownerUserId: '11111111-2222-4333-8444-555555555555',
       workflowId: 'stock-research-report', ownerAgentId: 'invage', callerAgentId: 'invage',
-      input: { ticker: 'TEST' }, signal: new AbortController().signal, agentBudget: 3, admitted: 0,
-      worker: vi.fn().mockResolvedValueOnce(structuredClone(discovery)).mockResolvedValueOnce(structuredClone(analysis)),
+      input: { ticker: 'TEST' }, signal: new AbortController().signal, agentBudget: 2, admitted: 0,
+      worker: vi.fn().mockResolvedValueOnce(structuredClone(discovery)),
       parallel: vi.fn(), parallelVerify: vi.fn().mockResolvedValue([{ approved, findings: approved ? [] : ['Unsupported claim.'] }]), log: vi.fn() };
   }
   it('publishes reviewed HTML only to the authenticated workflow owner with a durable side-panel URL', async () => {
@@ -105,7 +115,7 @@ describe('stock research workflow publication', () => {
     const publish = vi.fn().mockResolvedValue({ filename: 'stock.html', sessionUrl: 'https://test.example.com/api/files/stock.html/view' });
     const def = createStockResearchWorkflow({ collect, publish, now: () => now }); const ctx = context();
     const result = await def.run(ctx);
-    expect(def.agent_budget).toBe(3); expect(ctx.worker).toHaveBeenCalledTimes(2); expect(ctx.parallelVerify).toHaveBeenCalledTimes(1);
+    expect(def.agent_budget).toBe(2); expect(ctx.worker).toHaveBeenCalledTimes(1); expect(ctx.parallelVerify).toHaveBeenCalledTimes(1);
     expect(vi.mocked(ctx.worker).mock.calls.every(([spec]) => spec.llmProfile === 'heavy' && spec.task.includes('one bare JSON object'))).toBe(true);
     expect(vi.mocked(ctx.parallelVerify).mock.calls[0][0][0].llmProfile).toBe('heavy');
     expect(publish).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ ownerUserId: ctx.ownerUserId,
@@ -192,7 +202,7 @@ describe('stock workflow runtime and catalog HTTP integration', () => {
       const app = express();
       app.use('/api', (req, _res, next) => { (req as unknown as { user: { userId: string } }).user = { userId: '11111111-2222-4333-8444-555555555555' }; next(); }, createWorkflowsRouter(fakeFramework));
       const response = await request(app).get('/api/workflows').expect(200);
-      expect(response.body.workflows).toEqual([expect.objectContaining({ id: 'stock-research-report', agent_budget: 3,
+      expect(response.body.workflows).toEqual([expect.objectContaining({ id: 'stock-research-report', agent_budget: 2,
         owner_agent_id: 'invage', input: { empty: false, properties: ['ticker', 'peers'] } })]);
     } finally { await stopWorkflowRuntime(fakeFramework); stopWorkflowRuntimeForTests(); }
   });

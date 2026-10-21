@@ -2,7 +2,8 @@ import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 import { publishReportHtml, type DomainWorkflowDefinition } from 'utarus';
 import { collectStockData, rankStockPeers, stockTicker, type StockData } from '../research/stock-data.js';
-import { analysisSchema, auditSchema, discoverySchema, assertResearchReferences, type ResearchSource } from '../research/stock-model.js';
+import { auditSchema, discoverySchema, assertResearchReferences, type ResearchSource } from '../research/stock-model.js';
+import { summarizeStockFinancials } from '../research/stock-analysis.js';
 import { buildStockResearchReport } from '../report/stock-research-template.js';
 
 const inputSchema = Type.Object({ ticker: Type.String({ minLength: 1, maxLength: 20, description: 'Listed equity Yahoo ticker, for example RKLB or MSFT.' }),
@@ -22,8 +23,8 @@ export function createStockResearchWorkflow(dependencies: {
 } = {}): DomainWorkflowDefinition {
   return {
     id: 'stock-research-report', name: 'Stock research report',
-    description: 'Research a listed company and publish a sourced HTML equity report that opens in the chat side panel. Covers business and competition, dated annual financials, valuation and analyst expectations, a transparent comparison with named peers, recent developments, catalysts, risks and evidence gaps. Uses public data without requiring holdings or broker access. A researcher, analyst and independent evidence reviewer run before publication.',
-    agent_budget: 3, workerToolNames: ['moli_browser', 'firecrawl'], inputSchema,
+    description: 'Research a listed company and publish a sourced HTML equity report that opens in the chat side panel. Covers business and competition, dated annual financials, valuation and analyst expectations, a transparent comparison with named peers, recent developments, catalysts, risks and evidence gaps. Uses public data without requiring holdings or broker access. A company researcher and independent evidence reviewer check the report; financial summaries and rankings are calculated directly from retrieved figures.',
+    agent_budget: 2, workerToolNames: ['moli_browser', 'firecrawl'], inputSchema,
     async run(ctx) {
       if (!Value.Check(inputSchema, ctx.input)) throw new Error('Stock research requires a valid ticker and optional peer list.');
       const ticker = stockTicker(ctx.input.ticker);
@@ -36,7 +37,7 @@ export function createStockResearchWorkflow(dependencies: {
       ctx.log(`Collecting public company data for ${ticker}.`);
       const target = await collect(ticker, { now, signal: ctx.signal });
       const discoveryRaw = await ctx.worker({ role: 'company-researcher', schema: discoverySchema, llmProfile: 'heavy',
-        task: `${RULES}\nResearch ${ticker} (${target.name}) as of ${now.toISOString()}. Read the latest available issuer annual/quarterly results and material announcements. Explain business economics, competition and dated developments. Propose up to six listed business peers with a reason for each, unless the supplied peers are fixed. Favor genuinely comparable businesses in the same industry; the host will separately check provider classification and annual period alignment. Every factual paragraph must cite source IDs. Give new web sources IDs with the web: prefix, such as web:annual-report. Cite supplied structured data as data:${ticker}, but do not repeat that reserved source in your sources array. If a page or issuer financial statement cannot be verified, report the gap. Do not claim quarterly financial data is in the annual tables. Do not cite data from memory.\nFixed peer tickers: ${JSON.stringify(requestedPeers ?? null)}\nHost-collected target evidence (source ID data:${ticker}): ${JSON.stringify(target)}` });
+        task: `${RULES}\nResearch ${ticker} (${target.name}) as of ${now.toISOString()}. Read the latest available issuer annual/quarterly results and material announcements. Explain business economics, competition and dated developments. Supply a concise source-led thesis, dated catalysts and issuer risks in their respective schema fields. Do not invent an investment rating or price target. Financial ratios and numeric commentary will be calculated by the host, so do not retype those figures into a separate financial analysis. Propose up to six listed business peers with a reason for each, unless the supplied peers are fixed. Favor genuinely comparable businesses in the same industry; the host will separately check provider classification and annual period alignment. Every factual paragraph must cite source IDs. Give new web sources IDs with the web: prefix, such as web:annual-report. Cite supplied structured data as data:${ticker}, but do not repeat that reserved source in your sources array. If a page or issuer financial statement cannot be verified, report the gap. Do not claim quarterly financial data is in the annual tables. Do not cite data from memory.\nFixed peer tickers: ${JSON.stringify(requestedPeers ?? null)}\nHost-collected target evidence (source ID data:${ticker}): ${JSON.stringify(target)}` });
       if (!Value.Check(discoverySchema, discoveryRaw)) throw new Error('Company research returned an invalid evidence structure.');
       const discovery = discoveryRaw;
       if (!discovery.sources.length) discovery.gaps.push('No issuer source pages were supplied by the company researcher; only structured provider evidence is available.');
@@ -61,13 +62,10 @@ export function createStockResearchWorkflow(dependencies: {
       stocks.push(...peerData.filter((s): s is StockData => s !== null));
       const ranking = rankStockPeers(stocks, clock());
       const sources = [...dataSources(stocks), ...discovery.sources];
-      const discoveryClaims = [...discovery.business, ...discovery.competition, ...discovery.developments];
+      const discoveryClaims = [...discovery.business, ...discovery.competition, ...discovery.developments, ...discovery.thesis, ...discovery.catalysts, ...discovery.risks];
       assertResearchReferences(discoveryClaims, sources);
-      ctx.log(`Analyzing financials and ${stocks.length - 1} available peer companies.`);
-      const analysisRaw = await ctx.worker({ role: 'equity-analyst', schema: analysisSchema, llmProfile: 'heavy',
-        task: `${RULES}\nCreate a concise equity research assessment for ${ticker}. Explain the business thesis, financial trajectory, valuation sensitivity, catalysts and concrete risks. Use only the collected data and source IDs below; fetch cited pages to verify when needed. Do not create new source IDs. Cite provider figures with data:TICKER. Do not overwrite host-calculated financial metrics or rank. A missing composite rank must stay unavailable. Analyst target prices are not your own fair value. Do not recommend a trade from a peer rank or supply an unsupported Buy/Hold/Sell rating. No invented DCF. Explicitly identify non-positive earnings, missing fields, stale periods, currency uncertainty and sample selection when material.\nEVIDENCE BUNDLE:\n${JSON.stringify({ stocks, ranking, discovery, sources })}` });
-      if (!Value.Check(analysisSchema, analysisRaw)) throw new Error('Financial analysis returned an invalid evidence structure.');
-      const analysis = analysisRaw;
+      ctx.log(`Calculating financial summaries and comparing ${stocks.length - 1} available peer companies.`);
+      const analysis = summarizeStockFinancials(target, ranking, discovery);
       assertResearchReferences([analysis.conclusion, ...analysis.thesis, ...analysis.financials, ...analysis.valuation, ...analysis.catalysts, ...analysis.risks], sources);
       ctx.log('Independently reviewing evidence and ranking claims before publication.');
       const [audit] = await ctx.parallelVerify([{ role: 'evidence-reviewer', schema: auditSchema, llmProfile: 'heavy',
