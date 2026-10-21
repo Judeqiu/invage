@@ -9,6 +9,7 @@ import { createStockResearchWorkflow } from '../src/workflows/stock-research.js'
 import { bindWorkflowCatalog, clearWorkflowCatalogForTests } from '../node_modules/utarus/dist/workflows/catalog.js';
 import { bindWorkflowRuntime, startWorkflowRuntime, stopWorkflowRuntime, stopWorkflowRuntimeForTests } from '../node_modules/utarus/dist/workflows/runtime.js';
 import { createWorkflowsRouter } from '../node_modules/utarus/dist/webapp/workflows-router.js';
+import { sourceCatalog } from '../node_modules/utarus/dist/question-library/spec.js';
 
 const now = new Date('2026-10-21T00:00:00Z');
 function provider(): ResearchProvider {
@@ -146,7 +147,7 @@ describe('stock workflow runtime and catalog HTTP integration', () => {
     const { createInvageChatQuestionLibrary } = await import('../src/webapp/chat-questions.js');
     const { invageExtension, buildHostPurpose } = await import('../src/extension.js');
     expect(invageExtension.workflows?.map(w => w.id)).toContain('stock-research-report');
-    const library = createInvageChatQuestionLibrary();
+    const library = sourceCatalog(createInvageChatQuestionLibrary());
     expect(library.presets?.find(p => p.id === 'stock_research_report')).toMatchObject({ capabilityIds: ['stock_research.public'] });
     expect(buildHostPurpose('consultant')).toContain('list_workflows');
     expect(buildHostPurpose('consultant')).toContain('stock-research-report');

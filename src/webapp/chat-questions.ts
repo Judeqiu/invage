@@ -67,7 +67,7 @@ function questionGroups() {
 export function createInvageChatQuestionStarters(): ChatEmptyStarter[] {
   return questionGroups().flatMap((group) => group.questions.map(([id, title, template]) => ({
     id: `question_${id}`,
-    label: id === 'option_index_report' ? title : template.replaceAll('{ticker}', '[ticker]'),
+    label: id === 'option_index_report' || id === 'stock_research_report' ? title : template.replaceAll('{ticker}', '[ticker]'),
     description: group.label,
     message: template.includes('{ticker}')
       ? `${template.replaceAll('{ticker}', 'the ticker I choose')} First ask me which ticker to use.`
@@ -102,7 +102,9 @@ export function createInvageChatQuestionLibrary(): ChatQuestionLibraryConfig {
       id,
       categoryId: group.id,
       title,
-      description: id === 'option_index_report'
+      description: id === 'stock_research_report'
+        ? 'Research company financials, valuation, peers, catalysts and risks, with dated sources in an HTML side-panel report.'
+        : id === 'option_index_report'
         ? 'Automatically score recorded open options and show their calculated indexes, stress losses, quote dates and data gaps in a sidebar report.'
         : template.replaceAll('{ticker}', '[ticker]'),
       template,
