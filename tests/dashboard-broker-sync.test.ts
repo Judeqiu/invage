@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { createServer, type ServerResponse } from 'node:http';
 import { resolve, extname } from 'node:path';
@@ -16,6 +16,14 @@ it.skipIf(!existsSync(chrome))('tracks broker sync through refresh, reports fail
   const frame = (event: unknown) => `data: ${JSON.stringify(event)}\n\n`;
   const server = createServer((req, res) => {
     const url = new URL(req.url!, 'http://localhost');
+    if (url.pathname === '/shell') {
+      res.setHeader('Content-Type','text/html');
+      return res.end(`<button id="headerSync">Sync brokers</button><iframe src="/dashboard/index.html"></iframe><script>
+        const frame=document.querySelector('iframe');
+        window.addEventListener('message',event=>{if(event.source===frame.contentWindow && event.origin===location.origin && event.data?.type==='utarus:header-sync:ready') frame.contentWindow.postMessage({type:'utarus:header-sync:available'},location.origin);});
+        document.getElementById('headerSync').onclick=async()=>{await fetch('/broker-sync',{method:'POST'});frame.contentWindow.postMessage({type:'utarus:header-sync:activity'},location.origin);};
+      </script>`);
+    }
     if (url.pathname.endsWith('/broker-sync')) {
       res.setHeader('Content-Type', 'application/json');
       if (req.method === 'POST') {
@@ -98,9 +106,22 @@ it.skipIf(!existsSync(chrome))('tracks broker sync through refresh, reports fail
     await page.waitForFunction(() => document.getElementById('brokerSyncDetails')!.textContent!.includes('Main broker'));
     job!.accounts.forEach(a => { a.status = 'succeeded'; }); job!.status = 'completed';
     await page.waitForFunction(() => document.getElementById('brokerSyncStatus')!.textContent!.startsWith('Refreshing dashboard'));
+    await vi.waitFor(() => expect(refreshes).toBe(3));
     refresh!.end(frame({ type: 'result', payload }));
     await page.waitForSelector('#dashboardSync:enabled');
     expect(await page.$eval('#brokerSyncPanel', n => getComputedStyle(n).display)).toBe('none');
+    await page.goto(origin + '/shell');
+    const dashboard = page.frames().find(frame=>frame.url().endsWith('/dashboard/index.html'))!;
+    await dashboard.waitForFunction(()=>document.getElementById('dashboardSync')?.hidden === true);
+    expect(await dashboard.$eval('#dashboardSync',node=>getComputedStyle(node).display)).toBe('none');
+    await page.click('#headerSync');
+    await dashboard.waitForFunction(()=>document.getElementById('brokerSyncDetails')!.textContent!.includes('Main broker'));
+    expect(posts).toBe(4);
+    job!.accounts.forEach(account=>{account.status='succeeded';});job!.status='completed';
+    await vi.waitFor(()=>expect(refreshes).toBe(4), {timeout:5000});
+    refresh!.end(frame({type:'result',payload}));
+    await dashboard.waitForFunction(()=>!(document.getElementById('dashboardSync') as HTMLButtonElement).disabled);
+    expect(await dashboard.$eval('#brokerSyncPanel',node=>getComputedStyle(node).display)).toBe('none');
     expect(errors).toEqual([]);
   } finally {
     await browser.close(); server.closeAllConnections();

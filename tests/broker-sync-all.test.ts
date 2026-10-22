@@ -71,3 +71,22 @@ it('rejects unauthenticated requests and completes an empty batch', async () => 
   expect(response.body).toMatchObject({ status: 'completed', accounts: [] });
   expect(mocks.sync).not.toHaveBeenCalled();
 });
+
+it('exposes session-scoped sync timestamps and account states without credentials', async () => {
+  const snapshot = fixture();
+  const accounts = Object.values(snapshot.state.broker_connections!);
+  accounts[0].last_sync = {at:'2026-10-22T02:20:00Z',as_of:'2026-10-21',ok:true};
+  accounts[1].last_sync = {at:'2026-10-22T03:00:00Z',ok:false,error:'secret-token'};
+  mocks.session.mockImplementation(async req => req.user.userId === 'alice' ? snapshot : fixture('bob'));
+  const server = app();
+  expect((await request(server).get('/broker-sync/status')).status).toBe(401);
+  const response = await request(server).get('/broker-sync/status').set('x-user','alice');
+  expect(response.headers['cache-control']).toBe('private, no-store');
+  expect(response.body.running).toBe(false);
+  expect(response.body.updatedAt).toBe('2026-10-22T03:00:00Z');
+  expect(response.body.items.map((item: {status:string})=>item.status)).toEqual(['Synced','Failed','Never synced','Paused']);
+  expect(response.body.items[0]).toMatchObject({label:'Interactive Brokers · A',updatedAt:'2026-10-22T02:20:00Z'});
+  expect(JSON.stringify(response.body)).not.toMatch(/secret-token|activity_query_id|2026-10-21/);
+  const other = await request(server).get('/broker-sync/status').set('x-user','bob');
+  expect(other.body.updatedAt).toBeNull();
+});

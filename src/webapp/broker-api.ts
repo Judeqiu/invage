@@ -155,6 +155,31 @@ export function createBrokerConnectionsRouter(): Router {
     } catch (e) { accountError(res, e); }
   });
 
+  router.get('/broker-sync/status', async (req: Request, res: Response) => {
+    try {
+      const snapshot = await sessionInvestor(req);
+      const job = syncJobs.get(snapshot.state.user.id);
+      const items = Object.entries(readBrokerAccountModel(snapshot.state).connections).map(([id, conn]) => {
+        const progress = job?.status === 'running' ? job.accounts.find(account => account.id === id)?.status : undefined;
+        return {
+          id, label: `${getBrokerConnector(conn.broker_id).displayName} · ${conn.label}`,
+          // at is the actual sync time; as_of is the broker statement's date.
+          updatedAt: conn.last_sync?.at ?? null,
+          status: progress === 'running' ? 'Syncing' : progress === 'pending' ? 'Queued'
+            : !conn.enabled ? 'Paused' : conn.last_sync?.ok === false ? 'Failed'
+            : conn.last_sync?.ok ? 'Synced' : 'Never synced',
+        };
+      });
+      const latest = items.map(item => item.updatedAt).filter((at): at is string => !!at && Number.isFinite(Date.parse(at)))
+        .sort((a,b) => Date.parse(b) - Date.parse(a))[0] ?? null;
+      const failed = job?.accounts.filter(account => account.status === 'failed').length ?? 0;
+      res.setHeader('Cache-Control', 'private, no-store');
+      res.json({ running: job?.status === 'running', updatedAt: latest, items,
+        message: job?.status === 'running' ? 'Syncing enabled broker accounts…'
+          : failed ? `${failed} account${failed === 1 ? '' : 's'} failed to sync. Check Brokers for details.` : undefined });
+    } catch (e) { accountError(res, e); }
+  });
+
   function accountError(res: Response, e: unknown): void {
     const message = e instanceof Error ? e.message : String(e);
     const code = /account mismatch|account binding differs|does not match the broker/i.test(message) ? 'account_mismatch'

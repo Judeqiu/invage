@@ -3003,6 +3003,8 @@ function renderEmpty(body) {
 }
 
 let syncingBrokers = false;
+let pendingHeaderSync = false;
+const handledSyncJobs = new Set();
 let refreshingAfterSync = false;
 const syncButton = document.getElementById('dashboardSync');
 const refreshButton = document.getElementById('dashboardRefresh');
@@ -3015,6 +3017,7 @@ function updateActionButtons() {
   syncButton.disabled = loading || syncingBrokers;
   refreshButton.disabled = loading || syncingBrokers;
   document.getElementById('dashboardRetry').disabled = loading || syncingBrokers;
+  if (!loading && !syncingBrokers && pendingHeaderSync) void followHeaderSync();
 }
 async function brokerSyncRequest(method = 'GET') {
   const response = await fetch('/api/domain/invage/broker-sync', {
@@ -3056,6 +3059,7 @@ async function syncBrokers(existingJob) {
     refreshingAfterSync = true;
     const refreshed = await load(true);
     if (!refreshed) throw new Error('Broker sync finished, but the dashboard refresh failed. Retry Refresh portfolio.');
+    handledSyncJobs.add(jobId);
     syncProgress.value = 100;
     syncStatus.textContent = failed.length
       ? `Dashboard refreshed · ${succeeded} synced, ${failed.length} failed`
@@ -3071,6 +3075,27 @@ async function syncBrokers(existingJob) {
   }
 }
 syncButton.addEventListener('click', () => void syncBrokers());
+
+async function followHeaderSync() {
+  if (!pendingHeaderSync || loading || syncingBrokers) return;
+  pendingHeaderSync = false;
+  try {
+    const job = await brokerSyncRequest();
+    if (job && !handledSyncJobs.has(job.id)) await syncBrokers(job);
+  } catch (error) {
+    syncPanel.classList.remove('hidden');
+    syncStatus.textContent = error instanceof Error ? error.message : 'Could not check broker sync.';
+  }
+}
+window.addEventListener('message', event => {
+  if (window.parent === window || event.origin !== location.origin || event.source !== window.parent) return;
+  if (event.data?.type === 'utarus:header-sync:available') syncButton.hidden = true;
+  if (event.data?.type === 'utarus:header-sync:activity') {
+    pendingHeaderSync = true;
+    void followHeaderSync();
+  }
+});
+if (window.parent !== window) window.parent.postMessage({type:'utarus:header-sync:ready'}, location.origin);
 
 const loadStages = [
   'Reading your portfolio records',
@@ -3342,6 +3367,7 @@ if (el.channelPills) {
 
 void (async () => {
   await load();
+  await followHeaderSync();
   // Reattach after a reload; closing this page does not cancel the background job.
   try {
     const job = await brokerSyncRequest();
