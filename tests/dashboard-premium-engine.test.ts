@@ -2,8 +2,8 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { expect, it } from 'vitest';
 
-const source = readFileSync('webui/dashboard/app.js', 'utf8');
-const calculator = source.slice(source.indexOf('function openBookPremiumData('), source.indexOf('function premiumChartCard('));
+const source = readFileSync('webui/dashboard/aggregate-model.js', 'utf8');
+const calculator = source.slice(source.indexOf('function openBookPremiumData('), source.indexOf('    const result = {}'));
 const option = (overrides = {}) => ({
   ticker: 'AAPL PUT', instrument: 'option', currency: 'USD', cost: -600, value: -200, pl: 400,
   option: { underlying: 'AAPL', expiry: '2026-11-20', side: 'short' }, ...overrides,

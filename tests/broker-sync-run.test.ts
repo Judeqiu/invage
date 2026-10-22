@@ -1,3 +1,4 @@
+import { registerPortfolioRefresher } from '../src/state/projection-events.js';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
@@ -154,4 +155,37 @@ it.each([{enabled:false},{account_id:'U2'}])('rejects a connection changed durin
   expect(stored.log).toEqual([]);
   expect(stored.option_observations).toBeUndefined();
   expect(readBrokerAccountModel(stored).connections[id]).toMatchObject(patch);
+});
+
+it.each(['manual', 'scheduled'] as const)('awaits persisted aggregates after a successful %s import', async trigger => {
+  vi.spyOn(adapters.ibkr, 'fetchRaw').mockResolvedValue({ kind: 'xml', body: Buffer.from(emptyReport) });
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const refresh = vi.fn(async userId => {
+    expect(userId).toBe(stored.user.id);
+    expect(readBrokerAccountModel(stored).connections[id].last_sync?.ok).toBe(true);
+    expect(listBrokerSyncRuns(stored.user.id, readBrokerAccountModel(stored).connections[id].channel).runs[0].ok).toBe(true);
+    await gate;
+  });
+  const unregister = registerPortfolioRefresher(refresh);
+  try {
+    let done = false;
+    const work = syncBrokerAccount({ state: structuredClone(stored), revision }, id, undefined, trigger).then(result => { done = true; return result; });
+    await vi.waitFor(() => expect(refresh).toHaveBeenCalledOnce());
+    expect(done).toBe(false);
+    release();
+    expect((await work).aggregation).toEqual({ status: 'ready' });
+  } finally { release(); unregister(); }
+});
+
+it('retains a successful broker import when the aggregate refresh fails', async () => {
+  vi.spyOn(adapters.ibkr, 'fetchRaw').mockResolvedValue({ kind: 'xml', body: Buffer.from(emptyReport) });
+  vi.spyOn(console, 'error').mockImplementation(() => {});
+  const unregister = registerPortfolioRefresher(async () => { throw new Error('calculation failed'); });
+  try {
+    const result = await syncBrokerAccount({ state: structuredClone(stored), revision }, id, undefined, 'manual', true);
+    expect(result.aggregation).toEqual({ status: 'failed' });
+    expect(readBrokerAccountModel(stored).connections[id].last_sync?.ok).toBe(true);
+    expect(notices.failure).not.toHaveBeenCalled();
+  } finally { unregister(); }
 });

@@ -20,7 +20,8 @@
     } : {}, { Covered:'Recorded physical-delivery short calls matched to shares at the same broker channel. Coverage is capped at the shares held there. Missing or stale call records make coverage unavailable. This is not the broker’s collateral reservation.', '% of NAV':'Stock market value divided by NAV for the selected broker scope. A percentage above 100% is possible when short-option liabilities reduce NAV.' }, 'Long holdings in reporting currency');
   }
   function render() {
-    const view = globalThis.PositionsV2.build(payload, channel);
+    const view = payload?.pageProjections?.positions?.[channel];
+    if (!view) { if (channel !== 'all') { channel = 'all'; return render(); } throw new Error('Saved positions are unavailable. Sync your brokers and retry.'); }
     if (channel !== 'all' && !view.channels.includes(channel)) { channel = 'all'; writeChannelQuery(channel); return render(); }
     $('positionsFilters').innerHTML = `<span class="label-eyebrow">Broker</span>${['all', ...view.channels].map(ch => `<button type="button" class="chip-btn${ch === channel ? ' on' : ''}" data-channel="${esc(ch)}" aria-pressed="${ch === channel}">${esc(name(ch))}</button>`).join('')}`;
     $('positionsFreshness').textContent = `${view.stocks.length} ${view.stocks.length === 1 ? 'stock' : 'stocks'} · ${channel === 'all' ? 'combined across all brokers' : name(channel)} · ${view.dates.length ? view.dates.map(([ch, date]) => name(ch) + ' as of ' + date).join(' · ') : 'Broker dates unavailable'}`;
@@ -46,11 +47,11 @@
     loading = true; $('positionsRefresh').disabled = true; $('positionsRetry').disabled = true;
     $('positionsError').hidden = true; $('positionsProgress').hidden = false;
     $('positionsProgress').setAttribute('aria-valuenow', '0'); $('positionsProgress').firstElementChild.style.width = '0%';
-    $('positionsStatus').textContent = payload ? 'Updating prices and portfolio…' : 'Reading your portfolio records…';
+    $('positionsStatus').textContent = payload ? 'Loading saved calculations…' : 'Reading your portfolio records…';
     const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 180000);
     try {
       const fresh = await globalThis.PortfolioLoader.load({ refresh, signal:controller.signal,
-        onSnapshot: cached => { payload = cached; render(); $('positionsStatus').textContent = `Snapshot ${cached.generatedAt || 'from the last successful load'} · Updating prices and portfolio…`; },
+        onSnapshot: cached => { payload = cached; render(); $('positionsStatus').textContent = `Snapshot ${cached.generatedAt || 'from the last successful load'} · Loading saved calculations…`; },
         onProgress: progress => {
           const value = Math.max(0, Math.min(6, progress.completedStages || 0));
           $('positionsProgress').setAttribute('aria-valuenow', String(value)); $('positionsProgress').firstElementChild.style.width = `${value / 6 * 100}%`;
@@ -58,7 +59,7 @@
         },
       });
       payload = fresh; render();
-      $('positionsStatus').textContent = `Portfolio valued ${fresh.generatedAt || 'now'} · Broker position dates shown below`;
+      $('positionsStatus').textContent = `Portfolio valued ${fresh.generatedAt || 'date unavailable'} · Broker position dates shown below`;
       $('positionsProgress').setAttribute('aria-valuenow', '6');
     } catch (error) {
       $('positionsError').hidden = false;

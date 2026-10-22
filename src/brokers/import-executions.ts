@@ -1,3 +1,4 @@
+import { refreshPortfolioAfterSync } from '../state/projection-events.js';
 import { saveInvestor, type InvestorSnapshot } from '../state/investor-store.js';
 import { parseFlexOptionExecutions } from '../ibkr/flex-executions.js';
 import { buildExecutionJournal, mergeOptionExecutions } from './option-executions.js';
@@ -31,5 +32,6 @@ export async function importOptionExecutions(snapshot: InvestorSnapshot, xml: st
   const added = merged.length - (previous === undefined ? 0 : previous.length);
   snapshot.state.option_executions = merged;
   await saveInvestor(snapshot);
-  return { added, ...buildExecutionJournal(merged) };
+  const aggregation = await refreshPortfolioAfterSync(snapshot.state.user.id);
+  return { added, aggregation, ...buildExecutionJournal(merged) };
 }

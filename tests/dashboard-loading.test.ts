@@ -1,3 +1,4 @@
+import { withPageProjections } from './helpers/portfolio-projection.js';
 import { expect, it } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { createServer, type ServerResponse } from 'node:http';
@@ -12,11 +13,11 @@ it.skipIf(!existsSync(chrome)).each(['index.html', 'v2.html'])('%s shows streame
   let history: ServerResponse | undefined;
   const body = { empty: true, model: null, displayName: 'München', productProfile: 'consultant' };
   const historyBody = { episodes: [], connections: [], gaps: [], history_started: false, next_offset: null };
-  const frame = (event: unknown) => `data: ${JSON.stringify(event)}\n\n`;
+  const frame = (event: unknown) => `data: ${JSON.stringify(event && typeof event === 'object' && 'payload' in event ? { ...event, payload: withPageProjections((event as any).payload) } : event)}\n\n`;
   const server = createServer((req, res) => {
     const url = new URL(req.url!, 'http://localhost');
     if (url.pathname === '/api/domain/invage/dashboard') {
-      if (mode === 'json') { res.setHeader('Content-Type', 'application/json'); return res.end(JSON.stringify(body)); }
+      if (mode === 'json') { res.setHeader('Content-Type', 'application/json'); return res.end(JSON.stringify(withPageProjections(body))); }
       res.setHeader('Content-Type', 'text/event-stream');
       res.write(frame({ type: 'progress', stage: 'market', completedStages: 1, totalStages: 6, positions: 0, tradeRecords: 1577, snapshots: 12 }));
       if (mode === 'fail') return res.end(frame({ type: 'error', message: 'Unable to fetch saved records. Please retry.' }));
@@ -97,7 +98,7 @@ it.skipIf(!existsSync(chrome)).each(['index.html', 'v2.html'])('%s renders the s
     if (url.pathname === '/api/domain/invage/dashboard') {
       res.setHeader('Content-Type', 'text/event-stream');
       res.flushHeaders();
-      if (previewAvailable && url.searchParams.get('preview') === '1') res.write(`data: ${JSON.stringify({ type: 'snapshot', payload: cached })}\n\n`);
+      if (previewAvailable && url.searchParams.get('preview') === '1') res.write(`data: ${JSON.stringify({ type: 'snapshot', payload: withPageProjections(cached) })}\n\n`);
       stream = res; return;
     }
     if (url.pathname.endsWith('/option-history')) {
@@ -134,7 +135,7 @@ it.skipIf(!existsSync(chrome)).each(['index.html', 'v2.html'])('%s renders the s
     stream = undefined;
     await page.click('#dashboardRetry');
     await waitForStream();
-    stream!.end(`data: ${JSON.stringify({ type: 'result', payload: { ...cached, displayName: 'Fresh account', generatedAt: '2026-10-15T10:00:00Z' } })}\n\n`);
+    stream!.end(`data: ${JSON.stringify({ type: 'result', payload: withPageProjections({ ...cached, displayName: 'Fresh account', generatedAt: '2026-10-15T10:00:00Z' }) })}\n\n`);
     await page.waitForFunction(() => document.getElementById('subtitle')!.textContent!.includes('Fresh account'));
     expect(await page.$('#status')).toBeNull();
     expect(await page.$eval('#subtitle', node => node.textContent)).toContain('Channel: ibkr');
@@ -143,7 +144,7 @@ it.skipIf(!existsSync(chrome)).each(['index.html', 'v2.html'])('%s renders the s
     previewAvailable = false; stream = undefined; historyChannels.length = 0;
     await page.goto(origin + '/dashboard/' + dashboardFile + '?channel=ibkr');
     await waitForStream();
-    stream!.end(`data: ${JSON.stringify({ type: 'result', payload: cached })}\n\n`);
+    stream!.end(`data: ${JSON.stringify({ type: 'result', payload: withPageProjections(cached) })}\n\n`);
     await page.waitForFunction(() => document.getElementById('loadProgress')!.getAttribute('aria-valuenow') === '8');
     await page.waitForFunction(() => (document.getElementById('historyBroker') as HTMLSelectElement).value === 'ibkr');
     expect(historyChannels).toContain('ibkr');

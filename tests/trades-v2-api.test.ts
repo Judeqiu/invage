@@ -1,3 +1,4 @@
+import { persistPortfolioFixture } from './helpers/portfolio-projection.js';
 import { expect, it, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
@@ -12,8 +13,11 @@ it('requires authentication, isolates cached journals by owner/revision, and kee
   const a = tradesFixture(), b = {...tradesFixture(),user:{...a.user,id:'a648d3d4-f46f-4979-a9f3-7d76cefa9d15'},portfolio:{}};
   let revision = 1;
   mocks.load.mockImplementation(async owner => ({state:structuredClone(owner === a.user.id ? a : b),revision}));
-  mocks.history.mockReturnValue({observations:[],gaps:[]});
-  mocks.relationships.mockReturnValue({groups:[],historyGaps:[]});
+  mocks.history.mockReturnValue({observations:[],gaps:[],events:[],episodes:[]});
+  mocks.relationships.mockReturnValue({groups:[],spreads:[],historyGaps:[],coverage:[],gaps:[],connections:[],as_of:null});
+  await persistPortfolioFixture(a);
+  await persistPortfolioFixture(b);
+  mocks.history.mockClear();
   const app = express(); app.use(express.json());
   app.use((req,_res,next) => {if (req.headers['x-owner']) (req as any).user = {userId:req.headers['x-owner']};next();});
   app.use(createDashboardApiRouter());
@@ -28,15 +32,17 @@ it('requires authentication, isolates cached journals by owner/revision, and kee
   const pk = first.body.rows[0].optionId;
   revision++;
   a.portfolio!['AAPL-put'].units = 2;
+  await persistPortfolioFixture(a);
+  mocks.history.mockClear();
   const updated = await request(app).get('/trades-v2').set('x-owner',a.user.id).expect(200);
   expect(updated.body.rows[0]).toMatchObject({contracts:'2',premium:null,optionId:pk});
   expect(a.option_identities).toBeUndefined();
   expect(mocks.save).not.toHaveBeenCalled();
   await request(app).get('/trades-v2/history').set('x-owner',a.user.id).expect(200);
   await request(app).get('/trades-v2/history').set('x-owner',a.user.id).expect(200);
-  expect(mocks.history).toHaveBeenCalledTimes(1);
+  expect(mocks.history).not.toHaveBeenCalled();
   await request(app).get('/trades-v2/history?refresh=1').set('x-owner',a.user.id).expect(200);
-  expect(mocks.history).toHaveBeenCalledTimes(2);
+  expect(mocks.history).not.toHaveBeenCalled();
   mocks.save.mockImplementation(async snapshot => {snapshot.revision++;});
   await request(app).put(`/trades-v2/${pk}/note`).send({text:'Thesis',revision}).expect(401);
   await request(app).put(`/trades-v2/${pk}/note`).set('x-owner',a.user.id).send({text:'x'.repeat(8001),revision}).expect(400);

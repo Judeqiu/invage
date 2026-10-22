@@ -1,3 +1,4 @@
+import { withPageProjections } from './helpers/portfolio-projection.js';
 import { expect, it } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
@@ -76,7 +77,7 @@ it.skipIf(!existsSync(chrome)).each(['v2.html', 'index.html'])('renders roll-awa
     premiumJournal: { channels: Object.keys(f.accounts) }, optionAnalytics: { executions: [], profits: [], gaps: [] } };
   const server = createServer((req, res) => {
     const url = new URL(req.url!, 'http://localhost');
-    const json = (value: unknown) => { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(value)); };
+    const json = (value: unknown) => { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(withPageProjections(value))); };
     if (url.pathname.endsWith('/dashboard-cache')) return json(null);
     if (url.pathname.endsWith('/dashboard')) return json(dashboard);
     if (url.pathname.endsWith('/option-history')) return json({ episodes: [], connections: [], gaps: [], next_offset: null });

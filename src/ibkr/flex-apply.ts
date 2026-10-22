@@ -1,3 +1,4 @@
+import { refreshPortfolioAfterSync } from '../state/projection-events.js';
 import { saveInvestor, type InvestorSnapshot } from '../state/investor-store.js';
 /**
  * IBKR Flex XML adapter. Maps vendor rows into the public BrokerStatement
@@ -41,5 +42,6 @@ export async function applyFlexStatement(
   if (rawXml && slug) {
     applied.archivePath = archiveXml(slug, rawXml, applied.asOf);
   }
+  await refreshPortfolioAfterSync(slug);
   return applied;
 }

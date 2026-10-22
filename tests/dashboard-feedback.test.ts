@@ -1,3 +1,4 @@
+import { withPageProjections } from './helpers/portfolio-projection.js';
 import { expect, it } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
@@ -34,7 +35,7 @@ it.skipIf(!existsSync(chrome))('fits the desk overview and tables, filters risk,
   };
   const server=createServer(async(req,res)=>{
     const url=new URL(req.url!,'http://localhost');
-    const json=(body:unknown)=>{res.setHeader('Content-Type','application/json');res.end(JSON.stringify(body));};
+    const json=(body:unknown)=>{res.setHeader('Content-Type','application/json');res.end(JSON.stringify(withPageProjections(body)));};
     if(url.pathname==='/shell') {res.setHeader('Content-Type','text/html');return res.end('<body style="margin:0"><header style="height:68px;background:#090e16;color:#ddd">Velovest</header><iframe src="/dashboard/v2.html" style="display:block;width:100%;height:calc(100vh - 68px);border:0"></iframe>');}
     if(url.pathname.endsWith('/dashboard')) return json(dashboard);
     if(url.pathname.endsWith('/broker-sync')) return json(null);

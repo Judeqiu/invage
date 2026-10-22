@@ -104,7 +104,7 @@ export function createSyncBrokerTool(): AgentTool {
         const { state } = snapshot;
         const id = p.connector_id.trim();
         const def = getBrokerConnector(id);
-        const { applied } = state.broker_sources
+        const { applied, aggregation } = state.broker_sources
           ? await syncBrokerAccount(snapshot, resolveBrokerAccountId(state, id, p.connection_id),undefined,'manual',p.full_sync===true)
           : await syncBrokerConnection(snapshot, id,{full:p.full_sync===true});
         const cashLine =
@@ -126,7 +126,7 @@ export function createSyncBrokerTool(): AgentTool {
             cashLine,
             ...skipLines,
             applied.archivePath ? `Raw: ${applied.archivePath}` : '',
-            'Live marks still come from Yahoo on the dashboard.',
+            aggregation?.status === 'ready' ? 'Portfolio totals and page calculations have been saved.' : 'Broker data is imported; portfolio calculations are pending or need a background retry.',
           ]
             .filter(Boolean)
             .join('\n'),
@@ -140,6 +140,7 @@ export function createSyncBrokerTool(): AgentTool {
             lotsRemoved: applied.lotsRemoved,
             cash: applied.cash,
             not_imported: applied.skipped,
+            aggregation,
           },
         );
       } catch (e) {

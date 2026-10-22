@@ -12,7 +12,8 @@
   const contract = p => `${name(p.channel)} · ${p.ticker} ${p.side.toUpperCase()} ${p.right.toUpperCase()} ${amount(p.strike,p.nativeCurrency)} · ${p.expiry} ×${num(p.units)}`;
   const messageCard = (label,text,style = 'pattern-card') => `<div class="metric-card ${style}"><div class="label-eyebrow">${esc(label)}</div><p>${esc(text)}</p></div>`;
   function render() {
-    const v = M.build(payload,channel);
+    const v = payload?.pageProjections?.insights?.[channel];
+    if (!v) { if (channel !== 'all') { channel = 'all'; return render(); } throw new Error('Saved insights are unavailable. Sync your brokers and retry.'); }
     if (channel !== 'all' && !v.channels.includes(channel)) {channel = 'all';writeChannelQuery(channel);return render();}
     $('brokers').innerHTML = ['all',...v.channels].map(ch => `<button type="button" class="chip-btn${ch === channel ? ' on' : ''}" aria-pressed="${ch === channel}" data-channel="${esc(ch)}">${esc(name(ch))}</button>`).join('');
     $('eyebrow').textContent = `Daily briefing · ${payload?.generatedAt || 'Snapshot date unavailable'}`;
@@ -95,10 +96,10 @@
     const controller = new AbortController(),timer = setTimeout(() => controller.abort(),180000);
     try {
       const fresh = await globalThis.PortfolioLoader.load({refresh,signal:controller.signal,
-        onSnapshot:cached => {payload = cached;render();$('status').textContent = `Snapshot ${cached.generatedAt || 'from the previous successful load'} · Updating prices…`;},
+        onSnapshot:cached => {payload = cached;render();$('status').textContent = `Snapshot ${cached.generatedAt || 'from the previous successful load'} · Loading saved calculations…`;},
         onProgress:p => {const n = Math.max(0,Math.min(6,p.completedStages || 0));$('progress').setAttribute('aria-valuenow',String(n));$('progress').firstElementChild.style.width = `${n/6*100}%`;if (!payload) $('status').textContent = `Preparing briefing · ${p.stage || 'records'}`;},
       });
-      payload = fresh;render();$('status').textContent = `Portfolio valued ${fresh.generatedAt || 'now'} · Broker position dates and data coverage shown below`;
+      payload = fresh;render();$('status').textContent = `Portfolio valued ${fresh.generatedAt || 'date unavailable'} · Broker position dates and data coverage shown below`;
     } catch(error) {
       $('error').hidden = false;$('error').querySelector('p').textContent = error.name === 'AbortError' ? 'Briefing loading timed out. Please retry.' : error.message || 'Could not load the briefing.';
       $('status').textContent = payload ? `Update failed · Showing snapshot ${payload.generatedAt || 'from the previous load'}` : 'Briefing unavailable · Retry loading.';

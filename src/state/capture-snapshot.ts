@@ -1,3 +1,4 @@
+import { refreshPortfolioAfterSync } from './projection-events.js';
 import { writeFileSync, mkdirSync, existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { resolveDataRoot } from 'utarus';
@@ -166,5 +167,7 @@ export async function capturePortfolioSnapshot(state: InvestorState, date = new 
     history.push(fileName);
     writeFileSync(indexPath, JSON.stringify(history, null, 2), 'utf-8');
   }
+  const aggregation = await refreshPortfolioAfterSync(state.user.id, true);
+  if (aggregation.status === 'failed') throw new Error('Snapshot saved, but portfolio calculations failed. Retry to finish preparing the saved totals.');
   return { snapshot, fileName, live, cash, contingentCashObligation, positionsValue, totalPL, totalValue, positions };
 }

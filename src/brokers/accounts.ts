@@ -1,3 +1,4 @@
+import { refreshPortfolioAfterSync } from '../state/projection-events.js';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
@@ -504,7 +505,7 @@ function archive(slug: string, conn: BrokerAccountConnection, raw: Buffer, asOf:
   return file;
 }
 export async function syncBrokerAccount(snapshot: InvestorSnapshot, id: string, transport?: AdapterTransport,
-  trigger: 'manual' | 'scheduled' = 'manual', full = false): Promise<{ applied: BrokerApplyResult }> {
+  trigger: 'manual' | 'scheduled' = 'manual', full = false): Promise<{ applied: BrokerApplyResult; aggregation?: { status: 'ready' | 'pending' | 'failed' } }> {
   let state = snapshot.state;
   const model = readBrokerAccountModel(state);
   const conn = model.connections[id];
@@ -596,7 +597,8 @@ export async function syncBrokerAccount(snapshot: InvestorSnapshot, id: string, 
     } catch (error) {
       console.error('[broker/sync-notification] comparison failed:', error);
     }
-    return { applied };
+    const aggregation = await refreshPortfolioAfterSync(state.user.id);
+    return { applied, aggregation };
   } finally {
     inflight.delete(key);
   }

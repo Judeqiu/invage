@@ -84,7 +84,7 @@ export function createSyncIbkrFlexTool(): AgentTool {
       try {
         const snapshot = await resolveInvestorFromChannel(p);
         const { state } = snapshot;
-        const { applied } = state.broker_sources
+        const { applied, aggregation } = state.broker_sources
           ? await syncBrokerAccount(snapshot, resolveBrokerAccountId(state, 'ibkr', p.connection_id))
           : await syncBrokerConnection(snapshot, IBKR_CHANNEL);
         const cashLine =
@@ -106,7 +106,7 @@ export function createSyncIbkrFlexTool(): AgentTool {
             cashLine,
             ...skipLines,
             applied.archivePath ? `Raw XML: ${applied.archivePath}` : '',
-            'Live marks still come from Yahoo on the dashboard. Flex is IBKR books (positions + cash), not a live quote feed.',
+            aggregation?.status === 'ready' ? 'Portfolio totals and page calculations have been saved. Flex provides broker positions and cash; valuation uses market quotes.' : 'Broker data is imported; portfolio calculations are pending or need a background retry.',
           ]
             .filter(Boolean)
             .join('\n'),
@@ -119,6 +119,7 @@ export function createSyncIbkrFlexTool(): AgentTool {
             lotsRemoved: applied.lotsRemoved,
             cash: applied.cash,
             not_imported: applied.skipped,
+            aggregation,
           },
         );
       } catch (e) {

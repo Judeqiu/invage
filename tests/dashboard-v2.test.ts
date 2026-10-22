@@ -1,3 +1,4 @@
+import { withPageProjections } from './helpers/portfolio-projection.js';
 import { expect, it } from 'vitest';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { createServer } from 'node:http';
@@ -46,7 +47,7 @@ it.skipIf(!existsSync(executablePath))('renders V2 with shared data, clarifies m
   };
   const server = createServer(async (req, res) => {
     const url = new URL(req.url!, 'http://localhost');
-    const json = (body: unknown) => { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(body)); };
+    const json = (body: unknown) => { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(withPageProjections(body))); };
     if (url.pathname === '/shell') return res.end('<body style="margin:0;background:#10131c"><iframe src="/dashboard/v2.html" style="display:block;width:100%;height:100vh;border:0"></iframe>');
     if (url.pathname.endsWith('/dashboard')) return json(dashboard);
     if (url.pathname.endsWith('/dashboard-cache')) return json({});

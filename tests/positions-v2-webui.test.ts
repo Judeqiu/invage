@@ -1,3 +1,4 @@
+import { withPageProjections } from './helpers/portfolio-projection.js';
 import { expect, it } from 'vitest';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { createServer, type ServerResponse } from 'node:http';
@@ -28,7 +29,7 @@ it.skipIf(!existsSync(executablePath))('matches every mockup column, filters bot
   const root = resolve('webui'), dashboard = positionsFixture();
   dashboard.model.live.issues = [{ message:'München data note: <img src=x onerror=alert(1)>' }];
   let stream: ServerResponse | undefined, mode = 'held', requests = 0;
-  const event = (type: string, body: any) => 'data: ' + JSON.stringify({ type, ...body }) + '\n\n';
+  const event = (type: string, body: any) => 'data: ' + JSON.stringify({ type, ...body, ...(body.payload ? {payload: withPageProjections(body.payload)} : {}) }) + '\n\n';
   const server = createServer((req, res) => {
     const url = new URL(req.url!, 'http://localhost');
     if (url.pathname.endsWith('/dashboard')) {

@@ -1,3 +1,4 @@
+import { persistPortfolioFixture } from './helpers/portfolio-projection.js';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
@@ -43,6 +44,7 @@ it('pages timeline executions even when no position snapshot exists and keeps te
     { ...fill, execution_id: 'other-channel', channel: 'other', executed_at: '2026-10-06T11:05:44', side: 'buy', effect: 'close', gross_premium: '-96' },
   ];
   const before = JSON.stringify(state);
+  await persistPortfolioFixture(state);
   const url = `/option-history?include_executions=true&channel=${channel}&q=AVGO&right=put&to=2026-10-05&limit=1`;
   const first = await request(app()).get(url);
   expect(first.status).toBe(200);
@@ -62,6 +64,7 @@ it('pages timeline executions even when no position snapshot exists and keeps te
 });
 it('reads only the authenticated tenant and deduplicates source records', async () => {
   archive(owner); archive(other, '20261002', '999');
+  await persistPortfolioFixture(state);
   const response = await request(app()).get('/option-relationships');
   expect(response.status).toBe(200); expect(loadInvestor).toHaveBeenCalledWith(owner);
   expect(response.body.total).toBe(1); expect(response.body.groups[0].relationships[0].cash).toBe('20');
@@ -76,6 +79,7 @@ it('requires authentication and validates filters before loading state', async (
 });
 it('filters future relationships from dated replay and paginates matching groups', async () => {
   archive(owner); archive(owner, '20261002');
+  await persistPortfolioFixture(state);
   expect(optionRelationshipsForState(state, { asOf: '2026-09-30' }).groups).toEqual([]);
   const page = await request(app()).get('/option-relationships?as_of=2026-10-01&limit=1');
   expect(page.body.total).toBe(1); expect(page.body.next_offset).toBeNull();

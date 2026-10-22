@@ -101,7 +101,7 @@ Run `npm test` plus `UTARUS_LOADED_BY_HOST=1 node --test tests/migration/*.test.
 
 The Velovest dashboard uses recorded option trade cash flow for Daily (latest recorded trading day), MTD and total premium: STO proceeds minus BTC costs, consistently before brokerage fees. Reported option fees have a separate MTD card; unreported fees stay unknown. Section 02 includes historical option purchases and sales by trade month/underlying and recorded realized option P&L by closing/event month. FIFO matching and explicit broker lifecycle records establish realization; roll cash and position disappearance do not. Incomplete history and incompatible currency or fee bases remain visible gaps.
 
-Section 01 shows only short contracts with modeled ITM probability above 30%, with contract search and the latest verified roll credit. Section 03 provides Open, History and Rolls; retired Timeline preferences migrate to Open. Entry Spot currently uses the first opening-day adjusted close as a clearly labelled reference because imported executions do not carry an underlying execution-time quote. Manual Refresh updates the dashboard; Date replays saved valuation snapshots. The consultant is branded Velovest, with Velovest AI chat; supporting reply text under `## Detailed explanation` uses the shared framework's expandable control.
+Section 01 shows only short contracts with modeled ITM probability above 30%, with contract search and the latest verified roll credit. Section 03 provides Open, History and Rolls; retired Timeline preferences migrate to Open. Entry Spot currently uses the first opening-day adjusted close as a clearly labelled reference because imported executions do not carry an underlying execution-time quote. Manual Refresh reloads the saved calculation; broker sync updates its values. Date replays saved valuation snapshots. The consultant is branded Velovest, with Velovest AI chat; supporting reply text under `## Detailed explanation` uses the shared framework's expandable control.
 
 Chat includes the Lovable mockup's 18 preset questions in the composer's searchable
 Questions menu, grouped into setup/strike selection, technical analysis,
@@ -241,3 +241,38 @@ including when it finishes after midnight. The next 14:00 run starts a fresh
 batch even if a broker failed throughout the previous day. Starting after 14:00
 catches up that day's run; it does not fabricate snapshots for missed days.
 `INVAGE_DISABLE_SCHEDULERS=true` also disables this daily run.
+
+### Persisted portfolio calculations
+
+Every successful broker sync (manual, scheduled, latest or full), legacy Flex sync,
+and execution import now waits for the host's portfolio calculation worker.
+The worker prepares one private, atomic generation under
+`$UTARUS_DATA_ROOT/derived/portfolio/`, separate from the disposable dashboard
+cache. It includes NAV, cash, position value, cost, unrealized P/L, per-account
+and historical indices, benchmark history, assignment obligations and risk
+estimates, recorded premium and fees, realized and monthly option P/L,
+concentration, Positions/Insights models, open/history trade journals and their
+native-currency summaries, option episodes, and verified roll relationships.
+Missing FX, prices, fees and conflicting evidence retain their availability
+warnings; missing values are not replaced with zero.
+
+The daily 14:00 Singapore snapshot refreshes the saved generation again after
+writing the dated snapshot so historical views include it. Existing users are
+prepared in the background at startup. Financial edits enqueue a refresh, and a
+minute background scan repairs missing or outdated generations. Optimistic
+source fingerprints prevent publishing calculations made against an outdated
+portfolio. Scheduler claims and journal notes do not invalidate financial totals.
+Private results have no request-time TTL and survive process restarts.
+
+Dashboard, Positions, Insights, trades and option-history/relationship requests
+read saved results; even `refresh=1` does not run portfolio calculations or fetch
+quotes. `/portfolio-indices` exposes the saved totals and their calculation time.
+If current source data has no matching generation yet, the API reports that
+calculations are being prepared instead of rebuilding during the request or
+presenting stale money as current. Sync responses include `aggregation.status`;
+a calculation failure does not undo a successful broker import. The background
+worker retries it, and daily snapshot completion waits for successful calculation.
+User-selected trade filters and hypothetical opening-cash balances remain small
+presentation calculations over the saved journal, while its baseline totals
+are prepared during sync. Explicit new option-risk scenarios and contract lookup
+tools remain user-requested calculations, independent of portfolio page loading.

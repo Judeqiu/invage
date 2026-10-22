@@ -1,3 +1,4 @@
+import { buildTradeProjections } from '../src/report/page-projections.js';
 import { expect, it } from 'vitest';
 import { createServer } from 'node:http';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
@@ -45,10 +46,10 @@ it.skipIf(!existsSync(executablePath))('renders both exact column sets, lazy his
     }
     if (url.pathname.endsWith('/trades-v2') || url.pathname.endsWith('/trades-v2/history')) {
       res.setHeader('Content-Type','application/json');
-      if (url.pathname.endsWith('/history')) { historyRequests++; return res.end(JSON.stringify(history)); }
+      if (url.pathname.endsWith('/history')) { historyRequests++; return res.end(JSON.stringify({ ...history, aggregates: buildTradeProjections(history.rows, true) })); }
       openRequests++;
       if (fail) { res.statusCode = 503; return res.end(JSON.stringify({message:'Temporary journal failure'})); }
-      return res.end(JSON.stringify(open));
+      return res.end(JSON.stringify({ ...open, aggregates: buildTradeProjections(open.rows) }));
     }
     const file = resolve(root,'.'+url.pathname);
     if (!file.startsWith(root+'/') || !existsSync(file)) {res.statusCode = 404; return res.end();}

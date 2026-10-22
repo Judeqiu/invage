@@ -6,6 +6,7 @@ const runtime = { loadInvestor, syncBrokerAccount };
 export type BrokerSyncJob = {
   id: string;
   status: 'running' | 'completed';
+  calculationStatus?: 'ready' | 'pending' | 'failed';
   accounts: { id: string; label: string; status: 'pending' | 'running' | 'succeeded' | 'failed' }[];
 };
 
@@ -28,10 +29,14 @@ export function createBrokerSyncJobs(deps = runtime) {
       // Reload before each account: successful syncs update the investor revision.
       // Sequential imports also avoid competing writes to shared portfolio state.
       void (async () => {
+        job.calculationStatus = 'ready';
         for (const account of job.accounts) {
           account.status = 'running';
           try {
-            await deps.syncBrokerAccount(await deps.loadInvestor(userId), account.id);
+            const result = await deps.syncBrokerAccount(await deps.loadInvestor(userId), account.id);
+            const status = result?.aggregation?.status;
+            if (status === 'failed') job.calculationStatus = 'failed';
+            else if (status !== 'ready' && job.calculationStatus !== 'failed') job.calculationStatus = 'pending';
             account.status = 'succeeded';
           } catch {
             account.status = 'failed';

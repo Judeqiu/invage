@@ -1,3 +1,4 @@
+import { registerPortfolioRefresher } from '../src/state/projection-events.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -36,4 +37,16 @@ describe('shared portfolio snapshot capture', () => {
     expect(result.snapshot.totalValue).toBe(0);
     expect(result.snapshot.positions).toEqual([]);
   });
+});
+
+it('refreshes persisted aggregates after the dated snapshot is on disk', async () => {
+  const refresh = vi.fn(async (userId: string, force?: boolean) => {
+    expect(force).toBe(true);
+    expect(JSON.parse(readFileSync(join(resolveDataRoot(), 'drive', userId, 'snapshot-2026-10-21.json'), 'utf8')).date).toBe('2026-10-21');
+  });
+  const unregister = registerPortfolioRefresher(refresh);
+  try {
+    await capturePortfolioSnapshot(state, '2026-10-21');
+    expect(refresh).toHaveBeenCalledOnce();
+  } finally { unregister(); }
 });

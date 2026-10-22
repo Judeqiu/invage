@@ -12,6 +12,7 @@ async function main(): Promise<void> {
   const database = await openDatabaseRuntime({ env: process.env, mode: 'personal', onError: error => { throw error; } });
   const release = bindDatabaseRuntime(database);
   let framework: Framework | undefined;
+  let projectionWorker: { stop: () => Promise<void> } | undefined;
   let brokerScheduler: { stop: () => Promise<void> } | undefined;
   let stopping: Promise<void> | undefined;
   let startup: Promise<void>;
@@ -20,7 +21,10 @@ async function main(): Promise<void> {
     if (!stopping) stopping = (async () => {
       try { await startup; } catch (error) { console.error('[Startup]', error); process.exitCode = 1; }
       try { await brokerScheduler?.stop(); if (framework) await framework.stop(); }
-      finally { release(); await database.close(); }
+      finally {
+        try { await projectionWorker?.stop(); }
+        finally { release(); await database.close(); }
+      }
     })();
     return stopping;
   };
@@ -57,6 +61,8 @@ async function main(): Promise<void> {
       ] }));
     }
     if (stopping) return;
+    const { startPortfolioProjectionWorker } = await import('./state/portfolio-projections.js');
+    projectionWorker = startPortfolioProjectionWorker();
     if (process.env.INVAGE_DISABLE_SCHEDULERS !== 'true') {
       framework.startTaskScheduler();
       const { startBrokerSyncScheduler } = await import('./brokers/scheduler.js');

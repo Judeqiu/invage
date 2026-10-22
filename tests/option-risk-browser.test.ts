@@ -1,3 +1,4 @@
+import { withPageProjections } from './helpers/portfolio-projection.js';
 import { expect, it } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
@@ -29,7 +30,7 @@ it.skipIf(!existsSync(executable)).each(['index.html', 'v2.html'])('%s isolates 
   }, { AAPL: 100 }), []);
   const server = createServer(async (req,res) => {
     const url = new URL(req.url!, 'http://localhost');
-    const json = (body: unknown, code = 200) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
+    const json = (body: unknown, code = 200) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(withPageProjections(body))); };
     if (url.pathname === '/api/chat/messages') { let raw=''; for await (const c of req) raw+=c; prompts.push(JSON.parse(raw).text); return json({ message:'Chat fixture unavailable' },503); }
     if (url.pathname.endsWith('/dashboard')) { loads++; return json({ empty: false, displayName: 'Test', productProfile: 'consultant', generatedAt: '2026-10-16T10:00:00Z', model, analysisContextId: contextId, dashboardConfig: { showOptionRiskModelView: enabled } }); }
     if (url.pathname.endsWith('/capabilities')) { capabilities++; if (holdCapabilities) await new Promise<void>(r => capabilityWaiting.push(r)); return json({ enabled, available: true }); }

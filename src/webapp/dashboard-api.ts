@@ -3,34 +3,32 @@
  * Mounted by DomainExtension.webUi at /api/domain/invage (auth: user).
  */
 
+import { readProductProfile } from '../agents/roster.js';
+import { productDisplayName } from '../product-name.js';
 import { analysisContext, riskEnabled } from '../risk/context.js';
 import { createOptionRiskRouter } from './option-risk-api.js';
 import { createOptionIndexRouter } from './option-index-api.js';
 import { readDashboardConfig } from './dashboard-config.js';
 import { Router, type Request, type Response } from 'express';
 import { loadSessionState, targetUserId, type AuthUser } from 'utarus';
-import { loadDashboardForSlug, type DashboardLoadProgress } from './dashboard-data.js';
-import { cacheFingerprint, dashboardEnvironment, readDashboardCache, writeDashboardCache } from './dashboard-cache.js';
+import { requirePortfolioProjection, readPortfolioProjection, PortfolioProjectionUnavailable, type PortfolioProjection } from '../state/projection-store.js';
 import { loadWatchlistForSlug } from './watchlist-data.js';
 import { loadInvestor } from '../state/investor-store.js';
-import { buildExecutionJournal, validDate } from '../brokers/option-executions.js';
+import { validDate } from '../brokers/option-executions.js';
 import { readBrokerAccountModel } from '../brokers/accounts.js';
 import { latestSuccessfulBrokerSyncRun } from '../brokers/sync-history.js';
 import { optionHistoryForState } from './option-history-data.js';
-import { optionRelationshipsForState } from './option-relationships-data.js';
 import { isBooksEnabled } from '../books/db.js';
 import { loadBookPage } from './book-data.js';
 import { getPortfolio } from '../state/portfolio-state.js';
-import { fetchHistoricalCloses } from '../market/fetch-history.js';
-import { openOptionTradeDetails } from './option-dashboard-data.js';
 import { canonicalOptionUnderlying } from '../brokers/option-symbol.js';
 import { getTreasury, getReportingCurrency, setTreasury, type HouseholdInvestorState } from '../state/household-state.js';
 import { saveInvestor, saveOptionJournalMetadata } from '../state/investor-store.js';
-import { tradesOpenBook, tradesHistory } from './trades-v2-data.js';
 import { buildOptionIdentityIndex } from '../brokers/option-identities.js';
 
 export function createDashboardApiRouter(): Router {
   const router = Router();
+  router.use((_req, res, next) => { res.setHeader('Cache-Control', 'private, no-store'); next(); });
   router.put('/trades-v2/:optionId/note', async (req: Request, res: Response) => {
     res.setHeader('Cache-Control','private, no-store');
     try {
@@ -66,59 +64,45 @@ export function createDashboardApiRouter(): Router {
       if (!user?.userId) { res.status(401).json({ error:'unauthorized' }); return; }
       const snapshot = await loadInvestor(await targetUserId(req,user));
       const history = req.path.endsWith('/history');
-      const fingerprint = cacheFingerprint([snapshot.revision, history]);
-      const namespace = history ? 'trades-history' : 'trades-open';
-      // Quotes are not needed for this journal. Revision-bound private caches never mix users.
-      const cached = req.query.refresh === '1' ? null : readDashboardCache(namespace, snapshot.state.user.id, fingerprint, 60_000);
-      if (cached) { res.json(cached); return; }
-      let payload;
-      if (history) {
-        const evidence = optionHistoryForState(snapshot.state);
-        const relationships = optionRelationshipsForState(snapshot.state, {});
-        const journal = tradesHistory({ ...snapshot.state, option_observations:evidence.observations, option_events:evidence.events }, relationships.groups.flatMap(g => g.relationships));
-        const conflicts = new Set(relationships.historyGaps.filter(g => 'blocksTotals' in g && g.blocksTotals).map(g => g.channel));
-        for (const row of journal.rows) if (conflicts.has(row.channel)) {
-          row.premium = row.netCash = row.realizedPnl = row.returnsPct = null;
-          row.notes.push('Conflicting archived execution evidence needs reconciliation. Cash and profit figures are withheld.');
-        }
-        payload = { ...journal,
-          gaps:[...evidence.gaps, ...relationships.historyGaps], revision:snapshot.revision };
-      } else payload = { ...tradesOpenBook(snapshot.state), revision:snapshot.revision };
-      writeDashboardCache(namespace, snapshot.state.user.id, fingerprint, payload);
+      const saved = requirePortfolioProjection(snapshot.state);
+      const journal = history ? saved.tradeHistory : saved.openTrades;
+      const payload = { ...journal, calculatedAt: saved.calculatedAt, revision: snapshot.revision,
+        rows: journal.rows.map(row => ({ ...row, thesis: snapshot.state.option_journal?.[row.optionId]?.thesis ?? '',
+          noteUpdatedAt: snapshot.state.option_journal?.[row.optionId]?.updated_at ?? null })) };
       res.json(payload);
     } catch (error) {
       console.error('Trades v2 failed:', error);
-      res.status(500).json({ error:'trades_failed', message:'Could not load the option journal. Please retry.' });
+      res.status(error instanceof PortfolioProjectionUnavailable ? 503 : 500).json({ error:'trades_failed', message:'Could not load the option journal. Please retry.' });
     }
   });
   router.use('/option-index', createOptionIndexRouter());
   router.use('/option-risk', createOptionRiskRouter());
-  // Persist only derived dashboard fields, partitioned by the authorized target UUID.
-  // Account revisions and configuration invalidate previews; prices always refresh.
-  async function snapshotContext(slug: string) {
-    const startedAt = performance.now();
-    const snapshot = await loadInvestor(slug);
-    return { snapshot, startedAt, fingerprint: cacheFingerprint([snapshot.revision, dashboardEnvironment(), readDashboardConfig()]) };
-  }
-  type DashboardWork = {
-    promise: Promise<unknown>;
-    listeners: Set<(progress: DashboardLoadProgress) => void>;
-    progress?: DashboardLoadProgress;
-  };
-  const pending = new Map<string, DashboardWork>();
-  function readSnapshot(slug: string, fingerprint: string) {
-    return readDashboardCache<unknown>('snapshots', slug, fingerprint, 24 * 60 * 60 * 1000);
+  function dashboardBody(snapshot: Awaited<ReturnType<typeof loadInvestor>>, saved: PortfolioProjection = requirePortfolioProjection(snapshot.state)) {
+    return { ...saved.dashboard, productProfile: readProductProfile(), productName: productDisplayName(), displayName: snapshot.state.profile.display_name,
+      dashboardConfig: { ...readDashboardConfig(), showOptionRiskModelView: riskEnabled() },
+      analysisContextId: riskEnabled() ? analysisContext(snapshot) : null };
   }
   router.get('/dashboard-cache', async (req: Request, res: Response) => {
     res.setHeader('Cache-Control', 'private, no-store');
     try {
       const user = (req as Request & { user?: AuthUser }).user;
       if (!user?.userId) { res.status(401).json({ error: 'unauthorized' }); return; }
-      const slug = await targetUserId(req, user);
-      res.json(readSnapshot(slug, (await snapshotContext(slug)).fingerprint));
-    } catch {
-      res.status(500).json({ error: 'dashboard_failed', message: 'Could not read the portfolio snapshot.' });
-    }
+      const snapshot = await loadInvestor(await targetUserId(req, user));
+      const saved = readPortfolioProjection(snapshot.state);
+      res.json(saved ? dashboardBody(snapshot, saved) : null);
+    } catch { res.status(500).json({ error: 'dashboard_failed', message: 'Could not read saved portfolio totals.' }); }
+  });
+  router.get('/portfolio-indices', async (req: Request, res: Response) => {
+    res.setHeader('Cache-Control', 'private, no-store');
+    try {
+      const user = (req as Request & { user?: AuthUser }).user;
+      if (!user?.userId) { res.status(401).json({ error: 'unauthorized' }); return; }
+      const snapshot = await loadInvestor(await targetUserId(req, user));
+      const saved = requirePortfolioProjection(snapshot.state);
+      res.json({ calculatedAt: saved.calculatedAt, totals: saved.dashboard.model?.live ?? null,
+        scopes: saved.dashboard.aggregatedViews, pages: saved.dashboard.pageProjections });
+    } catch (error) { res.status(error instanceof PortfolioProjectionUnavailable ? 503 : 500)
+      .json({ error: 'indices_unavailable', message: 'Saved portfolio calculations are unavailable. Retry shortly or sync your brokers.' }); }
   });
 
   router.get('/portfolio-settings', async (req: Request, res: Response) => {
@@ -205,10 +189,10 @@ export function createDashboardApiRouter(): Router {
       const user = (req as Request & { user?: AuthUser }).user;
       if (!user?.userId) { res.status(401).json({ error: 'unauthorized', message: 'No session user.' }); return; }
       const snapshot = await loadInvestor(await targetUserId(req, user));
-      res.json(buildExecutionJournal(snapshot.state.option_executions));
+      res.json(requirePortfolioProjection(snapshot.state).journal);
     } catch (e) {
       console.error('Execution journal failed:', e);
-      res.status(500).json({ error: 'journal_failed', message: e instanceof Error ? e.message : String(e) });
+      res.status(e instanceof PortfolioProjectionUnavailable ? 503 : 500).json({ error: 'journal_failed', message: e instanceof Error ? e.message : String(e) });
     }
   });
 
@@ -224,19 +208,16 @@ export function createDashboardApiRouter(): Router {
       const portfolio = getPortfolio(snapshot.state);
       const holding = portfolio[key];
       if (!holding?.option) { res.status(404).json({ error: 'not_found', message: 'Open option position not found.' }); return; }
-      const accounts = Object.fromEntries(Object.values(readBrokerAccountModel(snapshot.state).connections)
-        .filter(conn => conn.account_id).map(conn => [conn.channel, conn.account_id!]));
-      const detail = openOptionTradeDetails({ [key]: holding }, snapshot.state.option_executions, accounts, snapshot.state.option_events)[key];
+      const detail = requirePortfolioProjection(snapshot.state).dashboard.optionTradeDetails?.[key];
       if (!detail || detail.openedFrom !== detail.openedTo) {
         res.status(409).json({ error: 'opening_date_unavailable', message: 'A single opening date is not confirmed by the recorded fills.' }); return;
       }
       const underlying = canonicalOptionUnderlying(holding.option.underlying, holding.option);
-      const closes = await fetchHistoricalCloses(underlying, [detail.openedFrom]);
-      const close = closes[detail.openedFrom];
-      if (close == null) { res.status(404).json({ error: 'price_unavailable', message: 'No adjusted daily close is available for the opening date.' }); return; }
+      const close = detail.entrySpot?.price;
+      if (close == null) { res.status(404).json({ error: 'price_unavailable', message: 'No saved adjusted daily close is available for the opening date.' }); return; }
       res.json({ underlying, date: detail.openedFrom, adjusted_close: close });
     } catch (e) {
-      res.status(502).json({ error: 'price_lookup_failed', message: e instanceof Error ? e.message : String(e) });
+      res.status(e instanceof PortfolioProjectionUnavailable ? 503 : 502).json({ error: 'price_lookup_failed', message: e instanceof Error ? e.message : String(e) });
     }
   });
 
@@ -259,12 +240,23 @@ export function createDashboardApiRouter(): Router {
     }
     try {
       const snapshot = await loadInvestor(await targetUserId(req, user));
-      const result = optionRelationshipsForState(snapshot.state, { channel, q, evidence, from, to, asOf });
+      const saved = requirePortfolioProjection(snapshot.state).relationships;
+      const groups = saved.groups.filter(group => !channel || group.channel === channel).flatMap(group => {
+        const visible = group.relationships.filter(r => (!asOf || r.through.slice(0, 10) <= asOf) &&
+          (!from || r.at.slice(0, 10) >= from) && (!to || r.through.slice(0, 10) <= to) &&
+          (!evidence || r.evidence === evidence) &&
+          (!q || `${r.old.underlying} ${r.old.strike} ${r.old.expiry} ${r.replacement.strike} ${r.replacement.expiry}`.toUpperCase().includes(q.toUpperCase())));
+        if (!visible.length) return [];
+        const latest = visible[0];
+        return [{ ...group, latest: latest.replacement, latest_quantity: latest.opened_quantity, last_at: latest.at, relationships: visible }];
+      }).sort((a, b) => b.last_at.localeCompare(a.last_at) || a.id.localeCompare(b.id));
+      const result = { ...saved, groups, as_of: asOf || null,
+        spreads: saved.spreads.filter(row => (!channel || row.channel === channel) && (!asOf || row.through.slice(0, 10) <= asOf)) };
       res.setHeader('Cache-Control', 'private, no-store');
       res.json({ ...result, groups: result.groups.slice(offset, offset + limit), total: result.groups.length,
         next_offset: offset + limit < result.groups.length ? offset + limit : null });
     } catch (error) {
-      res.status(500).json({ error: 'relationships_failed', message: error instanceof Error ? error.message : 'Could not load option relationships.' });
+      res.status(error instanceof PortfolioProjectionUnavailable ? 503 : 500).json({ error: 'relationships_failed', message: error instanceof Error ? error.message : 'Could not load option relationships.' });
     }
   });
 
@@ -279,7 +271,7 @@ export function createDashboardApiRouter(): Router {
       }
       const snapshot = await loadInvestor(await targetUserId(req, user));
       const state = snapshot.state;
-      const { episodes, observations, gaps } = optionHistoryForState(state);
+      const { episodes, observations, gaps } = requirePortfolioProjection(state).optionHistory;
       const channel = typeof req.query.channel === 'string' ? req.query.channel : '';
       const right = typeof req.query.right === 'string' ? req.query.right : '';
       const status = typeof req.query.status === 'string' ? req.query.status : '';
@@ -331,78 +323,30 @@ export function createDashboardApiRouter(): Router {
         connections, history_started: observations.length > 0, gaps });
     } catch (e) {
       console.error('Option history failed:', e);
-      res.status(500).json({ error: 'history_failed', message: e instanceof Error ? e.message : String(e) });
+      res.status(e instanceof PortfolioProjectionUnavailable ? 503 : 500).json({ error: 'history_failed', message: e instanceof Error ? e.message : String(e) });
     }
   });
 
   router.get('/dashboard', async (req: Request, res: Response) => {
-    let heartbeat: ReturnType<typeof setInterval> | undefined;
-    let streaming = false;
-    const send = (event: unknown) => {
-      if (!res.destroyed && !res.writableEnded) res.write(`data: ${JSON.stringify(event)}\n\n`);
-    };
+    res.setHeader('Cache-Control', 'private, no-store');
+    const streaming = req.query.progress === '1';
     try {
-      const user = (req as Request & { user: AuthUser }).user;
-      if (!user?.userId) {
-        res.status(401).json({ error: 'unauthorized', message: 'No session user.' });
-        return;
-      }
-      const slug = await targetUserId(req, user);
-      res.setHeader('Cache-Control', 'private, no-store');
-      const context = await snapshotContext(slug);
-      streaming = req.query.progress === '1';
+      const user = (req as Request & { user?: AuthUser }).user;
+      if (!user?.userId) { res.status(401).json({ error: 'unauthorized', message: 'No session user.' }); return; }
+      const snapshot = await loadInvestor(await targetUserId(req, user));
+      // Even refresh=1 only rereads the persisted generation. Refresh work runs after sync.
+      const body = dashboardBody(snapshot);
       if (streaming) {
         res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
         res.setHeader('X-Accel-Buffering', 'no');
-        res.flushHeaders();
-        heartbeat = setInterval(() => {
-          if (!res.destroyed && !res.writableEnded) res.write(': waiting\n\n');
-        }, 15000);
-        res.once('close', () => { clearInterval(heartbeat); });
-      }
-      const refreshHistory = req.query.refresh === '1';
-      if (streaming && req.query.preview === '1' && !refreshHistory) {
-        const cached = readSnapshot(slug, context.fingerprint);
-        if (cached) send({ type: 'snapshot', payload: cached });
-      }
-      const key = cacheFingerprint([slug, context.fingerprint, refreshHistory]);
-      let work = pending.get(key);
-      if (!work) {
-        const listeners = new Set<(progress: DashboardLoadProgress) => void>();
-        const created = { listeners } as DashboardWork;
-        created.promise = Promise.resolve().then(async () => {
-          const payload = await loadDashboardForSlug(slug, undefined, undefined, progress => {
-            created.progress = progress;
-            for (const listener of listeners) listener(progress);
-          }, { snapshot: context.snapshot, refreshHistory, startedAt: context.startedAt });
-          const body = { ...payload, dashboardConfig: { ...readDashboardConfig(), showOptionRiskModelView: riskEnabled() },
-            analysisContextId: riskEnabled() ? analysisContext(context.snapshot) : null };
-          writeDashboardCache('snapshots', slug, context.fingerprint, body);
-          return body;
-        }).finally(() => { pending.delete(key); });
-        work = created;
-        pending.set(key, work);
-      }
-      const listener = (progress: DashboardLoadProgress) => send({ type: 'progress', ...progress });
+        res.end(`data: ${JSON.stringify({ type: 'result', payload: body })}\n\n`);
+      } else res.json(body);
+    } catch (error) {
+      const message = error instanceof PortfolioProjectionUnavailable ? error.message : 'Saved portfolio data could not be loaded. Please retry.';
       if (streaming) {
-        work.listeners.add(listener);
-        if (work.progress) listener(work.progress);
-        res.once('close', () => work!.listeners.delete(listener));
-      }
-      let body: unknown;
-      try { body = await work.promise; }
-      finally { work.listeners.delete(listener); }
-      if (streaming) { send({ type: 'result', payload: body }); res.end(); }
-      else res.json(body);
-    } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
-      const status = /not found|does not exist|Admin must specify/i.test(message) ? 400 : 500;
-      if (streaming) {
-        send({ type: 'error', error: 'dashboard_failed', message: 'The dashboard could not finish loading. Please retry.' });
-        res.end();
-      } else res.status(status).json({ error: 'dashboard_failed', message });
-    } finally {
-      clearInterval(heartbeat);
+        res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+        res.end(`data: ${JSON.stringify({ type: 'error', error: 'dashboard_unavailable', message })}\n\n`);
+      } else res.status(error instanceof PortfolioProjectionUnavailable ? 503 : 500).json({ error: 'dashboard_unavailable', message });
     }
   });
 

@@ -44,7 +44,8 @@ function render(dash) {
   const consultant = productProfileOf(dash) === 'consultant';
   const raw = liveSlice(dash);
   bindFilters(raw);
-  const live = sliceLive(raw, channel);
+  const saved = dash?.aggregatedViews?.live?.[channel === 'all' ? 'merged' : channel];
+  const live = saved?.legacyView ?? null;
   el.hello.textContent = consultant ? 'Where the book stands.' : 'Where the books stand.';
   if (!live) {
     el.eyebrow.textContent = 'Daily briefing';
@@ -92,16 +93,13 @@ function render(dash) {
     ) + brokerFundAssetsCards(dash, channel);
   const prices = dash.equityPrices || {};
   const shorts = live.positions.filter((p) => p.instrument === 'option' && p.option && p.option.side === 'short');
-  const itmNear = shorts.filter((p) => {
-    const dte = dteDays(p.option.expiry);
-    return optionItmState(p, prices) === 'itm' && dte <= 21;
-  });
+  const itmNear = saved.legacy.itmNear;
   const cashVsCont =
     live.cashAmount != null && live.contingentCashObligation > live.cashAmount;
   const riskCards = [];
   for (const p of itmNear) {
     riskCards.push(`<div class="metric-card risk-danger">
-      <div class="label-eyebrow">ITM · DTE ${dteDays(p.option.expiry)}d</div>
+      <div class="label-eyebrow">ITM · DTE ${p.dte}d</div>
       <p style="margin-top:0.5rem;font-size:0.875rem">${esc(p.label)} is ITM vs last vs strike.</p>
     </div>`);
   }
@@ -116,13 +114,10 @@ function render(dash) {
     riskCards.length === 0 ? emptyCard('No books risks on this slice.') : riskCards.join('');
 
   const patterns = [];
-  const near30 = live.positions.filter(
-    (p) => p.instrument === 'option' && p.option && dteDays(p.option.expiry) <= 30,
-  );
+  const { near30, top } = saved.legacy;
   if (live.optionCount > 0) {
     patterns.push(`${near30.length} of ${live.optionCount} contracts expire within 30 days`);
   }
-  const top = [...live.positions].sort((a, b) => b.weightPct - a.weightPct)[0];
   if (top) {
     patterns.push(`Largest weight: ${top.ticker} ${top.weightPct.toFixed(1)}% NAV`);
   }
@@ -142,13 +137,7 @@ function render(dash) {
   el.actions.innerHTML = '';
 
   const opts = live.positions.filter((p) => p.instrument === 'option' && p.option);
-  const puts = opts.filter((p) => p.option.right === 'put').length;
-  const calls = opts.filter((p) => p.option.right === 'call').length;
-  const dteAvg =
-    opts.length === 0
-      ? null
-      : opts.reduce((s, p) => s + dteDays(p.option.expiry), 0) / opts.length;
-  const leaps = opts.filter((p) => dteDays(p.option.expiry) > 365).length;
+  const { puts, calls, dteAvg, leaps } = saved.legacy;
   el.s4.innerHTML = sectionHead(
     'Section 04',
     'Book statistics',

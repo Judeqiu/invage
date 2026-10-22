@@ -1,6 +1,6 @@
 /**
- * Load a live portfolio dashboard model for a user slug.
- * Used by the WebUI domain API (dynamic tab) — same math as the HTML report.
+ * Sync-time calculation pipeline for the persisted portfolio read model.
+ * HTTP pages read projection-store; they never call this calculation pipeline.
  *
  * Dashboard loads are **resilient**: data issues become `warnings` / model.live.issues
  * rather than a hard 500. Market prices are never invented — unpriced equities use
@@ -60,6 +60,9 @@ export interface BenchmarkData {
 }
 
 export interface DashboardPayload {
+  /** Sync-time projections for Positions, Insights and date/account dashboard scopes. */
+  pageProjections?: { positions: Record<string, unknown>; insights: Record<string, unknown> };
+  aggregatedViews?: Record<string, Record<string, unknown>>;
   slug: string;
   displayName: string;
   generatedAt: string;
@@ -378,7 +381,7 @@ export async function loadDashboardForSlug(
         : null,
       undefined,
       fx,
-      { resilient: true, reportingCurrency },
+      { resilient: true, reportingCurrency, allowEmpty: true },
     );
     for (const position of live.positions) {
       const stored = portfolio[position.ticker];

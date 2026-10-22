@@ -1,3 +1,4 @@
+import { withPageProjections } from './helpers/portfolio-projection.js';
 import { expect, it } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
@@ -20,7 +21,7 @@ it.skipIf(!existsSync(executablePath)).each(['index.html', 'v2.html'])('explains
   const prompts: any[] = []; let failChat = false, release: (() => void) | null = null, delay = false;
   const server = createServer(async (req, res) => {
     const url = new URL(req.url!, 'http://localhost');
-    const json = (value: unknown) => { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(value)); };
+    const json = (value: unknown) => { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(withPageProjections(value))); };
     if (url.pathname === '/shell') return res.end(`<iframe src="/insights/${version}" style="width:100%;height:96vh;border:0"></iframe><script>window.messages=[];addEventListener('message',e=>messages.push(e.data))</script>`);
     if (url.pathname.endsWith('/dashboard-cache')) return json(null);
     if (url.pathname.endsWith('/dashboard')) return json(payload);

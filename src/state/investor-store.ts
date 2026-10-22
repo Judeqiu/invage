@@ -1,3 +1,4 @@
+import { portfolioStateSaved } from './projection-events.js';
 import { loadStateById, resolveUserIdByAlias, saveState } from 'utarus';
 import type { InvestorState } from './portfolio-state.js';
 import { isBooksEnabled, withHouseholdPostCommit } from '../books/db.js';
@@ -33,6 +34,7 @@ export async function saveOptionJournalMetadata(snapshot: InvestorSnapshot): Pro
   snapshot.state.option_identities = buildOptionIdentityIndex(snapshot.state);
   await saveState(snapshot.state,snapshot.revision);
   snapshot.revision += 1;
+  portfolioStateSaved(snapshot);
 }
 
 export async function saveInvestor(snapshot: InvestorSnapshot): Promise<void> {
@@ -73,4 +75,5 @@ export async function saveInvestor(snapshot: InvestorSnapshot): Promise<void> {
   }
   // The repository increments exactly once on successful optimistic update.
   snapshot.revision += 1;
+  portfolioStateSaved(snapshot);
 }

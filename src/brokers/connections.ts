@@ -1,3 +1,4 @@
+import { refreshPortfolioAfterSync } from '../state/projection-events.js';
 import { saveInvestor, type InvestorSnapshot } from '../state/investor-store.js';
 /**
  * Per-user broker_connections YAML store + public DTO.
@@ -492,7 +493,7 @@ export async function syncBrokerConnection(
   snapshot: InvestorSnapshot,
   id: string,
   opts?: { transport?: AdapterTransport; full?:boolean },
-): Promise<{ view: PublicConnectorView; applied: BrokerApplyResult }> {
+): Promise<{ view: PublicConnectorView; applied: BrokerApplyResult; aggregation?: { status: 'ready' | 'pending' | 'failed' } }> {
   const { state } = snapshot;
   const slug = state.user.id;
   if (!slug) throw new Error('Investor state has no user.slug.');
@@ -553,7 +554,8 @@ export async function syncBrokerConnection(
     } catch (error) {
       console.error('[broker/sync-notification] comparison failed:', error);
     }
-    return { view: publicConnectorView(def, readBrokerConnections(state)[id]), applied };
+    const aggregation = await refreshPortfolioAfterSync(slug);
+    return { view: publicConnectorView(def, readBrokerConnections(state)[id]), applied, aggregation };
 
   } catch (error) {
     await publishBrokerSyncFailure(slug, broker.displayName, broker.displayName,

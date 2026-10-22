@@ -43,7 +43,8 @@ function render() {
   }
   const raw = liveSlice(dash);
   bindFilters(raw);
-  const live = sliceLive(raw, channel);
+  const saved = dash?.aggregatedViews?.live?.[channel === 'all' ? 'merged' : channel];
+  const live = saved?.legacyView ?? null;
   if (!live) {
     el.eyebrow.textContent = 'Equity book · empty';
     el.metrics.innerHTML = '';
@@ -57,10 +58,8 @@ function render() {
   const ccy = ccyOf(live);
   const all = equityRows(live);
   const rows = all;
-  const marketValue = rows.reduce((s, p) => s + p.value, 0);
-  const costValue = rows.reduce((s, p) => s + p.cost, 0);
+  const { equityValue: marketValue, equityCost: costValue, shares } = saved.legacy;
   const unrealized = marketValue - costValue;
-  const shares = rows.reduce((s, p) => s + p.units, 0);
   el.eyebrow.textContent =
     channel === 'all'
       ? `Equity book · ${rows.length} holdings`
@@ -129,12 +128,7 @@ function renderObligations(live, ccy) {
     'Understand your potential obligations if short options are assigned. Short puts require cash to purchase shares at the strike price, while short calls require delivery of shares. Coverage compares shares held with shares required for short calls. A dash means no matching recorded share position or no short-call obligation is available to calculate coverage.',
   );
   const shorts = live.positions.filter((p) => p.instrument === 'option' && p.option && p.option.side === 'short');
-  const cashIf = shorts
-    .filter((p) => p.option.right === 'put')
-    .reduce((s, p) => s + Number(p.contingentCashObligation || 0), 0);
-  const sharesCall = shorts
-    .filter((p) => p.option.right === 'call')
-    .reduce((s, p) => s + Number(p.contingentShareObligation || 0), 0);
+  const { cashIf, sharesCall } = saved.legacy;
   const coverVsCash =
     live.cashAmount != null && cashIf > 0 ? `${((live.cashAmount / cashIf) * 100).toFixed(0)}%` : '—';
   el.oblMetrics.innerHTML =

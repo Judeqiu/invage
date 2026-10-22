@@ -4,8 +4,8 @@ import { expect, it } from 'vitest';
 import { buildExecutionJournal, type OptionExecution } from '../src/brokers/option-executions.js';
 import { buildRecordedOptionAnalytics } from '../src/webapp/option-analytics.js';
 
-const source = readFileSync('webui/dashboard/app.js', 'utf8');
-const calculator = source.slice(source.indexOf('function selectedTradeChannels('), source.indexOf('\nfunction unverifiedOptionChannels'));
+const source = readFileSync('webui/dashboard/aggregate-model.js', 'utf8');
+const calculator = source.slice(source.indexOf('function selectedTradeChannels('), source.indexOf('function fundIndex('));
 const execution: OptionExecution = {
   channel: 'ibkr', account_id: 'A', execution_id: '1', contract_id: 'AMD-P',
   executed_at: '2026-08-01T10:00:00', underlying: 'AMD', right: 'put',
@@ -19,7 +19,7 @@ const fills = [execution,
 ] as OptionExecution[];
 
 function earned(analytics: unknown, overrides: Record<string, unknown> = {}, view: Record<string, unknown> = {}) {
-  const helpers = source.slice(source.indexOf('function selectedTradeChannels('), source.indexOf('function entrySpotHtml('));
+  const helpers = source.slice(source.indexOf('function selectedTradeChannels('), source.indexOf('function fundIndex('));
   return runInNewContext(`${helpers}\nrecordedRealizedForView(view, date)`, {
     payload: { optionAnalytics: analytics, premiumJournal: { channels: ['ibkr'] }, ...overrides },
     view: { channelView: 'ibkr', reportingCurrency: 'USD', ...view }, date: '2026-09-16',
@@ -101,7 +101,7 @@ it('withholds totals and monthly cash flow for conflicting broker evidence', () 
   expect(premium.total).toBeNull(); expect(premium.mtd).toBeNull(); expect(premium.daily).toBeNull();
   expect(premium.totalReason).toContain('reconciliation');
   const helper = source.slice(source.indexOf('function selectedTradeChannels('), source.indexOf('function recordedPremiumForView('));
-  const monthly = source.slice(source.indexOf('function recordedMonthlyData('), source.indexOf('function monthLabel('));
+  const monthly = source.slice(source.indexOf('function recordedMonthlyData('), source.indexOf('function openBookPremiumData('));
   const result = runInNewContext(`${helper}\n${monthly}\nrecordedMonthlyData(view, date)`, {
     payload: { optionAnalytics: { executions: fills, profits: [{ channel: 'ibkr', date: '2026-08-10', currency: 'USD', net: 348 }] },
       optionHistoryGaps: [{ channel: 'ibkr', blocksTotals: true }] },
@@ -161,7 +161,7 @@ it('uses one consistent before-fees basis when a closing fee is missing, with fe
 
 it('buckets recorded cash flow and realized profit by trade month and excludes future evidence', () => {
   const helper = source.slice(source.indexOf('function selectedTradeChannels('), source.indexOf('function recordedPremiumForView('));
-  const monthly = source.slice(source.indexOf('function recordedMonthlyData('), source.indexOf('function monthlyLineCard('));
+  const monthly = source.slice(source.indexOf('function recordedMonthlyData('), source.indexOf('function openBookPremiumData('));
   const result = runInNewContext(`${helper}\n${monthly}\nrecordedMonthlyData(view, date)`, {
     payload: { premiumJournal: { channels: ['ibkr'] }, optionAnalytics: { executions: fills,
       profits: [{ channel: 'ibkr', date: '2026-08-10', currency: 'USD', gross: 350, net: 348 },
@@ -186,7 +186,7 @@ it('shows zero daily and MTD flow without falling back to an older trade', () =>
 
 function monthlyResult(profits: unknown[], gaps: unknown[] = [], fxRates: unknown = undefined) {
   const helper = source.slice(source.indexOf('function selectedTradeChannels('), source.indexOf('function recordedPremiumForView('));
-  const monthly = source.slice(source.indexOf('function recordedMonthlyData('), source.indexOf('function monthLabel('));
+  const monthly = source.slice(source.indexOf('function recordedMonthlyData('), source.indexOf('function openBookPremiumData('));
   return runInNewContext(`${helper}\n${monthly}\nrecordedMonthlyData(view, date)`, {
     payload: { optionAnalytics: { executions: [], profits, gaps } },
     view: { channelView: 'ibkr', reportingCurrency: 'USD', fxRates }, date: '2026-10-13',

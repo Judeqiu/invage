@@ -562,9 +562,10 @@ export function createBrokerConnectionsRouter(): Router {
       }
       const id = connectorIdParam(req);
       if(req.body?.full_sync!==undefined&&typeof req.body.full_sync!=='boolean'){res.status(400).json({error:'full_sync must be boolean'});return;}
-      const { view, applied } = await syncBrokerConnection(snapshot, id,{full:req.body?.full_sync===true});
+      const { view, applied, aggregation } = await syncBrokerConnection(snapshot, id,{full:req.body?.full_sync===true});
       res.json({
         ...view,
+        aggregation,
         latest_raw_data: latestBrokerRawData(state.user.id, id),
         apply: {
           lots_upserted: applied.lotsUpserted,

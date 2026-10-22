@@ -1,3 +1,4 @@
+import { withPageProjections } from './helpers/portfolio-projection.js';
 import { expect, it } from 'vitest';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { createServer } from 'node:http';
@@ -34,7 +35,7 @@ it.skipIf(!existsSync(executable))('opens on Open without date or refresh contro
   let dashboard: Record<string, unknown> = { empty: true, displayName: 'Test', productProfile: 'consultant', dashboardConfig: { optionView: 'timeline' } };
   const server = createServer((req, res) => {
     const url = new URL(req.url!, 'http://localhost');
-    const json = (body: unknown) => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
+    const json = (body: unknown) => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(withPageProjections(body))); };
     if (url.pathname.endsWith('/dashboard')) return json(dashboard);
     if (url.pathname.endsWith('/option-history')) return json({ episodes: [], connections: [], gaps: [], history_started: false, next_offset: null });
     const file = resolve(root, '.' + url.pathname);
@@ -94,7 +95,7 @@ it.skipIf(!existsSync(executable))('explains dashboard cards in side chat with t
   };
   const server = createServer(async (req, res) => {
     const url = new URL(req.url!, 'http://localhost');
-    const json = (body: unknown) => { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(body)); };
+    const json = (body: unknown) => { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(withPageProjections(body))); };
     if (url.pathname === '/shell') return res.end('<iframe src="/dashboard/index.html" style="width:100%;height:95vh"></iframe><script>window.messages=[];addEventListener("message",e=>messages.push(e.data))</script>');
     if (url.pathname.endsWith('/dashboard')) return json(dashboard);
     if (url.pathname === '/api/chat/messages') {
