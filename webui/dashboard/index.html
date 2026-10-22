@@ -25,14 +25,12 @@
   <div id="error" class="error-box hidden"><p id="dashboardErrorMessage">Failed to load data.</p><button id="dashboardRetry" type="button" class="chip-btn">Retry loading</button></div>
   <div class="dashboard-actions">
     <button id="dashboardSync" type="button" class="chip-btn" disabled>Sync brokers</button>
-    <button id="dashboardRefresh" type="button" class="chip-btn">Refresh portfolio</button>
   </div>
   <section id="brokerSyncPanel" class="loading hidden" aria-label="Broker sync progress">
     <strong id="brokerSyncStatus" role="status" aria-live="polite"></strong>
     <progress id="brokerSyncProgress" max="100" value="0" aria-label="Sync brokers and refresh dashboard"></progress>
     <p id="brokerSyncDetails"></p>
   </section>
-  <p class="status-line" id="status"></p>
   <p id="optionChatStatus" class="option-chat-status" role="status" aria-live="polite"></p>
 
   <div id="dashboard" class="hidden" aria-busy="true">

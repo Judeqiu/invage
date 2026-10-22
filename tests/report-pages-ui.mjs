@@ -930,16 +930,15 @@ try {
   cachedSnapshot = structuredClone(payload);
   const beforeNavigation = dashboardRequests;
   await page.goto(`http://127.0.0.1:${port}/dashboard/`);
-  await page.waitForFunction(() => document.getElementById('status')?.textContent?.includes('Snapshot'));
+  await page.waitForSelector('#dashboard:not(.hidden)');
   await page.goto(`http://127.0.0.1:${port}/positions/`);
   await page.waitForSelector('#table2 tbody');
   await page.goto(`http://127.0.0.1:${port}/dashboard/`);
-  await page.waitForFunction(() => document.getElementById('status')?.textContent?.includes('Snapshot'));
+  await page.waitForSelector('#dashboard:not(.hidden)');
   assert.equal(dashboardRequests, beforeNavigation + 2, 'dashboard navigation displays a snapshot while revalidating; positions reuses the private snapshot');
-  await page.waitForSelector('#dashboardRefresh:enabled');
-  await page.click('#dashboardRefresh');
-  await page.waitForFunction(() => document.getElementById('status')?.textContent?.includes('Loaded in'));
-  assert.equal(dashboardRequests, beforeNavigation + 3, 'explicit refresh fetches new valuation');
+  await page.waitForFunction(() => document.getElementById('loadProgress')?.getAttribute('aria-valuenow') === '8');
+  assert.equal(await page.$('#dashboardRefresh'), null, 'dashboard uses header broker sync instead of a separate refresh button');
+  assert.equal(await page.$('#status'), null, 'dashboard omits the inline refresh status');
 
   await page.goto(`http://127.0.0.1:${port}/trades/`);
   await page.waitForSelector('#table tbody details');

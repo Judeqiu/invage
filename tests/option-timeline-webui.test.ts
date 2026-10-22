@@ -288,7 +288,7 @@ it.skipIf(!existsSync(executable))('defaults to Open and renders timeline filter
     const page = await browser.newPage(); const errors: string[] = []; page.on('pageerror', e => errors.push(e.message));
     await page.setViewport({ width: 1180, height: 950 });
     await page.goto(`http://127.0.0.1:${(server.address() as { port: number }).port}/dashboard/index.html`);
-    await page.waitForFunction(() => document.querySelector('.status-line')!.textContent!.includes('Last refresh'));
+    await page.waitForFunction(() => document.getElementById('loadProgress')!.getAttribute('aria-valuenow') === '8');
     expect(await page.$eval('#optionOpenTab', e => e.getAttribute('aria-pressed'))).toBe('true');
     expect(await page.$eval('#optionTimelinePanel', e => e.classList.contains('hidden'))).toBe(true);
     await page.click('#optionTimelineTab');
@@ -389,7 +389,7 @@ it.skipIf(!existsSync(executable))('defaults to Open and renders timeline filter
     await page.waitForFunction(() => !document.getElementById('timelineStatus')!.textContent!.includes('Some records could not be loaded') && document.querySelector('.timeline-roll'));
     await page.click('#optionOpenTab'); expect(await page.$eval('#optionTimelinePanel', e => e.classList.contains('hidden'))).toBe(true);
     expect(errors).toEqual([]);
-    expect(await page.$eval('#status', e => e.classList.contains('error'))).toBe(false);
+    expect(await page.$eval('#error', e => e.classList.contains('hidden'))).toBe(true);
   } finally { await browser.close(); await new Promise<void>(r => server.close(() => r())); }
 }, 30_000);
 

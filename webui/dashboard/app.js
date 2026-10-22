@@ -67,7 +67,6 @@ const el = {
   historySearch: document.getElementById('historySearch'),
   historyMore: document.getElementById('historyMore'),
   statusBadge: document.getElementById('statusBadge'),
-  status: document.getElementById('status'),
   loading: document.getElementById('loading'),
   error: document.getElementById('error'),
   dashboard: document.getElementById('dashboard'),
@@ -3007,7 +3006,6 @@ let pendingHeaderSync = false;
 const handledSyncJobs = new Set();
 let refreshingAfterSync = false;
 const syncButton = document.getElementById('dashboardSync');
-const refreshButton = document.getElementById('dashboardRefresh');
 const syncPanel = document.getElementById('brokerSyncPanel');
 const syncStatus = document.getElementById('brokerSyncStatus');
 const syncProgress = document.getElementById('brokerSyncProgress');
@@ -3015,7 +3013,6 @@ const syncDetails = document.getElementById('brokerSyncDetails');
 
 function updateActionButtons() {
   syncButton.disabled = loading || syncingBrokers;
-  refreshButton.disabled = loading || syncingBrokers;
   document.getElementById('dashboardRetry').disabled = loading || syncingBrokers;
   if (!loading && !syncingBrokers && pendingHeaderSync) void followHeaderSync();
 }
@@ -3058,7 +3055,7 @@ async function syncBrokers(existingJob) {
       : job.accounts.length ? `${succeeded} accounts synced.` : 'No enabled broker accounts. Connect a broker in Settings → Brokers.';
     refreshingAfterSync = true;
     const refreshed = await load(true);
-    if (!refreshed) throw new Error('Broker sync finished, but the dashboard refresh failed. Retry Refresh portfolio.');
+    if (!refreshed) throw new Error('Broker sync finished, but the dashboard refresh failed. Use Retry loading to try again.');
     handledSyncJobs.add(jobId);
     syncProgress.value = 100;
     syncStatus.textContent = failed.length
@@ -3231,8 +3228,6 @@ async function load(force = false) {
   let historyStarted = false;
   loadStartedAt = performance.now(); loadPosition = 0; loadCounts = {};
   el.error.classList.add('hidden');
-  el.status.className = 'status-line';
-  const snapshotLabel = () => `Snapshot ${payload?.generatedAt ? new Date(payload.generatedAt).toLocaleString() : 'from the last successful load'}`;
   el.loading.classList.toggle('hidden', showingSnapshot);
   el.dashboard.setAttribute('aria-busy', showingSnapshot ? 'false' : 'true');
   loadUi.progress.classList.remove('failed');
@@ -3241,7 +3236,6 @@ async function load(force = false) {
   const timer = setInterval(loadingClock, 1000);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 180000);
-  el.status.textContent = showingSnapshot ? `${snapshotLabel()} · Updating prices and portfolio…` : '';
   try {
     const body = await fetchDashboardWithProgress(controller.signal, force, cached => {
       payload = cached;
@@ -3251,7 +3245,6 @@ async function load(force = false) {
       optionDefaultApplied = true;
       el.loading.classList.add('hidden');
       el.dashboard.setAttribute('aria-busy', 'false');
-      el.status.textContent = `${snapshotLabel()} · Updating prices and portfolio…`;
       loadHistoryInBackground();
       historyStarted = true;
     });
@@ -3269,7 +3262,6 @@ async function load(force = false) {
     loadUi.fill.style.width = '100%';
     el.loading.classList.add('hidden');
     el.dashboard.setAttribute('aria-busy', 'false');
-    el.status.textContent = `Last refresh ${body.generatedAt ? new Date(body.generatedAt).toLocaleString() : new Date().toLocaleTimeString()} · Loaded in ${loadDuration()}`;
     // History has its own deadline and request lifecycle; it cannot block valuation.
     if (selectedChannel !== MERGED_CHANNEL_VIEW && el.historyBroker.value !== selectedChannel) {
       el.optionHistoryDetail.innerHTML = '';
@@ -3282,11 +3274,8 @@ async function load(force = false) {
     loadUi.progress.setAttribute('aria-valuetext', 'Dashboard loading interrupted');
     loadUi.stage.textContent = 'Dashboard loading interrupted';
     loadUi.hint.textContent = 'You can retry loading below.';
-    el.status.className = 'status-line error';
-    el.status.textContent = showingSnapshot
-      ? `${snapshotLabel()} · Update failed; showing the previous figures. Retry to update.`
-      : 'The dashboard could not finish loading.';
     loadUi.error.textContent = e?.name === 'AbortError' ? 'Loading took longer than expected. Please retry.' : e instanceof Error ? e.message : 'The dashboard could not load. Please retry.';
+    if (showingSnapshot) loadUi.error.textContent = `Update failed; showing the previous figures. ${loadUi.error.textContent}`;
     el.error.classList.remove('hidden');
     return false;
   } finally {
@@ -3389,5 +3378,3 @@ el.expiryTable?.addEventListener('input', event => {
     if (input && cursor != null) input.setSelectionRange(cursor, cursor);
   }, 150);
 });
-
-document.getElementById('dashboardRefresh').addEventListener('click', () => void load(true));

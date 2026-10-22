@@ -67,7 +67,8 @@ it.skipIf(!existsSync(chrome)).each(['index.html', 'v2.html'])('%s shows streame
     await page.waitForFunction(() => document.getElementById('optionFreshness')!.textContent!.includes('Loading option history'));
     history!.end(JSON.stringify(historyBody));
     expect(await page.$eval('#loadProgress', node => node.getAttribute('aria-valuenow'))).toBe('8');
-    expect(await page.$eval('#status', node => node.textContent)).toContain('Loaded in');
+    expect(await page.$('#status')).toBeNull();
+    expect(await page.$('#dashboardRefresh')).toBeNull();
     for (const failure of ['fail', 'cut']) {
       mode = failure;
       await page.reload();
@@ -117,23 +118,24 @@ it.skipIf(!existsSync(chrome)).each(['index.html', 'v2.html'])('%s renders the s
     await page.setRequestInterception(true);
     page.on('request', request => request.url().startsWith(origin) ? request.continue() : request.abort());
     await page.goto(origin + '/dashboard/' + dashboardFile);
-    await page.waitForFunction(() => document.getElementById('status')!.textContent!.includes('Updating prices'));
+    await page.waitForFunction(() => document.getElementById('subtitle')!.textContent!.includes('Cached account'));
     expect(await page.$eval('#subtitle', node => node.textContent)).toContain('Cached account');
-    expect(await page.$eval('#status', node => node.textContent)).toContain('Snapshot');
+    expect(await page.$('#status')).toBeNull();
     expect(await page.$eval('#loading', node => node.classList.contains('hidden'))).toBe(true);
     expect(await page.$eval('#dashboard', node => node.getAttribute('aria-busy'))).toBe('false');
     await page.click('[data-channel="ibkr"]');
     await page.click('#optionHistoryTab');
     await waitForStream();
     stream!.end(`data: ${JSON.stringify({ type: 'error', message: 'Please retry.' })}\n\n`);
-    await page.waitForFunction(() => document.getElementById('status')!.textContent!.includes('Update failed'));
+    await page.waitForSelector('#error:not(.hidden)');
+    expect(await page.$eval('#dashboardErrorMessage', node => node.textContent)).toContain('showing the previous figures');
     expect(await page.$eval('#subtitle', node => node.textContent)).toContain('Cached account');
     stream = undefined;
     await page.click('#dashboardRetry');
     await waitForStream();
     stream!.end(`data: ${JSON.stringify({ type: 'result', payload: { ...cached, displayName: 'Fresh account', generatedAt: '2026-10-15T10:00:00Z' } })}\n\n`);
     await page.waitForFunction(() => document.getElementById('subtitle')!.textContent!.includes('Fresh account'));
-    expect(await page.$eval('#status', node => node.textContent)).toContain('Last refresh');
+    expect(await page.$('#status')).toBeNull();
     expect(await page.$eval('#subtitle', node => node.textContent)).toContain('Channel: ibkr');
     expect(await page.$eval('#optionHistoryTab', node => node.getAttribute('aria-pressed'))).toBe('true');
     // A cache miss still finishes through the same streamed request.
@@ -141,7 +143,7 @@ it.skipIf(!existsSync(chrome)).each(['index.html', 'v2.html'])('%s renders the s
     await page.goto(origin + '/dashboard/' + dashboardFile + '?channel=ibkr');
     await waitForStream();
     stream!.end(`data: ${JSON.stringify({ type: 'result', payload: cached })}\n\n`);
-    await page.waitForFunction(() => document.getElementById('status')!.textContent!.includes('Last refresh'));
+    await page.waitForFunction(() => document.getElementById('loadProgress')!.getAttribute('aria-valuenow') === '8');
     await page.waitForFunction(() => (document.getElementById('historyBroker') as HTMLSelectElement).value === 'ibkr');
     expect(historyChannels).toContain('ibkr');
     expect(errors).toEqual([]);

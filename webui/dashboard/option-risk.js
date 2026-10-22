@@ -27,7 +27,7 @@
     const hadFocus = $('section01RiskPanel').contains(document.activeElement) || tabs.contains(document.activeElement);
     enabled = false; job = null; result = null;
     switchView('existing'); tabs.classList.add('hidden'); $('optionRiskOutput').replaceChildren();
-    if (hadFocus) { const target = context?.hasOptions ? $('expiryTitle') : $('dashboardRefresh'); target.tabIndex = -1; target.focus(); }
+    if (hadFocus) { const target = context?.hasOptions ? $('expiryTitle') : $('dashboard'); target.tabIndex = -1; target.focus(); }
   }
   async function request(path, options = {}, signal = controller.signal) {
     const response = await fetch(base + path, { credentials: 'same-origin', signal, ...options });

@@ -69,7 +69,8 @@ it.skipIf(!existsSync(chrome))('tracks broker sync through refresh, reports fail
     await page.click('#dashboardSync');
     await page.waitForFunction(() => document.getElementById('brokerSyncDetails')!.textContent!.includes('Main broker'));
     expect(await page.$eval('#dashboardSync', n => (n as HTMLButtonElement).disabled)).toBe(true);
-    expect(await page.$eval('#dashboardRefresh', n => (n as HTMLButtonElement).disabled)).toBe(true);
+    expect(await page.$('#dashboardRefresh')).toBeNull();
+    expect(await page.$('#status')).toBeNull();
     expect(refreshes).toBe(0);
     job!.accounts[0].status = 'succeeded'; job!.accounts[1].status = 'running';
     await page.waitForFunction(() => (document.getElementById('brokerSyncProgress') as HTMLProgressElement).value === 40);

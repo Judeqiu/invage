@@ -24,8 +24,6 @@
 }
 .warnings-banner.visible { display: block; }
 .warnings-banner ul { margin: 0; padding-left: 1.15rem; }
-.status-line { min-height: 1.1em; font-size: 0.75rem; color: var(--muted-foreground); margin: 0.5rem 0 0; }
-.status-line.error { color: var(--danger); }
 .controls-hidden { display: none !important; }
 .options-workspace { margin-top: 2rem; }
 .options-workspace-head { display: flex; justify-content: space-between; align-items: end; gap: 1rem; flex-wrap: wrap; }

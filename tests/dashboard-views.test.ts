@@ -47,7 +47,7 @@ it.skipIf(!existsSync(executable))('opens on Open without date or refresh contro
   try {
     const page = await browser.newPage(); const errors: string[] = []; page.on('pageerror', e => errors.push(e.message));
     await page.goto(`http://127.0.0.1:${(server.address() as { port: number }).port}/dashboard/index.html`);
-    await page.waitForFunction(() => document.querySelector('.status-line')!.textContent!.includes('Last refresh'));
+    await page.waitForFunction(() => document.getElementById('loadProgress')!.getAttribute('aria-valuenow') === '8');
     expect(await page.$eval('#optionOpenTab', e => e.getAttribute('aria-pressed'))).toBe('true');
     expect(await page.$('#optionTimelineTab')).not.toBeNull();
     expect(await page.$('#autoRefresh')).toBeNull();
