@@ -51,7 +51,7 @@ export function optionTradeEvidence(state: InvestorState, portfolio: Record<stri
 }
 
 export interface OptionTradeFilter {
-  underlying?: string; channel?: string; right?: 'call' | 'put'; effect?: 'open' | 'close';
+  underlying?: string; channel?: string; right?: 'call' | 'put'; effect?: 'open' | 'close' | 'mixed' | 'unknown';
   start_date?: string; end_date?: string; limit?: number; offset?: number;
 }
 
@@ -81,7 +81,7 @@ export function createListOptionTradesTool(): AgentTool {
       underlying: Type.Optional(Type.String({ description: 'Canonical underlying, e.g. TSLA, not an OCC contract code.' })),
       channel: Type.Optional(Type.String({ description: 'Exact broker account channel; omit for all.' })),
       right: Type.Optional(Type.Union([Type.Literal('call'), Type.Literal('put')])),
-      effect: Type.Optional(Type.Union([Type.Literal('open'), Type.Literal('close')])),
+      effect: Type.Optional(Type.Union([Type.Literal('open'), Type.Literal('close'), Type.Literal('mixed'), Type.Literal('unknown')])),
       start_date: Type.Optional(Type.String({ description: 'Inclusive trade date YYYY-MM-DD. Calculate the requested window from the current date.' })),
       end_date: Type.Optional(Type.String({ description: 'Inclusive trade date YYYY-MM-DD.' })),
       limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 200 })),

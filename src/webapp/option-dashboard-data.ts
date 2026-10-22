@@ -60,6 +60,7 @@ export function openOptionTradeDetails(
     const lots: Array<{ id: string; date: string; remaining: number; netPerContract: number | null; grossPerContract: number; currency: string }> = [];
     let invalid = false;
     for (const { row } of timeline) {
+      if (!['open', 'close'].includes(row.effect)) { invalid = true; break; }
       const opening = row.effect === 'open' && row.side === (short ? 'sell' : 'buy');
       const closing = row.effect === 'close' && row.side === (short ? 'buy' : 'sell');
       if (!opening && !closing) continue;

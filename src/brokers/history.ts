@@ -3,13 +3,13 @@ import { addDecimals, decimal, validDate, mergeOptionExecutions, type OptionExec
 export interface BrokerHistoryScope { broker_id: string; channel: string; account_id: string; }
 export interface BrokerHistoryExecution extends BrokerHistoryScope {
   id: string; order_id: string | null; native_symbol: string; symbol: string | null;
-  instrument: 'security' | 'option'; side: 'buy' | 'sell'; effect: 'open' | 'close' | 'unknown';
+  instrument: 'security' | 'option'; side: 'buy' | 'sell'; effect: 'open' | 'close' | 'mixed' | 'unknown';
   executed_at: string; clock: string; currency: string | null;
-  quantity: string; price: string; multiplier: string | null; gross_cash: string | null; fee_cash: string | null;
+  quantity: string; price: string | null; multiplier: string | null; gross_cash: string | null; fee_cash: string | null;
   option: { right: 'call' | 'put'; expiry: string; strike: string } | null;
 }
 export interface BrokerHistoryOrderLeg {
-  native_symbol: string; side: 'buy' | 'sell'; effect: 'open' | 'close' | 'unknown';
+  native_symbol: string; side: 'buy' | 'sell'; effect: 'open' | 'close' | 'mixed' | 'unknown';
   ratio: string; multiplier: string | null;
 }
 /** Broker-reported order charges, never additional execution cash flows. */
@@ -90,8 +90,8 @@ export function assertHistoryExecution(raw: unknown): BrokerHistoryExecution {
   }
   if ((instrument === 'option') !== (option !== null)) throw new Error('Broker history option terms required only for options');
   const row: BrokerHistoryExecution = { ...scope(o), id: text(o.id), order_id: nullableText(o.order_id), native_symbol: text(o.native_symbol), symbol: nullableText(o.symbol),
-    instrument, side: choice(o.side, ['buy','sell']), effect: choice(o.effect, ['open','close','unknown']), executed_at: stamp(o.executed_at), clock: text(o.clock),
-    currency: currency(o.currency), quantity: amount(o.quantity, true), price: nonnegative(o.price), multiplier: nullableAmount(o.multiplier, true),
+    instrument, side: choice(o.side, ['buy','sell']), effect: choice(o.effect, ['open','close','mixed','unknown']), executed_at: stamp(o.executed_at), clock: text(o.clock),
+    currency: currency(o.currency), quantity: amount(o.quantity, true), price: o.price === null ? null : nonnegative(o.price), multiplier: nullableAmount(o.multiplier, true),
     gross_cash: nullableAmount(o.gross_cash), fee_cash: nullableAmount(o.fee_cash), option };
   if (row.gross_cash !== null && (!row.currency || !row.multiplier)) throw new Error('Broker history cash requires verified currency and multiplier');
   if (row.gross_cash !== null && /[1-9]/.test(row.gross_cash) && row.gross_cash.startsWith('-') !== (row.side === 'buy')) throw new Error('Broker history cash sign disagrees with side');
@@ -113,7 +113,7 @@ export function assertHistoryOrder(raw: unknown): BrokerHistoryOrder {
   if (!Array.isArray(o.legs)) throw new Error('Broker history order legs must be an array');
   const legs = o.legs.map((raw: unknown) => {
     const l = obj(raw); keys(l, ['native_symbol','side','effect','ratio','multiplier']);
-    return { native_symbol: text(l.native_symbol), side: choice(l.side, ['buy','sell']), effect: choice(l.effect, ['open','close','unknown']), ratio: amount(l.ratio, true), multiplier: nullableAmount(l.multiplier, true) };
+    return { native_symbol: text(l.native_symbol), side: choice(l.side, ['buy','sell']), effect: choice(l.effect, ['open','close','mixed','unknown']), ratio: amount(l.ratio, true), multiplier: nullableAmount(l.multiplier, true) };
   });
   return { ...scope(o), id: text(o.id), native_symbol: text(o.native_symbol), side: choice(o.side, ['buy','sell','unknown']), status: text(o.status),
     created_at: stamp(o.created_at), updated_at: stamp(o.updated_at), clock: text(o.clock), currency: currency(o.currency),
@@ -156,10 +156,10 @@ export function mergeBrokerHistory(previous: BrokerHistory | undefined, incoming
     const prior = executions.get(row.id);
     if (!prior) { executions.set(row.id, row); continue; }
     const canonical = (v:string) => addDecimals(v,'0').replace(/\.0+$/,'').replace(/(\.\d*?)0+$/,'$1');
-    const core = (r: BrokerHistoryExecution) => ({ ...r, quantity:canonical(r.quantity),price:canonical(r.price), option:r.option ? { ...r.option,strike:canonical(r.option.strike) } : null, symbol: null, multiplier: null, gross_cash: null, fee_cash: null });
-    if (JSON.stringify(core(prior)) !== JSON.stringify(core(row)) || !economicEqual(prior.multiplier, row.multiplier) ||
+    const core = (r: BrokerHistoryExecution) => ({ ...r, quantity:canonical(r.quantity),price:null, option:r.option ? { ...r.option,strike:canonical(r.option.strike) } : null, symbol: null, multiplier: null, gross_cash: null, fee_cash: null });
+    if (JSON.stringify(core(prior)) !== JSON.stringify(core(row)) || !economicEqual(prior.price, row.price) || !economicEqual(prior.multiplier, row.multiplier) ||
       !economicEqual(prior.gross_cash, row.gross_cash) || !economicEqual(prior.fee_cash, row.fee_cash) || prior.symbol && row.symbol && prior.symbol !== row.symbol) throw new Error(`Conflicting broker history execution ${row.id}`);
-    executions.set(row.id, { ...row, symbol: row.symbol ?? prior.symbol, multiplier: row.multiplier ?? prior.multiplier, gross_cash: row.gross_cash ?? prior.gross_cash, fee_cash: row.fee_cash ?? prior.fee_cash });
+    executions.set(row.id, { ...row, price: row.price ?? prior.price, symbol: row.symbol ?? prior.symbol, multiplier: row.multiplier ?? prior.multiplier, gross_cash: row.gross_cash ?? prior.gross_cash, fee_cash: row.fee_cash ?? prior.fee_cash });
   }
   const orders = new Map<string, BrokerHistoryOrder>();
   for (const row of [...(old?.orders ?? []), ...next.orders]) {
@@ -183,12 +183,12 @@ export function mergeBrokerHistory(previous: BrokerHistory | undefined, incoming
       historical_imported: old?.sync.historical_imported === true || next.sync.historical_imported === true || old?.sync.full_history_synced === true, status, gaps, from: old && old.sync.from < next.sync.from ? old.sync.from : next.sync.from, full_history_synced: full } };
 }
 
-/** Existing option consumers share one projection; unpriced records remain in generic history. */
+/** Existing option consumers share one projection; known proceeds do not require a unit price. */
 export function optionExecutionsFromHistory(history: BrokerHistory): OptionExecution[] {
   return mergeOptionExecutions([], history.executions.filter(r => r.instrument === 'option' && r.option && r.symbol && r.currency &&
-    r.multiplier && r.gross_cash !== null && r.effect !== 'unknown').map(r => ({ channel: r.channel, account_id: r.account_id, execution_id: r.id,
+    r.multiplier && r.gross_cash !== null).map(r => ({ channel: r.channel, account_id: r.account_id, execution_id: r.id,
     contract_id: r.native_symbol, executed_at: r.executed_at, underlying: r.symbol!, right: r.option!.right, expiry: r.option!.expiry,
-    strike: r.option!.strike, multiplier: r.multiplier!, contracts: r.quantity, side: r.side, effect: r.effect as 'open' | 'close',
+    strike: r.option!.strike, multiplier: r.multiplier!, contracts: r.quantity, side: r.side, effect: r.effect,
     currency: r.currency!, gross_premium: r.gross_cash!, commission: r.fee_cash })));
 }
 

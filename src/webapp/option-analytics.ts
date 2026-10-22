@@ -25,6 +25,13 @@ export function buildRecordedOptionAnalytics(executions: OptionExecution[] = [],
     const reportedProfit = item.event?.broker_realized_pl != null;
     if (reportedProfit) profits.push({ channel: r.channel, account_id: r.account_id, underlying: r.underlying,
       date, currency: r.currency, gross: null, net: Number(item.event!.broker_realized_pl), source: 'broker_event' });
+    if (item.row && !['open', 'close'].includes(item.row.effect)) {
+      // Keep execution cash in the journal; do not consume the wrong FIFO lots.
+      lots.delete(key(r, 'short'));
+      lots.delete(key(r, 'long'));
+      gaps.push({ channel: r.channel, date, reason: 'Execution has mixed or unknown opening/closing quantities; realized profit requires reconciliation' });
+      continue;
+    }
     const side = item.row ? (item.row.effect === 'open' ? item.row.side === 'sell' : item.row.side === 'buy') ? 'short' : 'long'
       : item.event!.kind === 'exercise' ? 'long' : item.event!.kind === 'assignment' ? 'short' : null;
     const candidates = side ? [key(r, side)] : [key(r, 'short'), key(r, 'long')].filter(k => lots.get(k)?.length);

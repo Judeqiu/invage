@@ -229,7 +229,7 @@ function classifyTerminalEvents(episode: OptionEpisode): void {
   const eventCount = Number(addDecimals(...terminal.map(event => event.contracts)));
   const intervalExecutions = episode.executions.filter(row =>
     row.executed_at.slice(0, 10) >= episode.last_seen_open);
-  const closeCount = intervalExecutions.some(row => row.effect === 'open') ? NaN :
+  const closeCount = intervalExecutions.some(row => row.effect !== 'close') ? NaN :
     Number(addDecimals('0', ...intervalExecutions.filter(row => row.effect === 'close').map(row => row.contracts)));
   if (!Number.isSafeInteger(eventCount) || !Number.isSafeInteger(closeCount) || eventCount + closeCount > lastUnits!) {
     episode.status = 'conflicting_evidence';

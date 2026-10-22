@@ -1,5 +1,6 @@
 import { assertOptionExecution, decimal, mergeOptionExecutions, type OptionExecution } from '../brokers/option-executions.js';
 import { SaxesParser } from 'saxes';
+import { flexTradeEffect, flexTradeIsOption, flexTradeRight, flexTradeTimestamp } from './flex-trade-values.js';
 
 /** Explicit IBKR schema enums; never infer trade intent from descriptions. */
 export function parseFlexOptionExecutions(xml: string, channel = 'ibkr'): OptionExecution[] | undefined {
@@ -31,8 +32,8 @@ export function parseFlexOptionExecutions(xml: string, channel = 'ibkr'): Option
   if (sections !== 1) throw new Error('Execution import requires exactly one Trades section');
   const rows: OptionExecution[] = [];
   for (const row of trades) {
-    if (!row.assetCategory) throw new Error('Trade assetCategory is required');
-    if (row.assetCategory !== 'OPT') continue;
+    if (!row.assetCategory && !row.putCall) throw new Error('Trade requires assetCategory or option putCall metadata');
+    if (!flexTradeIsOption(row)) continue;
     const required = (key: string): string => {
       const value = row[key];
       if (typeof value !== 'string' || !value.trim()) throw new Error(`IBKR option execution ${row.tradeID}: missing ${key}`);
@@ -41,32 +42,30 @@ export function parseFlexOptionExecutions(xml: string, channel = 'ibkr'): Option
     const level = required('levelOfDetail');
     if (['ORDER', 'CLOSED_LOT', 'SYMBOL_SUMMARY', 'ASSET_CLASS', 'WASH_SALE'].includes(level)) continue;
     if (level !== 'EXECUTION') throw new Error(`Unsupported option trade level: ${level}`);
-    if (required('accountId') !== account) throw new Error('Execution account differs from statement account');
+    if (row.accountId && row.accountId !== account) throw new Error('Execution account differs from statement account');
     if (row.origTradeID && row.origTradeID !== '0') throw new Error('Execution correction requires explicit reconciliation; origTradeID is present');
     const currency = required('currency');
-    if (required('ibCommissionCurrency') !== currency) throw new Error('Execution commission currency differs from proceeds currency');
+    // A missing or foreign-currency fee does not invalidate known premium cash.
+    const commission = row.ibCommission?.trim() && row.ibCommissionCurrency === currency ? row.ibCommission.trim() : null;
     const side = required('buySell');
-    const effect = required('openCloseIndicator');
-    const right = required('putCall');
+    const effect = flexTradeEffect(row.openCloseIndicator);
+    const right = flexTradeRight(required('putCall'));
     if (side !== 'BUY' && side !== 'SELL') throw new Error(`Unsupported buySell: ${side}`);
-    if (effect !== 'O' && effect !== 'C') throw new Error(`Unsupported openCloseIndicator: ${effect}`);
-    if (right !== 'P' && right !== 'C') throw new Error(`Unsupported putCall: ${right}`);
-    const timestamp = required('dateTime').match(/^(\d{4})(\d{2})(\d{2});(\d{2})(\d{2})(\d{2})$/);
-    if (!timestamp) throw new Error('Execution dateTime must use YYYYMMDD;HHMMSS');
-    const expiry = required('expiry').match(/^(\d{4})(\d{2})(\d{2})$/);
-    if (!expiry) throw new Error('Execution expiry must use YYYYMMDD');
+    if (!right) throw new Error(`Unsupported putCall: ${right}`);
+    const timestamp = flexTradeTimestamp(required('dateTime'));
+    const expiry = required('expiry').match(/^(\d{4})-?(\d{2})-?(\d{2})$/);
+    if (!expiry) throw new Error('Execution expiry must be a compact or ISO date');
     const quantity = decimal(required('quantity'));
-    if (quantity.startsWith('-') !== (side === 'SELL')) throw new Error('Execution quantity sign disagrees with buySell');
     rows.push(assertOptionExecution({
       channel, account_id: account, execution_id: required('tradeID'), contract_id: required('conid'),
-      executed_at: `${timestamp[1]}-${timestamp[2]}-${timestamp[3]}T${timestamp[4]}:${timestamp[5]}:${timestamp[6]}`,
-      underlying: required('underlyingSymbol'), right: right === 'P' ? 'put' : 'call',
+      executed_at: timestamp,
+      underlying: required('underlyingSymbol'), right,
       expiry: `${expiry[1]}-${expiry[2]}-${expiry[3]}`, strike: required('strike'), multiplier: required('multiplier'),
-      contracts: quantity.replace(/^-/, ''), side: side === 'BUY' ? 'buy' : 'sell', effect: effect === 'O' ? 'open' : 'close',
-      currency, gross_premium: required('proceeds'), commission: required('ibCommission'),
+      contracts: quantity.replace(/^-/, ''), side: side === 'BUY' ? 'buy' : 'sell', effect,
+      currency, gross_premium: required('proceeds'), commission,
     }));
   }
-  if (rows.length === 0 && trades.some(row => row.assetCategory === 'OPT')) {
+  if (rows.length === 0 && trades.some(flexTradeIsOption)) {
     throw new Error('Trades contains option summaries but no option executions. Select Executions level in the Flex query.');
   }
   return mergeOptionExecutions([], rows);

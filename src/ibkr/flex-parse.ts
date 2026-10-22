@@ -1,5 +1,6 @@
 import { parseFlexOptionExecutions } from './flex-executions.js';
 import { parseFlexOptionEvents } from './flex-events.js';
+import { parseBrokerOptionCode } from '../brokers/option-symbol.js';
 
 export class FlexProtocolError extends Error {
   constructor(
@@ -374,7 +375,24 @@ export function parseFlexQueryXml(xml: string | Buffer): FlexStatementDoc {
   if (stAttrs.whenGenerated) doc.whenGenerated = stAttrs.whenGenerated;
   if (stAttrs.period) doc.period = stAttrs.period;
   const executions = parseFlexOptionExecutions(text);
-  if (executions !== undefined) doc.optionExecutions = executions;
+  if (executions !== undefined) {
+    doc.optionExecutions = executions;
+    for (const pos of openPositions.filter(row => row.assetCategory === 'OPT')) {
+      const encoded = parseBrokerOptionCode(pos.symbol.replace(/\s+/g, ''));
+      if ('skip' in encoded) continue;
+      // OCC symbols encode these terms; the contract size must still come
+      // from matching broker evidence, never a hard-coded 100 assumption.
+      pos.underlyingSymbol ??= encoded.root;
+      pos.putCall ??= encoded.right === 'put' ? 'P' : 'C';
+      pos.expiry ??= encoded.expiry;
+      pos.strike ??= encoded.strike;
+      const matching = executions.filter(row => row.account_id === pos.accountId && row.currency === pos.currency &&
+        row.underlying === encoded.root && row.right === encoded.right && row.expiry === encoded.expiry &&
+        Number(row.strike) === encoded.strike && (!pos.conid || row.contract_id === pos.conid));
+      const sizes = new Set(matching.map(row => Number(row.multiplier)));
+      if (pos.multiplier == null && sizes.size === 1) pos.multiplier = [...sizes][0];
+    }
+  }
   const events = parseFlexOptionEvents(text);
   if (events !== undefined) {
     doc.optionEvents = events.events;

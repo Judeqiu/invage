@@ -45,3 +45,10 @@ it('does not label physical assignment cash as realized option profit', () => {
     profits: [{ net: 125, source: 'broker_event' }], gaps: [],
   });
 });
+
+it.each(['mixed', 'unknown'] as const)('preserves %s cash without reporting invented closing profit', effect => {
+  const result = buildRecordedOptionAnalytics([open, close({ execution_id: 'mixed', effect, contracts: '3', executed_at: '2026-09-14T10:00:00' }), close()]);
+  expect(result.executions).toHaveLength(3);
+  expect(result.profits).toEqual([]);
+  expect(result.gaps).toHaveLength(2);
+});

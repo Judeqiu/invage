@@ -15,7 +15,7 @@ export interface OptionExecution {
   multiplier: string;
   contracts: string;
   side: 'buy' | 'sell';
-  effect: 'open' | 'close';
+  effect: 'open' | 'close' | 'mixed' | 'unknown';
   currency: string;
   gross_premium: string;
   /** Signed cash effect: negative fee, positive rebate; null if not reported. Same currency as proceeds. */
@@ -54,7 +54,7 @@ export function assertOptionExecution(raw: unknown): OptionExecution {
   for (const key of Object.keys(r)) if (!fields.includes(key)) throw new Error(`Unknown execution field: ${key}`);
   for (const key of fields) if (!(key === 'commission' && r[key] === null) && (typeof r[key] !== 'string' || !r[key].trim())) throw new Error(`Execution ${key} is required`);
   const e = r as unknown as OptionExecution;
-  if (!['call', 'put'].includes(e.right) || !['buy', 'sell'].includes(e.side) || !['open', 'close'].includes(e.effect)) throw new Error('Invalid execution action or right');
+  if (!['call', 'put'].includes(e.right) || !['buy', 'sell'].includes(e.side) || !['open', 'close', 'mixed', 'unknown'].includes(e.effect)) throw new Error('Invalid execution action or right');
   if (!/^[A-Z]{3,4}$/.test(e.currency)) throw new Error('Invalid execution currency');
   if (!validDate(e.expiry) || !/^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(e.executed_at) || !validDate(e.executed_at.slice(0, 10))) throw new Error('Invalid execution date/time');
   for (const value of [e.strike, e.multiplier, e.contracts]) {

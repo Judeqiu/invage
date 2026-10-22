@@ -1,6 +1,7 @@
 import { BrokerArchiveAccountMismatchError } from './errors.js';
 import { createHash } from 'node:crypto';
 import { SaxesParser } from 'saxes';
+import { flexTradeEffect, flexTradeIsOption, flexTradeTimestamp } from '../ibkr/flex-trade-values.js';
 import { addDecimals, decimal, validDate } from './option-executions.js';
 import { canonicalOptionUnderlying, optionUnderlyingFromBroker } from './option-symbol.js';
 import { moomooContractMetadata } from '../moomoo/moomoo-history.js';
@@ -14,7 +15,7 @@ export interface RollSource { id: string; version: string; }
 export interface RollFill {
   id: string; order: string; parent: string; prefix: string; account: string;
   contract: RollContract; at: string; clock: string; quantity: string;
-  side: 'buy' | 'sell'; effect: 'open' | 'close' | 'unknown';
+  side: 'buy' | 'sell'; effect: 'open' | 'close' | 'mixed' | 'unknown';
   cash: string | null; basis: 'net' | 'gross'; terminal: boolean; source: RollSource;
   gross_cash?: string;
   expected_quantity?: string;
@@ -97,25 +98,22 @@ export function parseRelationshipArchive(broker: string, bytes: Buffer, account:
       if (tag.name === 'FlexStatement') statementAccount = String(tag.attributes.accountId ?? '');
       if (tag.name === 'Trade' && path.at(-1) === 'Trades' && statementAccount === account) {
         const r = tag.attributes;
-        if (r.accountId !== account) throw new Error('Trade account mismatch');
-        if (r.assetCategory === 'OPT' && r.levelOfDetail === 'EXECUTION') {
+        if (r.accountId && r.accountId !== account) throw new Error('Trade account mismatch');
+        if (flexTradeIsOption(r) && r.levelOfDetail === 'EXECUTION') {
           if (r.origTradeID && r.origTradeID !== '0') throw new Error('Trade correction needs reconciliation');
-          const side = r.buySell; const effect = r.openCloseIndicator;
-          if (!['BUY', 'SELL'].includes(side) || !['O', 'C'].includes(effect)) throw new Error('Unknown option action');
-          const match = text(r.dateTime).match(/^(\d{8});(\d{2})(\d{2})(\d{2})$/);
-          if (!match) throw new Error('Invalid execution clock');
-          const at = `${ymd(match[1])}T${match[2]}:${match[3]}:${match[4]}`;
+          const side = r.buySell; const effect = flexTradeEffect(r.openCloseIndicator);
+          if (!['BUY', 'SELL'].includes(side)) throw new Error('Unknown option action');
+          const at = flexTradeTimestamp(text(r.dateTime));
           if (!Number.isFinite(Date.parse(at))) throw new Error('Invalid execution time');
           const terminal = r.transactionType === 'BookTrade';
-          if (!terminal && r.transactionType !== 'ExchTrade') throw new Error('Unsupported option transaction');
-          const q = num(r.quantity); if (q.startsWith('-') !== (side === 'SELL')) throw new Error('Quantity sign mismatch');
-          if (r.ibCommissionCurrency !== r.currency) throw new Error('Commission currency mismatch');
-          fills.push({ id: text(r.tradeID), order: text(r.ibOrderID), parent: r.brokerageOrderID || '',
+          if (!terminal && r.transactionType && r.transactionType !== 'ExchTrade') throw new Error('Unsupported option transaction');
+          const q = num(r.quantity);
+          fills.push({ id: text(r.tradeID), order: r.ibOrderID || r.brokerageOrderID || '', parent: r.brokerageOrderID || '',
             prefix: (r.ibExecID || '').split('.').slice(0, 2).join('.'), account,
             contract: contract(r.underlyingSymbol, r.putCall, r.expiry, r.strike, r.multiplier, r.currency),
             at, clock: 'Broker-reported clock', quantity: positive(q.replace(/^-/, '')),
-            side: side === 'BUY' ? 'buy' : 'sell', effect: effect === 'O' ? 'open' : 'close',
-            cash: num(r.netCash), basis: 'net', terminal, source,
+            side: side === 'BUY' ? 'buy' : 'sell', effect,
+            cash: r.netCash ? num(r.netCash) : r.proceeds && r.ibCommission && r.ibCommissionCurrency === r.currency ? addDecimals(num(r.proceeds), num(r.ibCommission)) : r.proceeds ? num(r.proceeds) : null, basis: r.netCash || r.ibCommission && r.ibCommissionCurrency === r.currency ? 'net' : 'gross', terminal, source,
             ...(r.proceeds !== undefined ? { gross_cash: num(r.proceeds) } : {}) });
         }
       }

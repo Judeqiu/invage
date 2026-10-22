@@ -62,3 +62,13 @@ it('keeps date-only lifecycle events separate from same-day fills without invent
   expect(rows.every(r => r.realizedPnl === null)).toBe(true);
   expect(rows.some(r => r.status === 'Expired')).toBe(true);
 });
+
+it.each(['mixed', 'unknown'] as const)('retains %s executions without treating them as pure closes', effect => {
+  const s = tradesFixture();
+  s.portfolio = {};
+  s.option_executions = [optionFill(), optionFill({ execution_id: 'mixed', effect, contracts: '3', side: 'buy', gross_premium: '-300', executed_at: '2026-10-01T10:00:00' })];
+  const rows = tradesHistory(s).rows;
+  const mixed = rows.find(row => row.executions.some(e => e.execution_id === 'mixed'))!;
+  expect(mixed).toMatchObject({ status: 'Unresolved', side: 'unknown', realizedPnl: null });
+  expect(rows.every(row => row.realizedPnl === null)).toBe(true);
+});

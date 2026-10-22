@@ -90,8 +90,12 @@ No date override. The window is the query template’s period. This sample’s `
 
 - No `<Trades>` wrapper → executions field omitted (`undefined`). Sync then **leaves** existing `option_executions` alone.
 - Empty `<Trades></Trades>` → empty list (history present, zero fills).
-- Each `Trade` with `assetCategory="OPT"` must be `levelOfDetail="EXECUTION"` and include: `accountId`, `tradeID`, `conid`, `dateTime` (`YYYYMMDD;HHMMSS`), `buySell`, `openCloseIndicator`, `quantity`, `multiplier`, `underlyingSymbol`, `putCall`, `strike`, `expiry` (`YYYYMMDD`), `currency`, `proceeds`, `ibCommission`, `ibCommissionCurrency`.
-- `ORDER` / `CLOSED_LOT` / summary rows are skipped. Stock trades are skipped. Missing required fields **fail the entire Flex parse**.
+- Option executions require a trade/contract ID, broker-local timestamp, buy/sell, quantity, contract terms, currency and proceeds. The statement supplies a missing row account ID. A missing asset category can be identified from explicit option `putCall` metadata.
+- `C;O` and `O;C` are retained as `effect: mixed` with the original execution ID, quantity, proceeds and commission. Missing/unrecognized position effects are `unknown`. Never guess the opening/closing split or duplicate cash. FIFO realized-profit and opening-date calculations withhold results when effects cannot be reconciled.
+- Fees absent or reported in another currency are `null`; gross cash is retained and net totals remain unknown. Trade price and stock ticker are optional history metadata when contract identity and proceeds are reported. Missing prices can be enriched by later overlapping reports without overwriting known prices or accepting conflicting money.
+- Quantities are stored as positive magnitudes; `buySell` supplies direction. Compact and ISO dates/times and `P`/`PUT`, `C`/`CALL` rights are supported.
+- A current position's OCC symbol can supply missing underlying, expiry, right and strike. A missing multiplier is filled only from unambiguous matching execution evidence for the same account, contract and currency; it is never defaulted to 100.
+- `ORDER` / `CLOSED_LOT` / summary rows are skipped. Stock trades are retained in generic history, outside the option journal. Account conflicts, corrections requiring reconciliation, malformed XML, invalid dates/amounts, inconsistent cash direction and conflicting duplicate executions still fail parsing because they would change financial meaning.
 
 Current code on **this production file** fails:
 

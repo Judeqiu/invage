@@ -48,7 +48,7 @@ const executionFields = {
   executed_at: field('datetime', 'Retained broker-local execution/order time; timezone must not be inferred.'),
   trade_date: date('Date portion of executed_at in its recorded broker-local clock.'),
   contracts: field('decimal', 'Positive contract quantity; direction comes from side/effect.', { unit: 'contracts', sum_group_by: ['channel', 'account_id', 'contract_id'] }),
-  side: str('buy or sell.'), effect: str('open or close; opening activity alone does not prove currently open.'),
+  side: str('buy or sell.'), effect: str('open, close, mixed or unknown; opening activity alone does not prove currently open.'),
   gross_premium: decimal('Signed premium cash effect; buys negative, sells positive.', true),
   commission: decimal('Signed fee/rebate; null when unreported.', true),
   net_premium: decimal('gross_premium + commission; null if commission unknown.', true),

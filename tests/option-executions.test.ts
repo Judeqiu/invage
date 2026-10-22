@@ -53,12 +53,24 @@ describe('option execution journal', () => {
     expect(journal.daily).toHaveLength(2);
     expect(journal.cumulative.map(row => row.net_premium)).toEqual(['5037.53086422', '5138.76543211']);
   });
+  it.each(['C;O', 'O;C', ' C ; O '])('retains a mixed %s execution once with exact cash', effect => {
+    const rows = parseFlexOptionExecutions(statement(trade().replace('openCloseIndicator="O"', `openCloseIndicator="${effect}"`)))!;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ effect: 'mixed', contracts: '2', gross_premium: '5140.00', commission: '-1.23456789' });
+    expect(buildExecutionJournal(mergeOptionExecutions(rows, rows)).daily[0].net_premium).toBe('5138.76543211');
+  });
+  it('retains usable cash with unknown effect, missing fees, unsigned sell quantity and inherited account', () => {
+    const xml = trade().replace('openCloseIndicator="O"', 'openCloseIndicator="?"')
+      .replace('ibCommission="-1.23456789"', '').replace('accountId="U1"', '')
+      .replace('quantity="-2"', 'quantity="2"').replace('assetCategory="OPT"', '');
+    const rows = parseFlexOptionExecutions(statement(xml))!;
+    expect(rows[0]).toMatchObject({ account_id: 'U1', effect: 'unknown', side: 'sell', contracts: '2', commission: null });
+    expect(buildExecutionJournal(rows).daily[0]).toMatchObject({ gross_premium: '5140.00', net_premium: null });
+    expect(parseFlexOptionExecutions(statement(trade().replace('ibCommissionCurrency="USD"', 'ibCommissionCurrency="HKD"')))![0].commission).toBeNull();
+  });
   it.each([
-    ['commission', trade().replace('ibCommission="-1.23456789"', '')],
-    ['currency', trade().replace('ibCommissionCurrency="USD"', 'ibCommissionCurrency="HKD"')],
     ['account', trade().replace('accountId="U1"', 'accountId="U2"')],
     ['date', trade().replace('20260909;103015', '20260230;103015')],
-    ['action', trade().replace('openCloseIndicator="O"', 'openCloseIndicator="O;C"')],
     ['correction', trade('origTradeID="123"')],
   ])('fails on invalid %s', (_name, row) => {
     expect(() => parseFlexOptionExecutions(statement(row))).toThrow();

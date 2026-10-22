@@ -18,7 +18,7 @@ export const brokerHistoryDatasets: Record<string,Dataset> = {
   broker_executions: dataset('All retained broker executions, including securities, closed options and unpriced historical contracts.',{
     ...scope,id:text('Broker execution identifier, unique within account and channel.'),order_id:text('Parent order identifier.'),
     native_symbol:text('Exact broker symbol.'),symbol:text('Canonical underlying/security symbol if resolved.'),instrument:text('security or option.'),
-    side:text('buy or sell.'),effect:text('open, close or unknown.'),executed_at:field('datetime','Broker-local execution timestamp.'),clock:text('Known timestamp timezone; IBKR_FLEX_UNSPECIFIED when Flex omits it.'),
+    side:text('buy or sell.'),effect:text('open, close, mixed or unknown.'),executed_at:field('datetime','Broker-local execution timestamp.'),clock:text('Known timestamp timezone; IBKR_FLEX_UNSPECIFIED when Flex omits it.'),
     currency:text('Reported or market-derived currency.'),quantity:decimal('Positive quantity; group by account and native_symbol when summing.'),price:decimal('Execution price per unit.'),
     multiplier:decimal('Exact verified contract multiplier; null if unavailable.'),gross_cash:decimal('Signed gross execution cash; buys negative, sells positive.',true),
     fee_cash:decimal('Signed execution fee/rebate, null if not reported.',true),right:text('call or put; null for securities.'),expiry:field('date','Option expiration date.'),strike:decimal('Option strike.'),
@@ -36,7 +36,7 @@ export const brokerHistoryDatasets: Record<string,Dataset> = {
     ...scope,order_id:text('Parent order identifier.'),currency:text('Reported fee currency.'),type:text('Broker fee item name.'),amount:decimal('Reported charge/rebate component; positive expense.',true),
   },s=>histories(s).flatMap(h=>h.orders.flatMap(o=>(o.fees?.items ?? []).map(item=>({...scopeValues(h),order_id:o.id,currency:o.fees!.currency,...item}))))),
   broker_order_legs: dataset('Authoritative parent order legs; leg quantities are ratios, not independent fills.',{
-    ...scope,order_id:text('Parent order identifier.'),native_symbol:text('Exact leg contract.'),side:text('buy or sell.'),effect:text('open, close or unknown.'),
+    ...scope,order_id:text('Parent order identifier.'),native_symbol:text('Exact leg contract.'),side:text('buy or sell.'),effect:text('open, close, mixed or unknown.'),
     ratio:decimal('Positive leg ratio per parent contract.'),multiplier:decimal('Reported leg premium multiplier.'),
   },s=>histories(s).flatMap(h=>h.orders.flatMap(o=>o.legs.map(l=>({...scopeValues(h),order_id:o.id,...l}))))),
   broker_history_sync: dataset('History completeness tracked independently of position sync success.',{

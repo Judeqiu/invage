@@ -110,6 +110,25 @@ export function tradesHistory(rawState: InvestorState, relationships: OptionRela
     .sort((a,b) => a.at.localeCompare(b.at) || (a.fill?.execution_id ?? a.event!.id).localeCompare(b.fill?.execution_id ?? b.event!.id));
   for (const item of timeline) {
     const e = item.fill, event = item.event, t = e ?? event!, option = optionId(state, t);
+    if (e && !['open', 'close'].includes(e.effect)) {
+      for (const side of ['short', 'long']) {
+        const prior = active.get(`${option}:${side}`);
+        if (prior) {
+          prior.complete = false;
+          prior.row.notes.push('A mixed or unknown position effect interrupts this cycle; realized profit requires reconciliation.');
+          active.delete(`${option}:${side}`);
+        }
+      }
+      const row = base(state, e, 'unknown');
+      row.id = optionSystemId(state.user.id, 'cycle', executionId(state, e));
+      row.status = 'Unresolved';
+      row.contracts = e.contracts;
+      row.lastTrade = e.executed_at.slice(0, 10);
+      row.executions.push({ ...e, id: executionId(state, e), option_id: option });
+      row.notes.push('Execution cash is retained; opening and closing quantities are not separately reported.');
+      cycles.push({ row, balance: '0', complete: false, gross: e.gross_premium, fees: e.commission, opened: '0', closedCash: '0', kinds: new Set() });
+      continue;
+    }
     const side = e ? (e.effect === 'open' ? e.side === 'sell' : e.side === 'buy') ? 'short' : 'long'
       : event!.kind === 'assignment' ? 'short' : event!.kind === 'exercise' ? 'long' : null;
     const candidates = side ? [`${option}:${side}`] : ['short','long'].map(s => `${option}:${s}`).filter(k => active.has(k));
