@@ -69,6 +69,7 @@ it.skipIf(!existsSync(chrome)).each(['index.html', 'v2.html'])('%s shows streame
     expect(await page.$eval('#loadProgress', node => node.getAttribute('aria-valuenow'))).toBe('8');
     expect(await page.$('#status')).toBeNull();
     expect(await page.$('#dashboardRefresh')).toBeNull();
+    expect(await page.$('#dashboardSync')).toBeNull();
     for (const failure of ['fail', 'cut']) {
       mode = failure;
       await page.reload();

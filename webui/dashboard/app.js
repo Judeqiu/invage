@@ -3005,20 +3005,18 @@ let syncingBrokers = false;
 let pendingHeaderSync = false;
 const handledSyncJobs = new Set();
 let refreshingAfterSync = false;
-const syncButton = document.getElementById('dashboardSync');
 const syncPanel = document.getElementById('brokerSyncPanel');
 const syncStatus = document.getElementById('brokerSyncStatus');
 const syncProgress = document.getElementById('brokerSyncProgress');
 const syncDetails = document.getElementById('brokerSyncDetails');
 
 function updateActionButtons() {
-  syncButton.disabled = loading || syncingBrokers;
   document.getElementById('dashboardRetry').disabled = loading || syncingBrokers;
   if (!loading && !syncingBrokers && pendingHeaderSync) void followHeaderSync();
 }
-async function brokerSyncRequest(method = 'GET') {
+async function brokerSyncRequest() {
   const response = await fetch('/api/domain/invage/broker-sync', {
-    method, credentials: 'include', signal: AbortSignal.timeout(20000),
+    credentials: 'include', signal: AbortSignal.timeout(20000),
   });
   if (!response.ok) throw new Error(response.status === 401
     ? 'Your session has ended. Sign in again.' : 'Could not check broker sync. Click Sync brokers to reconnect.');
@@ -3034,7 +3032,7 @@ async function syncBrokers(existingJob) {
   syncStatus.textContent = 'Starting broker sync…';
   syncDetails.textContent = 'Syncing enabled broker accounts, then refreshing your dashboard.';
   try {
-    let job = existingJob || await brokerSyncRequest('POST');
+    let job = existingJob;
     const jobId = job.id;
     while (true) {
       if (!job || job.id !== jobId) throw new Error('The sync job is no longer available. Click Sync brokers to start again.');
@@ -3071,7 +3069,6 @@ async function syncBrokers(existingJob) {
     updateActionButtons();
   }
 }
-syncButton.addEventListener('click', () => void syncBrokers());
 
 async function followHeaderSync() {
   if (!pendingHeaderSync || loading || syncingBrokers) return;
@@ -3086,13 +3083,11 @@ async function followHeaderSync() {
 }
 window.addEventListener('message', event => {
   if (window.parent === window || event.origin !== location.origin || event.source !== window.parent) return;
-  if (event.data?.type === 'utarus:header-sync:available') syncButton.hidden = true;
   if (event.data?.type === 'utarus:header-sync:activity') {
     pendingHeaderSync = true;
     void followHeaderSync();
   }
 });
-if (window.parent !== window) window.parent.postMessage({type:'utarus:header-sync:ready'}, location.origin);
 
 const loadStages = [
   'Reading your portfolio records',

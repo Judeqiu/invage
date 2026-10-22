@@ -19,8 +19,7 @@ The consultant header includes a Sync brokers control beside More. Its authentic
 with synced, failed, paused, queued and never-synced states. The hover/focus panel
 shows each broker and account; on phones it opens below the complete navigation.
 The action reuses the dashboard's deduplicated background sync. The dashboard
-hides its local sync button only after the shell announces the replacement and
-continues to track progress and refresh portfolio data after completion. Other
-profiles and standalone dashboards retain their local sync button. Both source
+tracks progress and refreshes portfolio data after header sync completes. Both
+dashboard versions omit the original page-level sync and refresh buttons. Both source
 repositories must include the header-sync changes; deploy the committed framework
 pin together with Invage, rather than copying only dashboard assets.
