@@ -71,9 +71,13 @@ it.skipIf(!existsSync(executablePath)).each(['index.html', 'v2.html'])('explains
       expect(prompts[1].text).toContain('Selected figure to explain: Short call lines — 2');
       const row = '#underlyings tbody tr:first-child';
       expect(await frame.$$eval(row + ' > *', ns => ns.length)).toBe(5);
+      expect(await frame.$eval(row + ' th', n => n.textContent)).toBe('AAPL');
+      expect(await frame.$eval(row + ' [data-insights-explain-button]', n => n.textContent)).toBe('AAPL');
+      expect(await frame.$eval(row + ' [data-insights-explain-button]', n => n.getAttribute('title'))).toBe('Explain with AI');
       await frame.click(row + ' [data-insights-explain-button]'); await frame.select('#insightsExplainMetric', '3'); await frame.click('#insightsExplainChoice button[value="explain"]');
       await expect.poll(() => prompts.length).toBe(3);
       expect(prompts.at(-1).text).toMatch(/Selected figure to explain: .+ · open P&L/);
+      expect(await frame.$eval(row + ' th', n => n.textContent)).toBe('AAPL');
     }
     await page.screenshot({ path: `/tmp/invage-insights-explain-${version}-desktop.png`, fullPage: true });
     for (const width of [390, 768, 1100]) {

@@ -3,7 +3,7 @@
 .insights-explain:hover,.insights-explain[aria-expanded="true"] { background:color-mix(in oklab,var(--brand) 10%,var(--card)); }
 .insights-explain:focus-visible { outline:2px solid var(--brand); outline-offset:-3px; }
 .insights-explain:disabled { cursor:wait; opacity:.6; }
-.insights-explain-row { position:static; display:block; width:auto; min-height:0; padding:.05rem 0; margin-top:.5rem; border:0; border-radius:0; background:transparent; font-size:.72rem; text-align:left; text-underline-offset:3px; }
+.insights-explain-row { position:static; display:inline; width:auto; min-height:0; padding:.05rem 0; margin:0; border:0; border-radius:0; background:transparent; color:inherit; font:inherit; font-weight:600; text-align:left; text-underline-offset:3px; }
 .insights-explain-row:hover,.insights-explain-row[aria-expanded="true"] { background:transparent; color:var(--brand-2); text-decoration:underline; }
 .insights-explain-row:focus-visible { outline-offset:3px; }
 #insightsExplainStatus { font-size:.8rem; color:var(--muted-foreground); margin:.6rem 0; }

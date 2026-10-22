@@ -17,7 +17,8 @@
       const descriptor = descriptors.get(button);
       const record = conversations.get(selections.get(descriptor?.key));
       button.disabled = record?.pending === true;
-      button.textContent = record?.pending ? 'Opening…' : 'Explain';
+      button.textContent = button.dataset.insightsExplainLabel || (record?.pending ? 'Opening…' : 'Explain');
+      button.setAttribute('aria-busy', String(record?.pending === true));
       button.setAttribute('aria-expanded', String(record?.requestId === active));
     });
   }
@@ -104,7 +105,11 @@
       if (!button) {
         button = document.createElement('button'); button.type = 'button'; button.className = 'insights-explain'; button.dataset.insightsExplainButton = '';
         button.addEventListener('click', () => choose(button));
-        if (card.tagName === 'TR') { card.cells[0].appendChild(button); button.classList.add('insights-explain-row'); }
+        if (card.tagName === 'TR') {
+          button.dataset.insightsExplainLabel = card.cells[0].textContent.trim();
+          button.title = 'Explain with AI';
+          card.cells[0].replaceChildren(button); button.classList.add('insights-explain-row');
+        }
         else { card.classList.add('insights-explain-card'); card.appendChild(button); }
       }
       button.setAttribute('aria-label', `Explain ${title}`); descriptors.set(button, descriptor);
