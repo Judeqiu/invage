@@ -8,6 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="../report.css" /><link rel="stylesheet" href="../dashboard/v2.css" /><link rel="stylesheet" href="./v2.css" />
+  <link rel="stylesheet" href="./explain.css" />
 </head>
 <body>
   <main class="page">
@@ -16,7 +17,7 @@
     <p id="status" class="status" role="status" aria-live="polite">Loading portfolio records…</p><div id="progress" class="progress" role="progressbar" aria-label="Briefing loading" aria-valuemin="0" aria-valuemax="6" aria-valuenow="0"><div></div></div>
     <div id="error" class="insights-error" role="alert" hidden><p></p><button id="retry" class="chip-btn" type="button">Retry loading</button></div>
     <div id="content" aria-busy="true">
-      <div id="metrics" class="briefing-metrics" aria-label="Portfolio overview"></div>
+      <p id="insightsExplainStatus" role="status" aria-live="polite"></p><div id="metrics" class="briefing-metrics" aria-label="Portfolio overview"></div>
       <section aria-labelledby="riskTitle"><div class="section-gap"><div class="label-eyebrow">Section 01</div><h2 id="riskTitle">Today's risks</h2><p>Expiry and assignment exposure from the recorded book. Missing data is identified separately.</p></div><div id="risks" class="insights-grid"><p class="empty">Preparing the risk briefing…</p></div><p id="riskCoverage" class="insights-note"></p></section>
       <section aria-labelledby="patternTitle"><div class="section-gap"><div class="label-eyebrow">Section 02</div><h2 id="patternTitle">Book patterns</h2><p>Observable concentration and expiry patterns; these do not establish trading habits or investor behaviour.</p></div><div id="patterns" class="insights-grid"></div></section>
       <section aria-labelledby="actionTitle"><div class="section-gap"><div class="label-eyebrow">Section 03</div><h2 id="actionTitle">Recommended actions</h2><p>Review candidates ranked by the fraction of reconciled gross opening premium retained at the displayed mark. Indicative, before fees and execution costs.</p></div><div class="metric-card review-card"><ol id="actions"></ol></div></section>
@@ -26,6 +27,6 @@
     </div>
     <footer>Recorded holdings · Matching market quotes · Broker dates shown · Educational analysis</footer>
   </main>
-  <script src="../report.js"></script><script src="../option-probability.js"></script><script src="../portfolio-loader.js"></script><script src="../positions/model.js"></script><script src="./model.js"></script><script src="./v2.js"></script>
+  <script src="../report.js"></script><script src="../option-probability.js"></script><script src="../portfolio-loader.js"></script><script src="../positions/model.js"></script><script src="./model.js"></script><script src="./explain.js"></script><script src="./v2.js"></script>
 </body>
 </html>

@@ -47,6 +47,41 @@
     $('underlyings').innerHTML = `<table class="insights-table"><caption class="sr-only">Option book in ${esc(v.ccy || 'unavailable reporting currency')}</caption><thead><tr>${M.columns.map(c => `<th scope="col">${esc(c)}</th>`).join('')}</tr></thead><tbody>${v.rows.map(r => `<tr><th scope="row" title="${esc(r.ticker)}">${esc(r.ticker)}</th><td>${num(r.lines)}<small>${num(r.contracts)} contracts${r.longLines ? ' · ' + r.longLines + ' long lines' : ''}</small></td><td>${esc(amount(r.premium,v.ccy))}${r.missingPremium ? `<small>${r.missingPremium} unmatched · known ${esc(amount(r.premiumSubtotal,v.ccy))}</small>` : ''}</td><td class="${tone(r.pnl)}">${esc(signed(r.pnl,v.ccy))}${r.missingPnl ? `<small>${r.missingPnl} lines unvalued</small>` : ''}</td><td><span class="signal ${r.pnl == null || r.pnl < 0 || r.highRisk ? 'warning' : 'positive'}">${esc(r.signal)}</span></td></tr>`).join('') || '<tr><td colspan="5" class="empty">No recorded option underlyings in this view.</td></tr>'}</tbody></table>`;
     $('availability').hidden = !v.warnings.length;
     $('availability').querySelector('ul').innerHTML = [...new Set(v.warnings)].map(w => `<li>${esc(w)}</li>`).join('');
+    const figures = (node, title, values) => {
+      if (!node) return;
+      node.dataset.explainTitle = title; node.dataset.explainFigures = JSON.stringify(values);
+    };
+    const stats = [...$('statistics').children];
+    for (const [i, contributor] of [[0, v.best], [1, v.worst]]) figures(stats[i], M.statLabels[i], contributor ? [
+      `${contributor.ticker} · open P&L — ${signed(contributor.pnl,v.ccy)}`,
+      `${contributor.ticker} · option lines — ${num(contributor.lines)}`,
+      `${contributor.ticker} · contracts — ${num(contributor.contracts)}`,
+    ] : [`${M.statLabels[i]} — unavailable (${rankingNote})`]);
+    figures(stats[2], M.statLabels[2], [`Contracts in profit — ${pct(v.profitPct)}`, `Profitable option lines — ${num(v.profitable)}`, `Recorded option lines — ${num(v.options)}`]);
+    figures(stats[3], M.statLabels[3], [`Average DTE — ${num(v.averageDte)} days`, `Lines expiring within 30 days — ${num(v.nearLines)}`]);
+    figures(stats[4], M.statLabels[4], [`Average remaining short premium per line — ${amount(v.averagePremium,v.ccy)}`]);
+    figures(stats[5], M.statLabels[5], [`Short put lines — ${num(v.puts)}`, `Short call lines — ${num(v.calls)}`]);
+    figures(stats[6], M.statLabels[6], [`Contracts beyond 365 days — ${num(v.leapContracts)}`, `Lines beyond 365 days — ${num(v.leapLines)}`]);
+    figures(stats[7], M.statLabels[7], [`Cash weight — ${pct(v.cashWeight)}`, `Recorded free cash — ${amount(v.cash,v.ccy)}`]);
+    figures($('patterns').children[0], 'Expiry profile', [`Lines expiring within 30 days — ${num(v.nearLines)}`, `Recorded option lines — ${num(v.options)}`, `Reconciled remaining short premium within 30 days — ${amount(v.nearPremium,v.ccy)}`]);
+    figures($('patterns').children[1], 'Concentration', v.concentration ? [`${v.concentration.ticker} · gross marked exposure — ${amount(v.concentration.value,v.ccy)}`, `${v.concentration.ticker} · gross exposure / NAV — ${pct(v.concentration.navPct)}`] : ['Concentration — unavailable; complete comparable marks and NAV required']);
+    [...$('risks').children].forEach(node => {
+      const title = node.querySelector('.label-eyebrow')?.textContent;
+      if (title === 'Cash vs assignment') figures(node, title, [`Gross put assignment cash — ${amount(v.obligation,v.ccy)}`, `Recorded cash — ${amount(v.cash,v.ccy)}`, `Cash shortfall vs gross assignment — ${amount(v.cashGap,v.ccy)}`]);
+      if (title === 'Past-expiry records') figures(node, title, [`Past-expiry option lines — ${num(v.expired)}`]);
+    });
+    [...$('underlyings').querySelectorAll('tbody tr')].forEach((node, i) => {
+      const row = v.rows[i]; if (!row) return;
+      figures(node, `${row.ticker} option book`, [
+        `${row.ticker} · option lines — ${num(row.lines)}`, `${row.ticker} · contracts — ${num(row.contracts)}`,
+        `${row.ticker} · premium received — ${amount(row.premium,v.ccy)}`, `${row.ticker} · open P&L — ${signed(row.pnl,v.ccy)}`,
+        ...(row.missingPremium ? [`${row.ticker} · known premium subtotal — ${amount(row.premiumSubtotal,v.ccy)} (${row.missingPremium} unmatched lines)`] : []),
+      ]);
+    });
+    InsightsExplain.install({ payload, channel, ccy: v.ccy, notes: [
+      'Current recorded holdings only. Premium received is reconciled opening cash for remaining short contracts, before fees. Open P&L includes long and short options and is unrealized, not historical trading performance. Counts of lines differ from contract quantities. Assignment cash is the gross physical-delivery short-put purchase obligation, not broker margin or net spread risk. Cash is recorded free cash, not buying power. Average DTE is the unweighted arithmetic mean of option rows; LEAPs expire beyond 365 days. Average premium is per remaining short-option line. Concentration sums absolute marked values by underlying and divides by NAV. Rankings require complete comparable P&L.',
+      ...v.warnings,
+    ].join(' ') });
     $('content').setAttribute('aria-busy','false');
   }
   $('brokers').addEventListener('click',event => {

@@ -166,6 +166,21 @@ function render(dash) {
 
   el.s5.innerHTML = '';
   el.emotion.innerHTML = '';
+  const annotate = (node, title, figures) => {
+    if (!node) return;
+    node.dataset.explainTitle = title; node.dataset.explainFigures = JSON.stringify(figures);
+  };
+  if (cashVsCont) annotate([...el.risks.children].find(node => node.querySelector('.label-eyebrow')?.textContent === 'Cash vs assignment'), 'Cash vs assignment', [
+    `Gross put assignment cash — ${money(live.contingentCashObligation, ccy)}`,
+    `Recorded cash — ${money(live.cashAmount, live.cashCurrency || ccy)}`,
+  ]);
+  let patternIndex = 0;
+  if (live.optionCount > 0) annotate(el.conc.children[patternIndex++], 'Expiry profile', [
+    `Option lines with DTE at most 30 days — ${near30.length}`,
+    `Recorded option lines — ${live.optionCount}`,
+  ]);
+  if (top) annotate(el.conc.children[patternIndex], 'Largest position weight', [`${top.ticker} · NAV weight — ${top.weightPct.toFixed(1)}%`]);
+  InsightsExplain.install({ payload: dash, channel, ccy, notes: 'Current recorded holdings only; open P&L is unrealized. Counts refer to recorded lots unless otherwise stated. Cash is recorded free cash, not buying power. Assignment cash is the gross short-put obligation, not broker margin. DTE uses calendar days; LEAPs expire beyond 365 days.' });
 }
 
 async function load() {

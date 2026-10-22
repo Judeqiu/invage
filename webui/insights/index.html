@@ -8,6 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="../report.css" />
+  <link rel="stylesheet" href="./explain.css" />
 </head>
 <body>
   <div class="page">
@@ -19,6 +20,7 @@
     </div>
     <div id="error" class="error" hidden></div>
     <div class="filters" id="filters"></div>
+    <p id="insightsExplainStatus" role="status" aria-live="polite"></p>
     <div id="metrics" class="grid-4" style="margin-top:1.5rem"></div>
     <div id="s1"></div>
     <div id="risks" class="grid-2"></div>
@@ -32,6 +34,7 @@
     <div id="emotion"></div>
   </div>
   <script src="../report.js"></script>
+  <script src="./explain.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
