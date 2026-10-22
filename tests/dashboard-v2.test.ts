@@ -113,6 +113,15 @@ it.skipIf(!existsSync(executablePath))('renders V2 with shared data, clarifies m
     expect(await frame.$eval('#expiryRow', n => n.textContent)).toContain('$23,000');
     expect(await frame.$eval('#openOptions', n => n.textContent)).toContain('AAPL');
     expect(await frame.$$eval('#premiumEngine > .premium-chart', nodes => nodes.length)).toBe(4);
+    expect(await frame.$('#openPremiumExpiryCard .premium-area-line')).not.toBeNull();
+    expect(await frame.$('#premiumConcentrationCard .premium-donut-segment')).not.toBeNull();
+    expect(await frame.$('#openPremiumUnderlyingCard .premium-column')).not.toBeNull();
+    expect(await frame.$('#openPnlExpiryCard .premium-column-loss')).not.toBeNull();
+    expect(await frame.$('#openPnlExpiryCard .premium-column-gain')).not.toBeNull();
+    const areaSize = await frame.$eval('#openPremiumExpiryCard', n => n.getBoundingClientRect().width);
+    const donutSize = await frame.$eval('#premiumConcentrationCard', n => n.getBoundingClientRect().width);
+    expect(areaSize).toBeGreaterThan(donutSize * 1.8);
+
     expect(await frame.$eval('#openPremiumExpiryCard', n => n.textContent)).toContain('Nov 2026');
     expect(await frame.$eval('#openPremiumExpiryCard', n => n.textContent)).toContain('$1,300.00');
     expect(await frame.$eval('#openPnlExpiryCard', n => n.textContent)).toContain('-$200.00');
@@ -140,6 +149,11 @@ it.skipIf(!existsSync(executablePath))('renders V2 with shared data, clarifies m
     for (const width of [390, 768, 1100]) {
       await page.setViewport({ width, height: 900 });
       expect(await frame.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      expect(await frame.$$eval('.premium-chart', cards => cards.every(card => {
+        const caption = card.querySelector('.premium-chart-caption')!.getBoundingClientRect();
+        const explain = card.querySelector('.card-explain')!.getBoundingClientRect();
+        return caption.bottom <= explain.top;
+      }))).toBe(true);
     }
     await page.setViewport({ width: 390, height: 844 });
     await preview.setViewport({ width: 390, height: 844 });

@@ -2261,14 +2261,66 @@ function openBookPremiumData(view) {
     concentration: new Map([...concentration].map(([name, value]) => [name, value == null || nav == null ? null : value / nav * 100])) };
 }
 
-function premiumBarCard(title, entries, caption, options = {}) {
+function premiumChartCard(title, entries, caption, options = {}) {
   const sorted = [...entries].sort(([a, av], [b, bv]) => options.monthly ? a.localeCompare(b)
     : av == null || bv == null ? (av == null) - (bv == null) || a.localeCompare(b) : Math.abs(bv) - Math.abs(av) || a.localeCompare(b));
-  const rows = sorted.map(([label, value]) => ({ label: options.monthly && /^\d{4}-\d{2}$/.test(label) ? monthLabel(label) : label,
-    value: value ?? 0, display: value == null ? 'Unavailable' : options.percent ? `${value.toFixed(1)}%` : fmtPrettyMoney(value, options.ccy) }));
-  if (!rows.length) return `<div class="metric-card premium-chart" id="${escapeHtml(options.id)}"><div class="label-eyebrow">${escapeHtml(title)}</div><p class="empty">${options.percent ? 'No holdings in this view.' : 'No open option positions in this view.'}</p><div class="metric-sub">${escapeHtml(caption)}</div></div>`;
-  const card = cssBarCard(title, rows, caption, { id: options.id, limit: options.monthly ? 12 : 8, help: options.help });
-  return card.replace('class="metric-card"', 'class="metric-card premium-chart"');
+  const rows = sorted.map(([label, value]) => ({
+    label: options.monthly && /^\d{4}-\d{2}$/.test(label) ? monthLabel(label) : label,
+    value, display: value == null ? 'Unavailable' : options.percent ? `${value.toFixed(1)}%` : fmtPrettyMoney(value, options.ccy),
+  }));
+  const known = rows.filter(r => r.value != null);
+  const chartLabel = `${title}. ${caption}. Exact values are listed below.`;
+  const colors = ['#8985ff', '#e0e3ea', '#9299a8', '#29c982', '#efb83e', '#f15368', '#63c9eb', '#b19afa'];
+  let visual = '';
+  if (!known.length) {
+    visual = `<p class="empty">${rows.length ? 'Values unavailable for this view. Check valuation and currency coverage.' : options.percent ? 'No holdings in this view.' : 'No open option positions in this view.'}</p>`;
+  } else if (options.percent) {
+    const total = known.reduce((sum, r) => sum + Math.abs(r.value), 0);
+    let offset = 0;
+    const arcs = known.map((r, i) => {
+      const length = total ? Math.abs(r.value) / total * 100 : 0;
+      const arc = `<circle class="premium-donut-segment" cx="120" cy="120" r="78" fill="none" stroke="${r.value < 0 ? 'var(--danger)' : colors[i % colors.length]}" stroke-width="40" pathLength="100" stroke-dasharray="${length} ${100 - length}" stroke-dashoffset="${-offset}" transform="rotate(-90 120 120)" tabindex="0" role="img" aria-label="${escapeHtml(r.label + ': ' + r.display)}"><title>${escapeHtml(r.label + ': ' + r.display)}</title></circle>`;
+      offset += length;
+      return arc;
+    }).join('');
+    const legend = rows.map((r, i) => `<li><span class="premium-legend-label"><i style="background:${r.value == null ? 'var(--muted-foreground)' : r.value < 0 ? 'var(--danger)' : colors[i % colors.length]}"></i>${escapeHtml(r.label)}</span><span class="num${r.value < 0 ? ' down' : ''}">${escapeHtml(r.display)}</span></li>`);
+    visual = `<svg class="premium-donut" viewBox="0 0 240 240" role="group" aria-label="${escapeHtml(chartLabel)}"><circle cx="120" cy="120" r="78" fill="none" stroke="var(--muted)" stroke-width="40" />${arcs}</svg><ul class="premium-legend">${legend.slice(0, 9).join('')}</ul>${legend.length > 9 ? `<details class="premium-values"><summary>Show ${legend.length - 9} more holdings</summary><ul class="premium-legend">${legend.slice(9).join('')}</ul></details>` : ''}`;
+  } else {
+    const width = Math.max(640, rows.length * (options.monthly ? 65 : 48) + 90);
+    const left = 78, right = width - 18, top = 20, bottom = 250;
+    const low = Math.min(0, ...known.map(r => r.value)), high = Math.max(0, ...known.map(r => r.value));
+    const span = high - low || 1;
+    const rough = span / 4, power = 10 ** Math.floor(Math.log10(rough));
+    const step = [1, 2, 2.5, 5, 10].map(n => n * power).find(n => n >= rough);
+    const min = Math.floor(low / step) * step, max = Math.ceil(high / step) * step || step;
+    const y = value => bottom - (value - min) / (max - min) * (bottom - top);
+    const slot = (right - left) / Math.max(1, rows.length);
+    const x = i => options.type === 'area' && rows.length > 1
+      ? left + i * (right - left) / (rows.length - 1) : left + slot * (i + .5);
+    const zero = y(0);
+    let grid = '';
+    for (let value = min; value <= max + step / 2; value += step) {
+      grid += `<line x1="${left}" x2="${right}" y1="${y(value)}" y2="${y(value)}" class="premium-gridline${Math.abs(value) < step / 100 ? ' premium-zero' : ''}" /><text x="${left - 10}" y="${y(value) + 4}" text-anchor="end" class="premium-axis">${escapeHtml(fmtPrettyMoney(value, options.ccy, 0))}</text>`;
+    }
+    const tickEvery = Math.max(1, Math.ceil(rows.length / (width / 65)));
+    const ticks = rows.map((r, i) => i % tickEvery === 0 || i === rows.length - 1 ? `<text x="${x(i)}" y="274" text-anchor="middle" class="premium-axis">${escapeHtml(r.label)}</text>` : '').join('');
+    let marks = '';
+    if (options.type === 'area') {
+      // Separate paths at missing values; curves stay within the adjacent values.
+      const segments = []; let segment = [];
+      rows.forEach((r, i) => { if (r.value == null) { if (segment.length) segments.push(segment); segment = []; } else segment.push({ x: x(i), y: y(r.value) }); });
+      if (segment.length) segments.push(segment);
+      marks = segments.map(points => {
+        let path = `M ${points[0].x} ${points[0].y}`;
+        points.slice(1).forEach((p, i) => { const prev = points[i], mid = (prev.x + p.x) / 2; path += ` C ${mid} ${prev.y}, ${mid} ${p.y}, ${p.x} ${p.y}`; });
+        return `<path class="premium-area-fill" d="${path} L ${points.at(-1).x} ${zero} L ${points[0].x} ${zero} Z" /><path class="premium-area-line" d="${path}" />`;
+      }).join('') + rows.map((r, i) => r.value == null ? '' : `<circle class="premium-area-point${known.length === 1 ? ' premium-area-point-single' : ''}" cx="${x(i)}" cy="${y(r.value)}" r="4" tabindex="0" role="img" aria-label="${escapeHtml(r.label + ': ' + r.display)}"><title>${escapeHtml(r.label + ': ' + r.display)}</title></circle>`).join('');
+    } else {
+      marks = rows.map((r, i) => r.value == null ? '' : `<rect class="premium-column${options.type === 'pnl' ? r.value < 0 ? ' premium-column-loss' : ' premium-column-gain' : ''}" x="${x(i) - slot * .36}" y="${Math.min(zero, y(r.value))}" width="${slot * .72}" height="${Math.max(1, Math.abs(zero - y(r.value)))}" rx="4" tabindex="0" role="img" aria-label="${escapeHtml(r.label + ': ' + r.display)}"><title>${escapeHtml(r.label + ': ' + r.display)}</title></rect>`).join('');
+    }
+    visual = `<div class="premium-plot-scroll" tabindex="0" role="region" aria-label="${escapeHtml(title)} chart, scroll horizontally for all categories"><svg class="premium-plot premium-plot-${escapeHtml(options.type || 'bar')}" style="min-width:${width}px" viewBox="0 0 ${width} 295" role="group" aria-label="${escapeHtml(chartLabel)}">${grid}${marks}${ticks}</svg></div><p class="premium-scroll-hint">Swipe the chart to see all categories, or expand exact values.</p><details class="premium-values"><summary>View exact values${rows.some(r => r.value == null) ? ' · some values unavailable' : ''}</summary><table><thead><tr><th>${options.monthly ? 'Expiry month' : 'Underlying'}</th><th>Amount</th></tr></thead><tbody>${rows.map(r => `<tr><td>${escapeHtml(r.label)}</td><td class="num${r.value < 0 ? ' down' : ''}">${escapeHtml(r.display)}</td></tr>`).join('')}</tbody></table></details>`;
+  }
+  return `<div class="metric-card premium-chart${options.percent ? ' premium-concentration' : ''}" id="${escapeHtml(options.id)}"><div class="label-eyebrow">${escapeHtml(title)}</div>${visual}<div class="metric-sub premium-chart-caption">${options.help ? `<button class="help-dot" type="button" aria-label="Explain ${escapeHtml(title)}" data-help="${escapeHtml(options.help)}">?</button> ` : ''}${escapeHtml(caption)}</div></div>`;
 }
 
 function renderPremiumEngine(view) {
@@ -2290,10 +2342,10 @@ function renderPremiumEngine(view) {
   const book = openBookPremiumData(view);
   const common = { ccy };
   const openHelp = 'Opening credit on remaining short contracts minus opening cost on remaining long contracts, before fees. Grouped by expiry, not trade date. This is open-book cost basis, not lifetime cash flow or realized profit.';
-  const openCards = premiumBarCard('Net option premium by expiry month', book.premiumByExpiry, 'Open book · before fees · ' + (ccy || 'portfolio currency'), { ...common, id: 'openPremiumExpiryCard', monthly: true, help: openHelp }) +
-    premiumBarCard('NAV concentration', book.concentration, 'Signed market value / NAV · includes option liabilities', { id: 'premiumConcentrationCard', percent: true, help: 'Positions are grouped by underlying, including option assets and liabilities. Cash and fixed deposits are separate. Negative weights and weights over 100% are possible. Unavailable when NAV is incomplete or non-positive.' }) +
-    premiumBarCard('Net option premium by underlying', book.premiumByUnderlying, 'Open book · credits less debits · before fees', { ...common, id: 'openPremiumUnderlyingCard', help: openHelp }) +
-    premiumBarCard('Open P&L by expiry month', book.pnlByExpiry, 'Unrealized · excludes completed trades and fees', { ...common, id: 'openPnlExpiryCard', monthly: true, help: 'Signed option market value minus signed opening cost, grouped by expiry month. Uses dashboard valuation marks. Missing marks, cost-only valuations or missing FX make the affected bucket unavailable.' });
+  const openCards = premiumChartCard('Net option premium by expiry month', book.premiumByExpiry, 'Open book · before fees · ' + (ccy || 'portfolio currency'), { ...common, id: 'openPremiumExpiryCard', type: 'area', monthly: true, help: openHelp }) +
+    premiumChartCard('NAV concentration', book.concentration, 'Ring: absolute exposure · labels: signed % of NAV', { id: 'premiumConcentrationCard', percent: true, help: 'The ring shows each underlying’s share of absolute net market value, so negative positions can be drawn. Legend percentages show signed market value divided by NAV. Positions are grouped by underlying, including option assets and liabilities. Cash and fixed deposits are separate. Negative weights and weights over 100% are possible. Unavailable when NAV is incomplete or non-positive.' }) +
+    premiumChartCard('Net option premium by underlying', book.premiumByUnderlying, 'Open book · credits less debits · before fees', { ...common, id: 'openPremiumUnderlyingCard', help: openHelp }) +
+    premiumChartCard('Open P&L by expiry month', book.pnlByExpiry, 'Unrealized · excludes completed trades and fees', { ...common, id: 'openPnlExpiryCard', type: 'pnl', monthly: true, help: 'Signed option market value minus signed opening cost, grouped by expiry month. Uses dashboard valuation marks. Missing marks, cost-only valuations or missing FX make the affected bucket unavailable.' });
   const historyCards = cssBarCard('Net Option Premium by Month', rows(data.byMonth), 'Before fees · recorded trades', { id: 'monthlyPremiumCard', limit: 5 }) +
     cssBarCard('Net Option Premium by Underlying', rows(data.byUnderlying, true), 'Before fees · includes recorded option purchases and sales', { id: 'underlyingPremiumCard', limit: 5, help: premiumHelp }) +
     (showRecordedPnlByMonth ? monthlyLineCard('Recorded P&L by Month', data, ccy, plHelp) : '');
