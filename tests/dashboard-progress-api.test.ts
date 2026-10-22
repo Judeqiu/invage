@@ -1,3 +1,5 @@
+import { addBrokerSource, addBrokerAccount, readBrokerAccountModel } from '../src/brokers/accounts.js';
+import { buildDashboardModel, buildLivePositions } from '../src/report/dashboard-model.js';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
@@ -74,5 +76,28 @@ it('applies management display settings without rebuilding financial results', a
   const response = await request(app()).get('/dashboard');
   expect(response.body.dashboardConfig.showRealizedPnl).toBe(false);
   expect(response.body.generatedAt).toBe('2026-10-23T06:00:00Z');
+  expect(mocks.calculate).not.toHaveBeenCalled();
+});
+
+it('serves the persisted broker rollups through both index and dashboard APIs', async () => {
+  const source = addBrokerSource(state, 'ibkr', { token: 'test' });
+  const ids = ['A', 'B'].map(account_id => addBrokerAccount(state,
+    { source_id: source, account_id, label: account_id, config: { activity_query_id: '1' } }));
+  const channels = ids.map(id => readBrokerAccountModel(state).connections[id].channel);
+  state.portfolio = { AAPL: { units: 1, avg_price: 10, currency: 'USD', channel: channels[0] },
+    MSFT: { units: 1, avg_price: 20, currency: 'USD', channel: channels[1] } };
+  state.cash = channels.map((channel, i) => ({ channel, amount: 100 * (i + 1), currency: 'USD', updated_at: '2026-10-23' }));
+  const live = buildLivePositions(state.portfolio, { AAPL: 100, MSFT: 200 }, {}, state.cash, [], undefined,
+    { reportingCurrency: 'USD', fxRates: {} });
+  await persistPortfolioFixture(state, { slug: owner, displayName: 'Test', generatedAt: '2026-10-23T06:00:00Z',
+    empty: false, model: buildDashboardModel(live, []), benchmark: null, productProfile: 'full', productName: 'Test' });
+  const index = await request(app()).get('/portfolio-indices');
+  expect(index.status).toBe(200);
+  expect(index.body.brokers.ibkr.totals).toMatchObject({ totalValue: 600, cashAmount: 300, navComplete: true });
+  expect(index.body.brokers.ibkr.channels.sort()).toEqual(channels.sort());
+  expect(index.body.brokers.ibkr.totals.byChannel).toHaveLength(2);
+  const dashboard = await request(app()).get('/dashboard?refresh=1');
+  expect(dashboard.status).toBe(200);
+  expect(dashboard.body.brokerAggregates).toEqual(index.body.brokers);
   expect(mocks.calculate).not.toHaveBeenCalled();
 });

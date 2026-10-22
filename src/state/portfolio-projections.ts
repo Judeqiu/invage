@@ -1,3 +1,4 @@
+import { buildBrokerProjections } from '../report/broker-projections.js';
 import { listUserIds } from 'utarus';
 import { loadInvestor } from './investor-store.js';
 import { registerPortfolioRefresher } from './projection-events.js';
@@ -10,7 +11,7 @@ import { optionRelationshipsForState } from '../webapp/option-relationships-data
 import { buildPageProjections, buildTradeProjections } from '../report/page-projections.js';
 
 const runtime = { loadInvestor, loadDashboardForSlug, buildExecutionJournal, tradesOpenBook, tradesHistory,
-  optionHistoryForState, optionRelationshipsForState, buildPageProjections, buildTradeProjections };
+  optionHistoryForState, optionRelationshipsForState, buildPageProjections, buildTradeProjections, buildBrokerProjections };
 
 /** Serial per-user writes; recheck the source before publishing an atomic generation. */
 export function createPortfolioProjectionRefresher(overrides: Partial<typeof runtime> = {}) {
@@ -40,6 +41,7 @@ export function createPortfolioProjectionRefresher(overrides: Partial<typeof run
         const openTrades = deps.tradesOpenBook(state);
         const entry: PortfolioProjection = { version: PROJECTION_VERSION, userId, fingerprint,
           calculatedAt: dashboard.generatedAt, dashboard,
+          brokers: deps.buildBrokerProjections(state, dashboard, openTrades.rows, tradeHistory.rows),
           journal: deps.buildExecutionJournal(state.option_executions), openTrades: { ...openTrades, aggregates: deps.buildTradeProjections(openTrades.rows) },
           tradeHistory: { ...tradeHistory, aggregates: deps.buildTradeProjections(tradeHistory.rows, true), gaps: [...optionHistory.gaps, ...relationships.historyGaps] }, optionHistory, relationships };
         const latest = await deps.loadInvestor(userId);

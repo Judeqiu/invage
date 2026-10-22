@@ -276,3 +276,17 @@ User-selected trade filters and hypothetical opening-cash balances remain small
 presentation calculations over the saved journal, while its baseline totals
 are prepared during sync. Explicit new option-risk scenarios and contract lookup
 tools remain user-requested calculations, independent of portfolio page loading.
+
+Portfolio generations also persist a `brokers` map keyed by connector identity
+(`ibkr`, `moomoo`, `tiger`, etc.). Each broker contains its member account channels,
+combined NAV/cash/deposit/position/P&L totals, Positions and Insights models,
+premium/fee/realized/monthly/risk summaries, and native-currency trade summaries.
+Multiple accounts from one broker are combined from already converted account
+values; shares and fills retain their account identity. Unassigned holdings do
+not get attributed to a broker, and missing account/cash/FX data marks broker NAV
+incomplete. These saved rollups are exposed as `brokers` on `/portfolio-indices`
+and `brokerAggregates` on `/dashboard`. Existing account scopes remain available.
+Projection schema v2 invalidates older generations so the background worker
+prepares the broker rollups automatically, including for newly linked accounts.
+Older combined valuation snapshots without account cash attribution remain in
+the existing account history views; they are not fabricated into broker NAV history.

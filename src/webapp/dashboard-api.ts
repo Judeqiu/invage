@@ -78,7 +78,7 @@ export function createDashboardApiRouter(): Router {
   router.use('/option-index', createOptionIndexRouter());
   router.use('/option-risk', createOptionRiskRouter());
   function dashboardBody(snapshot: Awaited<ReturnType<typeof loadInvestor>>, saved: PortfolioProjection = requirePortfolioProjection(snapshot.state)) {
-    return { ...saved.dashboard, productProfile: readProductProfile(), productName: productDisplayName(), displayName: snapshot.state.profile.display_name,
+    return { ...saved.dashboard, brokerAggregates: saved.brokers, productProfile: readProductProfile(), productName: productDisplayName(), displayName: snapshot.state.profile.display_name,
       dashboardConfig: { ...readDashboardConfig(), showOptionRiskModelView: riskEnabled() },
       analysisContextId: riskEnabled() ? analysisContext(snapshot) : null };
   }
@@ -100,7 +100,7 @@ export function createDashboardApiRouter(): Router {
       const snapshot = await loadInvestor(await targetUserId(req, user));
       const saved = requirePortfolioProjection(snapshot.state);
       res.json({ calculatedAt: saved.calculatedAt, totals: saved.dashboard.model?.live ?? null,
-        scopes: saved.dashboard.aggregatedViews, pages: saved.dashboard.pageProjections });
+        scopes: saved.dashboard.aggregatedViews, pages: saved.dashboard.pageProjections, brokers: saved.brokers });
     } catch (error) { res.status(error instanceof PortfolioProjectionUnavailable ? 503 : 500)
       .json({ error: 'indices_unavailable', message: 'Saved portfolio calculations are unavailable. Retry shortly or sync your brokers.' }); }
   });

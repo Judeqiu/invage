@@ -1,3 +1,4 @@
+import type { BrokerProjection } from '../report/broker-projections.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -9,13 +10,14 @@ import type { tradesOpenBook, tradesHistory } from '../webapp/trades-v2-data.js'
 import type { optionHistoryForState } from '../webapp/option-history-data.js';
 import type { optionRelationshipsForState } from '../webapp/option-relationships-data.js';
 
-export const PROJECTION_VERSION = 1;
+export const PROJECTION_VERSION = 2;
 export interface PortfolioProjection {
   version: typeof PROJECTION_VERSION;
   userId: string;
   fingerprint: string;
   calculatedAt: string;
   dashboard: DashboardPayload;
+  brokers: Record<string, BrokerProjection>;
   journal: ReturnType<typeof buildExecutionJournal>;
   openTrades: ReturnType<typeof tradesOpenBook> & { aggregates: Record<string, { totals: unknown[]; months: Record<string, unknown> }> };
   tradeHistory: ReturnType<typeof tradesHistory> & { gaps: unknown[]; aggregates: Record<string, { totals: unknown[]; months: Record<string, unknown> }> };
@@ -53,7 +55,7 @@ function location(userId: string) {
 export function readPortfolioProjection(state: InvestorState): PortfolioProjection | null {
   try {
     const entry = JSON.parse(readFileSync(location(state.user.id).file, 'utf8')) as PortfolioProjection;
-    return entry && entry.dashboard && entry.journal && entry.openTrades && entry.tradeHistory && entry.optionHistory && entry.relationships &&
+    return entry && entry.brokers && entry.dashboard && entry.journal && entry.openTrades && entry.tradeHistory && entry.optionHistory && entry.relationships &&
       typeof entry.calculatedAt === 'string' && entry.version === PROJECTION_VERSION && entry.userId === state.user.id && entry.fingerprint === portfolioFingerprint(state)
       ? entry : null;
   } catch { return null; }
