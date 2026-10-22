@@ -1,3 +1,4 @@
+import { runDailyBrokerSyncs } from './daily-sync.js';
 import { listUserIds } from 'utarus';
 import { loadInvestor, saveInvestor } from '../state/investor-store.js';
 import { brokerSyncInProgress, nextBrokerSyncAt, persistBrokerAccountModel, readBrokerAccountModel, syncBrokerAccount } from './accounts.js';
@@ -43,7 +44,10 @@ export function startBrokerSyncScheduler(): { stop: () => Promise<void> } {
   let stopped = false;
   const tick = () => {
     if (stopped || active) return;
-    active = runDueBrokerSyncs().catch(error => console.error('[broker/scheduler]', error))
+    active = (async () => {
+      await runDailyBrokerSyncs();
+      await runDueBrokerSyncs();
+    })().catch(error => console.error('[broker/scheduler]', error))
       .finally(() => { active = undefined; });
   };
   const timer = setInterval(tick, TICK_MS);

@@ -323,6 +323,14 @@ export interface InvestorState extends UserState {
    */
   broker_connections?: Record<string, BrokerConnection | BrokerAccountConnection>;
   broker_sources?: Record<string, BrokerAccessSource>;
+  /** Durable daily 14:00 Asia/Singapore batch, independent of account schedules. */
+  daily_broker_sync?: {
+    date: string;
+    synced_accounts: Record<string, string>;
+    lease_until?: string;
+    retry_after?: string;
+    completed_at?: string;
+  };
 }
 
 export function getPortfolio(state: InvestorState): Record<string, Holding> {

@@ -700,6 +700,8 @@ export function filterLiveByChannel(
 }
 
 export interface BuildLivePositionsOptions {
+  /** Permit a complete zero-position valuation, including cash-only snapshots. */
+  allowEmpty?: boolean;
   /**
    * Dashboard mode: missing prices → book-cost MTM + issues; mixed FX without rates
    * excludes cash/deposits from NAV instead of throwing. Tools keep default strict.
@@ -762,7 +764,7 @@ export function buildLivePositions(
   }
 
   const hasPositions = Object.keys(portfolio).length > 0;
-  if (!hasPositions && depositRows.length === 0) {
+  if (!hasPositions && depositRows.length === 0 && !opts?.allowEmpty) {
     if (resilient) {
       return emptyLiveSlice(issues);
     }

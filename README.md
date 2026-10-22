@@ -223,3 +223,21 @@ See [docs/data-model.md](docs/data-model.md).
 npm test
 npm run build
 ```
+
+### Daily broker sync and snapshot
+
+Every day at **14:00 Asia/Singapore (06:00 UTC)**, the broker scheduler syncs all
+enabled, bound broker accounts for every user, independently of their optional
+per-account schedules. New users and newly linked accounts join automatically.
+The daily run uses Sync latest, without forcing a historical backfill.
+
+After all enabled accounts for a user have synced successfully, it saves a
+portfolio snapshot as `snapshot-YYYY-MM-DD.json`, using the Singapore date of
+that daily batch. Failed or busy accounts retry after 30 minutes; successful
+accounts retain their progress. A snapshot failure retries without reimporting
+successful accounts. Progress survives restarts, with a six-hour lease expiring
+if a worker exits during a batch. A delayed batch keeps its original sync date,
+including when it finishes after midnight. The next 14:00 run starts a fresh
+batch even if a broker failed throughout the previous day. Starting after 14:00
+catches up that day's run; it does not fabricate snapshots for missed days.
+`INVAGE_DISABLE_SCHEDULERS=true` also disables this daily run.
