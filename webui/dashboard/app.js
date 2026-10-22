@@ -235,10 +235,28 @@ function entrySpotHtml(trade, ccy) {
     : '<span title="No verified opening price is available">—</span>';
 }
 
-function openingPremiumHtml(trade, ccy, roll = false) {
-  const value = roll && trade?.rollDate ? trade.rollPremium : trade?.stoGrossPremium ?? trade?.openingGrossPremium;
-  return value == null ? '<span title="Matching opening fills or latest roll credit are unavailable">—</span>'
-    : `${fmtPrettyMoney(value, trade.currency || ccy, 2)}${roll && trade.rollDate ? '<small class="entry-basis">Latest roll</small>' : ''}`;
+// Shared by both dashboard layouts and monthly totals. Never replace an
+// unavailable roll cash flow with the replacement leg's STO or book cost.
+function optionTradeCashFlow(trade) {
+  if (!trade || !/^[A-Z]{3,4}$/.test(trade.currency || '')) return null;
+  const rolled = Boolean(trade.rollDate) || trade.rollPremium !== undefined;
+  const value = rolled ? trade.rollPremium : trade.stoGrossPremium ?? trade.openingGrossPremium;
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function optionTradeCashFlowTotal(trades) {
+  if (!trades.length) return null;
+  const values = trades.map(optionTradeCashFlow);
+  if (values.some(value => value == null) || new Set(trades.map(trade => trade.currency)).size !== 1) return null;
+  const value = values.reduce((sum, amount) => sum + amount, 0);
+  return Number.isFinite(value) ? { value, currency: trades[0].currency } : null;
+}
+
+function openingPremiumHtml(trade) {
+  const value = optionTradeCashFlow(trade);
+  const rolled = Boolean(trade?.rollDate) || trade?.rollPremium !== undefined;
+  return value == null ? `<span title="${rolled ? 'Latest roll cash flow is unverified; opening premium is not substituted' : 'Matching opening fills or their currency are unavailable'}">—</span>`
+    : `<span title="${rolled ? 'Latest roll: replacement opening proceeds plus closing-leg cash flow' : 'Reconciled opening cash flow'} · before fees">${fmtPrettyMoney(value, trade.currency, 2)}</span><small class="entry-basis">${rolled ? 'Latest roll' : 'Opening'}</small>`;
 }
 
 function unverifiedOptionChannels(view) {
@@ -2397,7 +2415,7 @@ function renderOpenOptions(view) {
   const months = [...groups.keys()].sort();
   const ccy = reportingCcyCode(view);
   const prices = view.isLive ? payload?.equityPrices || {} : {};
-  const columns = isWheelDesk ? ['FIN INSTRUMENT','Pos','Last ($)','CST BSS (PREMIUM)','Avg Px','MKT Value','Unrealized P&L (%)','Days','Opened','Spot','Entry Spot','Assignment','Broker'] : ['Financial instrument', 'Pos', 'Opened', 'Entry\nSpot', 'Current\nSpot', 'Assignment\nexposure', 'DTE', 'Trade cash flow ·\nBefore Fees', 'Open cost /\ncontract', 'Mark /\ncontract', 'Market\nvalue', 'Unrealized\nP&L', '% of max', 'Broker'];
+  const columns = isWheelDesk ? ['FIN INSTRUMENT','Pos','Last ($)','PREMIUM / ROLL','Avg Px','MKT Value','Unrealized P&L (%)','Days','Opened','Spot','Entry Spot','Assignment','Broker'] : ['Financial instrument', 'Pos', 'Opened', 'Entry\nSpot', 'Current\nSpot', 'Assignment\nexposure', 'DTE', 'Trade cash flow ·\nBefore Fees', 'Open cost /\ncontract', 'Mark /\ncontract', 'Market\nvalue', 'Unrealized\nP&L', '% of max', 'Broker'];
   const details = (p) => {
     const o = p.option;
     const units = Number(p.units);
@@ -2429,16 +2447,12 @@ function renderOpenOptions(view) {
       ? fmtPrettyMoney(n, currencies[0], digits) : '—';
     const monthLabel = new Date(`${m}-01T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' }).toUpperCase().replace(' ', " '");
     const earliest = Math.min(...values.map((x) => x.dte ?? Infinity));
-    const credits = values;
-    const creditCurrencies = [...new Set(credits.map(x => x.trade?.currency))];
-    const cashFlow = trade => trade?.rollDate ? trade.rollPremium : trade?.stoGrossPremium ?? trade?.openingGrossPremium;
-    const totalCredit = credits.length && credits.every(x => cashFlow(x.trade) != null) && creditCurrencies.length === 1
-      ? fmtPrettyMoney(credits.reduce((sum, x) => sum + cashFlow(x.trade), 0), creditCurrencies[0], 2) : '—';
-    const signedCost = values.reduce((total,x)=>total + (x.p.option.side === 'short' ? -1 : 1)*x.premium,0);
+    const cashFlowTotal = optionTradeCashFlowTotal(values.map(x => x.trade));
+    const totalCredit = cashFlowTotal ? fmtPrettyMoney(cashFlowTotal.value, cashFlowTotal.currency, 2) : '—';
     const monthPct = currencies.length === 1 && sum('premium') > 0 ? sum('pl')/sum('premium')*100 : null;
     body += isWheelDesk ? `<tr class="option-month-total" data-month="${m}">
       <td><button type="button" class="option-month-toggle" data-option-month="${m}" aria-expanded="${!collapsedOptionMonths.has(m)}"><span aria-hidden="true">${collapsedOptionMonths.has(m) ? '▶' : '▼'}</span> TOTAL ${monthLabel} <span class="option-month-count">(${rows.length})</span></button></td>
-      <td class="num">${sum('position')}</td><td></td><td class="num">${totalMoney(signedCost,0)}</td><td></td>
+      <td class="num">${sum('position')}</td><td></td><td class="num">${totalCredit}</td><td></td>
       <td class="num">${totalMoney(sum('marketValue'),0)}</td><td class="num ${plClass(sum('pl'))}">${totalMoney(sum('pl'),0)}${monthPct == null ? '' : ` (${monthPct.toFixed(1)}%)`}</td>
       <td class="num">${Number.isFinite(earliest) ? earliest+'d' : '—'}</td><td></td><td></td><td></td><td class="num">${totalMoney(sum('exposure'),0)}</td><td></td>
     </tr>` : `<tr class="option-month-total" data-month="${m}">
@@ -2472,7 +2486,7 @@ function renderOpenOptions(view) {
         return spreadSummary + `<tr class="option-ledger-row${highlightedUnderlying === o.underlying ? ' option-underlying-highlight' : ''}" data-option-underlying="${escapeHtml(o.underlying)}">
           <td class="option-instrument">${optionInstrumentButton(p,view,asOf)}${roll}</td><td class="num">${position}</td>
           <td class="num">${Number.isFinite(mark) ? (mark/multiplier).toFixed(2) : '—'}</td>
-          <td class="num">${rowMoney((o.side === 'short' ? -1 : 1)*premium,0)}</td><td class="num">${(Number(p.avgCost)/multiplier).toFixed(2)}</td>
+          <td class="num">${openingPremiumHtml(trade)}</td><td class="num">${(Number(p.avgCost)/multiplier).toFixed(2)}</td>
           <td class="num">${rowMoney(marketValue,0)}</td><td class="num ${plClass(pl)}">${rowMoney(pl,0)}${pct == null ? '' : ` (${pct.toFixed(1)}%)`}</td>
           <td class="num">${dte == null ? '—' : dte+'d'}</td><td class="option-opened">${opened}</td><td class="num">${Number.isFinite(spot) && spot > 0 ? Number(spot).toFixed(2) : '—'}</td>
           <td class="num">${entrySpotHtml(trade,p.currency || ccy)}</td><td class="num">${exposure ? rowMoney(exposure,0) : '—'}</td><td>${brokerLabel(p.channel)}</td>
@@ -2486,7 +2500,7 @@ function renderOpenOptions(view) {
         <td class="num">${Number.isFinite(spot) && spot > 0 ? rowMoney(spot) : '—'}</td>
         <td class="num">${exposure ? rowMoney(exposure, 0) : '—'}</td>
         <td class="num">${dte == null ? '—' : `${dte}d`}</td>
-        <td class="num">${openingPremiumHtml(trade, p.currency || ccy, true)}</td>
+        <td class="num">${openingPremiumHtml(trade)}</td>
         <td class="num">${rowMoney(Number(p.avgCost))}</td>
         <td class="num">${rowMoney(mark)}</td>
         <td class="num">${rowMoney(marketValue)}</td>
@@ -2500,7 +2514,7 @@ function renderOpenOptions(view) {
     ? 'The estimated price of one whole option contract in the broker snapshot. It includes the number of shares covered by that contract. For a short option, this estimates the cost to buy it back; its position value is shown as negative.'
     : 'The estimated price of one whole option contract saved in this snapshot. For a short option, this estimates the cost to buy it back; its position value is shown as negative.';
   el.openOptions.innerHTML = `${freshnessWarning}${filters}<div class="metric-card table-card option-ledger-card"><div class="table-scroll"><table class="report option-ledger">
-    <thead><tr>${columns.map((h) => `<th scope="col"><span class="option-column-title">${h.split('\n').map(line => `<span class="option-column-label">${escapeHtml(line)}</span>`).join(' ')}</span>${isWheelDesk && h === 'CST BSS (PREMIUM)' ? '<button type="button" class="help-dot" data-help="Signed position cost basis: average cost per contract × quantity, negative for short options and positive for long options. It is not recorded trade or roll cash flow and does not include fees." aria-label="Explain position cost basis">?</button>' : ''}${isWheelDesk && ['Last ($)','Avg Px'].includes(h) ? '<button type="button" class="help-dot" data-help="Price per underlying share. Market value and cost basis include the contract multiplier and quantity." aria-label="Explain option price units">?</button>' : ''}${h === 'Mark /\ncontract' ? `<button type="button" class="help-dot" data-help="${escapeHtml(markHelp)}" aria-label="What Mark means">?</button>` : ''}</th>`).join('')}</tr></thead>
+    <thead><tr>${columns.map((h) => `<th scope="col"><span class="option-column-title">${h.split('\n').map(line => `<span class="option-column-label">${escapeHtml(line)}</span>`).join(' ')}</span>${isWheelDesk && h === 'PREMIUM / ROLL' ? '<button type="button" class="help-dot" data-help="Recorded trade cash flow before fees: latest verified roll cash flow (replacement opening proceeds plus the closing leg), otherwise reconciled opening proceeds or cost. Credits are positive; debits are negative. Known but unverified rolls show unavailable, not the STO alone. Month totals use these same values and require complete data in one currency. Average price and unrealized P&amp;L retain their separate position cost basis." aria-label="Explain premium and roll cash flow">?</button>' : ''}${isWheelDesk && ['Last ($)','Avg Px'].includes(h) ? '<button type="button" class="help-dot" data-help="Price per underlying share. Market value and cost basis include the contract multiplier and quantity." aria-label="Explain option price units">?</button>' : ''}${h === 'Mark /\ncontract' ? `<button type="button" class="help-dot" data-help="${escapeHtml(markHelp)}" aria-label="What Mark means">?</button>` : ''}</th>`).join('')}</tr></thead>
     <tbody>${body || `<tr><td colspan="${columns.length}" class="empty">No open option positions match these filters.</td></tr>`}</tbody>
   </table></div></div>`;
 }

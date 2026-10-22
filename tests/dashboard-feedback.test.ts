@@ -63,7 +63,7 @@ it.skipIf(!existsSync(chrome))('fits the desk overview and tables, filters risk,
       }
     }
     expect(await frame.$$eval('.risk-table th',nodes=>nodes.map(n=>n.textContent!.replace(/\?/g,'').trim()))).toEqual(['FIN INSTRUMENT (Discuss)','Pos','Days','Spot','Strike','Moneyness %','IV','If Assigned','Prob. ITM','Last ($)','Avg Px','Market Value','Unrealized P&L (%)','Broker']);
-    expect(await frame.$$eval('.option-ledger th',nodes=>nodes.map(n=>n.textContent!.replace(/\?/g,'').trim()))).toEqual(['FIN INSTRUMENT','Pos','Last ($)','CST BSS (PREMIUM)','Avg Px','MKT Value','Unrealized P&L (%)','Days','Opened','Spot','Entry Spot','Assignment','Broker']);
+    expect(await frame.$$eval('.option-ledger th',nodes=>nodes.map(n=>n.textContent!.replace(/\?/g,'').trim()))).toEqual(['FIN INSTRUMENT','Pos','Last ($)','PREMIUM / ROLL','Avg Px','MKT Value','Unrealized P&L (%)','Days','Opened','Spot','Entry Spot','Assignment','Broker']);
     expect(await frame.$eval('.risk-method',node=>node.textContent)).toContain('r = 4%, q = 0, T = DTE/365');
     expect(await frame.$$('.risk-row')).toHaveLength(40); // Distant unknown quote is excluded; 7-day unknown remains.
     await frame.click('[data-risk-level="danger"]');expect(await frame.$$('.risk-row')).toHaveLength(1);
@@ -86,7 +86,7 @@ it.skipIf(!existsSync(chrome))('fits the desk overview and tables, filters risk,
     await frame.click('[data-option-broker="all"]');await frame.type('#optionSearch','CALL $80');
     await frame.waitForFunction(()=>document.querySelectorAll('.option-ledger-row').length===1);
     expect(await frame.$eval('.option-ledger-row td:nth-child(3)',node=>node.textContent)).toBe('23.91');
-    expect(await frame.$eval('.option-ledger-row td:nth-child(4)',node=>node.textContent)).toBe('-$3,000');
+    expect(await frame.$eval('.option-ledger-row td:nth-child(4)',node=>node.textContent)).toBe('—'); // No reconciled fills: never substitute book cost.
     await frame.click('.option-ledger-row .option-instrument-link');await expect.poll(()=>prompts.length).toBe(2);
     expect(prompts[1]).toContain('AAPL short call, strike 80 USD, expiry 2027-10-22');
     await frame.$eval('#optionSearch',node=>{(node as HTMLInputElement).value='';node.dispatchEvent(new Event('input',{bubbles:true}));});

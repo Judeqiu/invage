@@ -47,9 +47,13 @@ refers to an available spot rather than claiming no spot feed exists, because th
 application already supplements broker snapshots with market quotes.
 
 Both V2 tables use the requested column sequence. Last and Avg Px are per-share
-prices; market values and P&L remain position totals. CST BSS (PREMIUM) is signed
-position cost basis, explained in column help; recorded opening/roll cash flow is
-not replaced or inferred from that basis. Contract labels open the existing AI
+prices; market values and P&L remain position totals. PREMIUM / ROLL shows
+verified latest roll cash flow including the closing leg,
+or reconciled opening cash flow for an unrolled position, before fees. Credits
+are positive and debits negative. Both layouts and month totals share the same
+cash-flow selector; known but unverified rolls, missing fills/currency and
+mixed-currency totals stay unavailable. Average price and unrealized P&L keep
+their separate position cost basis. Contract labels open the existing AI
 panel. Roll relationships, month collapse, history, timeline, and roll views remain
 accessible. Desktop tables fit at 1366px and above with the test portfolio; smaller
 screens scroll within each table, retaining sticky contract and header cells.
