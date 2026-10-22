@@ -2230,6 +2230,47 @@ function monthlyLineCard(title, data, ccy, help) {
   </div>`;
 }
 
+// Position economics (cost, value and P&L) are already in reporting currency.
+// Never apply FX twice or mix unconverted positions into a chart subtotal.
+function openBookPremiumData(view) {
+  const premiumByExpiry = new Map(), premiumByUnderlying = new Map();
+  const pnlByExpiry = new Map(), concentration = new Map();
+  const ccy = reportingCcyCode(view);
+  const sum = (map, key, value) => map.set(key,
+    value == null || map.get(key) === null ? null : (map.get(key) || 0) + value);
+  const number = value => value != null && Number.isFinite(Number(value)) ? Number(value) : null;
+  for (const p of view.positions || []) {
+    const converted = ccy && (p.currency === ccy ||
+      (p.currency && Number.isFinite(view.fxRates?.[p.currency]) && view.fxRates[p.currency] > 0));
+    const value = converted ? number(p.value) : null;
+    const underlying = p.option ? optionUnderlyingLabel(p.option) : p.ticker;
+    sum(concentration, underlying || 'Unspecified', value);
+    if (p.instrument !== 'option' || !p.option) continue;
+    const month = /^\d{4}-\d{2}-\d{2}$/.test(p.option.expiry || '') ? p.option.expiry.slice(0, 7) : 'Unknown expiry';
+    const cost = converted ? number(p.cost) : null;
+    const premium = cost == null ? null : -cost;
+    const pnl = converted && p.pricingMode !== 'cost' && p.markSource !== 'cost' ? number(p.pl) : null;
+    sum(premiumByExpiry, month, premium);
+    sum(premiumByUnderlying, underlying || 'Unspecified', premium);
+    sum(pnlByExpiry, month, pnl);
+  }
+  if (view.cashAmount != null) sum(concentration, 'Cash', number(view.cashAmount));
+  if (view.depositCount || view.depositsAmount) sum(concentration, 'Fixed deposits', number(view.depositsAmount));
+  const nav = view.navComplete !== false && Number.isFinite(view.totalValue) && view.totalValue > 0 ? view.totalValue : null;
+  return { premiumByExpiry, premiumByUnderlying, pnlByExpiry,
+    concentration: new Map([...concentration].map(([name, value]) => [name, value == null || nav == null ? null : value / nav * 100])) };
+}
+
+function premiumBarCard(title, entries, caption, options = {}) {
+  const sorted = [...entries].sort(([a, av], [b, bv]) => options.monthly ? a.localeCompare(b)
+    : av == null || bv == null ? (av == null) - (bv == null) || a.localeCompare(b) : Math.abs(bv) - Math.abs(av) || a.localeCompare(b));
+  const rows = sorted.map(([label, value]) => ({ label: options.monthly && /^\d{4}-\d{2}$/.test(label) ? monthLabel(label) : label,
+    value: value ?? 0, display: value == null ? 'Unavailable' : options.percent ? `${value.toFixed(1)}%` : fmtPrettyMoney(value, options.ccy) }));
+  if (!rows.length) return `<div class="metric-card premium-chart" id="${escapeHtml(options.id)}"><div class="label-eyebrow">${escapeHtml(title)}</div><p class="empty">${options.percent ? 'No holdings in this view.' : 'No open option positions in this view.'}</p><div class="metric-sub">${escapeHtml(caption)}</div></div>`;
+  const card = cssBarCard(title, rows, caption, { id: options.id, limit: options.monthly ? 12 : 8, help: options.help });
+  return card.replace('class="metric-card"', 'class="metric-card premium-chart"');
+}
+
 function renderPremiumEngine(view) {
   if (!el.premiumEngine || !el.premiumBlock) return;
   el.premiumBlock.classList.remove('hidden');
@@ -2237,8 +2278,8 @@ function renderPremiumEngine(view) {
   const data = recordedMonthlyData(view, date);
   const ccy = reportingCcyCode(view);
   const showRecordedPnlByMonth = payload.dashboardConfig?.showRecordedPnlByMonth === true;
-  el.premiumHead.innerHTML = sectionHead('Section 02', showRecordedPnlByMonth ? 'Premium and recorded P&L' : 'Option premium',
-    isWheelDesk ? 'Recorded option premium by month and underlying; history builds as trades are recorded.' : `${showRecordedPnlByMonth ? 'Track premium collected and profit or loss (P&L) by calendar month.' : 'Track option premium collected by calendar month and underlying.'} Historical trades are included where available; otherwise the charts build over time as Velovest records new trades.`);
+  el.premiumHead.innerHTML = sectionHead('Section 02', 'Premium engine',
+    'Explore net option premium, NAV concentration and unrealized P&L from the selected open book. Expand recorded trade history for cash flow by trade month.');
   const rows = (entries, byAmount = false) => [...entries].sort(([a, av], [b, bv]) => {
     if (!byAmount) return b.localeCompare(a);
     if (av == null || bv == null) return av == null && bv == null ? a.localeCompare(b) : av == null ? 1 : -1;
@@ -2246,9 +2287,18 @@ function renderPremiumEngine(view) {
   }).map(([label, value]) => ({ label, value: value ?? 0, display: value == null ? 'Unknown' : fmtPrettyMoney(value, ccy) }));
   const premiumHelp = 'Money received from selling options, minus money paid to buy options, grouped by the stock each option is based on. Includes recorded opening, closing and protective option trades, before brokerage fees. This is cash flow, not profit; missing history can make it incomplete.';
   const plHelp = 'Profit or loss from completed option trades, grouped by the month they ended. It is calculated from matched opening and closing trades, or reported directly by the broker. Partial subtotals exclude records that cannot be calculated. Fee treatment is shown for each month. Open positions and stock profit or loss are not included. Expand a month to see which stocks and brokers contribute.';
-  el.premiumEngine.innerHTML = cssBarCard('Net Option Premium by Month', rows(data.byMonth), 'Before fees · recorded trades', { id: 'monthlyPremiumCard', limit: 5 }) +
+  const book = openBookPremiumData(view);
+  const common = { ccy };
+  const openHelp = 'Opening credit on remaining short contracts minus opening cost on remaining long contracts, before fees. Grouped by expiry, not trade date. This is open-book cost basis, not lifetime cash flow or realized profit.';
+  const openCards = premiumBarCard('Net option premium by expiry month', book.premiumByExpiry, 'Open book · before fees · ' + (ccy || 'portfolio currency'), { ...common, id: 'openPremiumExpiryCard', monthly: true, help: openHelp }) +
+    premiumBarCard('NAV concentration', book.concentration, 'Signed market value / NAV · includes option liabilities', { id: 'premiumConcentrationCard', percent: true, help: 'Positions are grouped by underlying, including option assets and liabilities. Cash and fixed deposits are separate. Negative weights and weights over 100% are possible. Unavailable when NAV is incomplete or non-positive.' }) +
+    premiumBarCard('Net option premium by underlying', book.premiumByUnderlying, 'Open book · credits less debits · before fees', { ...common, id: 'openPremiumUnderlyingCard', help: openHelp }) +
+    premiumBarCard('Open P&L by expiry month', book.pnlByExpiry, 'Unrealized · excludes completed trades and fees', { ...common, id: 'openPnlExpiryCard', monthly: true, help: 'Signed option market value minus signed opening cost, grouped by expiry month. Uses dashboard valuation marks. Missing marks, cost-only valuations or missing FX make the affected bucket unavailable.' });
+  const historyCards = cssBarCard('Net Option Premium by Month', rows(data.byMonth), 'Before fees · recorded trades', { id: 'monthlyPremiumCard', limit: 5 }) +
     cssBarCard('Net Option Premium by Underlying', rows(data.byUnderlying, true), 'Before fees · includes recorded option purchases and sales', { id: 'underlyingPremiumCard', limit: 5, help: premiumHelp }) +
     (showRecordedPnlByMonth ? monthlyLineCard('Recorded P&L by Month', data, ccy, plHelp) : '');
+  const historyOpen = el.premiumEngine.querySelector('.premium-history')?.open || false;
+  el.premiumEngine.innerHTML = openCards + `<details class="premium-history"${historyOpen ? ' open' : ''}><summary>Recorded trade history <span>Cash flow by trade date${showRecordedPnlByMonth ? ' · completed-trade P&L' : ''}</span></summary><div class="grid-2 premium-history-grid">${historyCards || '<p class="empty">No recorded option trades in this view yet.</p>'}</div></details>`;
 }
 
 function renderOpenOptions(view) {

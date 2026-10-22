@@ -112,6 +112,18 @@ it.skipIf(!existsSync(executablePath))('renders V2 with shared data, clarifies m
     await frame.waitForSelector('#openOptions .option-ledger');
     expect(await frame.$eval('#expiryRow', n => n.textContent)).toContain('$23,000');
     expect(await frame.$eval('#openOptions', n => n.textContent)).toContain('AAPL');
+    expect(await frame.$$eval('#premiumEngine > .premium-chart', nodes => nodes.length)).toBe(4);
+    expect(await frame.$eval('#openPremiumExpiryCard', n => n.textContent)).toContain('Nov 2026');
+    expect(await frame.$eval('#openPremiumExpiryCard', n => n.textContent)).toContain('$1,300.00');
+    expect(await frame.$eval('#openPnlExpiryCard', n => n.textContent)).toContain('-$200.00');
+    expect(await frame.$eval('#openPremiumUnderlyingCard', n => n.textContent)).toContain('$940.00');
+    await frame.click('.premium-history > summary');
+    expect(await frame.$eval('#monthlyPremiumCard', n => n.textContent)).toContain('$250.00');
+    await frame.click('#channelPills [data-channel="ibkr"]');
+    expect(await frame.$eval('#openPremiumExpiryCard', n => n.textContent)).toContain('$700.00');
+    expect(await frame.$eval('.premium-history', n => (n as HTMLDetailsElement).open)).toBe(true);
+    await frame.click('#channelPills [data-channel="merged"]');
+
     await frame.click('#expiryTable [data-card-explain]');
     await frame.waitForSelector('#explainChoice[open]');
     expect(await frame.$eval('#explainMetric', node => node.textContent)).toContain('Spot — 220.00');
@@ -124,6 +136,7 @@ it.skipIf(!existsSync(executablePath))('renders V2 with shared data, clarifies m
     await preview.goto(origin + '/dashboard/v2.html');
     await preview.waitForSelector('#openOptions .option-ledger');
     await preview.screenshot({ path: '/tmp/invage-dashboard-v2-desktop.png', fullPage: true });
+    await (await preview.$('#premiumBlock'))!.screenshot({ path: '/tmp/invage-premium-engine-desktop.png' });
     for (const width of [390, 768, 1100]) {
       await page.setViewport({ width, height: 900 });
       expect(await frame.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -131,6 +144,7 @@ it.skipIf(!existsSync(executablePath))('renders V2 with shared data, clarifies m
     await page.setViewport({ width: 390, height: 844 });
     await preview.setViewport({ width: 390, height: 844 });
     await preview.screenshot({ path: '/tmp/invage-dashboard-v2-mobile.png', fullPage: true });
+    await (await preview.$('#premiumBlock'))!.screenshot({ path: '/tmp/invage-premium-engine-mobile.png' });
     await preview.close();
     dashboard.dashboardConfig.showTotalPremium = false;
     dashboard.dashboardConfig.showRealizedPnl = false;
