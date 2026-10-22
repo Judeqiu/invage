@@ -291,7 +291,7 @@ function optionInstrumentLabel(p) {
 function optionInstrumentButton(p, view, asOf) {
   const label = optionInstrumentLabel(p);
   const key = JSON.stringify([p.ticker, p.channel, view.isLive ? 'latest' : asOf]);
-  return `<button type="button" class="option-instrument-link" aria-expanded="false" data-option-key="${escapeHtml(key)}" data-option-label="${escapeHtml(label)}" data-option-title="${escapeHtml(label)}" data-option-context="${escapeHtml(`${p.channel} · ${p.units} contracts · Snapshot ${asOf}`)}" data-option-discuss="${escapeHtml(optionDiscussionPrompt(p, view, asOf))}" aria-label="Discuss ${escapeHtml(label)}, ${escapeHtml(p.channel)}" title="Discuss this contract with Velovest AI"${pendingDiscussions.has(key) ? ' disabled' : ''}>${escapeHtml(label)}</button>`;
+  return `<button type="button" class="option-instrument-link" aria-expanded="false" data-option-key="${escapeHtml(key)}" data-option-label="${escapeHtml(label)}" data-option-title="${escapeHtml(label)}" data-option-context="${escapeHtml(`${p.channel} · ${p.units} contracts · Snapshot ${asOf}`)}" data-option-discuss="${escapeHtml(optionDiscussionPrompt(p, view, asOf))}" aria-label="Discuss ${escapeHtml(label)}, ${escapeHtml(p.channel)}" title="Discuss with AI"${pendingDiscussions.has(key) ? ' disabled' : ''}>${escapeHtml(label)}</button>`;
 }
 
 function metricCardHtml(label, value, sub, help, valueClass) {
