@@ -70,7 +70,6 @@
 
       <div class="kpi-row" id="kpiRow" inert aria-hidden="true"></div>
       <section id="v2Summary" class="v2-summary" aria-label="Portfolio overview"></section>
-      <nav class="v2-jump" aria-label="Dashboard sections"><a href="#expiryBlock">01 <span>Expiry &amp; assignment</span></a><a href="#premiumBlock">02 <span>Premium engine</span></a><a href="#optionsWorkspace">03 <span>Positions &amp; rolls</span></a></nav>
 
       <div id="expiryBlock">
       <div id="section01ViewTabs" class="option-risk-tabs hidden" role="tablist" aria-label="Section 01 view">
@@ -109,7 +108,8 @@
         <div class="options-workspace-head">
           <div>
             <div class="label-eyebrow">Section 03</div>
-            <h2>Option positions &amp; rolls</h2>
+            <h2 id="optionWorkspaceTitle">Open options positions · broker view</h2>
+            <p class="workspace-description">View all open option positions, grouped by expiry month.</p>
           </div>
           <div class="option-view-tabs" role="group" aria-label="Option position view">
             <button type="button" class="chip-btn on" id="optionOpenTab" aria-pressed="true">Open</button>

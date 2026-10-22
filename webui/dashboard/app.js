@@ -7,6 +7,7 @@
  */
 
 const API = '/api/domain/invage/dashboard';
+const isWheelDesk = document.body.dataset.dashboardVersion === 'v2';
 
 /** Unassigned broker tags resolve to this channel on the dashboard. */
 const DEFAULT_CHANNEL = 'default';
@@ -88,6 +89,11 @@ let selectedDate = 'live';
 let selectedChannel = MERGED_CHANNEL_VIEW;
 let optionRightFilter = 'all';
 let riskRightFilter = 'all';
+let riskBrokerFilter = 'all';
+let riskLevelFilter = 'all';
+let optionBrokerFilter = 'all';
+let optionSearch = '';
+let optionSearchTimer;
 let riskSearch = '';
 let riskSearchTimer;
 let highlightedUnderlying = null;
@@ -253,9 +259,39 @@ function daysToExpiry(expiry, asOf) {
   return Math.round((e - a) / 86400000);
 }
 
-// Keep all portfolio views on the same matched-quote probability calculation.
+// Wheel Desk opts into the requested broker-mark model; other views retain matching-quote validation.
 function optionFinishItmProbability(position, spot, days) {
-  return globalThis.OptionProbability.finishItmProbability(position, spot, days);
+  return isWheelDesk
+    ? globalThis.OptionProbability.brokerMarkItmProbability(position, spot, days)
+    : globalThis.OptionProbability.finishItmProbability(position, spot, days);
+}
+
+const brokerNames = { ibkr: 'IBKR', moomoo: 'moomoo', tiger: 'Tiger Brokers', webull: 'Webull', futubull: 'Futubull' };
+function brokerIdentity(channel) {
+  const meta = payload?.brokerChannels?.[channel];
+  const id = meta?.brokerId || /^(ibkr|moomoo|tiger|webull|futubull)(?:[-_:]|$)/i.exec(channel || '')?.[1].toLowerCase();
+  return { id: id || channel, name: brokerNames[id] || (channel === DEFAULT_CHANNEL ? 'Unassigned' : channel), account: meta?.label || channel };
+}
+function brokerLabel(channel) {
+  const broker = brokerIdentity(channel);
+  return `<span class="broker-name broker-${escapeHtml(brokerNames[broker.id] ? broker.id : 'other')}" title="${escapeHtml(broker.account)}">${escapeHtml(broker.name)}</span>`;
+}
+function brokerFilters(kind, selected, positions) {
+  const found = [...new Set(positions.map(p => brokerIdentity(p.channel).id))];
+  const ids = [...Object.keys(brokerNames).filter(id => found.includes(id)), ...found.filter(id => !brokerNames[id])];
+  return `<div class="option-filter-group broker-filters" role="group" aria-label="Filter by broker"><span class="label-eyebrow">Broker</span>${['all', ...ids].map(id => `<button type="button" class="chip-btn broker-filter${selected === id ? ' on' : ''} broker-${escapeHtml(brokerNames[id] ? id : 'other')}" data-${kind}-broker="${escapeHtml(id)}" aria-pressed="${selected === id}">${escapeHtml(id === 'all' ? 'All' : brokerNames[id] || id)}</button>`).join('')}</div>`;
+}
+function riskLevel(probability) {
+  return probability == null ? 'muted' : probability > 0.6 ? 'danger' : probability >= 0.45 ? 'warning' : 'ok';
+}
+function optionInstrumentLabel(p) {
+  const o = p.option;
+  return `${optionUnderlyingLabel(o)} ${o.right.toUpperCase()} ${fmtPrettyMoney(o.strike, p.currency, Number.isInteger(o.strike) ? 0 : 2)} ${optionDateLabel(o.expiry).toUpperCase()}`;
+}
+function optionInstrumentButton(p, view, asOf) {
+  const label = optionInstrumentLabel(p);
+  const key = JSON.stringify([p.ticker, p.channel, view.isLive ? 'latest' : asOf]);
+  return `<button type="button" class="option-instrument-link" aria-expanded="false" data-option-key="${escapeHtml(key)}" data-option-label="${escapeHtml(label)}" data-option-title="${escapeHtml(label)}" data-option-context="${escapeHtml(`${p.channel} · ${p.units} contracts · Snapshot ${asOf}`)}" data-option-discuss="${escapeHtml(optionDiscussionPrompt(p, view, asOf))}" aria-label="Discuss ${escapeHtml(label)}, ${escapeHtml(p.channel)}" title="Discuss this contract with Velovest AI"${pendingDiscussions.has(key) ? ' disabled' : ''}>${escapeHtml(label)}</button>`;
 }
 
 function metricCardHtml(label, value, sub, help, valueClass) {
@@ -313,6 +349,11 @@ function channelBadgeHtml(channel) {
 function setOptionTab(tab) {
   tab = ['open', 'timeline', 'history', 'rolls'].includes(tab) ? tab : 'open';
   optionTab = tab;
+  if (isWheelDesk) {
+    document.body.dataset.optionView = tab;
+    const title = document.getElementById('optionWorkspaceTitle');
+    if (title) title.textContent = tab === 'open' ? 'Open options positions · broker view' : tab === 'timeline' ? 'Options timeline' : tab === 'history' ? 'Option position history' : 'Option rolls';
+  }
   document.getElementById('optionTimelineTab').classList.toggle('on', tab === 'timeline');
   document.getElementById('optionTimelineTab').setAttribute('aria-pressed', String(tab === 'timeline'));
   document.getElementById('optionTimelinePanel').classList.toggle('hidden', tab !== 'timeline');
@@ -1618,7 +1659,7 @@ function renderOverview(view) {
   installCardExplainButtons();
 }
 
-// V2 is a presentation of the same calculated view, not a second data pipeline.
+// The V2 overview reuses the calculated portfolio values and recorded premium figures.
 function renderV2Overview() {
   const summary = document.getElementById('v2Summary');
   if (!summary) return;
@@ -1642,7 +1683,7 @@ function renderV2Overview() {
     return clone.outerHTML;
   };
   const group = (title, content, className = '') => `<section class="v2-group ${className}"><h2 class="label-eyebrow">${title}</h2><div class="v2-group-body">${content}</div></section>`;
-  const premium = `<div class="metric-card v2-premium-card"><div class="label-eyebrow">Premium cash flow</div>${stat(kpis[0])}${stat(kpis[1])}${stat(el.totalPremiumCard, 'Total premium · Net')}${kpis[2] ? `<p class="metric-sub v2-fees">${escapeHtml([...kpis[2].querySelectorAll('.label-eyebrow, .metric-value, .metric-sub')].map(node => node.textContent.trim()).join(' · '))}</p>` : ''}</div>`;
+  const premium = `<div class="metric-card v2-premium-card">${stat(kpis[0])}${stat(kpis[1])}${stat(el.totalPremiumCard, 'Total premium · Net')}${kpis[2] ? `<p class="metric-sub v2-fees">${escapeHtml([...kpis[2].querySelectorAll('.label-eyebrow, .metric-value')].map(node => node.textContent.trim()).join(': '))}</p>` : ''}</div>`;
   let earnings = '';
   if (!el.realizedPnlCard.classList.contains('hidden')) {
     const view = payload?.model ? buildView(selectedDate, selectedChannel) : null;
@@ -1655,10 +1696,10 @@ function renderV2Overview() {
       const node = document.createElement('div'); node.innerHTML = html;
       return stat(node.firstElementChild);
     };
-    earnings = `<div class="metric-card v2-premium-card"><div class="label-eyebrow">Earned premium · Realized P&amp;L</div>${period('Earned premium · Daily', premiumData?.dailyFrom)}${period('Earned premium · MTD', date?.slice(0, 7) + '-01')}${stat(el.realizedPnlCard, 'Earned premium · Total')}</div>`;
+    earnings = `<div class="metric-card v2-premium-card">${period('Earned premium · Daily', premiumData?.dailyFrom)}${period('Earned premium · MTD', date?.slice(0, 7) + '-01')}${stat(el.realizedPnlCard, 'Earned premium · Total')}</div>`;
   }
   const funds = kpis.slice(5).map(copy).join('') || metricCardHtml('Fund assets · Broker', '—',
-    'No separate broker fund balance reported in this view. Recorded fund holdings remain included in NAV.',
+    'Not reported separately · Itemized funds remain included in NAV.',
     'This card shows a separately reported broker fund balance when available. An unavailable balance is not zero. Itemized fund holdings are already included in NAV; do not add them again.');
   summary.innerHTML = group('Premium & earnings', premium + earnings, 'v2-earnings') +
     group('Account value', copy(el.navValue.closest('.metric-card')) + funds) +
@@ -1674,7 +1715,7 @@ function cardExplanationTargets(card) {
   const headers = [...card.querySelectorAll('thead th')].map(cell => cell.textContent.replace(/\s+/g, ' ').trim());
   return rows.flatMap(row => {
     const label = row.cells[0].cloneNode(true);
-    label.querySelectorAll('button').forEach(button => button.remove());
+    label.querySelectorAll('button').forEach(button => button.replaceWith(button.dataset.optionLabel || ''));
     return [...row.cells].slice(1).flatMap((cell, i) => {
       const value = cell.textContent.replace(/\s+/g, ' ').trim();
       return /[0-9]/.test(value) || value === '—'
@@ -1780,7 +1821,7 @@ function syncDiscussionButtons() {
   el.dashboard.querySelectorAll('[data-option-discuss], [data-card-explain]').forEach(button => {
     const pending = pendingDiscussions.has(button.dataset.optionKey);
     button.disabled = pending;
-    button.textContent = pending ? 'Opening…' : button.hasAttribute('data-card-explain') ? 'Explain' : 'Discuss';
+    button.textContent = pending ? 'Opening…' : button.dataset.optionLabel || (button.hasAttribute('data-card-explain') ? 'Explain' : 'Discuss');
   });
 }
 
@@ -1886,6 +1927,54 @@ async function startOptionDiscussion(button, retryRequestId) {
   }
 }
 
+function wheelRiskTable(rows, radar, view, asOf) {
+  const eligible = rows.filter(r => r.estimate.probability != null || (r.days >= 0 && r.days <= 7));
+  const filtered = eligible.filter(r =>
+    (riskRightFilter === 'all' || r.p.option.right === riskRightFilter) &&
+    (riskBrokerFilter === 'all' || brokerIdentity(r.p.channel).id === riskBrokerFilter) &&
+    (riskLevelFilter === 'all' || riskLevel(r.estimate.probability) === riskLevelFilter) &&
+    (!riskSearch || optionInstrumentLabel(r.p).toLowerCase().includes(riskSearch.toLowerCase()))
+  ).sort((a,b) => (a.days ?? Infinity) - (b.days ?? Infinity) || (b.estimate.probability ?? -1) - (a.estimate.probability ?? -1));
+  const right = ['all','put','call'].map(value => `<button type="button" class="chip-btn${riskRightFilter === value ? ' on' : ''}" data-risk-right="${value}" aria-pressed="${riskRightFilter === value}">${value === 'all' ? 'All' : value.toUpperCase()}</button>`).join('');
+  const levels = [['all','All'],['danger','Act now >60%'],['warning','Caution 45–60%'],['ok','Comfortable']].map(([value,label]) => `<button type="button" class="risk-filter risk-filter-${value}${riskLevelFilter === value ? ' on' : ''}" data-risk-level="${value}" aria-pressed="${riskLevelFilter === value}">${escapeHtml(label)}</button>`).join('');
+  const columns = ['FIN INSTRUMENT','Pos','Days','Spot','Strike','Moneyness %','IV','If Assigned','Prob. ITM','Last ($)','Avg Px','Market Value','Unrealized P&L (%)','Broker'];
+  const body = filtered.map(({p,spot,days,estimate,exposure}) => {
+    const o = p.option, multiplier = Number(o.multiplier || 100);
+    const mark = Number.isFinite(p.brokerMark) ? p.brokerMark : Number(o.mark);
+    const value = -mark * Number(p.units);
+    const cost = Number(p.avgCost) * Number(p.units);
+    const pl = value + cost;
+    const pct = cost > 0 ? pl / cost * 100 : null;
+    const probability = estimate.probability;
+    const tone = riskLevel(probability);
+    const label = tone === 'danger' ? 'Act now' : tone === 'warning' ? 'Caution' : 'Comfortable';
+    const moneyness = spot > 0 && o.strike > 0 ? (spot - o.strike) / o.strike * 100 : null;
+    const itm = moneyness != null && (o.right === 'put' ? moneyness < 0 : moneyness > 0);
+    const money = (n,digits=0) => Number.isFinite(n) ? fmtPrettyMoney(n,p.currency || reportingCcyCode(view),digits) : '—';
+    return `<tr class="risk-row risk-row-${tone}" data-risk-underlying="${escapeHtml(o.underlying)}" tabindex="0" aria-label="Highlight ${escapeHtml(o.underlying)} in open options">
+      <td>${optionInstrumentButton(p,view,asOf)}</td><td class="num">${-Number(p.units)}</td><td class="num">${days == null ? '—' : `${days}d`}</td>
+      <td class="num">${spot > 0 ? Number(spot).toFixed(2) : '—'}</td><td class="num">${money(Number(o.strike))}</td>
+      <td class="num ${itm ? 'down' : 'muted'}">${moneyness == null ? '—' : fmtSigned(moneyness,1)+'%'}</td>
+      <td class="num muted">${estimate.iv == null ? '—' : (estimate.iv*100).toFixed(0)+'%'}</td>
+      <td class="num">${Number.isFinite(exposure) ? fmtPrettyMoney(exposure,reportingCcyCode(view),0) : '—'}</td>
+      <td title="${escapeHtml(probability == null ? estimate.reason : 'Black–Scholes estimate from this contract’s broker mark and available underlying spot; r = 4%, q = 0, T = DTE/365.')}">${riskPill(tone, probability == null ? '—' : `${(probability*100).toFixed(1)}% · ${label}`)}</td>
+      <td class="num">${Number.isFinite(mark) ? (mark/multiplier).toFixed(2) : '—'}</td><td class="num">${(Number(p.avgCost)/multiplier).toFixed(2)}</td>
+      <td class="num">${money(value)}</td><td class="num ${plClass(pl)}">${money(pl)}${pct == null ? '' : ` (${pct.toFixed(1)}%)`}</td><td>${brokerLabel(p.channel)}</td>
+    </tr>`;
+  }).join('');
+  return `<div class="metric-card table-card risk-card">
+    <div class="risk-toolbar">${brokerFilters('risk',riskBrokerFilter,rows.map(r=>r.p))}
+      <div class="option-filter-group"><span class="label-eyebrow">Right</span>${right}</div>
+      <label class="risk-search"><span class="visually-hidden">Search contracts</span><input id="riskSearch" type="search" placeholder="Ticker, strike, expiry" value="${escapeHtml(riskSearch)}" /></label>
+      <div class="risk-legend" role="group" aria-label="Filter by risk">${levels}</div>
+      <p class="risk-filter-count" role="status">${filtered.length} of ${eligible.length} contracts · ${radar.length} flagged${riskLevelFilter === 'all' ? ' · All risks' : ''}</p>
+    </div>
+    <div class="table-scroll"><table class="report risk-table"><thead><tr>${columns.map((label,i)=>`<th scope="col">${escapeHtml(label)}${i===0 ? ' <span class="instrument-hint">(Discuss)</span>' : ''}${label==='Last ($)' || label==='Avg Px' ? '<button type="button" class="help-dot" data-help="Price per underlying share. Position totals include the contract multiplier and quantity." aria-label="Explain option price units">?</button>' : ''}</th>`).join('')}</tr></thead>
+    <tbody>${body || `<tr><td colspan="14" class="empty">No contracts match these filters.</td></tr>`}</tbody></table></div>
+    <details class="risk-method"><summary>How Prob. ITM is calculated</summary><p>Implied volatility is solved from each contract’s own broker mark by bisection on Black–Scholes (r = 4%, q = 0, T = DTE/365). The risk-neutral probability of finishing in the money is N(−d₂) for puts and N(d₂) for calls. Contracts without an available underlying spot or a usable broker mark show “—” and still appear here when they expire within 7 days. This estimates finishing in the money, not early assignment. The exposure cards include contracts above 30% and contracts expiring within 7 days; probability-weighted exposure stays unavailable if any included contract cannot be scored.</p></details>
+  </div>`;
+}
+
 function renderExpiryRisk(view, asOf) {
   if (!el.expiryRow) return;
   const hasOptions = (view.optionCount || 0) > 0;
@@ -1922,7 +2011,7 @@ function renderExpiryRisk(view, asOf) {
       : Number.isFinite(callRate) ? callNative * callRate : NaN;
     return { p, spot, days, estimate, exposure };
   });
-  const radar = rows.filter((r) => r.estimate.probability > 0.3 || (typeof r.days === 'number' && r.days >= 0 && r.days <= 21 && optionItmState(r.p, prices) === 'itm'));
+  const radar = rows.filter((r) => r.estimate.probability > 0.3 || (typeof r.days === 'number' && r.days >= 0 && (isWheelDesk ? r.days <= 7 : r.days <= 21 && optionItmState(r.p, prices) === 'itm')));
   const scoredExposure = radar.filter(r => Number.isFinite(r.exposure) && r.exposure > 0);
   const missing = rows.filter((r) => r.estimate.probability == null).length;
   const exposure = scoredExposure.length === radar.length ? scoredExposure.reduce((sum, r) => sum + r.exposure, 0) : null;
@@ -1942,7 +2031,7 @@ function renderExpiryRisk(view, asOf) {
       'High-risk ITM exposure',
       radar.length && exposure != null ? fmtPrettyMoney(exposure, reportingCcyCode(view), 0) : '—',
       '',
-      'Total value of shares you could have to buy for short puts, or deliver for short calls, if every contract in this risk list is assigned. The list includes contracts with an estimated chance above 30% of finishing in the money, and confirmed ITM contracts expiring within 21 days. This is a possible exposure, not a forecast.',
+      `Total value of shares you could have to buy for short puts, or deliver for short calls, if every contract in this risk list is assigned. ${isWheelDesk ? 'The list includes contracts above 30% probability of finishing in the money and contracts expiring within 7 days.' : 'The list includes contracts with an estimated chance above 30% of finishing in the money, and confirmed ITM contracts expiring within 21 days.'} This is a possible exposure, not a forecast.`,
     ),
     metricCardHtml(
       'Probability-weighted exposure',
@@ -1967,7 +2056,9 @@ function renderExpiryRisk(view, asOf) {
   ].join('');
 
   if (el.expiryTable) {
-    if (shorts.length === 0) {
+    if (isWheelDesk) {
+      el.expiryTable.innerHTML = wheelRiskTable(rows, radar, view, asOf);
+    } else if (shorts.length === 0) {
       el.expiryTable.innerHTML = emptyCard('No short option lots in this view.');
     } else {
       const chip = (kind, value, label, selected) =>
@@ -2027,6 +2118,8 @@ el.expiryTable?.addEventListener('click', (event) => {
     return;
   }
   if (chip?.dataset.riskRight != null) riskRightFilter = chip.dataset.riskRight;
+  else if (chip?.dataset.riskBroker != null) riskBrokerFilter = chip.dataset.riskBroker;
+  else if (chip?.dataset.riskLevel != null) riskLevelFilter = chip.dataset.riskLevel;
   else {
     const row = event.target.closest('[data-risk-underlying]');
     if (!row) return;
@@ -2145,7 +2238,7 @@ function renderPremiumEngine(view) {
   const ccy = reportingCcyCode(view);
   const showRecordedPnlByMonth = payload.dashboardConfig?.showRecordedPnlByMonth === true;
   el.premiumHead.innerHTML = sectionHead('Section 02', showRecordedPnlByMonth ? 'Premium and recorded P&L' : 'Option premium',
-    `${showRecordedPnlByMonth ? 'Track premium collected and profit or loss (P&L) by calendar month.' : 'Track option premium collected by calendar month and underlying.'} Historical trades are included where available; otherwise the charts build over time as Velovest records new trades.`);
+    isWheelDesk ? 'Recorded option premium by month and underlying; history builds as trades are recorded.' : `${showRecordedPnlByMonth ? 'Track premium collected and profit or loss (P&L) by calendar month.' : 'Track option premium collected by calendar month and underlying.'} Historical trades are included where available; otherwise the charts build over time as Velovest records new trades.`);
   const rows = (entries, byAmount = false) => [...entries].sort(([a, av], [b, bv]) => {
     if (!byAmount) return b.localeCompare(a);
     if (av == null || bv == null) return av == null && bv == null ? a.localeCompare(b) : av == null ? 1 : -1;
@@ -2175,21 +2268,23 @@ function renderOpenOptions(view) {
     const dates = view.isLive ? Object.entries(payload.brokerAsOf || {})
       .filter(([channel]) => view.channelView === MERGED_CHANNEL_VIEW || channel === view.channelView)
       .map(([channel, date]) => `${channel.toUpperCase()} ${optionDateLabel(date)}`) : [];
-    el.openOptionsHead.innerHTML = sectionHead(
+    el.openOptionsHead.innerHTML = isWheelDesk ? '' : sectionHead(
       '',
       'Open options positions · broker view',
       `View all open option positions, grouped by expiry month. Cash flow is the opening credit or debit, or the latest verified roll including its closing leg, before fees. Verified vertical spreads show their combined opening cash flow above their legs. Missing or unreconciled data is shown as unknown. Entry Spot uses the execution price where recorded, otherwise the opening-day adjusted close. ${dates.length ? `Broker positions as of ${dates.join(' · ')}.` : 'Broker position date unavailable.'}`,
     );
   }
   const opts = allOptions.filter((p) =>
-    (optionRightFilter === 'all' || p.option.right === optionRightFilter),
+    (optionRightFilter === 'all' || p.option.right === optionRightFilter) &&
+    (!isWheelDesk || optionBrokerFilter === 'all' || brokerIdentity(p.channel).id === optionBrokerFilter) &&
+    (!isWheelDesk || !optionSearch || optionInstrumentLabel(p).toLowerCase().includes(optionSearch.toLowerCase())),
   );
   const chip = (kind, value, label, selected) =>
     `<button type="button" class="chip-btn${selected ? ' on' : ''}" data-option-${kind}="${escapeHtml(value)}" aria-pressed="${selected}">${escapeHtml(label)}</button>`;
-  const filters = `<div class="option-ledger-filters">
+  const filters = `<div class="option-ledger-filters">${isWheelDesk ? brokerFilters('option',optionBrokerFilter,allOptions) : ''}
     <div class="option-filter-group"><span class="label-eyebrow">Right</span>
       ${['all', 'put', 'call'].map((r) => chip('right', r, r.toUpperCase() === 'ALL' ? 'All' : r.toUpperCase(), optionRightFilter === r)).join('')}
-    </div>
+    </div>${isWheelDesk ? `<label class="risk-search"><span class="visually-hidden">Search open contracts</span><input id="optionSearch" type="search" placeholder="Ticker, strike, expiry" value="${escapeHtml(optionSearch)}" /></label><span class="option-filter-count" role="status">${opts.length} of ${allOptions.length} contracts</span>` : ''}
   </div>`;
   const groups = new Map();
   for (const p of opts) {
@@ -2200,7 +2295,7 @@ function renderOpenOptions(view) {
   const months = [...groups.keys()].sort();
   const ccy = reportingCcyCode(view);
   const prices = view.isLive ? payload?.equityPrices || {} : {};
-  const columns = ['Financial instrument', 'Pos', 'Opened', 'Entry\nSpot', 'Current\nSpot', 'Assignment\nexposure', 'DTE', 'Trade cash flow ·\nBefore Fees', 'Open cost /\ncontract', 'Mark /\ncontract', 'Market\nvalue', 'Unrealized\nP&L', '% of max', 'Broker'];
+  const columns = isWheelDesk ? ['FIN INSTRUMENT','Pos','Last ($)','CST BSS (PREMIUM)','Avg Px','MKT Value','Unrealized P&L (%)','Days','Opened','Spot','Entry Spot','Assignment','Broker'] : ['Financial instrument', 'Pos', 'Opened', 'Entry\nSpot', 'Current\nSpot', 'Assignment\nexposure', 'DTE', 'Trade cash flow ·\nBefore Fees', 'Open cost /\ncontract', 'Mark /\ncontract', 'Market\nvalue', 'Unrealized\nP&L', '% of max', 'Broker'];
   const details = (p) => {
     const o = p.option;
     const units = Number(p.units);
@@ -2237,7 +2332,14 @@ function renderOpenOptions(view) {
     const cashFlow = trade => trade?.rollDate ? trade.rollPremium : trade?.stoGrossPremium ?? trade?.openingGrossPremium;
     const totalCredit = credits.length && credits.every(x => cashFlow(x.trade) != null) && creditCurrencies.length === 1
       ? fmtPrettyMoney(credits.reduce((sum, x) => sum + cashFlow(x.trade), 0), creditCurrencies[0], 2) : '—';
-    body += `<tr class="option-month-total" data-month="${m}">
+    const signedCost = values.reduce((total,x)=>total + (x.p.option.side === 'short' ? -1 : 1)*x.premium,0);
+    const monthPct = currencies.length === 1 && sum('premium') > 0 ? sum('pl')/sum('premium')*100 : null;
+    body += isWheelDesk ? `<tr class="option-month-total" data-month="${m}">
+      <td><button type="button" class="option-month-toggle" data-option-month="${m}" aria-expanded="${!collapsedOptionMonths.has(m)}"><span aria-hidden="true">${collapsedOptionMonths.has(m) ? '▶' : '▼'}</span> TOTAL ${monthLabel} <span class="option-month-count">(${rows.length})</span></button></td>
+      <td class="num">${sum('position')}</td><td></td><td class="num">${totalMoney(signedCost,0)}</td><td></td>
+      <td class="num">${totalMoney(sum('marketValue'),0)}</td><td class="num ${plClass(sum('pl'))}">${totalMoney(sum('pl'),0)}${monthPct == null ? '' : ` (${monthPct.toFixed(1)}%)`}</td>
+      <td class="num">${Number.isFinite(earliest) ? earliest+'d' : '—'}</td><td></td><td></td><td></td><td class="num">${totalMoney(sum('exposure'),0)}</td><td></td>
+    </tr>` : `<tr class="option-month-total" data-month="${m}">
       <td><button type="button" class="option-month-toggle" data-option-month="${m}" aria-expanded="${!collapsedOptionMonths.has(m)}"><span aria-hidden="true">${collapsedOptionMonths.has(m) ? '▶' : '▼'}</span> TOTAL ${monthLabel} <span class="option-month-count">(${rows.length})</span></button></td>
       <td class="num">${sum('position')}</td>
       <td></td><td></td><td></td>
@@ -2249,7 +2351,7 @@ function renderOpenOptions(view) {
     </tr>`;
     if (collapsedOptionMonths.has(m)) continue;
     const shownSpreads = new Set();
-    body += values.map(({ p, position, mark, marketValue, pl, exposure, dte, captured, trade }) => {
+    body += values.map(({ p, position, premium, mark, marketValue, pl, exposure, dte, captured, trade }) => {
       const o = p.option;
       const rowMoney = (n, digits = 2) => fmtPrettyMoney(n, p.currency || ccy, digits);
       const spot = prices[o.underlying];
@@ -2259,6 +2361,21 @@ function renderOpenOptions(view) {
       const spreadRow = spread && !shownSpreads.has(spread.id)
         ? `<tr class="option-spread-summary"><td colspan="7">${escapeHtml(`${optionUnderlyingLabel(o)} ${spread.longStrike}/${spread.shortStrike} ${o.right} vertical spread · ${optionDateLabel(o.expiry)} · ×${spread.quantity}`)}</td><td class="num">${spread.grossPremium == null ? 'Unknown' : rowMoney(spread.grossPremium)}<small class="entry-basis">Combined opening ${spread.grossPremium < 0 ? 'debit' : 'credit'}</small></td><td colspan="6"></td></tr>` : '';
       if (spread) shownSpreads.add(spread.id);
+      if (isWheelDesk) {
+        const asOf = view.isLive ? (payload.generatedAt || '').slice(0,10) : view.label;
+        const pct = premium > 0 ? pl/premium*100 : null;
+        const multiplier = Number(o.multiplier || 100);
+        const roll = `<button type="button" class="option-roll-link" data-roll-contract="${escapeHtml(o.underlying)}" data-roll-channel="${escapeHtml(p.channel)}" data-roll-strike="${escapeHtml(o.strike)}" data-roll-expiry="${escapeHtml(o.expiry)}" aria-label="Check roll relationships for ${escapeHtml(optionInstrumentLabel(p))}" title="Check roll relationships">↗</button>`;
+        const spreadSummary = spread && spreadRow ? `<tr class="option-spread-summary"><td colspan="13">${escapeHtml(`${optionUnderlyingLabel(o)} ${spread.longStrike}/${spread.shortStrike} ${o.right} vertical spread · ${optionDateLabel(o.expiry)} · ×${spread.quantity}`)} · Combined recorded opening ${spread.grossPremium == null ? 'cash flow unavailable' : (spread.grossPremium < 0 ? 'debit ' : 'credit ')+rowMoney(spread.grossPremium)}</td></tr>` : '';
+        return spreadSummary + `<tr class="option-ledger-row${highlightedUnderlying === o.underlying ? ' option-underlying-highlight' : ''}" data-option-underlying="${escapeHtml(o.underlying)}">
+          <td class="option-instrument">${optionInstrumentButton(p,view,asOf)}${roll}</td><td class="num">${position}</td>
+          <td class="num">${Number.isFinite(mark) ? (mark/multiplier).toFixed(2) : '—'}</td>
+          <td class="num">${rowMoney((o.side === 'short' ? -1 : 1)*premium,0)}</td><td class="num">${(Number(p.avgCost)/multiplier).toFixed(2)}</td>
+          <td class="num">${rowMoney(marketValue,0)}</td><td class="num ${plClass(pl)}">${rowMoney(pl,0)}${pct == null ? '' : ` (${pct.toFixed(1)}%)`}</td>
+          <td class="num">${dte == null ? '—' : dte+'d'}</td><td class="option-opened">${opened}</td><td class="num">${Number.isFinite(spot) && spot > 0 ? Number(spot).toFixed(2) : '—'}</td>
+          <td class="num">${entrySpotHtml(trade,p.currency || ccy)}</td><td class="num">${exposure ? rowMoney(exposure,0) : '—'}</td><td>${brokerLabel(p.channel)}</td>
+        </tr>`;
+      }
       return spreadRow + `<tr class="option-ledger-row${highlightedUnderlying === o.underlying ? ' option-underlying-highlight' : ''}" data-option-underlying="${escapeHtml(o.underlying)}">
         <td class="option-instrument">${escapeHtml(label)}<br><button type="button" class="chip-btn" data-roll-contract="${escapeHtml(o.underlying)}" data-roll-channel="${escapeHtml(p.channel)}" data-roll-strike="${escapeHtml(o.strike)}" data-roll-expiry="${escapeHtml(o.expiry)}">Check roll relationships</button></td>
         <td class="num">${position}</td>
@@ -2281,7 +2398,7 @@ function renderOpenOptions(view) {
     ? 'The estimated price of one whole option contract in the broker snapshot. It includes the number of shares covered by that contract. For a short option, this estimates the cost to buy it back; its position value is shown as negative.'
     : 'The estimated price of one whole option contract saved in this snapshot. For a short option, this estimates the cost to buy it back; its position value is shown as negative.';
   el.openOptions.innerHTML = `${freshnessWarning}${filters}<div class="metric-card table-card option-ledger-card"><div class="table-scroll"><table class="report option-ledger">
-    <thead><tr>${columns.map((h) => `<th scope="col"><span class="option-column-title">${h.split('\n').map(line => `<span class="option-column-label">${escapeHtml(line)}</span>`).join(' ')}</span>${h === 'Mark /\ncontract' ? `<button type="button" class="help-dot" data-help="${escapeHtml(markHelp)}" aria-label="What Mark means">?</button>` : ''}</th>`).join('')}</tr></thead>
+    <thead><tr>${columns.map((h) => `<th scope="col"><span class="option-column-title">${h.split('\n').map(line => `<span class="option-column-label">${escapeHtml(line)}</span>`).join(' ')}</span>${isWheelDesk && h === 'CST BSS (PREMIUM)' ? '<button type="button" class="help-dot" data-help="Signed position cost basis: average cost per contract × quantity, negative for short options and positive for long options. It is not recorded trade or roll cash flow and does not include fees." aria-label="Explain position cost basis">?</button>' : ''}${isWheelDesk && ['Last ($)','Avg Px'].includes(h) ? '<button type="button" class="help-dot" data-help="Price per underlying share. Market value and cost basis include the contract multiplier and quantity." aria-label="Explain option price units">?</button>' : ''}${h === 'Mark /\ncontract' ? `<button type="button" class="help-dot" data-help="${escapeHtml(markHelp)}" aria-label="What Mark means">?</button>` : ''}</th>`).join('')}</tr></thead>
     <tbody>${body || `<tr><td colspan="${columns.length}" class="empty">No open option positions match these filters.</td></tr>`}</tbody>
   </table></div></div>`;
 }
@@ -2289,7 +2406,9 @@ function renderOpenOptions(view) {
 el.openOptions?.addEventListener('click', (event) => {
   const button = event.target.closest('button');
   if (!button) return;
-  if (button.dataset.optionRight != null) optionRightFilter = button.dataset.optionRight;
+  if (button.dataset.optionDiscuss != null) { void startOptionDiscussion(button); return; }
+  if (button.dataset.optionBroker != null) optionBrokerFilter = button.dataset.optionBroker;
+  else if (button.dataset.optionRight != null) optionRightFilter = button.dataset.optionRight;
   else if (button.dataset.optionMonth != null) {
     const month = button.dataset.optionMonth;
     if (collapsedOptionMonths.has(month)) collapsedOptionMonths.delete(month);
@@ -2314,7 +2433,11 @@ function renderChannelPills(view) {
   el.channelPills.innerHTML = pills
     .map((p) => {
       const on = p.id === selectedChannel ? ' on' : '';
-      return `<button type="button" class="chip-btn${on}" data-channel="${escapeHtml(p.id)}">${escapeHtml(p.label)}</button>`;
+      const broker = brokerIdentity(p.id);
+      const logo = isWheelDesk && ['ibkr','moomoo','tiger','webull'].includes(broker.id);
+      const duplicates = channels.filter(ch => brokerIdentity(ch).id === broker.id).length > 1;
+      const content = logo ? `<img src="../broker-logos/${broker.id}.png" alt="${escapeHtml(broker.name)}" />${duplicates ? `<span class="broker-account-label">${escapeHtml(broker.account)}</span>` : ''}` : escapeHtml(p.label);
+      return `<button type="button" class="chip-btn${on}${logo ? ' broker-logo-button' : ''}" data-channel="${escapeHtml(p.id)}" aria-pressed="${p.id === selectedChannel}" aria-label="${escapeHtml(logo ? `${broker.name} · ${broker.account}` : p.label)}" title="${escapeHtml(logo ? `${broker.name} · ${broker.account}` : p.label)}">${content}</button>`;
     })
     .join('');
 }
@@ -3358,6 +3481,17 @@ void (async () => {
     if (job?.status === 'running') await syncBrokers(job);
   } catch { /* The explicit Sync brokers action reports connection errors. */ }
 })();
+
+el.openOptions?.addEventListener('input', event => {
+  if (event.target.id !== 'optionSearch') return;
+  optionSearch = event.target.value;
+  clearTimeout(optionSearchTimer);
+  optionSearchTimer = setTimeout(() => {
+    const view = buildView(selectedDate,selectedChannel);
+    if (view) renderOpenOptions(view);
+    document.getElementById('optionSearch')?.focus();
+  },150);
+});
 
 el.expiryTable?.addEventListener('input', event => {
   if (event.target.id !== 'riskSearch') return;

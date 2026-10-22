@@ -23,3 +23,39 @@ tracks progress and refreshes portfolio data after header sync completes. Both
 dashboard versions omit the original page-level sync and refresh buttons. Both source
 repositories must include the header-sync changes; deploy the committed framework
 pin together with Invage, rather than copying only dashboard assets.
+
+
+Wheel Desk incorporates the 21 October dashboard feedback and the Lovable reference.
+The overview puts the two premium panels above account value and cash/obligation
+cards, with broker artwork on the account selectors. Account selection remains
+per channel; `brokerChannels` supplies identities for custom channel names. Section
+headings and descriptions share a compact desktop row. The legacy dashboard keeps
+its existing layout and probability model.
+
+V2 risk filters cover broker, option right, contract search, and the probability
+bands Act now (>60%), Caution (45–60%), and Comfortable (<45%). Missing estimates
+appear only under All risks. All scored short contracts can be inspected; unscored
+contracts remain in the radar when expiry is within seven days. Exposure cards
+include contracts above 30% or expiring within seven days; weighted exposure stays
+unavailable if any included contract lacks an estimate.
+
+The user explicitly selected the feedback's probability model: solve IV from the
+contract's broker mark with Black–Scholes, r=4%, q=0, and T=DTE/365, then use N(d2)
+for calls and N(-d2) for puts. Missing underlying spot or unusable broker marks stay
+unscored. Other portfolio pages retain the matched-quote model. The explanation
+refers to an available spot rather than claiming no spot feed exists, because the
+application already supplements broker snapshots with market quotes.
+
+Both V2 tables use the requested column sequence. Last and Avg Px are per-share
+prices; market values and P&L remain position totals. CST BSS (PREMIUM) is signed
+position cost basis, explained in column help; recorded opening/roll cash flow is
+not replaced or inferred from that basis. Contract labels open the existing AI
+panel. Roll relationships, month collapse, history, timeline, and roll views remain
+accessible. Desktop tables fit at 1366px and above with the test portfolio; smaller
+screens scroll within each table, retaining sticky contract and header cells.
+
+Validation includes the independent 4% model reference values, invalid-mark guards,
+account metadata, broker/risk/search filters, AI discussion from both tables, desktop
+first-viewport coverage, Section 03 visibility at page bottom, mobile overflow, and
+legacy dashboard regressions. Broker artwork is copied from the supplied public
+reference; the Webull mark is its embedded PNG.

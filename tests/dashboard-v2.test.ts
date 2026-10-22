@@ -114,7 +114,7 @@ it.skipIf(!existsSync(executablePath))('renders V2 with shared data, clarifies m
     expect(await frame.$eval('#openOptions', n => n.textContent)).toContain('AAPL');
     await frame.click('#expiryTable [data-card-explain]');
     await frame.waitForSelector('#explainChoice[open]');
-    expect(await frame.$eval('#explainMetric', node => node.textContent)).toContain('Current Spot — 220.00');
+    expect(await frame.$eval('#explainMetric', node => node.textContent)).toContain('Spot — 220.00');
     await frame.click('#explainChoice button[value="cancel"]');
     expect(prompts).toHaveLength(1);
     const preview = await browser.newPage();

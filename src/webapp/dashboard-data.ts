@@ -79,6 +79,8 @@ export interface DashboardPayload {
   connectionMetrics?: Record<string, BrokerConnectionMetrics>;
   /** Broker statement dates keyed by holding channel. */
   brokerAsOf?: Record<string, string>;
+  /** Broker identity for account channels, including custom channel names. */
+  brokerChannels?: Record<string, { brokerId: string; label: string }>;
   /** Opening fills matched to the current open lots; absent means unverified. */
   optionTradeDetails?: Record<string, OpenOptionTradeDetail>;
   /** Recorded option cash flow, including long legs, never inferred from position cost basis. */
@@ -429,6 +431,7 @@ export async function loadDashboardForSlug(
   await progress('broker', 3);
   let connectionMetrics: Record<string, BrokerConnectionMetrics> | undefined;
   let brokerAsOf: Record<string, string> | undefined;
+  const brokerChannels: NonNullable<DashboardPayload['brokerChannels']> = {};
   let premiumSupportedChannels: string[] = [];
   const accountsByChannel: Record<string, string> = {};
   try {
@@ -439,6 +442,7 @@ export async function loadDashboardForSlug(
       if (date && (!dates[channel] || date > dates[channel])) dates[channel] = date;
     };
     for (const [id, conn] of Object.entries(conns)) {
+      brokerChannels[conn.channel] = { brokerId: conn.broker_id, label: conn.label };
       if (conn.account_id) accountsByChannel[conn.channel] = conn.account_id;
       if (['ibkr', 'moomoo', 'tiger', 'webull'].includes(conn.broker_id)) premiumSupportedChannels.push(conn.channel);
       if (conn.last_sync?.ok) recordDate(conn.channel, conn.last_sync.as_of);
@@ -543,6 +547,7 @@ export async function loadDashboardForSlug(
   if (Object.keys(market.prices).length > 0) out.equityPrices = market.prices;
   if (connectionMetrics) out.connectionMetrics = connectionMetrics;
   if (brokerAsOf) out.brokerAsOf = brokerAsOf;
+  if (Object.keys(brokerChannels).length) out.brokerChannels = brokerChannels;
   logTimings();
   return out;
 }
