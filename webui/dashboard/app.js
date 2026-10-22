@@ -85,6 +85,7 @@ const el = {
 };
 
 let payload = null;
+let portfolioPayload = null;
 let selectedDate = 'live';
 let selectedChannel = MERGED_CHANNEL_VIEW;
 let optionRightFilter = 'all';
@@ -105,9 +106,81 @@ let optionHistoryRequest = 0;
 let historySearchTimer = null;
 const collapsedOptionMonths = new Set();
 
+function selectedBroker(key = selectedChannel) {
+  const id = key?.startsWith('broker:') ? key.slice(7) : null;
+  return id ? portfolioPayload?.brokerAggregates?.[id] ?? null : null;
+}
+function selectionOptions() {
+  const source = portfolioPayload || payload;
+  const channels = source?.model?.live?.channels || [];
+  const brokers = Object.keys(source?.brokerAggregates || {});
+  return [{ id: MERGED_CHANNEL_VIEW, label: 'All platforms' },
+    ...brokers.map(id => ({ id: 'broker:' + id, label: (brokerNames[id] || id) + ' · All accounts', brokerId: id })),
+    ...channels.map(id => ({ id, label: id === DEFAULT_CHANNEL ? 'Unassigned' :
+      (source.brokerChannels?.[id] ? (brokerNames[source.brokerChannels[id].brokerId] || source.brokerChannels[id].brokerId) + ' · ' + source.brokerChannels[id].label : id) }))];
+}
+function activateSelection() {
+  const broker = selectedBroker();
+  payload = broker?.dashboard ? { ...broker.dashboard, aggregatedViews: broker.scopes, pageProjections: broker.pages,
+    brokerAggregates: portfolioPayload.brokerAggregates,
+    dashboardConfig: portfolioPayload.dashboardConfig, analysisContextId: portfolioPayload.analysisContextId,
+    productProfile: portfolioPayload.productProfile, productName: portfolioPayload.productName,
+    displayName: portfolioPayload.displayName } : portfolioPayload;
+  if (broker) selectedDate = 'live';
+}
+function selectionMatches(channel, key) {
+  if (!key || key === 'all' || key === MERGED_CHANNEL_VIEW) return true;
+  const broker = selectedBroker(key);
+  return broker ? broker.channels.includes(channel) : key === channel;
+}
+function scopedHistorySelection(value) {
+  const broker = selectedBroker();
+  return broker && value !== selectedChannel && !broker.channels.includes(value) ? selectedChannel : value;
+}
+function historySelectionOptions(connections) {
+  const broker = selectedBroker();
+  const scopes = broker ? [{ channel: selectedChannel, label: selectionLabel() + ' · All accounts' }] :
+    [{ channel: '', label: 'All brokers' }, ...Object.values(portfolioPayload?.brokerAggregates || {}).map(item =>
+      ({ channel: 'broker:' + item.brokerId, label: (brokerNames[item.brokerId] || item.brokerId) + ' · All accounts' }))];
+  return [...scopes, ...connections.filter(row => !broker || broker.channels.includes(row.channel))]
+    .map(row => `<option value="${escapeHtml(row.channel)}">${escapeHtml(row.label || row.broker_id || row.channel)}</option>`).join('');
+}
+function selectionLabel() {
+  const broker = selectedBroker();
+  return broker ? brokerNames[broker.brokerId] || broker.brokerId : selectedChannel;
+}
+function selectionPreference(value) {
+  const key = 'invage:dashboard-scope:' + (portfolioPayload?.slug || portfolioPayload?.displayName || 'default');
+  try {
+    if (value !== undefined) sessionStorage.setItem(key, value);
+    return sessionStorage.getItem(key);
+  } catch { return null; }
+}
+function requestedSelection() {
+  const query = new URLSearchParams(location.search), hash = new URLSearchParams(location.hash.slice(1));
+  return normalizeChannelId(query.has('channel') || hash.has('channel') ? channelFromQuery() : selectionPreference() || channelFromQuery());
+}
+function applySelection(value) {
+  const next = normalizeChannelId(value);
+  if (next === selectedChannel) return;
+  selectedChannel = next;
+  optionBrokerFilter = 'all'; riskBrokerFilter = 'all';
+  rollContext = '';
+  activateSelection();
+  if (el.channelSelect) el.channelSelect.value = selectedChannel;
+  writeChannelQuery(selectedChannel === MERGED_CHANNEL_VIEW ? 'all' : selectedChannel);
+  selectionPreference(selectedChannel);
+  // Clear prior results immediately; late responses are rejected by request IDs.
+  optionHistoryRequest++; rollRequest++;
+  optionHistory.episodes = []; rollData.groups = []; el.optionHistoryDetail.innerHTML = '';
+  renderDate(selectedDate, selectedChannel);
+  if (optionTab === 'history') followHistoryBroker(selectedChannel);
+}
+
 function normalizeChannelId(raw) {
   if (!raw || raw === 'all' || raw === MERGED_CHANNEL_VIEW) return MERGED_CHANNEL_VIEW;
-  return raw;
+  const source = portfolioPayload || payload;
+  return !source?.model?.live?.channels?.includes(raw) && source?.brokerAggregates?.[raw] ? 'broker:' + raw : raw;
 }
 let charts = {};
 let loading = false;
@@ -162,7 +235,7 @@ function optionUnderlyingLabel(option) {
 }
 
 function savedDashboardScope(view) {
-  const scope = payload?.aggregatedViews?.[view.isLive ? 'live' : view.label]?.[view.channelView];
+  const scope = payload?.aggregatedViews?.[view.isLive ? 'live' : view.label]?.[selectedBroker() ? MERGED_CHANNEL_VIEW : view.channelView];
   if (!scope) throw new Error('Saved portfolio calculations are unavailable. Sync your brokers and retry.');
   return scope;
 }
@@ -219,7 +292,7 @@ function daysToExpiry(expiry, asOf) {
 
 const brokerNames = { ibkr: 'IBKR', moomoo: 'moomoo', tiger: 'Tiger Brokers', webull: 'Webull', futubull: 'Futubull' };
 function brokerIdentity(channel) {
-  const meta = payload?.brokerChannels?.[channel];
+  const meta = (portfolioPayload || payload)?.brokerChannels?.[channel];
   const id = meta?.brokerId || /^(ibkr|moomoo|tiger|webull|futubull)(?:[-_:]|$)/i.exec(channel || '')?.[1].toLowerCase();
   return { id: id || channel, name: brokerNames[id] || (channel === DEFAULT_CHANNEL ? 'Unassigned' : channel), account: meta?.label || channel };
 }
@@ -329,6 +402,9 @@ function setOptionTab(tab) {
 function followHistoryBroker(channel) {
   const broker = channel === 'all' || channel === MERGED_CHANNEL_VIEW ? '' : channel;
   if (el.historyBroker.value === broker) return;
+  if (broker && !Array.from(el.historyBroker.options).some(option => option.value === broker)) {
+    const option = document.createElement('option'); option.value = broker; option.textContent = selectionLabel(); el.historyBroker.append(option);
+  }
   el.historyBroker.value = broker;
   el.optionHistoryDetail.innerHTML = '';
   renderOptionHistory();
@@ -337,7 +413,7 @@ function followHistoryBroker(channel) {
 
 function renderOptionFreshness() {
   if (!el.optionFreshness) return;
-  const rows = optionHistory.connections || [];
+  const rows = (optionHistory.connections || []).filter(row => selectionMatches(row.channel, selectedChannel));
   const summary = rows.length ? rows.map(row => {
     const name = row.label || row.broker_id.toUpperCase();
     const confirmed = row.position_as_of ? `positions as of ${optionDateLabel(row.position_as_of)}` : 'no confirmed position date';
@@ -379,14 +455,14 @@ function renderOptionHistory() {
     el.optionHistoryTable.innerHTML = `<div class="metric-card empty">${escapeHtml(optionHistoryError)}</div>`;
     return;
   }
-  const broker = el.historyBroker.value;
+  const broker = scopedHistorySelection(el.historyBroker.value);
   const right = el.historyRight.value;
   const status = el.historyStatus.value;
   const search = el.historySearch.value.trim().toUpperCase();
   const from = el.historyFrom.value;
   const to = el.historyTo.value;
   const rows = optionHistory.episodes.filter(row =>
-    (!broker || row.channel === broker) && (!right || row.contract.right === right) &&
+    selectionMatches(row.channel, broker) && (!right || row.contract.right === right) &&
     (status === 'all' || status === 'historical' && row.first_seen_absent || row.status === status) &&
     (!search || historyContractLabel(row).toUpperCase().includes(search)) &&
     (!from || (row.first_seen_absent || row.last_seen_open) >= from) &&
@@ -436,7 +512,7 @@ async function loadOptionHistory(more = false, signal, channelOverride) {
   if (more && offset == null) return;
   const request = ++optionHistoryRequest;
   const params = new URLSearchParams({ offset: String(offset), limit: '100' });
-  const channel = channelOverride ?? el.historyBroker.value;
+  const channel = scopedHistorySelection(channelOverride ?? el.historyBroker.value);
   if (channel) params.set('channel', channel);
   if (el.historyRight.value) params.set('right', el.historyRight.value);
   if (el.historyStatus.value !== 'all') params.set('status', el.historyStatus.value);
@@ -450,8 +526,8 @@ async function loadOptionHistory(more = false, signal, channelOverride) {
     if (request !== optionHistoryRequest) return;
     optionHistory = { ...body, episodes: more ? [...optionHistory.episodes, ...body.episodes] : body.episodes };
     optionHistoryError = '';
-    const selected = channelOverride ?? el.historyBroker.value;
-    el.historyBroker.innerHTML = `<option value="">All brokers</option>${body.connections.map(row => `<option value="${escapeHtml(row.channel)}">${escapeHtml(row.label || row.broker_id)}</option>`).join('')}`;
+    const selected = scopedHistorySelection(channelOverride ?? el.historyBroker.value);
+    el.historyBroker.innerHTML = historySelectionOptions(body.connections);
     el.historyBroker.value = selected;
   } catch (error) {
     if (request !== optionHistoryRequest) return;
@@ -464,9 +540,10 @@ async function loadOptionHistory(more = false, signal, channelOverride) {
 
 const optionTimeline = window.createOptionTimeline(() => ({
   channel: ['all', MERGED_CHANNEL_VIEW].includes(selectedChannel) ? '' : selectedChannel,
-  asOf: selectedDate === 'live' ? new Date().toISOString().slice(0, 10) : selectedDate,
+  asOf: selectedDate === 'live' ? (payload?.generatedAt || new Date().toISOString()).slice(0, 10) : selectedDate,
   replay: selectedDate !== 'live',
-  positions: payload?.model ? buildView(selectedDate, selectedChannel).positions : [],
+  positions: payload?.model ? buildView(selectedDate, selectedChannel)?.positions || [] : [],
+  channels: selectedBroker()?.channels,
   tradeDetails: selectedDate === 'live' ? payload?.optionTradeDetails || {} : {},
   brokerAsOf: payload?.brokerAsOf || {},
 }));
@@ -563,6 +640,8 @@ async function loadRollRelationships(more = false) {
   for (const [key, control] of [['channel', 'broker'], ['q', 'search'], ['evidence', 'evidence'], ['from', 'from'], ['to', 'to']]) {
     if (rollEl[control].value.trim()) params.set(key, rollEl[control].value.trim());
   }
+  const scopedChannel = scopedHistorySelection(params.get('channel') || '');
+  if (scopedChannel) params.set('channel', scopedChannel);
   if (selectedDate !== 'live') params.set('as_of', selectedDate);
   if (!more) rollData = { ...rollData, groups: [], gaps: [], coverage: [], total: 0, next_offset: null };
   rollLoading = true; rollError = ''; renderRollRelationships();
@@ -580,8 +659,8 @@ async function loadRollRelationships(more = false) {
       }
       rollTarget = null;
     }
-    const selected = rollEl.broker.value;
-    rollEl.broker.innerHTML = '<option value="">All accounts</option>' + body.connections.map(c => `<option value="${escapeHtml(c.channel)}">${escapeHtml(c.label)} · ${escapeHtml(c.account_id)}</option>`).join('');
+    const selected = scopedHistorySelection(rollEl.broker.value);
+    rollEl.broker.innerHTML = historySelectionOptions(body.connections);
     rollEl.broker.value = selected;
   } catch (error) { if (request !== rollRequest) return; rollError = error instanceof Error ? error.message : String(error); }
   if (request !== rollRequest) return;
@@ -680,7 +759,7 @@ function benchIndexAt(dateKey) {
 
 /** Date and account views are calculated during sync, including historical totals. */
 function buildView(dateKey, channelKey = selectedChannel) {
-  return payload?.aggregatedViews?.[dateKey]?.[channelKey]?.view ?? null;
+  return payload?.aggregatedViews?.[dateKey]?.[selectedBroker(channelKey) ? MERGED_CHANNEL_VIEW : channelKey]?.view ?? null;
 }
 
 /** Timeline points up to (and including) the selected date. Live adds a 'Now' point. */
@@ -1084,7 +1163,9 @@ function renderOverview(view) {
 
   if (el.deskEyebrow) {
     const consultant = payload.productProfile === 'consultant';
-    if (view.channelView === MERGED_CHANNEL_VIEW) {
+    if (selectedBroker()) {
+      el.deskEyebrow.textContent = selectionLabel() + ' desk';
+    } else if (view.channelView === MERGED_CHANNEL_VIEW) {
       el.deskEyebrow.textContent = consultant
         ? channels.length > 1
           ? 'Multi-broker desk'
@@ -1316,7 +1397,7 @@ function prepareCardExplanation(button, selectedFigure) {
   const values = content.textContent.replace(/\s+/g, ' ').trim();
   const notes = [...card.querySelectorAll('[data-help]')].map(node => node.dataset.help).join(' ');
   const asOf = selectedDate === 'live' ? payload?.generatedAt || 'latest' : selectedDate;
-  const channel = selectedChannel === MERGED_CHANNEL_VIEW ? 'All brokers (merged)' : selectedChannel;
+  const channel = selectedChannel === MERGED_CHANNEL_VIEW ? 'All brokers (merged)' : selectionLabel();
   const context = `${channel} · ${selectedDate === 'live' ? 'Latest view' : 'Historical snapshot'} · ${asOf}`;
   const prompt = [
     `Explain the number${card.querySelector('.metric-value') ? '' : 's'} on my dashboard card "${title}" in plain language.`,
@@ -1515,7 +1596,7 @@ function renderExpiryRisk(view, asOf) {
   if (!el.expiryRow) return;
   const hasOptions = (view.optionCount || 0) > 0;
   if (el.expiryBlock) el.expiryBlock.classList.toggle('hidden', !hasOptions);
-  window.OptionRiskView?.update({ payload, hasOptions, channel: selectedChannel, date: selectedDate, isLive: view.isLive });
+  window.OptionRiskView?.update({ payload, hasOptions, channel: selectedChannel, accountChannels: selectedBroker()?.channels.filter(channel => payload.model.live.positions.some(row => row.channel === channel)), date: selectedDate, isLive: view.isLive });
   if (el.expiryTitle) {
     const consultant = payload.productProfile === 'consultant';
     el.expiryTitle.innerHTML = consultant
@@ -1963,23 +2044,15 @@ el.openOptions?.addEventListener('click', (event) => {
 
 function renderChannelPills(view) {
   if (!el.channelPills) return;
-  const live = payload.model.live;
-  const channels =
-    Array.isArray(live.channels) && live.channels.length > 0 ? live.channels : [DEFAULT_CHANNEL];
-  const pills = [
-    { id: MERGED_CHANNEL_VIEW, label: 'All platforms' },
-    ...channels.map((ch) => ({
-      id: ch,
-      label: ch === DEFAULT_CHANNEL ? 'Unassigned' : ch,
-    })),
-  ];
+  const channels = (portfolioPayload || payload)?.model?.live?.channels || [];
+  const pills = selectionOptions();
   el.channelPills.innerHTML = pills
     .map((p) => {
       const on = p.id === selectedChannel ? ' on' : '';
-      const broker = brokerIdentity(p.id);
+      const broker = p.brokerId ? { id: p.brokerId, name: brokerNames[p.brokerId] || p.brokerId, account: 'All accounts' } : brokerIdentity(p.id);
       const logo = isWheelDesk && ['ibkr','moomoo','tiger','webull'].includes(broker.id);
       const duplicates = channels.filter(ch => brokerIdentity(ch).id === broker.id).length > 1;
-      const content = logo ? `<img src="../broker-logos/${broker.id}.png" alt="${escapeHtml(broker.name)}" />${duplicates ? `<span class="broker-account-label">${escapeHtml(broker.account)}</span>` : ''}` : escapeHtml(p.label);
+      const content = logo ? `<img src="../broker-logos/${broker.id}.png" alt="${escapeHtml(broker.name)}" />${duplicates || p.brokerId ? `<span class="broker-account-label">${escapeHtml(broker.account)}</span>` : ''}` : escapeHtml(p.label);
       return `<button type="button" class="chip-btn${on}${logo ? ' broker-logo-button' : ''}" data-channel="${escapeHtml(p.id)}" aria-pressed="${p.id === selectedChannel}" aria-label="${escapeHtml(logo ? `${broker.name} · ${broker.account}` : p.label)}" title="${escapeHtml(logo ? `${broker.name} · ${broker.account}` : p.label)}">${content}</button>`;
     })
     .join('');
@@ -2470,8 +2543,8 @@ function renderInsights(view) {
 
   if (view.channelView === MERGED_CHANNEL_VIEW && (view.channels || []).length > 1) {
     insights.push({
-      title: 'Multi-channel portfolio',
-      text: `Merged view across: ${(view.channels || []).join(', ')}. Use the Channel control to isolate one broker. Unassigned holdings appear under "${DEFAULT_CHANNEL}".`,
+      title: selectedBroker() ? selectionLabel() + ' accounts' : 'Multi-channel portfolio',
+      text: selectedBroker() ? `Showing all ${(view.channels || []).length} accounts at ${selectionLabel()}. Select an account to inspect its own totals.` : `Merged view across: ${(view.channels || []).join(', ')}. Use the Channel control to isolate one broker. Unassigned holdings appear under "${DEFAULT_CHANNEL}".`,
       color: '#7c3aed',
     });
   } else if (view.channelView === DEFAULT_CHANNEL) {
@@ -2508,12 +2581,14 @@ function renderInsights(view) {
 /* ---------- orchestration ---------- */
 
 function renderDate(dateKey, channelKey = selectedChannel) {
-  // deposits table rendered inside after view is built
-  if (!payload?.model) return;
+  activateSelection();
+  if (selectedBroker()) dateKey = 'live';
+  if (!payload) return;
+  if (!payload.model) { renderEmpty(payload); initChannelSelect(); renderChannelPills(); syncDateControls(); return; }
   const view = buildView(dateKey, channelKey);
   if (!view) return;
 
-  const chLabel =
+  const chLabel = selectedBroker() ? selectionLabel() + ' · All accounts' :
     view.channelView === MERGED_CHANNEL_VIEW
       ? 'All channels (merged)'
       : `Channel: ${view.channelLabel || view.channelView}`;
@@ -2528,6 +2603,7 @@ function renderDate(dateKey, channelKey = selectedChannel) {
   syncDateControls();
 
   renderOverview(view);
+  if (selectedBroker() && el.heroLead) el.heroLead.textContent += ' Broker totals reflect the latest sync; choose an account for saved dates.';
   setOptionTab(optionTab);
 }
 
@@ -2537,6 +2613,14 @@ function historyDates() {
 
 function syncDateControls() {
   const dates = historyDates();
+  const brokerMode = !!selectedBroker();
+  if (el.dateSelect) {
+    el.dateSelect.replaceChildren(...['live', ...dates.slice().reverse()].map(date => { const node = document.createElement('option'); node.value = date; node.textContent = date === 'live' ? 'Live' : date; return node; }));
+    el.dateSelect.disabled = brokerMode;
+    el.dateSelect.value = selectedDate;
+    el.dateSelect.title = brokerMode ? 'Broker totals show the latest sync. Select an account for saved dates.' : '';
+  }
+  if (el.dateInput) { el.dateInput.disabled = brokerMode; el.dateInput.title = el.dateSelect?.title || ''; }
   const inputYmd =
     selectedDate === 'live'
       ? dates[dates.length - 1] || new Date().toISOString().slice(0, 10)
@@ -2554,39 +2638,23 @@ function syncDateControls() {
 }
 
 function initChannelSelect() {
-  const live = payload.model.live;
-  const channels = Array.isArray(live.channels) && live.channels.length > 0
-    ? live.channels
-    : [DEFAULT_CHANNEL];
-
+  const options = selectionOptions();
+  if (!options.some(option => option.id === selectedChannel)) selectedChannel = MERGED_CHANNEL_VIEW;
   if (el.channelSelect) {
-    el.channelSelect.innerHTML = '';
-    const mergedOpt = document.createElement('option');
-    mergedOpt.value = MERGED_CHANNEL_VIEW;
-    mergedOpt.textContent = 'All (merged)';
-    el.channelSelect.appendChild(mergedOpt);
-
-    channels.forEach((ch) => {
-      const opt = document.createElement('option');
-      opt.value = ch;
-      opt.textContent = ch === DEFAULT_CHANNEL ? 'default (unassigned)' : ch;
-      el.channelSelect.appendChild(opt);
-    });
+    el.channelSelect.replaceChildren(...options.map(option => {
+      const node = document.createElement('option'); node.value = option.id; node.textContent = option.label; return node;
+    }));
+    el.channelSelect.value = selectedChannel;
   }
-
-  const stillValid =
-    selectedChannel === MERGED_CHANNEL_VIEW || channels.includes(selectedChannel);
-  if (!stillValid) selectedChannel = MERGED_CHANNEL_VIEW;
-  if (el.channelSelect) el.channelSelect.value = selectedChannel;
 }
 
 function initDashboard(preserveSelection = false) {
-  const requested = preserveSelection ? selectedChannel : normalizeChannelId(channelFromQuery());
-  const liveChannels = payload.model.live.channels || [];
-  selectedChannel =
-    requested === MERGED_CHANNEL_VIEW || liveChannels.includes(requested)
-      ? requested
-      : MERGED_CHANNEL_VIEW;
+  portfolioPayload = payload;
+  const requested = preserveSelection ? selectedChannel : requestedSelection();
+  selectedChannel = selectionOptions().some(option => option.id === requested) ? requested : MERGED_CHANNEL_VIEW;
+  if (selectedChannel !== requested) writeChannelQuery('all');
+  selectionPreference(selectedChannel);
+  activateSelection();
   const dates = payload.model.history.map((h) => h.date).sort().reverse();
   const stillValid = selectedDate === 'live' || dates.includes(selectedDate);
   if (!stillValid) selectedDate = 'live';
@@ -2899,9 +2967,9 @@ async function load(force = false) {
   const timeout = setTimeout(() => controller.abort(), 180000);
   try {
     const body = await fetchDashboardWithProgress(controller.signal, force, cached => {
-      payload = cached;
+      payload = cached; portfolioPayload = cached;
       if (cached.empty || !cached.model) renderEmpty(cached);
-      else initDashboard();
+      else initDashboard(showingSnapshot);
       showingSnapshot = true;
       optionDefaultApplied = true;
       el.loading.classList.add('hidden');
@@ -2909,7 +2977,7 @@ async function load(force = false) {
       loadHistoryInBackground();
       historyStarted = true;
     });
-    payload = body;
+    payload = body; portfolioPayload = body;
     updateLoading(6, { positions: body.model?.live?.positions?.length, tradeRecords: body.optionAnalytics?.executions?.length, snapshots: body.model?.history?.length });
     await paintLoadingStage();
     if (!optionDefaultApplied) {
@@ -2954,9 +3022,7 @@ el.dateSelect.addEventListener('change', (e) => {
   renderDate(selectedDate, selectedChannel);
 });
 el.channelSelect.addEventListener('change', (e) => {
-  selectedChannel = e.target.value;
-  renderDate(selectedDate, selectedChannel);
-  if (optionTab === 'history') followHistoryBroker(selectedChannel);
+  applySelection(e.target.value);
 });
 if (el.dateInput) {
   el.dateInput.addEventListener('change', (e) => {
@@ -3007,11 +3073,7 @@ if (el.channelPills) {
   el.channelPills.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-channel]');
     if (!btn) return;
-    selectedChannel = normalizeChannelId(btn.getAttribute('data-channel'));
-    if (el.channelSelect) el.channelSelect.value = selectedChannel;
-    writeChannelQuery(selectedChannel === MERGED_CHANNEL_VIEW ? 'all' : selectedChannel);
-    renderDate(selectedDate, selectedChannel);
-    if (optionTab === 'history') followHistoryBroker(selectedChannel);
+    applySelection(btn.getAttribute('data-channel'));
   });
 }
 

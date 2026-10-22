@@ -60,6 +60,8 @@ it('persists separate broker rollups, combines same-broker accounts, and preserv
   expect(Object.keys(saved.brokers).sort()).toEqual(['ibkr', 'moomoo']);
   const ib = saved.brokers.ibkr, moo = saved.brokers.moomoo;
   expect(ib.nav).toBe(825);
+  expect(ib.dashboard.model!.live.totalValue).toBe(825);
+  expect(ib.dashboard.model!.live.positions.every(row => row.channel !== f.channels[2])).toBe(true);
   expect(moo.nav).toBe(150);
   expect(ib.channels).toEqual(f.channels.slice(0, 2).sort());
   expect(ib.totals).toMatchObject({ totalValue: 825, positionsValue: 500, totalCost: 175, totalPL: 325, cashAmount: 250, depositsAmount: 75, navComplete: true });

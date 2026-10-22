@@ -64,6 +64,7 @@
   function buildTracks(episodes, groups, context) {
     const tracks = new Map(), links = [];
     const visible = date => date && day(date) <= context.asOf;
+    const selected = channel => context.channels ? context.channels.includes(channel) : !context.channel || channel === context.channel;
     function track(channel, account, c, side) {
       c = { ...c, underlying: stockSymbol(c) };
       const key = contractKey(channel, account, c, side);
@@ -74,7 +75,7 @@
       if (visible(date) && !t.events.some(e => e.id === id)) t.events.push({ id, date: day(date), kind, label, ...(fill ? { fill } : {}) });
     }
     for (const row of episodes) {
-      if (context.channel && row.channel !== context.channel) continue;
+      if (!selected(row.channel)) continue;
       if (!visible(row.first_seen) && !(row.executions || []).some(e => visible(e.executed_at)) && !(row.events || []).some(e => visible(e.date))) continue;
       const t = track(row.channel, row.account_id, row.contract, row.contract.side);
       const observations = row.observations.filter(o => visible(o.as_of));
@@ -102,14 +103,14 @@
       if (visible(row.first_seen_absent)) event(t, `absent:${row.id}`, row.first_seen_absent, 'absent', 'First observed absent; this alone does not establish a close');
     }
     for (const fill of context.executions || []) {
-      if (!visible(fill.executed_at) || context.channel && fill.channel !== context.channel) continue;
+      if (!visible(fill.executed_at) || !selected(fill.channel)) continue;
       const side = (fill.effect === 'open') === (fill.side === 'buy') ? 'long' : 'short';
       const t = track(fill.channel, fill.account_id, fill, side);
       event(t, `fill:${fill.execution_id}`, fill.executed_at, fill.effect,
         `${fill.side.toUpperCase()} to ${fill.effect} · ${fill.contracts} contracts · ${fill.executed_at}`, fill);
     }
     for (const group of groups) for (const r of group.relationships) {
-      if (!visible(r.through) || context.channel && r.channel !== context.channel) continue;
+      if (!visible(r.through) || !selected(r.channel)) continue;
       const old = track(r.channel, r.account_id, r.old, r.side);
       const replacementSide = r.replacement_effect === 'close' ? (r.side === 'long' ? 'short' : 'long') : r.side;
       const next = track(r.channel, r.account_id, r.replacement, replacementSide);
@@ -359,7 +360,7 @@
       return { rows: out, executions, gaps, limited: true };
     }
     async function load(force = false) {
-      const context = getContext(), key = JSON.stringify([context.channel, context.asOf, context.replay]);
+      const context = getContext(), key = JSON.stringify([context.channel, context.channels, context.asOf, context.replay]);
       if (!force && pendingKey === key) return;
       if (!force && loadedKey === key) { render(); return; }
       const id = ++request; pendingKey = key; selectedKey = null; status.textContent = 'Loading option timeline…'; detail.innerHTML = ''; chart.innerHTML = '';

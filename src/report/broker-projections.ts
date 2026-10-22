@@ -12,6 +12,8 @@ export interface BrokerProjection {
   calculatedAt: string;
   /** Complete broker NAV in the reporting currency; partial valuations stay unavailable. */
   nav: number | null;
+  /** Broker-specific dashboard data; saved aggregate scopes and page models sit alongside it. */
+  dashboard: DashboardPayload;
   totals: LiveDashboardSlice | null;
   scopes: ReturnType<typeof buildPageProjections>['dashboard'];
   pages: { positions: Record<string, unknown>; insights: Record<string, unknown> };
@@ -93,7 +95,7 @@ export function buildBrokerProjections(state: InvestorState, dashboard: Dashboar
         gaps: dashboard.optionAnalytics.gaps.filter(owns) },
     };
     const pages = buildPageProjections(scoped);
-    result[brokerId] = { brokerId, channels, calculatedAt: dashboard.generatedAt, nav: live?.navComplete === true ? live.totalValue : null, totals: live,
+    result[brokerId] = { brokerId, channels, calculatedAt: dashboard.generatedAt, nav: live?.navComplete === true ? live.totalValue : null, totals: live, dashboard: scoped,
       scopes: pages.dashboard, pages: { positions: pages.positions, insights: pages.insights }, journal,
       trades: { open: buildTradeProjections(openRows.filter(owns)), history: buildTradeProjections(historyRows.filter(owns), true) } };
   }

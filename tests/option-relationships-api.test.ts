@@ -142,3 +142,43 @@ it('withholds earlier relationships when a newer archive contains corrections ne
   expect(result.groups).toEqual([]);
   expect(result.gaps.some(g => g.reason.includes('withheld'))).toBe(true);
 });
+
+it('filters timeline fills to every account of the selected broker without leaking other channels', async () => {
+  const first = Object.values(readBrokerAccountModel(state).connections)[0];
+  const secondId = addBrokerAccount(state, { source_id: first.source_id, account_id: 'B', label: 'Savings', config: { activity_query_id: '1' } });
+  const second = readBrokerAccountModel(state).connections[secondId];
+  const fill = { contract_id: 'AMD-put', underlying: 'AMD', right: 'put' as const, expiry: '2027-01-15', strike: '100',
+    multiplier: '100', contracts: '1', currency: 'USD', commission: '-1', gross_premium: '100', side: 'sell' as const,
+    effect: 'open' as const, executed_at: '2026-10-01T10:00:00', execution_id: 'open' };
+  state.option_executions = [{ ...fill, channel: first.channel, account_id: 'A' },
+    { ...fill, channel: second.channel, account_id: 'B' }, { ...fill, channel: 'outside', account_id: 'T' }];
+  await persistPortfolioFixture(state);
+  const response = await request(app()).get('/option-history?channel=broker:ibkr&include_executions=true');
+  expect(response.status).toBe(200);
+  expect(response.body.executions.map((row: any) => row.account_id).sort()).toEqual(['A', 'B']);
+  expect((await request(app()).get(`/option-history?channel=${first.channel}&include_executions=true`)).body.execution_total).toBe(1);
+  expect((await request(app()).get('/option-history?channel=broker:unknown&include_executions=true')).body.execution_total).toBe(0);
+  expect((await request(app()).get('/option-history?channel[]=ibkr')).status).toBe(400);
+});
+
+it('filters roll groups, coverage and gaps by selected broker across custom account channels', async () => {
+  const first = Object.values(readBrokerAccountModel(state).connections)[0];
+  const secondId = addBrokerAccount(state, { source_id: first.source_id, account_id: 'B', label: 'Savings', config: { activity_query_id: '1' } });
+  const second = readBrokerAccountModel(state).connections[secondId];
+  state.broker_sources!.outside = { broker_id: 'tiger', credentials: {} };
+  state.broker_connections!.outside = { broker_id: 'tiger', source_id: 'outside', enabled: true, account_id: 'T',
+    label: 'Other broker', channel: 'outside', config: { account: 'T' } };
+  archive(owner);
+  const file = join(root, 'drive', owner, 'broker-sync', first.channel, '20261001.xml');
+  const directory = join(root, 'drive', owner, 'broker-sync', second.channel); mkdirSync(directory, { recursive: true });
+  writeFileSync(join(directory, '20261001.xml'), readFileSync(file, 'utf8').replaceAll('accountId="A"', 'accountId="B"'));
+  await persistPortfolioFixture(state);
+  const response = await request(app()).get('/option-relationships?channel=broker:ibkr');
+  expect(response.status).toBe(200);
+  expect(response.body.groups.map((row: any) => row.account_id).sort()).toEqual(['A', 'B']);
+  expect(response.body.coverage.map((row: any) => row.account_id).sort()).toEqual(['A', 'B']);
+  expect(response.body.gaps.every((row: any) => row.channel !== 'outside')).toBe(true);
+  const unknown = await request(app()).get('/option-relationships?channel=broker:unknown');
+  expect(unknown.body.groups).toEqual([]);
+  expect(unknown.body.coverage).toEqual([]);
+});

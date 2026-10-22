@@ -10,7 +10,7 @@ import type { tradesOpenBook, tradesHistory } from '../webapp/trades-v2-data.js'
 import type { optionHistoryForState } from '../webapp/option-history-data.js';
 import type { optionRelationshipsForState } from '../webapp/option-relationships-data.js';
 
-export const PROJECTION_VERSION = 2;
+export const PROJECTION_VERSION = 3;
 export interface PortfolioProjection {
   version: typeof PROJECTION_VERSION;
   userId: string;

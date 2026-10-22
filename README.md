@@ -286,7 +286,18 @@ values; shares and fills retain their account identity. Unassigned holdings do
 not get attributed to a broker, and missing account/cash/FX data marks broker NAV
 incomplete. These saved rollups are exposed as `brokers` on `/portfolio-indices`
 and `brokerAggregates` on `/dashboard`. Existing account scopes remain available.
-Projection schema v2 invalidates older generations so the background worker
+Projection schema v3 invalidates older generations so the background worker
 prepares the broker rollups automatically, including for newly linked accounts.
 Older combined valuation snapshots without account cash attribution remain in
 the existing account history views; they are not fabricated into broker NAV history.
+
+The dashboard supports **All platforms**, a broker's **All accounts** mode, and
+individual accounts in both layouts. Broker selection uses the persisted broker
+payload for cards, holdings, premium, risk and insights. History, roll and timeline
+requests filter all of that broker's account channels, and scenario analysis
+receives the matching account IDs. Selection is retained in the `channel` URL
+parameter (`broker:ibkr`, for example) and per-user browser-session preferences
+across reloads and sync refreshes. Legacy
+broker-name links resolve to broker mode when they are not an account channel.
+Broker-wide valuation views currently show the latest saved calculation; date
+controls are disabled with guidance to select an account for older saved dates.

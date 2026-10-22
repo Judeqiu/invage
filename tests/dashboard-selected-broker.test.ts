@@ -1,0 +1,137 @@
+import { expect, it } from 'vitest';
+import { existsSync, readFileSync } from 'node:fs';
+import { createServer } from 'node:http';
+import { resolve, extname } from 'node:path';
+import puppeteer from 'puppeteer-core';
+import { buildDashboardModel, buildLivePositions } from '../src/report/dashboard-model.js';
+import { buildBrokerProjections } from '../src/report/broker-projections.js';
+import { buildPageProjections } from '../src/report/page-projections.js';
+import { buildExecutionJournal } from '../src/brokers/option-executions.js';
+import { buildRecordedOptionAnalytics } from '../src/webapp/option-analytics.js';
+import type { InvestorState } from '../src/state/portfolio-state.js';
+import type { DashboardPayload } from '../src/webapp/dashboard-data.js';
+
+function fixture() {
+  const state: InvestorState = { user: { id: '00000000-0000-4000-8000-000000000061', slug: 'test', created_at: '2026-01-01' },
+    profile: { display_name: 'Selected broker', contact_email: 'test@example.com' }, log: [],
+    broker_sources: { ib: { broker_id: 'ibkr', credentials: { token: 'test' } }, tiger: { broker_id: 'tiger', credentials: {} } },
+    broker_connections: Object.fromEntries(['retirement', 'savings', 'other'].map((channel, i) => [channel, {
+      broker_id: i < 2 ? 'ibkr' : 'tiger', source_id: i < 2 ? 'ib' : 'tiger', account_id: 'A' + i,
+      channel, label: channel, enabled: true, config: i < 2 ? {} : { account: 'A' + i },
+    }])),
+    portfolio: {
+      'AAPL@retirement': { units: 1, avg_price: 80, currency: 'USD', channel: 'retirement' },
+      'AAPL@savings': { units: 1, avg_price: 80, currency: 'USD', channel: 'savings' },
+      'MSFT@other': { units: 1, avg_price: 180, currency: 'USD', channel: 'other' },
+      'AAPL-put': { units: 1, avg_price: 100, currency: 'USD', channel: 'retirement', instrument: 'option',
+        option: { underlying: 'AAPL', right: 'put', side: 'short', strike: 100, expiry: '2026-11-20', multiplier: 100, settlement: 'physical', mark: 100, quote_source: 'manual' } },
+      'MSFT-put': { units: 1, avg_price: 100, currency: 'USD', channel: 'other', instrument: 'option',
+        option: { underlying: 'MSFT', right: 'put', side: 'short', strike: 200, expiry: '2026-11-20', multiplier: 100, settlement: 'physical', mark: 50, quote_source: 'manual' } },
+    },
+    cash: ['retirement', 'savings', 'other'].map((channel, i) => ({ channel, currency: 'USD', amount: [50, 75, 25][i], updated_at: '2026-10-23' })),
+  };
+  state.option_executions = ['retirement', 'savings', 'other'].map((channel, i) => ({ channel, account_id: 'A' + i,
+    execution_id: 'open', contract_id: 'option-' + i, executed_at: '2026-10-23T09:00:00', underlying: i < 2 ? 'AAPL' : 'MSFT',
+    right: 'put', side: 'sell', effect: 'open', strike: i < 2 ? '100' : '200', expiry: '2026-11-20', multiplier: '100',
+    contracts: '1', gross_premium: ['100', '200', '500'][i], currency: 'USD', commission: '-1' }));
+  const journal = buildExecutionJournal(state.option_executions);
+  const live = buildLivePositions(state.portfolio!, { AAPL: 100, MSFT: 200 }, {}, state.cash, [], '2026-10-23', { reportingCurrency: 'USD', fxRates: {} });
+  const dashboard: DashboardPayload = { slug: state.user.id, displayName: state.profile.display_name, empty: false,
+    generatedAt: '2026-10-23T10:00:00Z', productProfile: 'consultant', productName: 'Test', benchmark: null,
+    model: buildDashboardModel(live, [{ date: '2026-10-22', totalValue: 999, totalCost: 0, totalPL: 0, totalPLPct: 0, positions: [], cashAmount: 999, cashCurrency: 'USD' }]),
+    premiumJournal: { available: journal.available, daily: journal.daily, channels: ['retirement', 'savings', 'other'] },
+    optionAnalytics: buildRecordedOptionAnalytics(state.option_executions), equityPrices: { AAPL: 100, MSFT: 200 },
+    brokerAsOf: { retirement: '2026-10-23', savings: '2026-10-23', other: '2026-10-23' },
+    brokerChannels: { retirement: { brokerId: 'ibkr', label: 'Retirement' }, savings: { brokerId: 'ibkr', label: 'Savings' }, other: { brokerId: 'tiger', label: 'Other' } } };
+  dashboard.aggregatedViews = buildPageProjections(dashboard).dashboard;
+  const brokers = buildBrokerProjections(state, dashboard, [], []);
+  return { ...dashboard, brokerAggregates: brokers, analysisContextId: 'selected-broker-test',
+    dashboardConfig: { showTotalPremium: true, showRealizedPnl: true, showOptionRiskModelView: true } };
+}
+const executablePath = process.env.CHROME_BINARY || '/usr/bin/chromium';
+it.skipIf(!existsSync(executablePath)).each(['index.html', 'v2.html'])('%s keeps broker/account/all selection consistent across totals, history, risk scope and reload', async fileName => {
+  const root = resolve('webui'), payload = fixture();
+  const requests: URL[] = [], riskScopes: string[][] = [];
+  const server = createServer(async (req, res) => {
+    const url = new URL(req.url!, 'http://localhost'); requests.push(url);
+    const json = (body: unknown, status = 200) => { res.statusCode = status; res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(body)); };
+    if (url.pathname.endsWith('/dashboard')) return json(payload);
+    if (url.pathname.endsWith('/broker-sync')) return json(null);
+    if (url.pathname.endsWith('/option-history')) return json({ episodes: [], connections: ['retirement','savings','other'].map((channel, i) => ({ channel, label: channel, broker_id: i < 2 ? 'ibkr' : 'tiger' })), gaps: [], next_offset: null });
+    if (url.pathname.endsWith('/option-relationships')) return json({ groups: [], spreads: [], connections: [], coverage: [], gaps: [], total: 0, next_offset: null });
+    if (url.pathname.endsWith('/option-risk/capabilities')) return json({ enabled: true, available: true });
+    if (url.pathname.endsWith('/option-risk/latest')) { riskScopes.push(JSON.parse(url.searchParams.get('accountIds') || '[]')); return json({ job: null }); }
+    if (url.pathname.endsWith('/option-risk/jobs')) return json({ error: 'Test market data unavailable' }, 503);
+    const file = resolve(root, '.' + url.pathname);
+    if (!file.startsWith(root + '/') || !existsSync(file)) { res.statusCode = 404; res.end(); return; }
+    res.setHeader('Content-Type', extname(file) === '.js' ? 'text/javascript' : extname(file) === '.css' ? 'text/css' : 'text/html');
+    res.end(readFileSync(file));
+  });
+  await new Promise<void>(done => server.listen(0, '127.0.0.1', done));
+  const browser = await puppeteer.launch({ executablePath, headless: true, args: ['--no-sandbox'] });
+  try {
+    const page = await browser.newPage(), errors: string[] = [];
+    page.on('pageerror', error => errors.push(error.message));
+    const origin = `http://127.0.0.1:${(server.address() as any).port}`;
+    await page.setRequestInterception(true);
+    page.on('request', request => request.url().startsWith(origin) ? request.continue() : request.abort());
+    await page.goto(origin + '/dashboard/' + fileName);
+    await page.waitForSelector('[data-channel="broker:ibkr"]');
+    expect(await page.$eval('#navValue', node => node.textContent)).toBe('$400.00');
+    await page.select('#dateSelect', '2026-10-22');
+    expect(await page.$eval('#navValue', node => node.textContent)).toBe('$999.00');
+    await page.click('[data-channel="broker:ibkr"]');
+    expect(await page.$eval('#navValue', node => node.textContent)).toBe('$225.00');
+    expect(await page.$eval('#deskEyebrow', node => node.textContent)).toContain('IBKR');
+    expect(await page.$eval('#totalPremiumValue', node => node.textContent)).toBe('$300.00');
+    expect(await page.$eval('#openOptions', node => node.textContent)).toContain('AAPL');
+    expect(await page.$eval('#openOptions', node => node.textContent)).not.toContain('MSFT');
+    expect(await page.$eval('#dateSelect', node => (node as HTMLInputElement).disabled)).toBe(true);
+    expect(new URL(page.url()).searchParams.get('channel')).toBe('broker:ibkr');
+    const beforeRefresh = requests.filter(url => url.pathname.endsWith('/dashboard')).length;
+    // The post-sync path uses this same saved-data reload operation.
+    await page.$eval('#dashboardRetry', node => (node as HTMLButtonElement).click());
+    await expect.poll(() => requests.filter(url => url.pathname.endsWith('/dashboard')).length).toBeGreaterThan(beforeRefresh);
+    await page.waitForSelector('#dashboardRetry:enabled');
+    expect(await page.$eval('#channelSelect', node => (node as HTMLSelectElement).value)).toBe('broker:ibkr');
+    expect(await page.$eval('#navValue', node => node.textContent)).toBe('$225.00');
+    await page.reload();
+    await page.waitForFunction(() => document.getElementById('channelSelect')?.value === 'broker:ibkr');
+    expect(await page.$eval('#navValue', node => node.textContent)).toBe('$225.00');
+    await page.goto(origin + '/dashboard/' + fileName);
+    await page.waitForFunction(() => document.getElementById('channelSelect')?.value === 'broker:ibkr');
+    expect(await page.$eval('#navValue', node => node.textContent)).toBe('$225.00');
+    await page.click('#optionHistoryTab');
+    await expect.poll(() => requests.some(url => url.pathname.endsWith('/option-history') && url.searchParams.get('channel') === 'broker:ibkr')).toBe(true);
+    await page.waitForFunction(() => document.querySelector('#historyBroker option[value="retirement"]'));
+    expect(await page.$('#historyBroker option[value="other"]')).toBeNull();
+    await page.click('#optionRollsTab');
+    await expect.poll(() => requests.some(url => url.pathname.endsWith('/option-relationships') && url.searchParams.get('channel') === 'broker:ibkr')).toBe(true);
+    await page.click('#optionOpenTab');
+    await page.waitForSelector('#section01RiskTab:not(.hidden)');
+    await page.click('#section01RiskTab');
+    await expect.poll(() => riskScopes.some(scope => scope.length === 2 && scope.includes('retirement') && scope.includes('savings'))).toBe(true);
+    await page.select('#channelSelect', 'other');
+    expect(await page.$eval('#navValue', node => node.textContent)).toBe('$175.00');
+    expect(await page.$eval('#dateSelect', node => (node as HTMLInputElement).disabled)).toBe(false);
+    expect(await page.$eval('#openOptions', node => node.textContent)).toContain('MSFT');
+    await page.select('#channelSelect', 'broker:tiger');
+    expect(await page.$eval('#navValue', node => node.textContent)).toBe('$175.00');
+    expect(await page.$eval('#totalPremiumValue', node => node.textContent)).toBe('$500.00');
+    await page.select('#channelSelect', 'merged');
+    expect(await page.$eval('#navValue', node => node.textContent)).toBe('$400.00');
+    await page.setViewport({ width: 390, height: 844 });
+    await page.click('[data-channel="broker:ibkr"]');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: '/tmp/invage-selected-broker-' + fileName + '.png', fullPage: true });
+    await page.goto(origin + '/dashboard/' + fileName + '?channel=ibkr');
+    await page.waitForFunction(() => document.getElementById('channelSelect')?.value === 'broker:ibkr');
+    expect(await page.$eval('#navValue', node => node.textContent)).toBe('$225.00');
+    delete payload.brokerAggregates.ibkr;
+    await page.reload();
+    await page.waitForFunction(() => document.getElementById('channelSelect')?.value === 'merged');
+    expect(await page.$eval('#navValue', node => node.textContent)).toBe('$400.00');
+    expect(new URL(page.url()).searchParams.has('channel')).toBe(false);
+    expect(errors).toEqual([]);
+  } finally { await browser.close(); server.closeAllConnections(); await new Promise<void>(done => server.close(() => done())); }
+}, 30000);

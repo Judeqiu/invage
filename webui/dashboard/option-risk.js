@@ -42,7 +42,7 @@
   }
   function input(refresh = false) {
     const all = ['merged', 'all'].includes(context.channel);
-    return { analysisContextId: context.payload.analysisContextId, accountScope: { kind: all ? 'all' : 'selected', accountIds: all ? [] : [context.channel] },
+    return { analysisContextId: context.payload.analysisContextId, accountScope: { kind: all ? 'all' : 'selected', accountIds: all ? [] : context.accountChannels || [context.channel] },
       horizonTradingDays: Number($('optionRiskHorizon').value), scenarioSet: 'equity-options-standard-v1', mode: 'conditional', refresh };
   }
   function params() {
@@ -153,7 +153,7 @@
     } catch (e) { if (token === generation && e.name !== 'AbortError') status((result ? 'Stale result retained · ' : '') + e.message + (e.retryable === false ? '' : ' · Retry available.')); }
   }
   window.OptionRiskView = { update(next) {
-    const key = JSON.stringify([next.payload.analysisContextId, next.payload.generatedAt, next.channel, next.date, next.hasOptions]);
+    const key = JSON.stringify([next.payload.analysisContextId, next.payload.generatedAt, next.channel, next.accountChannels, next.date, next.hasOptions]);
     context = next;
     if (key !== contextKey) {
       stop(); contextKey = key; job = null; result = null; $('optionRiskOutput').replaceChildren(); status('Select Risk & scenarios to load analysis.');

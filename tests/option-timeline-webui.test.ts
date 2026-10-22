@@ -458,3 +458,13 @@ it.skipIf(!existsSync(executable))('highlights the entire roll chain on selectio
     expect(await page.$$('.timeline-selected, .timeline-muted')).toHaveLength(0);
   } finally { await browser.close(); await new Promise<void>(r => server.close(() => r())); }
 }, 30_000);
+
+it('keeps evidence within every account of a selected broker', () => {
+  const window: any = {};
+  runInNewContext(script, { window });
+  const accounts = [{ ...episode, id: 'first', channel: 'retirement' },
+    { ...episode, id: 'second', channel: 'savings', account_id: 'B' },
+    { ...episode, id: 'outside', channel: 'other', account_id: 'C' }];
+  const result = window.buildOptionTimelineTracks(accounts, [], { ...context, channel: 'broker:ibkr', channels: ['retirement', 'savings'] });
+  expect(result.tracks.map((row: any) => row.channel).sort()).toEqual(['retirement', 'savings']);
+});

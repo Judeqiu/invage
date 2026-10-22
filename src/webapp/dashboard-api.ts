@@ -26,6 +26,11 @@ import { getTreasury, getReportingCurrency, setTreasury, type HouseholdInvestorS
 import { saveInvestor, saveOptionJournalMetadata } from '../state/investor-store.js';
 import { buildOptionIdentityIndex } from '../brokers/option-identities.js';
 
+function matchesDashboardSelection(projection: PortfolioProjection, selection: string, channel: string): boolean {
+  if (!selection) return true;
+  return selection.startsWith('broker:') ? projection.brokers[selection.slice(7)]?.channels.includes(channel) === true : selection === channel;
+}
+
 export function createDashboardApiRouter(): Router {
   const router = Router();
   router.use((_req, res, next) => { res.setHeader('Cache-Control', 'private, no-store'); next(); });
@@ -240,8 +245,10 @@ export function createDashboardApiRouter(): Router {
     }
     try {
       const snapshot = await loadInvestor(await targetUserId(req, user));
-      const saved = requirePortfolioProjection(snapshot.state).relationships;
-      const groups = saved.groups.filter(group => !channel || group.channel === channel).flatMap(group => {
+      const projection = requirePortfolioProjection(snapshot.state);
+      const saved = projection.relationships;
+      const matches = (row: { channel: string }) => matchesDashboardSelection(projection, channel, row.channel);
+      const groups = saved.groups.filter(matches).flatMap(group => {
         const visible = group.relationships.filter(r => (!asOf || r.through.slice(0, 10) <= asOf) &&
           (!from || r.at.slice(0, 10) >= from) && (!to || r.through.slice(0, 10) <= to) &&
           (!evidence || r.evidence === evidence) &&
@@ -251,7 +258,8 @@ export function createDashboardApiRouter(): Router {
         return [{ ...group, latest: latest.replacement, latest_quantity: latest.opened_quantity, last_at: latest.at, relationships: visible }];
       }).sort((a, b) => b.last_at.localeCompare(a.last_at) || a.id.localeCompare(b.id));
       const result = { ...saved, groups, as_of: asOf || null,
-        spreads: saved.spreads.filter(row => (!channel || row.channel === channel) && (!asOf || row.through.slice(0, 10) <= asOf)) };
+        historyGaps: saved.historyGaps.filter(matches), coverage: saved.coverage.filter(matches), gaps: saved.gaps.filter(matches),
+        spreads: saved.spreads.filter(row => matches(row) && (!asOf || row.through.slice(0, 10) <= asOf)) };
       res.setHeader('Cache-Control', 'private, no-store');
       res.json({ ...result, groups: result.groups.slice(offset, offset + limit), total: result.groups.length,
         next_offset: offset + limit < result.groups.length ? offset + limit : null });
@@ -271,7 +279,8 @@ export function createDashboardApiRouter(): Router {
       }
       const snapshot = await loadInvestor(await targetUserId(req, user));
       const state = snapshot.state;
-      const { episodes, observations, gaps } = requirePortfolioProjection(state).optionHistory;
+      const projection = requirePortfolioProjection(state);
+      const { episodes, observations, gaps } = projection.optionHistory;
       const channel = typeof req.query.channel === 'string' ? req.query.channel : '';
       const right = typeof req.query.right === 'string' ? req.query.right : '';
       const status = typeof req.query.status === 'string' ? req.query.status : '';
@@ -280,7 +289,8 @@ export function createDashboardApiRouter(): Router {
       const asOf = typeof req.query.as_of === 'string' ? req.query.as_of : '';
       const q = typeof req.query.q === 'string' ? req.query.q.trim().toUpperCase().slice(0, 100) : '';
       const includeExecutions = req.query.include_executions === 'true';
-      if (right && right !== 'put' && right !== 'call' ||
+      const matchesScope = (row: { channel: string }) => matchesDashboardSelection(projection, channel, row.channel);
+      if (Object.keys(req.query).some(key => key.startsWith('channel[')) || req.query.channel !== undefined && typeof req.query.channel !== 'string' || right && right !== 'put' && right !== 'call' ||
           status && !['historical', 'open', 'unverified', 'no_longer_observed', 'closed_by_fills',
             'expired', 'assigned', 'exercised', 'cash_settled', 'mixed_outcomes',
             'partially_explained', 'conflicting_evidence'].includes(status) ||
@@ -290,7 +300,7 @@ export function createDashboardApiRouter(): Router {
         res.status(400).json({ error: 'invalid_filter', message: 'Invalid option history filter.' }); return;
       }
       const matches = episodes.filter(row =>
-        (!channel || row.channel === channel) && (!right || row.contract.right === right) &&
+        matchesScope(row) && (!right || row.contract.right === right) &&
         (!status || status === 'historical' && row.first_seen_absent != null || row.status === status) &&
         (!from || (row.first_seen_absent ?? row.last_seen_open) >= from) &&
         (!to || (row.first_seen_absent ?? row.last_seen_open) <= to) &&
@@ -298,7 +308,7 @@ export function createDashboardApiRouter(): Router {
       // Timeline history includes contracts that opened and closed between
       // position snapshots. Page these trades alongside the observed episodes.
       const executions = includeExecutions ? (state.option_executions ?? []).filter(row =>
-        (!channel || row.channel === channel) && (!right || row.right === right) &&
+        matchesScope(row) && (!right || row.right === right) &&
         (!from || row.executed_at.slice(0, 10) >= from) && (!to || row.executed_at.slice(0, 10) <= to) &&
         (!asOf || row.executed_at.slice(0, 10) <= asOf) &&
         (!q || `${row.underlying} ${row.expiry} ${row.strike}`.toUpperCase().includes(q)))
@@ -320,7 +330,7 @@ export function createDashboardApiRouter(): Router {
       res.json({ episodes: matches.slice(offset, offset + limit), total: matches.length,
         ...(includeExecutions ? { executions: executions.slice(offset, offset + limit), execution_total: executions.length } : {}),
         next_offset: offset + limit < Math.max(matches.length, executions.length) ? offset + limit : null,
-        connections, history_started: observations.length > 0, gaps });
+        connections, history_started: observations.some(matchesScope), gaps: gaps.filter(matchesScope) });
     } catch (e) {
       console.error('Option history failed:', e);
       res.status(e instanceof PortfolioProjectionUnavailable ? 503 : 500).json({ error: 'history_failed', message: e instanceof Error ? e.message : String(e) });
