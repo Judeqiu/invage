@@ -30,7 +30,7 @@ it('keeps a retry intent when PostgreSQL is unavailable before loading the accou
   await retryBrokerSyncs(new Date(+now+60_000),{
     dueBrokerSyncs:()=>[job], loadInvestor:async()=>{throw new Error('database unavailable')}, finishBrokerSync:finish,
   });
-  expect(finish).toHaveBeenCalledWith(job,false,new Date(+now+60_000));
+  expect(finish).not.toHaveBeenCalled();
   finishBrokerSync(job,true);
 });
 
@@ -41,4 +41,18 @@ it('preserves a newly requested Full sync when an older running attempt complete
   const pending=dueBrokerSyncs(new Date(+now+60_000));
   expect(pending).toContainEqual(expect.objectContaining({userId:'full-request',full:true}));
   finishBrokerSync(pending.find(j=>j.userId==='full-request')!,true);
+});
+
+it('acknowledges only Full requests captured before an attempt began',()=>{
+  const now=new Date();
+  queueFullBrokerSync('immutable-full','conn','binding');
+  const started=beginBrokerSync('immutable-full','conn','binding',false,now);
+  expect(started.full).toBe(true);
+  queueFullBrokerSync('immutable-full','conn','binding');
+  finishBrokerSync(started,true);
+  const remaining=dueBrokerSyncs(new Date(+now+60_000));
+  expect(remaining).toContainEqual(expect.objectContaining({userId:'immutable-full',full:true,request:true}));
+  const next=beginBrokerSync('immutable-full','conn','binding',false,now);
+  finishBrokerSync(next,true);
+  expect(dueBrokerSyncs(new Date(+now+60_000)).filter(j=>j.userId==='immutable-full')).toEqual([]);
 });

@@ -103,3 +103,9 @@ IBKR's `IBKR_FLEX_UNSPECIFIED` clock is retained as unverified local time,
 not passed to IANA time-zone conversion. Its broker-reported effects still
 import; only position-based inference for such rows is skipped. No UTC default
 is invented and this does not queue an otherwise valid history import.
+
+New Full requests use separate immutable queue entries. An attempt captures
+request IDs when it begins and acknowledges only those IDs after persistence;
+a concurrent newer request cannot be removed by an older attempt's cleanup.
+Queue cancellation is revalidated while holding the account lease. A database
+outage before loading an account leaves its due entry intact for the next tick.

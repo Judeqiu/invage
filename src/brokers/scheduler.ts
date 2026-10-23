@@ -1,3 +1,4 @@
+import { withBrokerSyncLease } from './sync-lease.js';
 import { dueBrokerSyncs, finishBrokerSync, brokerSyncBinding } from './sync-retries.js';
 import { loadInvestor } from '../state/investor-store.js';
 import { brokerSyncInProgress, readBrokerAccountModel, syncBrokerAccount } from './accounts.js';
@@ -10,7 +11,11 @@ export async function retryBrokerSyncs(now = new Date(), overrides: Partial<type
       const snapshot = await deps.loadInvestor(job.userId);
       const connection = deps.readBrokerAccountModel(snapshot.state).connections[job.connectionId];
       if (!connection?.enabled || brokerSyncBinding(connection) !== job.binding) {
-        deps.finishBrokerSync(job, true); // Explicit pause/removal/rebinding cancels retries.
+        await withBrokerSyncLease(job.userId,job.connectionId,async()=>{
+          const fresh=await deps.loadInvestor(job.userId);
+          const current=deps.readBrokerAccountModel(fresh.state).connections[job.connectionId];
+          if(!current?.enabled || brokerSyncBinding(current)!==job.binding)deps.finishBrokerSync(job,true);
+        }); // Revalidate cancellation while excluding another attempt.
         continue;
       }
       if (deps.brokerSyncInProgress(job.userId, job.connectionId)) continue;
@@ -21,7 +26,8 @@ export async function retryBrokerSyncs(now = new Date(), overrides: Partial<type
       }
     } catch (error) {
       // If SQL is unavailable even before sync starts, keep the disk-backed intent.
-      deps.finishBrokerSync(job, false, now);
+      // An entered sync manages its own intent. A pre-load SQL failure leaves
+      // the due entry intact for the next tick; never race a newer job writer.
       console.error('[broker/scheduler] retry', job.userId, job.connectionId, error);
     }
   }
