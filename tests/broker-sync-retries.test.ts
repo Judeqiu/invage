@@ -1,5 +1,5 @@
 import { expect, it, vi } from 'vitest';
-import { beginBrokerSync, dueBrokerSyncs, finishBrokerSync } from '../src/brokers/sync-retries.js';
+import { beginBrokerSync, dueBrokerSyncs, finishBrokerSync, queueFullBrokerSync } from '../src/brokers/sync-retries.js';
 it('retains failed work independently of SQL, preserves full sync, backs off and completes only the owning attempt', () => {
   const now = new Date('2026-10-23T00:00:00Z');
   const first=beginBrokerSync('user','conn','binding',true,now);
@@ -32,4 +32,13 @@ it('keeps a retry intent when PostgreSQL is unavailable before loading the accou
   });
   expect(finish).toHaveBeenCalledWith(job,false,new Date(+now+60_000));
   finishBrokerSync(job,true);
+});
+
+it('preserves a newly requested Full sync when an older running attempt completes',()=>{
+  const now=new Date();const old=beginBrokerSync('full-request','conn','binding',false,now);
+  queueFullBrokerSync('full-request','conn','binding');
+  finishBrokerSync(old,true);
+  const pending=dueBrokerSyncs(new Date(+now+60_000));
+  expect(pending).toContainEqual(expect.objectContaining({userId:'full-request',full:true}));
+  finishBrokerSync(pending.find(j=>j.userId==='full-request')!,true);
 });

@@ -78,6 +78,7 @@ export function moomooContractMetadata(bundle: MooMooRawBundle, lots: BrokerLot[
 }
 
 export function mapMooMooHistory(bundle: MooMooRawBundle, lots: BrokerLot[], channel: string): BrokerHistory | undefined {
+ if(bundle.history_error)return undefined;
   if (!bundle.fills_history) return undefined;
   const bound = { broker_id:bundle.schema === 'invage.futubull.cloud.raw.v1' ? 'futubull' : 'moomoo', channel, account_id:bundle.acc_id };
   const metadata = moomooContractMetadata(bundle, lots), gaps: BrokerHistoryGap[] = [];

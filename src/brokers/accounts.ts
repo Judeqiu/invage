@@ -1,4 +1,6 @@
-import { beginBrokerSync, finishBrokerSync, brokerSyncBinding, brokerSyncRetry } from './sync-retries.js';
+import { withBrokerSyncLease } from './sync-lease.js';
+import { isInvestorRevisionConflict } from './state-conflicts.js';
+import { beginBrokerSync, finishBrokerSync, brokerSyncBinding, brokerSyncRetry, queueFullBrokerSync } from './sync-retries.js';
 import { refreshPortfolioAfterSync } from '../state/projection-events.js';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -14,7 +16,7 @@ import type {
 import { assertBrokerConnectionMetrics } from '../state/portfolio-state.js';
 import { getCashes, getPortfolio } from '../state/portfolio-state.js';
 import { buildHoldingKey } from '../market/position-value.js';
-import { getBrokerAdapter,parseBrokerSnapshot,attachFetchedHistory,archiveHistoryAttachments, type BrokerRawPayload, type AdapterTransport } from './adapter.js';
+import { getBrokerAdapter,parseBrokerSnapshot,deferBrokerHistory,attachFetchedHistory,archiveHistoryAttachments, type BrokerRawPayload, type AdapterTransport } from './adapter.js';
 import { applyBrokerStatement } from './apply-statement.js';
 import { planBrokerHistorySync, assertBrokerHistory, type BrokerHistorySyncPlan } from './history.js';
 import { BROKER_CATALOG, getBrokerConnector, type BrokerConnectorDef } from './catalog.js';
@@ -369,7 +371,7 @@ export function patchBrokerAccount(state: InvestorState, id: string, patch: {
 }
 
 /** IBKR query may contain multiple accounts. Parse each statement in isolation. */
-export function ibkrStatements(raw: Buffer, channel: string): BrokerStatement[] {
+export function ibkrStatements(raw: Buffer, channel: string, includeHistory = true): BrokerStatement[] {
   const xml = raw.toString('utf8');
   if (/<(?:Error|FlexError)\b/.test(xml)) throw new Error('IBKR Flex returned an error envelope.');
   const status = xmlElementText(xml, 'Status');
@@ -388,7 +390,7 @@ export function ibkrStatements(raw: Buffer, channel: string): BrokerStatement[] 
     throw new Error('IBKR Flex response has no complete FlexStatement.');
   }
   const out = matches.map(m => {
-    const statement = mapFlexDocToStatement(parseFlexQueryXml(m[0]), channel);
+    const statement = mapFlexDocToStatement(parseFlexQueryXml(m[0], includeHistory), channel);
     if (statement.option_executions) statement.option_executions = statement.option_executions.map(row => ({ ...row, channel }));
     if (statement.option_events) statement.option_events = statement.option_events.map(row => ({ ...row, channel }));
     return statement;
@@ -407,7 +409,12 @@ async function fetchStatements(model: BrokerAccountModel, conn: BrokerAccountCon
   onRaw?.(raw.body);
   const parser = adapter.usesCsvTables ? loadBrokerParserSpec(slug, conn.broker_id,
     conn.channel === conn.broker_id ? undefined : connectionId) : null;
-  const statements = parser ? [runCsvTablesSpec(raw.body.toString('utf8'), parser, conn.channel)]
+  let statements: BrokerStatement[];
+  if (conn.broker_id === 'ibkr' && !parser) {
+    try { statements = ibkrStatements(raw.body, conn.channel, !raw.historyDeferred); }
+    catch (error) { statements = ibkrStatements(raw.body, conn.channel, false); raw.historyDeferred = {reason:'IBKR execution parsing deferred; current account snapshot retained.'}; }
+    if (raw.historyDeferred) statements = statements.map(s=>({...s, skipped:[...s.skipped,{kind:'event',reason:HISTORY_PENDING_REASON}]}));
+  } else statements = parser ? [runCsvTablesSpec(raw.body.toString('utf8'), parser, conn.channel)]
     : conn.broker_id === 'ibkr' ? ibkrStatements(raw.body, conn.channel)
     : [parseBrokerSnapshot(adapter, raw, conn.channel)];
   return { raw: raw.body, statements:statements.map(statement=>statement.skipped.some(s=>s.reason===HISTORY_PENDING_REASON) ? statement : attachFetchedHistory(raw,statement)),payload:raw };
@@ -484,6 +491,16 @@ function archive(slug: string, conn: BrokerAccountConnection, raw: Buffer, asOf:
 }
 export async function syncBrokerAccount(snapshot: InvestorSnapshot, id: string, transport?: AdapterTransport,
   trigger: 'manual' | 'scheduled' = 'manual', full = false): Promise<{ applied: BrokerApplyResult; aggregation?: { status: 'ready' | 'pending' | 'failed' } }> {
+  try { return await withBrokerSyncLease(snapshot.state.user.id,id,()=>syncBrokerAccountUnlocked(snapshot,id,transport,trigger,full)); }
+  catch(error) {
+    const conn=readBrokerAccountModel(snapshot.state).connections[id];
+    if(full && conn && error instanceof Error && error.message==='Sync already in progress.') queueFullBrokerSync(snapshot.state.user.id,id,brokerSyncBinding(conn));
+    throw error;
+  }
+}
+
+async function syncBrokerAccountUnlocked(snapshot: InvestorSnapshot, id: string, transport?: AdapterTransport,
+  trigger: 'manual' | 'scheduled' = 'manual', full = false): Promise<{ applied: BrokerApplyResult; aggregation?: { status: 'ready' | 'pending' | 'failed' } }> {
   let state = snapshot.state;
   const model = readBrokerAccountModel(state);
   const conn = model.connections[id];
@@ -512,13 +529,15 @@ export async function syncBrokerAccount(snapshot: InvestorSnapshot, id: string, 
       const history = planBrokerHistorySync(state.broker_history?.[conn.channel], conn.account_id, new Date(), full);
       const fetched = await fetchStatements(model, conn, id, state.user.id, transport, body => { raw = body; }, history);
       raw = fetched.raw;
-      const statement = fetched.statements.find(s => s.account_id === conn.account_id);
+      let statement = fetched.statements.find(s => s.account_id === conn.account_id);
       if (!statement) throw new Error(`Broker statement account mismatch: expected ${conn.account_id}.`);
       archivePath = archive(state.user.id, conn, fetched.raw, statement.as_of, true);
-      archiveHistoryAttachments(state.user.id,conn.channel,fetched.payload);
+      try { archiveHistoryAttachments(state.user.id,conn.channel,fetched.payload); }
+      catch { fetched.payload.historyDeferred={reason:'Historical evidence archive unavailable; retry history before advancing its checkpoint.'};statement=deferBrokerHistory(statement); }
       // Network/backfill work can take minutes. Apply against the latest
       // revision so unrelated profile edits survive, while rejecting rebinding
       // or pausing the selected account during the fetch.
+      for (let attempt = 0; ; attempt++) {
       const latest = await loadInvestor(state.user.id);
       const latestModel = readBrokerAccountModel(latest.state);
       const selected = latestModel.connections[id];
@@ -534,6 +553,7 @@ export async function syncBrokerAccount(snapshot: InvestorSnapshot, id: string, 
       // readBrokerAccountModel(). Persist that canonical shape before the apply
       // layer verifies the selected account and channel against stored state.
       if (!state.broker_sources) persistBrokerAccountModel(state, latestModel);
+      try {
       applied = await applyBrokerStatement(snapshot, id, statement, fetched.raw, result => {
         const current = readBrokerAccountModel(state);
         current.connections[id].last_sync = { at, ok: true, as_of: result.asOf, account_id: result.accountId,
@@ -541,7 +561,12 @@ export async function syncBrokerAccount(snapshot: InvestorSnapshot, id: string, 
           ...(result.skipped.length ? { not_imported: result.skipped.map(formatBrokerSkip) } : {}) };
         persistBrokerAccountModel(state, current);
       }, { brokerId: conn.broker_id, channel: conn.channel },
-      { syncId, observedAt: at, rawDataId: rawId(), deferHistoryConflicts: true });
+      { syncId, observedAt: fetched.payload.meta?.snapshot_at ?? at, rawDataId: rawId(), deferHistoryConflicts: true, historyError:fetched.payload.historyDeferred?.reason, requireCompleteSnapshot:true });
+      break;
+      } catch (error) {
+        if (!isInvestorRevisionConflict(error) || attempt >= 2) throw error;
+      }
+      }
     } catch (error) {
       const secrets = def.credentialFields.filter(f => f.type === 'secret').map(f => credentials[f.id]).filter((v): v is string => !!v);
       const message = redactSecrets(error instanceof Error ? error.message : String(error), secrets);
@@ -551,7 +576,8 @@ export async function syncBrokerAccount(snapshot: InvestorSnapshot, id: string, 
       try {
         const fresh = await loadInvestor(state.user.id);
         const current = readBrokerAccountModel(fresh.state);
-        if (current.connections[id]) {
+        if (current.connections[id] && brokerSyncBinding(current.connections[id]) === brokerSyncBinding(conn) &&
+            (!current.connections[id].last_sync?.at || current.connections[id].last_sync!.at <= at)) {
           current.connections[id].last_sync = { at, ok: false, error: message };
           persistBrokerAccountModel(fresh.state, current);
           await saveInvestor(fresh);
@@ -565,6 +591,8 @@ export async function syncBrokerAccount(snapshot: InvestorSnapshot, id: string, 
       account_id: applied.accountId, lots_upserted: applied.lotsUpserted, lots_removed: applied.lotsRemoved,
       ...(rawId() ? { raw_data_id: rawId() } : {}) });
     applied.archivePath = archivePath;
+    complete = !applied.skipped.some(s => s.reason === HISTORY_PENDING_REASON);
+    finishBrokerSync(intent, complete);
     try {
       await publishBrokerSyncSuccess(state.user.id, state.user.admin === true,
         brokerSyncFacts(def.displayName, conn.label, before, captureBrokerSyncSnapshot(state, conn.channel), applied,
@@ -572,7 +600,6 @@ export async function syncBrokerAccount(snapshot: InvestorSnapshot, id: string, 
     } catch (error) {
       console.error('[broker/sync-notification] comparison failed:', error);
     }
-    complete = !applied.skipped.some(s => s.reason === HISTORY_PENDING_REASON);
     const aggregation = await refreshPortfolioAfterSync(state.user.id);
     return { applied, aggregation };
   } finally {

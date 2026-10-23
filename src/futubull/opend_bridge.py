@@ -84,16 +84,22 @@ def main():
             output = {"schema": "invage.futubull.raw.v1", "fetched_at": datetime.now(timezone.utc).isoformat(),
                       "acc_id": account_id, "funds": funds, "positions": positions}
             if request.get("history"):
-                plan = request["history"]
-                bounds = {"start": plan["from"][:10] + " 00:00:00", "end": plan["through"][:10] + " 23:59:59",
-                          "trd_env": futu.TrdEnv.REAL, "acc_id": account}
-                deals = require_ok(context.history_deal_list_query(**bounds), "historical deals", futu)
-                orders = require_ok(context.history_order_list_query(**bounds), "historical orders", futu)
-                # Read-only settled fee query, available on supported REAL gateways.
-                # Request only parents with observed fills; never invent zero fees.
-                fees, fee_gaps = fetch_order_fees(context, deals, account, futu)
-                output["history"] = {"plan": plan, "deals": deals, "orders": orders,
-                                     "order_fees": fees, "fee_gaps": fee_gaps}
+                # Emit the validated core first so a history timeout/crash cannot erase it.
+                print(MARKER + json.dumps({**output, "history_error": "OpenD history did not finish; retry historical enrichment."}, separators=(",", ":")), flush=True)
+                try:
+                    plan = request["history"]
+                    bounds = {"start": plan["from"][:10] + " 00:00:00", "end": plan["through"][:10] + " 23:59:59",
+                              "trd_env": futu.TrdEnv.REAL, "acc_id": account}
+                    deals = require_ok(context.history_deal_list_query(**bounds), "historical deals", futu)
+                    orders = require_ok(context.history_order_list_query(**bounds), "historical orders", futu)
+                    # Read-only settled fee query, available on supported REAL gateways.
+                    # Request only parents with observed fills; never invent zero fees.
+                    fees, fee_gaps = fetch_order_fees(context, deals, account, futu)
+                    output["history"] = {"plan": plan, "deals": deals, "orders": orders,
+                                         "order_fees": fees, "fee_gaps": fee_gaps}
+                except Exception:
+                    output["history_error"] = "OpenD historical enrichment unavailable; retain current snapshot and retry history."
+
         print(MARKER + json.dumps(output, separators=(",", ":")))
     finally:
         context.close()

@@ -1,3 +1,4 @@
+import { deferredHistoryReason } from '../brokers/history-fetch.js';
 import { brokerRequestSignal } from '../brokers/network.js';
 import { webullOrderFees } from './webull-fees.js';
 import { randomBytes } from 'node:crypto';
@@ -249,7 +250,14 @@ export async function fetchWebullRawBundle(
     credentials,
     fetchImpl,
   });
+  const snapshot: WebullRawBundle = {
+    schema: 'invage.webull.raw.v1', fetched_at: new Date().toISOString(), region: credentials.region,
+    host, account_id, accounts, balances, positions,
+  };
+  try {
   const option_history: unknown[] = [];
+  snapshot.option_history = option_history;
+  snapshot.history_plan = opts?.history;
   const seen = new Set<string>();
   let pagination_key = '';
   const end_time = opts?.history?.through ?? new Date().toISOString();
@@ -299,20 +307,11 @@ export async function fetchWebullRawBundle(
       }
     }
   }
-  return {
-    schema: 'invage.webull.raw.v1',
-    fetched_at: new Date().toISOString(),
-    region: credentials.region,
-    host,
-    account_id,
-    accounts,
-    balances,
-    positions,
-    option_history,
-    order_details,
-    fee_gaps,
-    history_plan:opts?.history,
-  };
+    return { ...snapshot, option_history, order_details, fee_gaps, history_plan: opts?.history };
+  } catch (error) {
+    // Discard incomplete pages, not the independently fetched account snapshot.
+    return { ...snapshot, history_error: deferredHistoryReason('Webull', error) };
+  }
 }
 
 /** Account choices for Settings; positions and balances are not fetched. */

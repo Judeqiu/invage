@@ -6,6 +6,7 @@ export interface MooMooEnvelope {
 }
 
 export interface MooMooRawBundle {
+  history_error?: string;
   schema: 'invage.moomoo.raw.v1' | 'invage.futubull.cloud.raw.v1';
   fetched_at: string;
   acc_id: string;

@@ -1,5 +1,11 @@
+import { isDeepStrictEqual } from 'node:util';
+import { withBrokerSyncLease } from './sync-lease.js';
+import { isInvestorRevisionConflict } from './state-conflicts.js';
+import { beginBrokerSync, finishBrokerSync, brokerSyncBinding, queueFullBrokerSync } from './sync-retries.js';
+import { relative, join } from 'node:path';
+import { resolveDataRoot } from 'utarus';
 import { refreshPortfolioAfterSync } from '../state/projection-events.js';
-import { saveInvestor, type InvestorSnapshot } from '../state/investor-store.js';
+import { loadInvestor, saveInvestor, type InvestorSnapshot } from '../state/investor-store.js';
 /**
  * Per-user broker_connections YAML store + public DTO.
  * Lazy-migrates top-level ibkr_flex on write (including failed sync).
@@ -10,7 +16,7 @@ import type { IbkrFlexConfig } from '../ibkr/flex-config.js';
 import { normalizePem } from './pem.js';
 import {
   archiveBrokerSuccess, attachFetchedHistory, archiveHistoryAttachments,
-  getBrokerAdapter,
+  getBrokerAdapter, parseBrokerSnapshot, deferBrokerHistory,
   type AdapterTransport,
   type BrokerRawPayload,
 } from './adapter.js';
@@ -19,7 +25,7 @@ import { applyBrokerStatement } from './apply-statement.js';
 import { runCsvTablesSpec } from './csv-tables.js';
 import { loadBrokerParserSpec } from './parser-store.js';
 import type { BrokerStatement } from './statement.js';
-import { formatBrokerSkip, type BrokerApplyResult } from './statement.js';
+import { HISTORY_PENDING_REASON, formatBrokerSkip, type BrokerApplyResult } from './statement.js';
 import { archiveBrokerTriage } from './triage.js';
 import { brokerSyncFacts, captureBrokerSyncSnapshot, publishBrokerSyncFailure,
   publishBrokerSyncSuccess } from './sync-notification.js';
@@ -494,7 +500,25 @@ export async function syncBrokerConnection(
   id: string,
   opts?: { transport?: AdapterTransport; full?:boolean },
 ): Promise<{ view: PublicConnectorView; applied: BrokerApplyResult; aggregation?: { status: 'ready' | 'pending' | 'failed' } }> {
-  const { state } = snapshot;
+  try { return await withBrokerSyncLease(snapshot.state.user.id,id,()=>syncBrokerConnectionUnlocked(snapshot,id,opts)); }
+  catch(error) {
+    if(opts?.full && error instanceof Error && error.message==='Sync already in progress.') {
+      const {readBrokerAccountModel}=await import('./accounts.js');
+      const conn=readBrokerAccountModel(snapshot.state).connections[id];
+      if(conn)queueFullBrokerSync(snapshot.state.user.id,id,brokerSyncBinding(conn));
+    }
+    throw error;
+  }
+}
+
+async function syncBrokerConnectionUnlocked(
+  snapshot: InvestorSnapshot,
+  id: string,
+  opts?: { transport?: AdapterTransport; full?:boolean },
+): Promise<{ view: PublicConnectorView; applied: BrokerApplyResult; aggregation?: { status: 'ready' | 'pending' | 'failed' } }> {
+  let { state } = snapshot;
+  let intent: ReturnType<typeof beginBrokerSync> | undefined;
+  let complete = false;
   const slug = state.user.id;
   if (!slug) throw new Error('Investor state has no user.slug.');
   const broker = getBrokerConnector(id);
@@ -509,20 +533,22 @@ export async function syncBrokerConnection(
     secrets = Object.entries(conn.credentials)
       .filter(([fid]) => def.credentialFields.find((f) => f.id === fid)?.type === 'secret')
       .map(([, v]) => v);
+    const {readBrokerAccountModel} = await import('./accounts.js');
+    intent = beginBrokerSync(slug,id,brokerSyncBinding(readBrokerAccountModel(state).connections[id]),opts?.full===true);
     const adapter = getBrokerAdapter(id);
     let raw: BrokerRawPayload;
     let statement: BrokerStatement;
     try {
       const previousHistory = state.broker_history?.[def.channel];
       const accountId = conn.last_sync?.account_id ?? conn.credentials.acc_id ?? conn.credentials.account ?? conn.credentials.account_id ?? previousHistory?.account_id ?? '';
-      raw = await adapter.fetchRaw(conn.credentials, { ...opts, accountId:accountId||undefined,channel:def.channel, history: planBrokerHistorySync(previousHistory, accountId, new Date(), opts?.full === true) });
+      raw = await adapter.fetchRaw(conn.credentials, { ...opts, accountId:accountId||undefined,channel:def.channel, history: planBrokerHistorySync(previousHistory, accountId, new Date(), intent.full) });
       try {
         const spec = adapter.usesCsvTables ? loadBrokerParserSpec(slug, id) : null;
         // A saved parser is an explicit user configuration, not a recovery path
         // for failed database writes. Recon never loads specs.
         statement = spec
           ? runCsvTablesSpec(raw.body.toString('utf8'), spec, def.channel)
-          : adapter.parseToStatement(raw, def.channel);
+          : parseBrokerSnapshot(adapter, raw, def.channel);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         const triage = archiveBrokerTriage({ slug, connectorId: id, body: raw.body,
@@ -537,16 +563,28 @@ export async function syncBrokerConnection(
     }
     statement=attachFetchedHistory(raw,statement);
     const archivePath = archiveBrokerSuccess(slug, id, raw, statement.as_of);
-    archiveHistoryAttachments(slug,broker.channel,raw);
+    try { archiveHistoryAttachments(slug,broker.channel,raw); } catch { raw.historyDeferred={reason:'Historical evidence archive unavailable; retry history before advancing its checkpoint.'};statement=deferBrokerHistory(statement); }
     // Portfolio, cash, metrics and success status use the same revision-checked
-    // aggregate write. Persistence errors propagate without a second attempt.
-    const applied = await applyBrokerStatement(snapshot, id, statement, raw.body, result => {
+    // aggregate write. Only optimistic revision conflicts reapply retained evidence.
+    let applied: BrokerApplyResult;
+    for (let attempt=0;;attempt++) {
+      const latest=await loadInvestor(slug);
+      const current=resolveConnectionForSync(latest.state,id);
+      if(!isDeepStrictEqual(current.conn.credentials,conn.credentials)) throw new Error('Broker connection changed during synchronization; retry.');
+      snapshot.state=latest.state;snapshot.revision=latest.revision;state=snapshot.state;
+      try {
+    applied = await applyBrokerStatement(snapshot, id, statement, raw.body, result => {
       const last_sync: BrokerConnectionLastSync = { at, ok: true, as_of: result.asOf,
         account_id: result.accountId, lots_upserted: result.lotsUpserted, lots_removed: result.lotsRemoved };
       if (result.skipped.length) last_sync.not_imported = result.skipped.map(formatBrokerSkip);
       writeLastSync(state, id, last_sync, secrets);
-    });
+    }, undefined, {observedAt:raw.meta?.snapshot_at ?? at,rawDataId:relative(join(resolveDataRoot(),'drive',slug),archivePath).replaceAll('\\','/'),deferHistoryConflicts:true,historyError:raw.historyDeferred?.reason,requireCompleteSnapshot:true});
+      break;
+      } catch(error) { if(!isInvestorRevisionConflict(error)||attempt>=2)throw error; }
+    }
     applied.archivePath = archivePath;
+    complete = !applied.skipped.some(s=>s.reason===HISTORY_PENDING_REASON);
+    finishBrokerSync(intent,complete);
     try {
       await publishBrokerSyncSuccess(slug, state.user.admin === true,
         brokerSyncFacts(def.displayName, def.displayName, before, captureBrokerSyncSnapshot(state, def.channel), applied,
@@ -563,6 +601,7 @@ export async function syncBrokerConnection(
     throw error;
   } finally {
     inflight.delete(key);
+    if(intent)finishBrokerSync(intent,complete);
   }
 }
 

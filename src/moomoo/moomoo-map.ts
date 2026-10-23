@@ -292,7 +292,7 @@ export function mapMooMooBundleToStatement(bundle: MooMooRawBundle, channel: str
     skipped,
   };
   if (metrics) statement.metrics = metrics;
-  if (!includeHistory) return statement;
+  if (!includeHistory || bundle.history_error) return statement;
   const history = mapMooMooHistory(bundle, lots, channel);
   if (history) {
     statement.history = history;

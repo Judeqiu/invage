@@ -201,7 +201,7 @@ function mapPositionsSleeve(env: TigerGatewayEnvelope, channel: string, seen: Se
 } {
   const lots: BrokerStatement['lots'] = [];
   const skipped: BrokerSkip[] = [];
-  if (!envelopeOk(env)) return { lots, skipped };
+  if (!envelopeOk(env)) return { lots, skipped: [{kind:'position',reason:'Tiger position sleeve unavailable; a failed response is not an empty holding list.'}] };
   let items: Record<string, unknown>[];
   try {
     items = positionItems(env.data);
@@ -353,7 +353,7 @@ export function mapTigerBundleToStatement(bundle: TigerRawBundle, channel: strin
     skipped,
   };
   if (mapped.metrics) statement.metrics = mapped.metrics;
-  if (!includeHistory) return statement;
+  if (!includeHistory || bundle.history_error) return statement;
   statement.history = mapTigerHistory(bundle,lots,channel);
   const history = bundle.history ? undefined : mapTigerOptionHistory(bundle, lots, channel);
   if (history) {

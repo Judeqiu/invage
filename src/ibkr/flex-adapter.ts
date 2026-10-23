@@ -1,3 +1,4 @@
+import { deferredHistoryReason } from '../brokers/history-fetch.js';
 /**
  * IBKR Flex catalog adapter. Fetch + Flex XML parse only.
  * csv_tables is a syncBrokerConnection overlay (usesCsvTables signal).
@@ -40,6 +41,7 @@ export const ibkrFlexAdapter: BrokerConnectorAdapter = {
     const dates=flexHistoryDates(xml.toString('utf8'),account);if(!dates.length)throw new Error('Flex current account binding mismatch');
     const latest=dates.map(d=>d.through).sort().at(-1)!;const reports=[{xml:xml.toString('utf8'),from:dates[0].from,through:latest}];
     const attachments:NonNullable<BrokerRawPayload['historyAttachments']>=[],gaps:BrokerHistoryGap[]=[];
+    try {
     let imported=opts.history.mode==='full';
     if(opts.history.mode==='full'){
       const year=Number(latest.slice(0,4));
@@ -53,8 +55,7 @@ export const ibkrFlexAdapter: BrokerConnectorAdapter = {
           if(actual.some(d=>d.from!==from||d.through!==through))gaps.push({kind:'coverage',reference:from,reason:'Returned historical Flex dates differ from the requested interval.'});
           reports.push({xml:historical.toString('utf8'),from,through});attachments.push({kind:'xml',body:historical});
         }catch(error){
-          if(!(error instanceof FlexHttpError))throw error;
-          if(error.code!=='1003')imported=false;
+          if(!(error instanceof FlexHttpError) || error.code!=='1003')throw error;
           gaps.push({kind:'coverage',reference:from,reason:`IBKR historical report unavailable (${error.code}); stopped further yearly requests to avoid repeated failed attempts.`});
           break;
         }
@@ -66,10 +67,13 @@ export const ibkrFlexAdapter: BrokerConnectorAdapter = {
     const effective={...opts.history,through,from:opts.history.from>through?new Date(Date.parse(through)-2*86400000).toISOString():opts.history.from};
     const history=mapFlexHistory(reports,account,channel,effective,gaps,imported);
     return {kind:'xml',body:xml,history,historyAttachments:attachments};
+    } catch (error) {
+      return {kind:'xml',body:xml,historyAttachments:attachments,historyDeferred:{reason:deferredHistoryReason('IBKR',error)}};
+    }
   },
-  parseToStatement(raw: BrokerRawPayload, channel: string) {
-    const statement=mapFlexDocToStatement(parseFlexQueryXml(raw.body), channel);
-    if(raw.history){statement.history=raw.history;statement.option_executions=[];}
+  parseToStatement(raw: BrokerRawPayload, channel: string, includeHistory = true) {
+    const statement=mapFlexDocToStatement(parseFlexQueryXml(raw.body, includeHistory), channel);
+    if(includeHistory && raw.history){statement.history=raw.history;statement.option_executions=[];}
     return statement;
   },
 };

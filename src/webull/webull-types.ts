@@ -16,6 +16,7 @@ export const WEBULL_API_HOSTS: Record<WebullRegion, string> = {
 export const WEBULL_ALLOW_HOSTS = new Set(Object.values(WEBULL_API_HOSTS));
 
 export interface WebullRawBundle {
+  history_error?: string;
   schema: 'invage.webull.raw.v1';
   fetched_at: string;
   region: WebullRegion;

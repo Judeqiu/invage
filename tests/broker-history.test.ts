@@ -78,6 +78,11 @@ describe('shared broker history',()=>{
     expect(s.log).toContainEqual(expect.objectContaining({action:'broker_history_deferred',raw_data_id:'broker-sync/moomoo/evidence.json'}));
     expect(result.skipped).toContainEqual(expect.objectContaining({kind:'event',reason:expect.stringContaining('reconciliation queued')}));
   });
+  it('retains existing holdings and cash rather than applying an incomplete current snapshot',async()=>{
+    const s=state();const before=structuredClone(s);
+    await expect(applyBrokerStatement({state:s,revision:1},'moomoo',{account_id:'A',as_of:'2026-10-14',cash:[],lots:[],skipped:[{kind:'position',reason:'Position sleeve unavailable'}]},undefined,undefined,undefined,{requireCompleteSnapshot:true})).rejects.toThrow('current snapshot is incomplete');
+    expect(s).toEqual(before);
+  });
   it('locks account binding when retained history is the only imported data',()=>{
     const s=state(),source=addBrokerSource(s,'ibkr',{token:'secret'}),id=addBrokerAccount(s,{source_id:source,account_id:'A',label:'A',config:{activity_query_id:'1'}});
     const channel=readBrokerAccountModel(s).connections[id].channel,h=history('ibkr');h.channel=channel;h.executions.forEach(e=>e.channel=channel);s.broker_history={[channel]:h};

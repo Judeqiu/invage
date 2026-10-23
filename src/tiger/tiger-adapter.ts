@@ -1,3 +1,4 @@
+import { jsonBrokerPayload } from '../brokers/history-fetch.js';
 import type {
   AdapterTransport,
   BrokerConnectorAdapter,
@@ -33,7 +34,7 @@ export const tigerAdapter: BrokerConnectorAdapter = {
     const bundle = await fetchTigerRawBundle(credentialsFrom(credentials), {
       fetchImpl: fetchImpl(opts), history:opts?.history,
     });
-    return { kind: 'json', body: Buffer.from(JSON.stringify(bundle)), meta: { gateway: bundle.gateway } };
+    return jsonBrokerPayload(bundle, { gateway: bundle.gateway });
   },
   parseToStatement(raw: BrokerRawPayload, channel: string, includeHistory = true) {
     let parsed: unknown;

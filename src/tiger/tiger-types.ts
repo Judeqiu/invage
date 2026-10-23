@@ -9,6 +9,7 @@ export interface TigerGatewayEnvelope {
 }
 
 export interface TigerRawBundle {
+  history_error?: string;
   schema: 'invage.tiger.raw.v1';
   fetched_at: string;
   gateway: string;

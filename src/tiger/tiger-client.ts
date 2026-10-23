@@ -1,3 +1,4 @@
+import { deferredHistoryReason } from '../brokers/history-fetch.js';
 import { brokerRequestSignal } from '../brokers/network.js';
 import type { BrokerHistorySyncPlan } from '../brokers/history.js';
 import { BrokerHttpError, BrokerParseError } from '../brokers/errors.js';
@@ -277,7 +278,6 @@ export async function fetchTigerRawBundle(
       paper: paperGuess,
       fetchImpl,
     }));
-  const fetched_at = new Date().toISOString();
   const account = credentials.account;
   let managed: TigerGatewayEnvelope | null = null;
   try {
@@ -337,9 +337,16 @@ export async function fetchTigerRawBundle(
   const optionRows = Array.isArray(OPT.data) ? OPT.data :
     OPT.data && typeof OPT.data === 'object' ? (OPT.data as { items?: unknown }).items : undefined;
   const hasOptions = envelopeOk(OPT) && Array.isArray(optionRows) && optionRows.length > 0;
+  const snapshot: TigerRawBundle = {
+    schema: 'invage.tiger.raw.v1', fetched_at: new Date().toISOString(), gateway, account,
+    license: credentials.license, account_kind, managed_accounts: managed,
+    assets: { method: assetMethod, envelope: assetsEnv }, positions: { STK, OPT, FUND },
+  };
+  try {
   const history:TigerRawBundle['history'] = opts?.history ? account_kind === 'global'
     ? { ...await fetchOptionHistory({gateway,credentials,fetchImpl,timestamp:opts.timestamp},opts.history,true),mode:opts.history.mode,gaps:[{kind:'coverage' as const,reference:null,reason:'Tiger Global execution history is not supported by order_transactions.'}] }
     : { ...await fetchOptionHistory({gateway,credentials,fetchImpl,timestamp:opts.timestamp},opts.history),mode:opts.history.mode,gaps:[] } : undefined;
+  snapshot.history = history;
   if(history && account_kind !== 'global'){
     const existing=new Set(history.orders.map(row=>String(row.id)));
     for(const id of new Set(history.transactions.map(row=>String(row.orderId))))if(!existing.has(id)){
@@ -353,6 +360,7 @@ export async function fetchTigerRawBundle(
   }
   const option_history = !opts?.history && hasOptions && account_kind !== 'global'
     ? await fetchOptionHistory({ gateway, credentials, fetchImpl, timestamp: opts?.timestamp }) : undefined;
+  snapshot.option_history = option_history;
   // The list already reports commission and GST. Query individual orders only
   // to recover missing totals; avoid an extra request per historical fill.
   for (const h of [history, option_history]) if (h) {
@@ -373,17 +381,8 @@ export async function fetchTigerRawBundle(
       }
     }
   }
-  return {
-    schema: 'invage.tiger.raw.v1',
-    fetched_at,
-    gateway,
-    account,
-    license: credentials.license,
-    account_kind,
-    managed_accounts: managed,
-    assets: { method: assetMethod, envelope: assetsEnv },
-    positions: { STK, OPT, FUND },
-    ...(history ? { history } : {}),
-    ...(option_history ? { option_history } : {}),
-  };
+    return { ...snapshot, ...(history ? { history } : {}), ...(option_history ? { option_history } : {}) };
+  } catch (error) {
+    return { ...snapshot, history_error: deferredHistoryReason('Tiger', error) };
+  }
 }

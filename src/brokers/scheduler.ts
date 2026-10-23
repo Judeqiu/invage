@@ -14,7 +14,11 @@ export async function retryBrokerSyncs(now = new Date(), overrides: Partial<type
         continue;
       }
       if (deps.brokerSyncInProgress(job.userId, job.connectionId)) continue;
-      await deps.syncBrokerAccount(snapshot, job.connectionId, undefined, 'scheduled', job.full);
+      if (connection.account_id) await deps.syncBrokerAccount(snapshot, job.connectionId, undefined, 'scheduled', job.full);
+      else {
+        const {syncBrokerConnection}=await import('./connections.js');
+        await syncBrokerConnection(snapshot,job.connectionId,{full:job.full});
+      }
     } catch (error) {
       // If SQL is unavailable even before sync starts, keep the disk-backed intent.
       deps.finishBrokerSync(job, false, now);

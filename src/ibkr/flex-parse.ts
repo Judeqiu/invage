@@ -260,7 +260,7 @@ function parseCashRow(row: Record<string, string>): FlexCashRow {
   return { currency, endingCash: ending };
 }
 
-export function parseFlexQueryXml(xml: string | Buffer): FlexStatementDoc {
+export function parseFlexQueryXml(xml: string | Buffer, includeHistory = true): FlexStatementDoc {
   const text = Buffer.isBuffer(xml) ? xml.toString('utf8') : xml;
   throwIfErrorEnvelope(text);
   if (looksLikeCsv(text)) {
@@ -374,7 +374,7 @@ export function parseFlexQueryXml(xml: string | Buffer): FlexStatementDoc {
   };
   if (stAttrs.whenGenerated) doc.whenGenerated = stAttrs.whenGenerated;
   if (stAttrs.period) doc.period = stAttrs.period;
-  const executions = parseFlexOptionExecutions(text);
+  const executions = includeHistory ? parseFlexOptionExecutions(text) : undefined;
   if (executions !== undefined) {
     doc.optionExecutions = executions;
     for (const pos of openPositions.filter(row => row.assetCategory === 'OPT')) {
@@ -393,7 +393,7 @@ export function parseFlexQueryXml(xml: string | Buffer): FlexStatementDoc {
       if (pos.multiplier == null && sizes.size === 1) pos.multiplier = [...sizes][0];
     }
   }
-  const events = parseFlexOptionEvents(text);
+  const events = includeHistory ? parseFlexOptionEvents(text) : undefined;
   if (events !== undefined) {
     doc.optionEvents = events.events;
     doc.skipped.push(...events.skipped);

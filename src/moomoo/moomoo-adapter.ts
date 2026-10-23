@@ -1,3 +1,4 @@
+import { jsonBrokerPayload } from '../brokers/history-fetch.js';
 import type {
   AdapterTransport,
   BrokerConnectorAdapter,
@@ -34,7 +35,7 @@ export function createCloudBrokerAdapter(id: 'moomoo' | 'futubull'): BrokerConne
         fetchImpl: fetchImpl(opts),
         history: opts?.history,
       });
-      return { kind: 'json', body: Buffer.from(JSON.stringify(bundle)), meta: { acc_id: bundle.acc_id } };
+      return jsonBrokerPayload(bundle, { acc_id: bundle.acc_id });
     },
     parseToStatement(raw: BrokerRawPayload, channel: string, includeHistory = true) {
       let parsed: unknown;

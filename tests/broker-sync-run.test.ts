@@ -200,3 +200,32 @@ it('retries a failed broker fetch from its durable intent and removes it after s
   expect(readBrokerAccountModel(stored).connections[id].last_sync?.ok).toBe(true);
   expect(dueBrokerSyncs(new Date(Date.now()+86400000))).toEqual([]);
 });
+
+it('reapplies the retained response after a revision conflict without repeating the broker fetch',async()=>{
+  const fetch=vi.spyOn(adapters.ibkr,'fetchRaw').mockResolvedValue({kind:'xml',body:Buffer.from(emptyReport)});
+  mocks.save.mockImplementationOnce(async()=>{stored.profile.display_name='Concurrent edit';revision++;throw new Error('Investor state changed during this update; reload before saving.')});
+  await syncBrokerAccount({state:structuredClone(stored),revision},id);
+  expect(fetch).toHaveBeenCalledOnce();expect(mocks.save).toHaveBeenCalledTimes(2);
+  expect(stored.profile.display_name).toBe('Concurrent edit');
+  expect(readBrokerAccountModel(stored).connections[id].last_sync?.ok).toBe(true);
+});
+it('does not overwrite a later successful sync with an older failed attempt',async()=>{
+  vi.spyOn(adapters.ibkr,'fetchRaw').mockImplementation(async()=>{
+    stored.broker_connections![id].last_sync={at:new Date(Date.now()+1000).toISOString(),ok:true,as_of:'2026-10-23',account_id:'U1'};
+    revision++;throw new Error('Old attempt failed');
+  });
+  await expect(syncBrokerAccount({state:structuredClone(stored),revision},id)).rejects.toThrow('Old attempt failed');
+  expect(readBrokerAccountModel(stored).connections[id].last_sync?.ok).toBe(true);
+  expect(mocks.save).not.toHaveBeenCalled();
+});
+it('saves current data and queues history retry without advancing the existing history checkpoint',async()=>{
+  const channel=readBrokerAccountModel(stored).connections[id].channel;
+  stored.broker_history={[channel]:{broker_id:'ibkr',channel,account_id:'U1',executions:[],orders:[],sync:{version:1,mode:'incremental',from:'2026-09-28T00:00:00Z',through:'2026-10-01T00:00:00Z',status:'complete',full_history_synced:false,fees:'unavailable',gaps:[]}}};
+  const before=structuredClone(stored.broker_history);
+  vi.spyOn(adapters.ibkr,'fetchRaw').mockResolvedValue({kind:'xml',body:Buffer.from(emptyReport),historyDeferred:{reason:'History timeout'}});
+  const result=await syncBrokerAccount({state:structuredClone(stored),revision},id);
+  expect(readBrokerAccountModel(stored).connections[id].last_sync?.ok).toBe(true);
+  expect(stored.broker_history).toEqual(before);
+  expect(result.applied.skipped).toContainEqual(expect.objectContaining({reason:expect.stringContaining('reconciliation queued')}));
+  expect(dueBrokerSyncs(new Date(Date.now()+60_000))).toHaveLength(1);
+});

@@ -1,3 +1,4 @@
+import { jsonBrokerPayload } from '../brokers/history-fetch.js';
 import type { BrokerConnectorAdapter } from '../brokers/adapter.js';
 import { BrokerParseError } from '../brokers/errors.js';
 import { fetchFutubullSnapshot } from './futubull-client.js';
@@ -13,7 +14,7 @@ export const futubullAdapter: BrokerConnectorAdapter = {
     if (credentials.app_key || !credentials.opend_port) return cloudAdapter.fetchRaw(credentials, opts);
     const bundle = await fetchFutubullSnapshot({ opend_port: credentials.opend_port,
       security_firm: credentials.security_firm, acc_id: credentials.acc_id },opts?.history);
-    return { kind: 'json', body: Buffer.from(JSON.stringify(bundle)), meta: { account_id: String(bundle.acc_id ?? '') } };
+    return jsonBrokerPayload(bundle, { account_id: String(bundle.acc_id ?? '') });
   },
   parseToStatement(raw, channel, includeHistory = true) {
     let parsed: unknown;

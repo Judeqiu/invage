@@ -37,9 +37,20 @@ async function bridgeCall(credentials: FutubullCredentials, mode: 'discover' | '
   const line = child.stdout.split('\n').reverse().find((value: string) => value.startsWith(marker));
   if (!line) throw new Error(child.error ? 'Futubull OpenD bridge failed. Install Python futu-api and check the local gateway.'
     : 'Futubull OpenD bridge returned no result.');
-  let result: Record<string, unknown>;
-  try { result = JSON.parse(line.slice(marker.length)) as Record<string, unknown>; }
-  catch { throw new Error('Futubull OpenD bridge returned invalid JSON.'); }
+  let result: Record<string, unknown> | undefined;
+  for (const candidate of child.stdout.split('\n').reverse().filter(value=>value.startsWith(marker))) {
+    try { result=JSON.parse(candidate.slice(marker.length)) as Record<string,unknown>;break; }
+    catch { if(!history)throw new Error('Futubull OpenD bridge returned invalid JSON.'); }
+  }
+  if(!result)throw new Error('Futubull OpenD bridge returned invalid JSON.');
+  if (history && (child.error || result.error)) {
+    for (const earlier of child.stdout.split('\n').reverse().filter(value=>value.startsWith(marker))) {
+      try {
+        const core=JSON.parse(earlier.slice(marker.length));
+        if(core.schema==='invage.futubull.raw.v1' && core.history_error && !core.error) return core;
+      } catch { /* A truncated history result cannot invalidate a complete earlier snapshot. */ }
+    }
+  }
   if (child.error || result.error) throw new Error(String(result.error ?? 'Futubull OpenD bridge failed.'));
   return result;
 }

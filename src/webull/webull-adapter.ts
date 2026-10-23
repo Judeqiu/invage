@@ -1,3 +1,4 @@
+import { jsonBrokerPayload } from '../brokers/history-fetch.js';
 import type {
   AdapterTransport,
   BrokerConnectorAdapter,
@@ -32,11 +33,7 @@ export const webullAdapter: BrokerConnectorAdapter = {
     const bundle = await fetchWebullRawBundle(credentialsFrom(credentials), {
       fetchImpl: fetchImpl(opts), history:opts?.history,
     });
-    return {
-      kind: 'json',
-      body: Buffer.from(JSON.stringify(bundle)),
-      meta: { host: bundle.host, account_id: bundle.account_id },
-    };
+    return jsonBrokerPayload(bundle, { host: bundle.host, account_id: bundle.account_id });
   },
   parseToStatement(raw: BrokerRawPayload, channel: string, includeHistory = true) {
     let parsed: unknown;

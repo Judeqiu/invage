@@ -146,7 +146,7 @@ export async function applyBrokerStatement(
   _raw?: Buffer,
   beforeSave?: (result: BrokerApplyResult) => void,
   connection?: { brokerId: string; channel: string },
-  observation?: { syncId?: string; observedAt?: string; rawDataId?: string; deferHistoryConflicts?: boolean },
+  observation?: { syncId?: string; observedAt?: string; rawDataId?: string; deferHistoryConflicts?: boolean; historyError?: string; requireCompleteSnapshot?: boolean },
 ): Promise<BrokerApplyResult> {
   const { state } = snapshot;
   if (state.broker_sources && !connection) throw new Error('Account connection ID and channel are required for broker apply.');
@@ -157,6 +157,7 @@ export async function applyBrokerStatement(
       throw new Error('Broker statement account/channel differs from selected connection.');
     }
   }
+  if(observation?.requireCompleteSnapshot && doc.skipped.some(s=>s.kind==='position'||s.kind==='cash')) throw new Error('Broker current snapshot is incomplete; retained the previous holdings and cash for automatic retry.');
   const channel = connection?.channel ?? getBrokerConnector(connectorId).channel;
   assertStatementNotOlder(state, connectorId, channel, doc.as_of);
   // All adapters and custom parsers pass through this before any books writes.
@@ -180,7 +181,7 @@ export async function applyBrokerStatement(
   let history: BrokerStatement['history'];
   let executions: BrokerStatement['option_executions'];
   let optionEvents: BrokerStatement['option_events'];
-  let historyError: string | undefined;
+  let historyError: string | undefined = observation?.historyError;
   try {
     optionEvents = doc.option_events === undefined ? undefined : mergeOptionLifecycleEvents(state.option_events ?? [], doc.option_events);
     history = doc.history ? reconcileExecutionEffects(mergeBrokerHistory(state.broker_history?.[channel], doc.history),
@@ -242,7 +243,7 @@ export async function applyBrokerStatement(
     lotsUpserted: stamped.length,
     lotsRemoved: removed,
     cash: doc.cash,
-    skipped: historyError ? [...doc.skipped, { kind: 'event', reason: HISTORY_PENDING_REASON }] : doc.skipped,
+    skipped: historyError && !doc.skipped.some(s=>s.reason===HISTORY_PENDING_REASON) ? [...doc.skipped, { kind: 'event', reason: HISTORY_PENDING_REASON }] : doc.skipped,
     ...(history ? { historySync:history.sync } : {}),
   };
   if (beforeSave) beforeSave(result);

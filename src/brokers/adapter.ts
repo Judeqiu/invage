@@ -1,3 +1,4 @@
+import { deferredHistoryReason } from './history-fetch.js';
 /**
  * Per-connector fetch/parse. Catalog id selects the adapter.
  * Apply stays in applyBrokerStatement; csv_tables stays in syncBrokerConnection.
@@ -20,6 +21,7 @@ import { assertBrokerHistory, type BrokerHistory, type BrokerHistorySyncPlan } f
 export type BrokerRawKind = 'xml' | 'json' | 'text';
 
 export interface BrokerRawPayload {
+  historyDeferred?: { reason: string };
   history?: BrokerHistory;
   historyUnavailable?: {broker_id:string;channel:string;plan:BrokerHistorySyncPlan;reason:string};
   historyAttachments?: Array<{ body:Buffer; kind:'xml'|'json' }>;
@@ -82,6 +84,7 @@ export function archiveBrokerSuccess(
 
 /** Historical reports are evidence only; their old snapshots never replace current holdings. */
 export function attachFetchedHistory(raw:BrokerRawPayload,statement:BrokerStatement):BrokerStatement {
+  if(raw.historyDeferred) return deferBrokerHistory(statement);
   if(raw.historyUnavailable){const issue=raw.historyUnavailable;return {...statement,history:assertBrokerHistory({broker_id:issue.broker_id,channel:issue.channel,account_id:statement.account_id,executions:[],orders:[],sync:{...issue.plan,version:1,historical_imported:false,status:'partial',full_history_synced:false,fees:'unavailable',gaps:[{kind:'coverage',reference:null,reason:issue.reason}]}})};}
   if(!raw.history||raw.history.account_id!==statement.account_id)return statement;
   return {...statement,history:raw.history,...(raw.history.broker_id==='ibkr'?{option_executions:[]}: {})};
@@ -95,11 +98,21 @@ export function archiveHistoryAttachments(slug:string,channel:string,raw:BrokerR
 
 /** A historical parser fault must not discard a separately valid account snapshot. */
 export function parseBrokerSnapshot(adapter: BrokerConnectorAdapter, raw: BrokerRawPayload, channel: string): BrokerStatement {
+  if (raw.historyDeferred) {
+    const snapshot = adapter.parseToStatement(raw, channel, false);
+    return deferBrokerHistory(snapshot);
+  }
   try { return adapter.parseToStatement(raw, channel); }
   catch (original) {
     // Adapters that cannot independently validate current data will throw again.
     let snapshot: BrokerStatement;
     try { snapshot = adapter.parseToStatement(raw, channel, false); } catch { throw original; }
-    return { ...snapshot, skipped: [...snapshot.skipped, { kind: 'event', reason: HISTORY_PENDING_REASON }] };
+    raw.historyDeferred = {reason: deferredHistoryReason(adapter.id, original)};
+    return deferBrokerHistory(snapshot);
   }
+}
+
+export function deferBrokerHistory(statement: BrokerStatement): BrokerStatement {
+  return {...statement,history:undefined,option_executions:undefined,option_events:undefined,
+    skipped:statement.skipped.some(s=>s.reason===HISTORY_PENDING_REASON) ? statement.skipped : [...statement.skipped,{kind:'event',reason:HISTORY_PENDING_REASON}]};
 }

@@ -253,7 +253,7 @@ export function mapWebullBundleToStatement(bundle: WebullRawBundle, channel: str
     lots,
     skipped,
   };
-  if (!includeHistory) return stmt;
+  if (!includeHistory || bundle.history_error) return stmt;
   stmt.history=mapWebullHistory(bundle,channel);
   const executions = bundle.history_plan ? undefined : mapWebullOptionHistory(bundle, lots, channel);
   if (executions) stmt.option_executions = executions;

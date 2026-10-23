@@ -36,6 +36,7 @@ function identity(row:Row):string {
 function side(row:Row):'buy'|'sell'{if(row.action==='BUY')return 'buy';if(row.action==='SELL')return 'sell';throw new BrokerParseError('Unknown Tiger historical side');}
 function effect(row:Row):'open'|'close'|'unknown'{return typeof row.isOpen==='boolean'?row.isOpen?'open':'close':'unknown';}
 export function mapTigerHistory(bundle:TigerRawBundle,lots:BrokerLot[],channel:string):BrokerHistory|undefined {
+ if(bundle.history_error)return undefined;
  const raw=bundle.history;if(!raw)return undefined;
  const h={...raw,orders:raw.orders.map(normalizeHistoryRow),transactions:raw.transactions.map(normalizeHistoryRow)};
  const scope={broker_id:'tiger',channel,account_id:bundle.account},gaps:BrokerHistoryGap[]=[...h.gaps];

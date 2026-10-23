@@ -68,5 +68,5 @@ export function mapFutubullSnapshot(raw: unknown, channel: string, includeHistor
     assertHolding(key, holding);
     lots.push({ ticker, currency, holding });
   }
-  return { account_id: bundle.acc_id, as_of, cash, lots, skipped,history:includeHistory ? mapFutubullHistory(bundle,channel) : undefined };
+  return { account_id: bundle.acc_id, as_of, cash, lots, skipped,history:includeHistory && !bundle.history_error ? mapFutubullHistory(bundle,channel) : undefined };
 }

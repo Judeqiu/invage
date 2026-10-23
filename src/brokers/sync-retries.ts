@@ -72,3 +72,8 @@ export function brokerSyncRetry(userId: string, connectionId: string, binding: s
     return job?.binding === binding ? { attempts: job.attempts, retry_at: job.retryAt } : null;
   } catch (error) { console.error('[broker/sync-retries] read', userId, connectionId, error); return null; }
 }
+
+export function queueFullBrokerSync(userId: string, connectionId: string, binding: string): void {
+  const prior=read(filename(userId,connectionId));
+  write({version:1,id:randomUUID(),userId,connectionId,binding,full:true,attempts:prior?.attempts ?? 0,retryAt:new Date(Date.now()+30_000).toISOString()});
+}

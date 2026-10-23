@@ -51,3 +51,46 @@ Other historical classifications remain unresolved where the retained broker
 evidence cannot substantiate them. Retrying preserves a request; it does not
 create absent facts or guarantee completion during a permanent broker, disk or
 database outage.
+
+## Fetch, persistence and concurrency audit
+
+History fetch failures are isolated before parsing as well as during merge.
+The following paths retain their independently fetched current snapshot and
+mark history deferred: Webull pagination, Tiger history and parent lookup,
+MooMoo and Futubull Cloud fill/order history, IBKR yearly backfills, and the
+OpenD Python bridge. OpenD emits its validated core before entering historical
+queries; even a history timeout or later SDK exception can recover that core.
+Partial Webull pages remain archived as evidence but are never parsed as a
+complete history interval. A deferred history fetch or attachment-archive
+failure does not advance the saved history checkpoint. The queued request
+retains its original Full/incremental mode.
+
+Live syncs reject incomplete current positions or cash before changing either
+holdings or books. A failed Tiger position sleeve is recorded as unavailable,
+rather than silently becoming evidence of zero holdings. Primary endpoint
+failures therefore preserve the previous complete snapshot and remain retryable;
+optional historical failures allow a complete current snapshot to save.
+
+The account API, scheduler and legacy connector/tool routes share these rules.
+Known optimistic revision conflicts reload current state and reapply the same
+retained response, at most three attempts, without repeating broker requests or
+including unrelated concurrent edits in a stale write. An old failed attempt
+cannot overwrite a more recent successful status. Successful persistence clears
+its retry intent before notification generation.
+
+A per-account kernel `flock` excludes overlapping app, Drive and operator
+processes. Closing the process pipe releases the lock automatically, including
+a crash. Runtime requires `flock` from util-linux (present on the production
+Ubuntu host). A Full request arriving during another sync remains queued after
+the older attempt completes. Other accounts can continue independently.
+
+Regression checks cover injected 504s across HTTP brokers, primary failures,
+partial pages, OpenD history failures/timeouts, unchanged checkpoints, concurrent
+profile edits, stale failure statuses, cross-process exclusion and queued Full
+requests. Snapshot timestamps describe when the current broker data was read,
+rather than when a potentially long history backfill finished. Network, disk or
+SQL outages can still delay completion; queued work is not reported as completed.
+
+For rsync deployments, set the committed staging root to mode 0755 before
+invoking canonical fast-deploy. Rsync copies that root mode to the installation,
+which must remain traversable by the `velovest` service account.

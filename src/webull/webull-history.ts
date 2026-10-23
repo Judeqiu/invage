@@ -7,6 +7,7 @@ type Row=Record<string,unknown>;
 function record(v:unknown):Row{if(!v||typeof v!=='object'||Array.isArray(v))throw new BrokerParseError('Invalid Webull historical row');return v as Row;}
 function side(row:Row):'buy'|'sell'|'unknown'{return row.side==='BUY'?'buy':['SELL','SHORT'].includes(String(row.side))?'sell':'unknown';}
 export function mapWebullHistory(bundle:WebullRawBundle,channel:string):BrokerHistory|undefined {
+ if(bundle.history_error)return undefined;
  const plan=bundle.history_plan;if(!plan)return undefined;
  if(!Array.isArray(bundle.option_history))throw new BrokerParseError('Webull historical orders missing');
  const scope={broker_id:'webull',channel,account_id:bundle.account_id};
