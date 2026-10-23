@@ -1,3 +1,5 @@
+import { dueBrokerSyncs } from '../src/brokers/sync-retries.js';
+import { retryBrokerSyncs } from '../src/brokers/scheduler.js';
 import { registerPortfolioRefresher } from '../src/state/projection-events.js';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -54,7 +56,7 @@ it.each(['manual', 'scheduled'] as const)('does not create an account retry sche
     .rejects.toThrow('Broker unavailable');
   expect(readBrokerAccountModel(stored).connections[id].sync_schedule).toBeUndefined();
   expect(notices.failure).toHaveBeenLastCalledWith(stored.user.id, 'Interactive Brokers', 'Main',
-    'Broker unavailable', { retryScheduled: false });
+    'Broker unavailable', { retryScheduled: true });
 
   vi.setSystemTime(new Date('2026-10-15T01:35:00Z'));
   await expect(syncBrokerAccount({ state: structuredClone(stored), revision }, id, undefined, 'scheduled'))
@@ -71,16 +73,16 @@ it('preserves automatic sync being turned off while a sync is failing', async ()
     .rejects.toThrow('Broker unavailable');
   expect(readBrokerAccountModel(stored).connections[id].sync_schedule).toBeUndefined();
   expect(notices.failure).toHaveBeenLastCalledWith(stored.user.id, 'Interactive Brokers', 'Main',
-    'Broker unavailable', { retryScheduled: false });
+    'Broker unavailable', { retryScheduled: true });
 });
 
-it('does not announce a retry if saving failure status fails', async () => {
+it('keeps automatic recovery available even when saving failure status fails', async () => {
   vi.spyOn(adapters.ibkr, 'fetchRaw').mockRejectedValue(new Error('Broker unavailable'));
   mocks.save.mockRejectedValueOnce(new Error('State unavailable'));
   await expect(syncBrokerAccount({ state: structuredClone(stored), revision }, id))
     .rejects.toThrow('State unavailable');
   expect(notices.failure).toHaveBeenLastCalledWith(stored.user.id, 'Interactive Brokers', 'Main',
-    'Broker unavailable', { retryScheduled: false });
+    'Broker unavailable', { retryScheduled: true });
 });
 
 it('records successful and failed sync attempts with their original raw responses', async () => {
@@ -184,4 +186,17 @@ it('retains a successful broker import when the aggregate refresh fails', async 
     expect(readBrokerAccountModel(stored).connections[id].last_sync?.ok).toBe(true);
     expect(notices.failure).not.toHaveBeenCalled();
   } finally { unregister(); }
+});
+
+it('retries a failed broker fetch from its durable intent and removes it after successful persistence', async () => {
+  const valid = `<FlexQueryResponse><FlexStatements count="1"><FlexStatement accountId="U1" fromDate="20260930" toDate="20261001"><OpenPositions/><CashReport><CashReportCurrency accountId="U1" currency="USD" endingCash="100"/></CashReport></FlexStatement></FlexStatements></FlexQueryResponse>`;
+  const fetch=vi.spyOn(adapters.ibkr,'fetchRaw').mockRejectedValueOnce(new Error('Network unavailable')).mockResolvedValue({kind:'xml',body:Buffer.from(valid)});
+  await expect(syncBrokerAccount({state:structuredClone(stored),revision},id,undefined,'manual',true)).rejects.toThrow('Network unavailable');
+  const later=new Date(Date.now()+60_000);
+  expect(dueBrokerSyncs(later)).toHaveLength(1);
+  await retryBrokerSyncs(later);
+  expect(fetch).toHaveBeenCalledTimes(2);
+  expect(fetch.mock.calls[1][1]!.history!.mode).toBe('full');
+  expect(readBrokerAccountModel(stored).connections[id].last_sync?.ok).toBe(true);
+  expect(dueBrokerSyncs(new Date(Date.now()+86400000))).toEqual([]);
 });

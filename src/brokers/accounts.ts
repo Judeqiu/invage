@@ -1,3 +1,4 @@
+import { beginBrokerSync, finishBrokerSync, brokerSyncBinding, brokerSyncRetry } from './sync-retries.js';
 import { refreshPortfolioAfterSync } from '../state/projection-events.js';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -13,14 +14,14 @@ import type {
 import { assertBrokerConnectionMetrics } from '../state/portfolio-state.js';
 import { getCashes, getPortfolio } from '../state/portfolio-state.js';
 import { buildHoldingKey } from '../market/position-value.js';
-import { getBrokerAdapter,attachFetchedHistory,archiveHistoryAttachments, type BrokerRawPayload, type AdapterTransport } from './adapter.js';
+import { getBrokerAdapter,parseBrokerSnapshot,attachFetchedHistory,archiveHistoryAttachments, type BrokerRawPayload, type AdapterTransport } from './adapter.js';
 import { applyBrokerStatement } from './apply-statement.js';
 import { planBrokerHistorySync, assertBrokerHistory, type BrokerHistorySyncPlan } from './history.js';
 import { BROKER_CATALOG, getBrokerConnector, type BrokerConnectorDef } from './catalog.js';
 import { parseLastSync, readBrokerConnections, redactSecrets } from './connections.js';
 import { normalizePem } from './pem.js';
 import type { BrokerStatement } from './statement.js';
-import { formatBrokerSkip, type BrokerApplyResult } from './statement.js';
+import { HISTORY_PENDING_REASON, formatBrokerSkip, type BrokerApplyResult } from './statement.js';
 import { parseFlexQueryXml, xmlElementText } from '../ibkr/flex-parse.js';
 import { mapFlexDocToStatement } from '../ibkr/flex-map.js';
 import { loadBrokerParserSpec } from './parser-store.js';
@@ -249,13 +250,14 @@ export function publicBrokerAccounts(state: InvestorState) {
       const credentials = combinedCredentials(model, conn);
       const secrets = def.credentialFields.filter(f => f.type === 'secret')
         .map(f => credentials[f.id]).filter((v): v is string => !!v);
+      const retry = conn.enabled ? brokerSyncRetry(state.user.id, id, brokerSyncBinding(conn)) : null;
       const status = !conn.enabled ? 'paused' : !requiredComplete(def, credentials) || !conn.account_id
-        ? 'needs_setup' : conn.last_sync?.ok === false ? 'error' : conn.last_sync?.ok === true ? 'verified' : 'ready';
+        ? 'needs_setup' : conn.last_sync?.ok === false ? retry ? 'retrying' : 'error' : conn.last_sync?.ok === true ? 'verified' : 'ready';
       return {
         id, broker_id: conn.broker_id, source_id: conn.source_id, label: conn.label,
         account_id: conn.account_id ?? null, channel: conn.channel, enabled: conn.enabled,
         account_binding_editable: canRebind(state, conn),
-        status, config: Object.fromEntries(def.credentialFields.filter(f => configFields(def.id).has(f.id))
+        status, sync_retry: retry, config: Object.fromEntries(def.credentialFields.filter(f => configFields(def.id).has(f.id))
           .map(f => [f.id, publicValue(conn.config[f.id], f.type === 'secret')])),
         last_sync: conn.last_sync ? { ...conn.last_sync,
           ...(conn.last_sync.error ? { error: redactSecrets(conn.last_sync.error, secrets) } : {}) } : null,
@@ -407,8 +409,8 @@ async function fetchStatements(model: BrokerAccountModel, conn: BrokerAccountCon
     conn.channel === conn.broker_id ? undefined : connectionId) : null;
   const statements = parser ? [runCsvTablesSpec(raw.body.toString('utf8'), parser, conn.channel)]
     : conn.broker_id === 'ibkr' ? ibkrStatements(raw.body, conn.channel)
-    : [adapter.parseToStatement(raw, conn.channel)];
-  return { raw: raw.body, statements:statements.map(statement=>attachFetchedHistory(raw,statement)),payload:raw };
+    : [parseBrokerSnapshot(adapter, raw, conn.channel)];
+  return { raw: raw.body, statements:statements.map(statement=>statement.skipped.some(s=>s.reason===HISTORY_PENDING_REASON) ? statement : attachFetchedHistory(raw,statement)),payload:raw };
 }
 export async function discoverBrokerAccounts(state: InvestorState, sourceId: string, config: Record<string, string>, transport?: AdapterTransport) {
   const model = readBrokerAccountModel(state);
@@ -491,7 +493,10 @@ export async function syncBrokerAccount(snapshot: InvestorSnapshot, id: string, 
   const before = captureBrokerSyncSnapshot(state, conn.channel);
   const key = `${state.user.id}:${id}`;
   if (inflight.has(key)) throw new Error('Sync already in progress.');
+  const intent = beginBrokerSync(state.user.id, id, brokerSyncBinding(conn), full);
+  full = intent.full;
   inflight.add(key);
+  let complete = false;
   const at = new Date().toISOString();
   const syncId = randomUUID();
   let raw: Buffer | undefined;
@@ -536,7 +541,7 @@ export async function syncBrokerAccount(snapshot: InvestorSnapshot, id: string, 
           ...(result.skipped.length ? { not_imported: result.skipped.map(formatBrokerSkip) } : {}) };
         persistBrokerAccountModel(state, current);
       }, { brokerId: conn.broker_id, channel: conn.channel },
-      { syncId, observedAt: at, rawDataId: rawId() });
+      { syncId, observedAt: at, rawDataId: rawId(), deferHistoryConflicts: true });
     } catch (error) {
       const secrets = def.credentialFields.filter(f => f.type === 'secret').map(f => credentials[f.id]).filter((v): v is string => !!v);
       const message = redactSecrets(error instanceof Error ? error.message : String(error), secrets);
@@ -552,7 +557,7 @@ export async function syncBrokerAccount(snapshot: InvestorSnapshot, id: string, 
           await saveInvestor(fresh);
         }
       } finally {
-        await publishBrokerSyncFailure(state.user.id, def.displayName, conn.label, message, { retryScheduled: false });
+        await publishBrokerSyncFailure(state.user.id, def.displayName, conn.label, message, { retryScheduled: true });
       }
       throw new Error(message);
     }
@@ -567,9 +572,11 @@ export async function syncBrokerAccount(snapshot: InvestorSnapshot, id: string, 
     } catch (error) {
       console.error('[broker/sync-notification] comparison failed:', error);
     }
+    complete = !applied.skipped.some(s => s.reason === HISTORY_PENDING_REASON);
     const aggregation = await refreshPortfolioAfterSync(state.user.id);
     return { applied, aggregation };
   } finally {
     inflight.delete(key);
+    finishBrokerSync(intent, complete);
   }
 }

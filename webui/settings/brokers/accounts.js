@@ -125,11 +125,12 @@ function existingCard(c) {
   const b = broker(c.broker_id);
   const s = source(c.source_id);
   const open = managed === c.id;
-  const last = c.last_sync?.ok === false ? `Last sync failed: ${c.last_sync.error}`
+  const last = c.sync_retry ? c.last_sync?.ok === true ? 'Current positions and cash saved. Historical reconciliation will retry automatically.' : 'Sync will retry automatically. Your last saved data remains available.'
+    : c.last_sync?.ok === false ? `Last sync failed: ${c.last_sync.error}`
     : c.last_sync?.ok === true ? `Last sync: ${c.last_sync.as_of || c.last_sync.at}` : 'Never synced';
   const status = c.status === 'needs_setup' ? c.account_id ? 'Access incomplete' : 'Select account'
     : c.status === 'ready' ? 'Ready to validate' : c.status === 'verified' ? 'Synced'
-    : c.status === 'paused' ? 'Paused' : 'Sync error';
+    : c.status === 'paused' ? 'Paused' : c.status === 'retrying' ? 'Retrying' : 'Sync error';
   return `<section class="connector">
     <div class="card-head"><div><div class="title">${esc(c.label)}</div>
       <div class="cap">${esc(b.display_name)} · ${esc(c.account_id || 'Account selection needed')} · ${esc(c.channel)}</div></div>

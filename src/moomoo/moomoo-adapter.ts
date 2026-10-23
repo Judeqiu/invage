@@ -36,7 +36,7 @@ export function createCloudBrokerAdapter(id: 'moomoo' | 'futubull'): BrokerConne
       });
       return { kind: 'json', body: Buffer.from(JSON.stringify(bundle)), meta: { acc_id: bundle.acc_id } };
     },
-    parseToStatement(raw: BrokerRawPayload, channel: string) {
+    parseToStatement(raw: BrokerRawPayload, channel: string, includeHistory = true) {
       let parsed: unknown;
       try {
         parsed = JSON.parse(raw.body.toString('utf8'));
@@ -46,7 +46,7 @@ export function createCloudBrokerAdapter(id: 'moomoo' | 'futubull'): BrokerConne
       const bundle = parsed as MooMooRawBundle;
       const expected = id === 'futubull' ? 'invage.futubull.cloud.raw.v1' : 'invage.moomoo.raw.v1';
       if (bundle?.schema !== expected) throw new BrokerParseError(`${id} raw bundle schema mismatch.`);
-      return mapMooMooBundleToStatement(bundle, channel);
+      return mapMooMooBundleToStatement(bundle, channel, includeHistory);
     },
   };
 }

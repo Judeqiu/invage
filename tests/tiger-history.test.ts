@@ -1,3 +1,5 @@
+import { parseBrokerSnapshot } from '../src/brokers/adapter.js';
+import { tigerAdapter } from '../src/tiger/tiger-adapter.js';
 import { mergeBrokerHistory } from '../src/brokers/history.js';
 import { describe, expect, it } from 'vitest';
 import { mapTigerHistory } from '../src/tiger/tiger-history.js';
@@ -22,6 +24,17 @@ describe('Tiger regional history', () => {
       },
     };
   }
+
+  it('isolates malformed history while independently validating the current snapshot', () => {
+    const raw=bundle(); raw.history!.transactions[0].transactionTime='ambiguous';
+    const payload={kind:'json' as const,body:Buffer.from(JSON.stringify(raw))};
+    const snapshot=parseBrokerSnapshot(tigerAdapter,payload,'tiger');
+    expect(snapshot.cash).toEqual([{currency:'USD',amount:1000}]);
+    expect(snapshot.history).toBeUndefined();
+    expect(snapshot.skipped).toContainEqual(expect.objectContaining({kind:'event',reason:expect.stringContaining('reconciliation queued')}));
+    raw.assets.envelope.data={};
+    expect(()=>parseBrokerSnapshot(tigerAdapter,{...payload,body:Buffer.from(JSON.stringify(raw))},'tiger')).toThrow(/cash sleeves/);
+  });
 
   it.each([['SI', 'Z74.SI'], ['SI', 'Z74'], ['SG', 'Z74.SI'], ['SG', 'Z74']])(
     'reconciles %s %s executions with Singapore orders without changing raw evidence', (market, symbol) => {

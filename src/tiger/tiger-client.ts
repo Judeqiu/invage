@@ -1,3 +1,4 @@
+import { brokerRequestSignal } from '../brokers/network.js';
 import type { BrokerHistorySyncPlan } from '../brokers/history.js';
 import { BrokerHttpError, BrokerParseError } from '../brokers/errors.js';
 import { shanghaiTimestamp, signTigerRequest, verifyTigerResponse } from './tiger-sign.js';
@@ -150,7 +151,7 @@ export async function tigerExecute(args: {
   params.sign = signTigerRequest(params, args.credentials.private_key);
   const res = await args.fetchImpl(args.gateway, {
     method: 'POST',
-    signal: args.signal,
+    signal: brokerRequestSignal(args.signal),
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
   });

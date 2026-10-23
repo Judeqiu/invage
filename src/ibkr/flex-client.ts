@@ -1,3 +1,4 @@
+import { brokerRequestSignal } from '../brokers/network.js';
 import {
   FlexProtocolError,
   looksLikeCsv,
@@ -58,6 +59,7 @@ export function createFlexTransport(userAgent = 'walletstreet-ibkr-flex/1.0'): F
       const url = new URL(`${FLEX_BASE}/${path}`);
       for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
       const res = await fetch(url, {
+        signal: brokerRequestSignal(),
         headers: { 'User-Agent': userAgent },
       });
       lastAt = Date.now();

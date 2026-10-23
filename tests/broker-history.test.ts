@@ -2,7 +2,7 @@ import { describe,expect,it,vi } from 'vitest';
 import { assertBrokerHistory, mergeBrokerHistory, planBrokerHistorySync, optionExecutionsFromHistory, type BrokerHistory } from '../src/brokers/history.js';
 import { mergeOptionExecutions } from '../src/brokers/option-executions.js';
 import { runQuery } from '../src/data-query/engine.js';
-import type { InvestorState } from '../src/state/portfolio-state.js';
+import { getCashes, type InvestorState } from '../src/state/portfolio-state.js';
 import { addBrokerSource,addBrokerAccount,patchBrokerAccount,readBrokerAccountModel } from '../src/brokers/accounts.js';
 vi.mock('../src/state/investor-store.js',()=>({saveInvestor:vi.fn()}));
 vi.mock('../src/books/index.js',()=>({isBooksEnabled:()=>false}));
@@ -65,6 +65,18 @@ describe('shared broker history',()=>{
     const before=structuredClone(s),bad=history();bad.executions[0].price='20';
     await expect(applyBrokerStatement({state:s,revision:1},'conn',{account_id:'A',as_of:'2026-10-14',cash:[{amount:500,currency:'USD'}],lots:[],skipped:[],history:bad},undefined,undefined,{brokerId:'moomoo',channel:'moomoo'})).rejects.toThrow(/Conflicting/);
     expect(s).toEqual(before);
+  });
+  it('saves current cash and positions while retaining conflicting history for a durable retry',async()=>{
+    const s=state();s.broker_connections={conn:{broker_id:'moomoo',channel:'moomoo',account_id:'A'}} as InvestorState['broker_connections'];
+    s.broker_history={moomoo:history()};s.option_executions=optionExecutionsFromHistory(history());
+    const oldHistory=structuredClone(s.broker_history), oldExecutions=structuredClone(s.option_executions);
+    const bad=history();bad.executions[0].price='20';
+    const result=await applyBrokerStatement({state:s,revision:1},'conn',{account_id:'A',as_of:'2026-10-14',cash:[{amount:500,currency:'USD'}],lots:[],skipped:[],history:bad},
+      undefined,undefined,{brokerId:'moomoo',channel:'moomoo'},{rawDataId:'broker-sync/moomoo/evidence.json',syncId:'sync',deferHistoryConflicts:true});
+    expect(getCashes(s)[0].amount).toBe(500);
+    expect(s.broker_history).toEqual(oldHistory);expect(s.option_executions).toEqual(oldExecutions);
+    expect(s.log).toContainEqual(expect.objectContaining({action:'broker_history_deferred',raw_data_id:'broker-sync/moomoo/evidence.json'}));
+    expect(result.skipped).toContainEqual(expect.objectContaining({kind:'event',reason:expect.stringContaining('reconciliation queued')}));
   });
   it('locks account binding when retained history is the only imported data',()=>{
     const s=state(),source=addBrokerSource(s,'ibkr',{token:'secret'}),id=addBrokerAccount(s,{source_id:source,account_id:'A',label:'A',config:{activity_query_id:'1'}});

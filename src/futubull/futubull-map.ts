@@ -21,7 +21,7 @@ function number(value: unknown): number | undefined {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
-export function mapFutubullSnapshot(raw: unknown, channel: string): BrokerStatement {
+export function mapFutubullSnapshot(raw: unknown, channel: string, includeHistory = true): BrokerStatement {
   const bundle = record(raw);
   if (bundle.schema !== 'invage.futubull.raw.v1' || typeof bundle.acc_id !== 'string' ||
       !/^\d+$/.test(bundle.acc_id) || typeof bundle.fetched_at !== 'string' ||
@@ -68,5 +68,5 @@ export function mapFutubullSnapshot(raw: unknown, channel: string): BrokerStatem
     assertHolding(key, holding);
     lots.push({ ticker, currency, holding });
   }
-  return { account_id: bundle.acc_id, as_of, cash, lots, skipped,history:mapFutubullHistory(bundle,channel) };
+  return { account_id: bundle.acc_id, as_of, cash, lots, skipped,history:includeHistory ? mapFutubullHistory(bundle,channel) : undefined };
 }

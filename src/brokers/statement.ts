@@ -1,3 +1,4 @@
+export const HISTORY_PENDING_REASON = 'Historical reconciliation queued; current positions and cash are saved.';
 /**
  * Canonical broker statement — the only apply input.
  * Catalog parsers (IBKR Flex XML, csv_tables) map vendor rows into this

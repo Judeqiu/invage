@@ -1,3 +1,4 @@
+import { mergeExecutionEffect } from './execution-effects.js';
 import { canonicalOptionUnderlying } from './option-symbol.js';
 
 /** Execution history is independent of current holding snapshots. Money is exact decimal text. */
@@ -87,9 +88,10 @@ export function mergeOptionExecutions(existing: unknown, incoming: unknown): Opt
       }));
       // An unreported fee may become available after settlement. Keep known
       // fees when an overlapping source still omits them; never revise money.
-      if (JSON.stringify(normalized({ ...prior,commission:null })) === JSON.stringify(normalized({ ...row,commission:null })) &&
-          (prior.commission === null || row.commission === null || JSON.stringify(normalized(prior)) === JSON.stringify(normalized(row)))) {
-        byId.set(key, prior.commission === null && row.commission !== null ? { ...prior,commission:row.commission } : prior);
+      const effect = mergeExecutionEffect(prior.effect, row.effect);
+      if (JSON.stringify(normalized({ ...prior,commission:null,effect })) === JSON.stringify(normalized({ ...row,commission:null,effect })) &&
+          (prior.commission === null || row.commission === null || JSON.stringify(normalized({...prior,effect})) === JSON.stringify(normalized({...row,effect})))) {
+        byId.set(key, { ...prior, effect, commission: prior.commission ?? row.commission });
         continue;
       }
       throw new Error(`Execution conflict: ${key}`);

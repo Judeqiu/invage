@@ -38,13 +38,13 @@ export const webullAdapter: BrokerConnectorAdapter = {
       meta: { host: bundle.host, account_id: bundle.account_id },
     };
   },
-  parseToStatement(raw: BrokerRawPayload, channel: string) {
+  parseToStatement(raw: BrokerRawPayload, channel: string, includeHistory = true) {
     let parsed: unknown;
     try {
       parsed = JSON.parse(raw.body.toString('utf8'));
     } catch {
       throw new BrokerParseError('Webull raw body is not JSON.');
     }
-    return mapWebullBundleToStatement(parsed as WebullRawBundle, channel);
+    return mapWebullBundleToStatement(parsed as WebullRawBundle, channel, includeHistory);
   },
 };

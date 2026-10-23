@@ -14,7 +14,7 @@ import { futubullAdapter } from '../futubull/futubull-adapter.js';
 import { tigerAdapter } from '../tiger/tiger-adapter.js';
 import { webullAdapter } from '../webull/webull-adapter.js';
 import { getBrokerConnector } from './catalog.js';
-import type { BrokerStatement } from './statement.js';
+import { HISTORY_PENDING_REASON, type BrokerStatement } from './statement.js';
 import { assertBrokerHistory, type BrokerHistory, type BrokerHistorySyncPlan } from './history.js';
 
 export type BrokerRawKind = 'xml' | 'json' | 'text';
@@ -42,7 +42,7 @@ export interface BrokerConnectorAdapter {
     credentials: Record<string, string>,
     opts?: { transport?: AdapterTransport; history?: BrokerHistorySyncPlan; accountId?:string; channel?:string },
   ): Promise<BrokerRawPayload>;
-  parseToStatement(raw: BrokerRawPayload, channel: string): BrokerStatement;
+  parseToStatement(raw: BrokerRawPayload, channel: string, includeHistory?: boolean): BrokerStatement;
 }
 
 export const adapters: Record<string, BrokerConnectorAdapter> = {
@@ -91,4 +91,15 @@ export function archiveHistoryAttachments(slug:string,channel:string,raw:BrokerR
   const dir=join(resolveDataRoot(),'drive',slug,'broker-sync',channel,'history');mkdirSync(dir,{recursive:true,mode:0o700});
   const stamp=new Date().toISOString().replace(/[:.]/g,'-');
   raw.historyAttachments.forEach((item,index)=>writeFileSync(join(dir,`${stamp}-${index}.${item.kind}`),item.body,{mode:0o600,flag:'wx'}));
+}
+
+/** A historical parser fault must not discard a separately valid account snapshot. */
+export function parseBrokerSnapshot(adapter: BrokerConnectorAdapter, raw: BrokerRawPayload, channel: string): BrokerStatement {
+  try { return adapter.parseToStatement(raw, channel); }
+  catch (original) {
+    // Adapters that cannot independently validate current data will throw again.
+    let snapshot: BrokerStatement;
+    try { snapshot = adapter.parseToStatement(raw, channel, false); } catch { throw original; }
+    return { ...snapshot, skipped: [...snapshot.skipped, { kind: 'event', reason: HISTORY_PENDING_REASON }] };
+  }
 }

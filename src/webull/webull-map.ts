@@ -229,7 +229,7 @@ function mapPosition(
   return { lot: { ticker: holdingBaseKey(mapKey), currency, holding } };
 }
 
-export function mapWebullBundleToStatement(bundle: WebullRawBundle, channel: string): BrokerStatement {
+export function mapWebullBundleToStatement(bundle: WebullRawBundle, channel: string, includeHistory = true): BrokerStatement {
   if (bundle.schema !== 'invage.webull.raw.v1') {
     throw new BrokerParseError('Webull raw bundle schema is not invage.webull.raw.v1.');
   }
@@ -253,6 +253,7 @@ export function mapWebullBundleToStatement(bundle: WebullRawBundle, channel: str
     lots,
     skipped,
   };
+  if (!includeHistory) return stmt;
   stmt.history=mapWebullHistory(bundle,channel);
   const executions = bundle.history_plan ? undefined : mapWebullOptionHistory(bundle, lots, channel);
   if (executions) stmt.option_executions = executions;

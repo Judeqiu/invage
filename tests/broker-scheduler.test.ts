@@ -4,12 +4,13 @@ vi.mock('../src/brokers/daily-sync.js', () => ({ runDailyBrokerSyncs: mocks.dail
 import { startBrokerSyncScheduler } from '../src/brokers/scheduler.js';
 
 afterEach(() => { vi.useRealTimers(); vi.clearAllMocks(); });
-it('runs only the shared daily batch, serializes ticks, and stops cleanly', async () => {
+it('runs recovery and the shared daily batch, serializes ticks, and stops cleanly', async () => {
   vi.useFakeTimers();
   let release!: () => void;
   mocks.daily.mockImplementationOnce(() => new Promise<void>(resolve => { release = resolve; })).mockResolvedValue(undefined);
   const scheduler = startBrokerSyncScheduler();
   try {
+    await vi.advanceTimersByTimeAsync(0);
     expect(mocks.daily).toHaveBeenCalledOnce();
     await vi.advanceTimersByTimeAsync(60_000);
     expect(mocks.daily).toHaveBeenCalledOnce();

@@ -1,3 +1,4 @@
+import { brokerRequestSignal } from '../brokers/network.js';
 import { BrokerHttpError, BrokerParseError } from '../brokers/errors.js';
 import { moomooNonce, moomooSignContent, parseSignAlg, signMooMooRequest, type MooMooSignAlg } from './moomoo-sign.js';
 import { looksLikeOptionCode } from '../brokers/option-symbol.js';
@@ -68,6 +69,7 @@ async function moomooRequest(args: {
   });
   const signature = signMooMooRequest(content, args.credentials.private_key, args.credentials.sign_alg);
   const res = await args.fetchImpl(url, {
+    signal: brokerRequestSignal(),
     method,
     ...(args.body !== undefined ? { body: args.body } : {}),
     headers: {
@@ -171,7 +173,7 @@ async function fetchOptionBasicInfo(
 
 async function serverTimeMs(fetchImpl: typeof fetch, credentials: MooMooCredentials): Promise<string | undefined> {
   try {
-    const res = await fetchImpl(`${apiOrigin(credentials)}/api/v1.0/server-time`);
+    const res = await fetchImpl(`${apiOrigin(credentials)}/api/v1.0/server-time`, { signal: brokerRequestSignal() });
     if (!res.ok) return undefined;
     const json: unknown = await res.json();
     const rec = json && typeof json === 'object' ? (json as Record<string, unknown>) : {};

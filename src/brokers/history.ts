@@ -1,3 +1,4 @@
+import { mergeExecutionEffect } from './execution-effects.js';
 import { addDecimals, decimal, validDate, mergeOptionExecutions, type OptionExecution } from './option-executions.js';
 
 export interface BrokerHistoryScope { broker_id: string; channel: string; account_id: string; }
@@ -156,10 +157,11 @@ export function mergeBrokerHistory(previous: BrokerHistory | undefined, incoming
     const prior = executions.get(row.id);
     if (!prior) { executions.set(row.id, row); continue; }
     const canonical = (v:string) => addDecimals(v,'0').replace(/\.0+$/,'').replace(/(\.\d*?)0+$/,'$1');
-    const core = (r: BrokerHistoryExecution) => ({ ...r, quantity:canonical(r.quantity),price:null, option:r.option ? { ...r.option,strike:canonical(r.option.strike) } : null, symbol: null, multiplier: null, gross_cash: null, fee_cash: null });
+    const effect = mergeExecutionEffect(prior.effect, row.effect);
+    const core = (r: BrokerHistoryExecution) => ({ ...r, effect, quantity:canonical(r.quantity),price:null, option:r.option ? { ...r.option,strike:canonical(r.option.strike) } : null, symbol: null, multiplier: null, gross_cash: null, fee_cash: null });
     if (JSON.stringify(core(prior)) !== JSON.stringify(core(row)) || !economicEqual(prior.price, row.price) || !economicEqual(prior.multiplier, row.multiplier) ||
       !economicEqual(prior.gross_cash, row.gross_cash) || !economicEqual(prior.fee_cash, row.fee_cash) || prior.symbol && row.symbol && prior.symbol !== row.symbol) throw new Error(`Conflicting broker history execution ${row.id}`);
-    executions.set(row.id, { ...row, price: row.price ?? prior.price, symbol: row.symbol ?? prior.symbol, multiplier: row.multiplier ?? prior.multiplier, gross_cash: row.gross_cash ?? prior.gross_cash, fee_cash: row.fee_cash ?? prior.fee_cash });
+    executions.set(row.id, { ...row, effect, price: row.price ?? prior.price, symbol: row.symbol ?? prior.symbol, multiplier: row.multiplier ?? prior.multiplier, gross_cash: row.gross_cash ?? prior.gross_cash, fee_cash: row.fee_cash ?? prior.fee_cash });
   }
   const orders = new Map<string, BrokerHistoryOrder>();
   for (const row of [...(old?.orders ?? []), ...next.orders]) {

@@ -1,3 +1,5 @@
+import { HISTORY_PENDING_REASON } from './statement.js';
+import { reconcileExecutionEffects } from './execution-effects.js';
 import { saveInvestor, type InvestorSnapshot } from '../state/investor-store.js';
 import { mergeOptionExecutions } from './option-executions.js';
 import { mergeOptionLifecycleEvents } from './option-events.js';
@@ -144,7 +146,7 @@ export async function applyBrokerStatement(
   _raw?: Buffer,
   beforeSave?: (result: BrokerApplyResult) => void,
   connection?: { brokerId: string; channel: string },
-  observation?: { syncId?: string; observedAt?: string; rawDataId?: string },
+  observation?: { syncId?: string; observedAt?: string; rawDataId?: string; deferHistoryConflicts?: boolean },
 ): Promise<BrokerApplyResult> {
   const { state } = snapshot;
   if (state.broker_sources && !connection) throw new Error('Account connection ID and channel are required for broker apply.');
@@ -160,21 +162,41 @@ export async function applyBrokerStatement(
   // All adapters and custom parsers pass through this before any books writes.
   doc = { ...doc, lots: doc.lots.map(normalizeBrokerOptionLot) };
   if (doc.history && (doc.history.channel !== channel || doc.history.account_id !== doc.account_id || doc.history.broker_id !== (connection?.brokerId ?? connectorId))) throw new Error('History broker/channel/account differs from broker statement');
-  const history = doc.history ? mergeBrokerHistory(state.broker_history?.[channel], doc.history) : undefined;
-  if (history) doc = { ...doc, option_executions: mergeOptionExecutions(doc.option_executions ?? [], optionExecutionsFromHistory(history)) };
-  // Validate all incoming history before ledger writes or snapshot mutation.
-  const executions = doc.option_executions === undefined ? undefined : mergeOptionExecutions(
-    state.option_executions === undefined ? [] : state.option_executions,
-    doc.option_executions,
-  );
-  if (doc.option_executions?.some(row => row.channel !== channel || row.account_id !== doc.account_id)) {
-    throw new Error('Execution channel/account differs from broker statement');
+  // Prepare observation history on a copy, so replay conflicts fail before
+  // ledger writes and a failed books transaction leaves the snapshot untouched.
+  const observedState = { ...state };
+  appendOptionObservation(observedState, {
+    statement: doc, brokerId: connection?.brokerId ?? connectorId,
+    connectionId: connectorId, channel,
+    syncId: observation?.syncId, observedAt: observation?.observedAt,
+    rawDataId: observation?.rawDataId,
+  });
+
+  // Account binding remains a hard boundary; only historical enrichment can be deferred.
+  if (doc.option_executions?.some(row => row.channel !== channel || row.account_id !== doc.account_id) ||
+      doc.option_events?.some(row => row.channel !== channel || row.account_id !== doc.account_id || row.broker_id !== (connection?.brokerId ?? connectorId))) {
+    throw new Error('Historical evidence differs from broker statement account/channel');
   }
-  const optionEvents = doc.option_events === undefined ? undefined : mergeOptionLifecycleEvents(
-    state.option_events === undefined ? [] : state.option_events, doc.option_events);
-  if (doc.option_events?.some(row => row.channel !== channel || row.account_id !== doc.account_id ||
-      row.broker_id !== (connection?.brokerId ?? connectorId))) {
-    throw new Error('Option event broker/channel/account differs from broker statement');
+  let history: BrokerStatement['history'];
+  let executions: BrokerStatement['option_executions'];
+  let optionEvents: BrokerStatement['option_events'];
+  let historyError: string | undefined;
+  try {
+    optionEvents = doc.option_events === undefined ? undefined : mergeOptionLifecycleEvents(state.option_events ?? [], doc.option_events);
+    history = doc.history ? reconcileExecutionEffects(mergeBrokerHistory(state.broker_history?.[channel], doc.history),
+      observedState.option_observations ?? [], optionEvents ?? state.option_events ?? []) : undefined;
+    const incoming = history ? mergeOptionExecutions(doc.option_executions ?? [], optionExecutionsFromHistory(history)) : doc.option_executions;
+    executions = incoming === undefined ? undefined : mergeOptionExecutions(state.option_executions ?? [], incoming);
+    // Share the validated classification across both database projections. Merging
+    // above has checked identity, quantities, time and all reported money first.
+    if (history && executions) {
+      const byId = new Map(executions.filter(e => e.channel === channel && e.account_id === doc.account_id).map(e => [e.execution_id, e]));
+      history.executions = history.executions.map(e => byId.has(e.id) ? { ...e, effect: byId.get(e.id)!.effect } : e);
+    }
+  } catch (error) {
+    if (!observation?.deferHistoryConflicts || !observation.rawDataId) throw error;
+    historyError = error instanceof Error ? error.message : String(error);
+    history = undefined; executions = undefined; optionEvents = undefined;
   }
   const stamped = stampLots(doc.lots, channel);
   if (new Set(stamped.map((lot) => lot.mapKey)).size !== stamped.length) {
@@ -185,16 +207,6 @@ export async function applyBrokerStatement(
   const today = doc.as_of;
   const existing = getPortfolio(state);
   const removed = removedKeys.filter((k) => !stamped.some((l) => l.mapKey === k)).length;
-
-  // Prepare observation history on a copy, so replay conflicts fail before
-  // ledger writes and a failed books transaction leaves the snapshot untouched.
-  const observedState = { ...state };
-  appendOptionObservation(observedState, {
-    statement: doc, brokerId: connection?.brokerId ?? connectorId,
-    connectionId: connectorId, channel,
-    syncId: observation?.syncId, observedAt: observation?.observedAt,
-    rawDataId: observation?.rawDataId,
-  });
 
   if (isBooksEnabled()) {
     const fingerprint = createHash('sha256').update(_raw ?? JSON.stringify(doc)).digest('hex');
@@ -210,6 +222,10 @@ export async function applyBrokerStatement(
   if (optionEvents !== undefined) state.option_events = optionEvents;
   if (history) state.broker_history = { ...state.broker_history, [channel]: history };
 
+  if (historyError) state.log.push({ ts: today, action: 'broker_history_deferred',
+    connector_id: connectorId, account_id: doc.account_id, reason: historyError,
+    raw_data_id: observation!.rawDataId!, sync_id: observation!.syncId ?? '',
+  });
   state.log.push({
     ts: today,
     action: 'broker_sync',
@@ -226,7 +242,7 @@ export async function applyBrokerStatement(
     lotsUpserted: stamped.length,
     lotsRemoved: removed,
     cash: doc.cash,
-    skipped: doc.skipped,
+    skipped: historyError ? [...doc.skipped, { kind: 'event', reason: HISTORY_PENDING_REASON }] : doc.skipped,
     ...(history ? { historySync:history.sync } : {}),
   };
   if (beforeSave) beforeSave(result);

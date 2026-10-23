@@ -246,7 +246,7 @@ function mapPosition(
   return { lot: { ticker: holdingBaseKey(mapKey), currency, holding } };
 }
 
-export function mapMooMooBundleToStatement(bundle: MooMooRawBundle, channel: string): BrokerStatement {
+export function mapMooMooBundleToStatement(bundle: MooMooRawBundle, channel: string, includeHistory = true): BrokerStatement {
   if (bundle.schema !== 'invage.moomoo.raw.v1' && bundle.schema !== 'invage.futubull.cloud.raw.v1') {
     throw new BrokerParseError('MooMoo raw bundle schema is not invage.moomoo.raw.v1.');
   }
@@ -292,6 +292,7 @@ export function mapMooMooBundleToStatement(bundle: MooMooRawBundle, channel: str
     skipped,
   };
   if (metrics) statement.metrics = metrics;
+  if (!includeHistory) return statement;
   const history = mapMooMooHistory(bundle, lots, channel);
   if (history) {
     statement.history = history;

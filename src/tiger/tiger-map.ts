@@ -325,7 +325,7 @@ function mapGlobalAssets(data: unknown, account: string, asOf: string, skipped: 
   return { cash, metrics };
 }
 
-export function mapTigerBundleToStatement(bundle: TigerRawBundle, channel: string): BrokerStatement {
+export function mapTigerBundleToStatement(bundle: TigerRawBundle, channel: string, includeHistory = true): BrokerStatement {
   if (bundle.schema !== 'invage.tiger.raw.v1') {
     throw new BrokerParseError('Tiger raw bundle schema is not invage.tiger.raw.v1.');
   }
@@ -353,6 +353,7 @@ export function mapTigerBundleToStatement(bundle: TigerRawBundle, channel: strin
     skipped,
   };
   if (mapped.metrics) statement.metrics = mapped.metrics;
+  if (!includeHistory) return statement;
   statement.history = mapTigerHistory(bundle,lots,channel);
   const history = bundle.history ? undefined : mapTigerOptionHistory(bundle, lots, channel);
   if (history) {

@@ -1,3 +1,4 @@
+import { brokerRequestSignal } from '../brokers/network.js';
 import { webullOrderFees } from './webull-fees.js';
 import { randomBytes } from 'node:crypto';
 import type { BrokerHistorySyncPlan } from '../brokers/history.js';
@@ -93,7 +94,7 @@ export async function webullGet(args: {
     'x-version': 'v3',
   };
   if (args.credentials.access_token) headers['x-access-token'] = args.credentials.access_token;
-  const res = await args.fetchImpl(url, { method: 'GET', headers, signal:args.signal });
+  const res = await args.fetchImpl(url, { method: 'GET', headers, signal:brokerRequestSignal(args.signal) });
   const text = await res.text();
   let json: unknown = text;
   try {

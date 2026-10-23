@@ -35,13 +35,13 @@ export const tigerAdapter: BrokerConnectorAdapter = {
     });
     return { kind: 'json', body: Buffer.from(JSON.stringify(bundle)), meta: { gateway: bundle.gateway } };
   },
-  parseToStatement(raw: BrokerRawPayload, channel: string) {
+  parseToStatement(raw: BrokerRawPayload, channel: string, includeHistory = true) {
     let parsed: unknown;
     try {
       parsed = JSON.parse(raw.body.toString('utf8'));
     } catch {
       throw new BrokerParseError('Tiger raw body is not JSON.');
     }
-    return mapTigerBundleToStatement(parsed as TigerRawBundle, channel);
+    return mapTigerBundleToStatement(parsed as TigerRawBundle, channel, includeHistory);
   },
 };

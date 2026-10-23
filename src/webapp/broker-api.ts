@@ -1,3 +1,4 @@
+import { brokerSyncRetry, brokerSyncBinding } from '../brokers/sync-retries.js';
 import { readBrokerSyncConfig } from './dashboard-config.js';
 import { saveInvestor, type InvestorSnapshot } from '../state/investor-store.js';
 import { createBrokerSyncJobs } from '../brokers/sync-all.js';
@@ -301,11 +302,17 @@ export function createBrokerConnectionsRouter(): Router {
     } catch (e) { accountError(res, e); }
   });
   router.post('/broker-accounts/:id/sync', async (req: Request, res: Response) => {
+    let snapshot: InvestorSnapshot | undefined;
     try {
-      const snapshot = await sessionInvestor(req);
+      snapshot = await sessionInvestor(req);
       if(req.body?.full_sync!==undefined&&typeof req.body.full_sync!=='boolean'){res.status(400).json({error:'full_sync must be boolean'});return;}
       res.json(await syncBrokerAccount(snapshot, String(req.params.id),undefined,'manual',req.body?.full_sync===true));
-    } catch (e) { accountError(res, e); }
+    } catch (e) {
+      const connection = snapshot && readBrokerAccountModel(snapshot.state).connections[String(req.params.id)];
+      const retry = connection?.enabled && brokerSyncRetry(snapshot!.state.user.id, String(req.params.id), brokerSyncBinding(connection));
+      if (retry) { res.status(202).json({ queued: true, retry_at: retry.retry_at, message: 'Sync queued for automatic retry. Your last saved data remains available.' }); return; }
+      accountError(res, e);
+    }
   });
   router.get('/broker-accounts/:id/sync-history', async (req: Request, res: Response) => {
     try {

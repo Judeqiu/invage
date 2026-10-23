@@ -31,6 +31,10 @@ try{const page=await browser.newPage();const errors=[];page.on('pageerror',e=>er
  assert.equal(requests[2].path,'/api/domain/invage/broker-accounts/webull-A');assert.equal(Object.hasOwn(requests[2].body,'sync_frequency'),false);assert.equal(requests[2].body.enabled,true);
  payload.automatic_sync.enabled=false;await page.reload({waitUntil:'networkidle0'});await page.click('[data-action="manage"][data-id="webull-A"]');await page.waitForSelector('#account-label');
  assert.match(await page.$eval('#account-label',node=>node.closest('.manage').textContent),/Automatic syncing is disabled/);assert.equal(await page.$('#sync-frequency'),null);
+ const tiger=payload.connections.find(c=>c.broker_id==='tiger');Object.assign(tiger,{status:'retrying',sync_retry:{attempts:2,retry_at:new Date().toISOString()},last_sync:{ok:false,error:'Network unavailable'}});
+ await page.reload({waitUntil:'networkidle0'});
+ const card=await page.$eval('[data-action="sync"][data-id="tiger-A"]',node=>node.closest('.connector').textContent);
+ assert.match(card,/Retrying/);assert.match(card,/retry automatically/);assert.doesNotMatch(card,/Sync error/);
  assert.deepEqual(errors,[]);await mkdir('/tmp/invage-full-sync-ui',{recursive:true});await page.screenshot({path:'/tmp/invage-full-sync-ui/brokers.png',fullPage:true});
  await page.setViewport({width:420,height:1000});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);await page.screenshot({path:'/tmp/invage-full-sync-ui/brokers-mobile.png',fullPage:true});
  console.log('Broker UI passed: configurable schedule and disabled status display correctly, account saves omit schedule fields, and manual sync modes work.');
