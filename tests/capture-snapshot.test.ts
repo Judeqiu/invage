@@ -30,6 +30,22 @@ describe('shared portfolio snapshot capture', () => {
     expect(JSON.parse(readFileSync(join(dir, 'snapshots.json'), 'utf8'))).toEqual([result.fileName]);
   });
 
+  it('keeps only the latest snapshot per sync date and preserves other days', async () => {
+    const user = { ...state, user: { ...state.user, id: 'latest-daily-snapshot-user' } };
+    const capture = (date: string, amount: number) => capturePortfolioSnapshot({ ...user,
+      cash: { amount, currency: 'USD', updated_at: date } }, date, { allowEmpty: true });
+    await capture('2026-10-22', 80);
+    await capture('2026-10-23', 100);
+    await capture('2026-10-23', 175);
+    await capture('2026-10-24', 200);
+    const dir = join(resolveDataRoot(), 'drive', user.user.id);
+    const files = JSON.parse(readFileSync(join(dir, 'snapshots.json'), 'utf8')) as string[];
+    expect(files).toEqual(['snapshot-2026-10-22.json', 'snapshot-2026-10-23.json', 'snapshot-2026-10-24.json']);
+    const snapshots = files.map(file => JSON.parse(readFileSync(join(dir, file), 'utf8')));
+    expect(snapshots.map(snapshot => snapshot.totalValue)).toEqual([80, 175, 200]);
+    expect(snapshots[1]).toMatchObject({ date: '2026-10-23', cashAmount: 175 });
+  });
+
   it('can record an empty synced account while keeping the manual empty-portfolio guard', async () => {
     const empty = { ...state, cash: undefined };
     await expect(capturePortfolioSnapshot(empty, '2026-10-22')).rejects.toThrow('No portfolio');
