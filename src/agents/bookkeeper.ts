@@ -6,6 +6,7 @@
  * on the same user YAML managed by WalletStreet. No market research persona.
  */
 
+import { TEXT_AND_IMAGE_ROUTING, TEXT_HEAVY_HEURISTICS } from './llm-routing.js';
 import type { DomainExtension, EnrichMessageContext, Skill } from 'utarus';
 import {
   resolveUserBySlackUser,
@@ -235,6 +236,8 @@ function bookkeeperContextPrefix(investor: InvestorState, ctx: EnrichMessageCont
 }
 
 export const bookkeeperExtension: DomainExtension = {
+  llmRouting: TEXT_AND_IMAGE_ROUTING,
+  llmHeavyHeuristics: TEXT_HEAVY_HEURISTICS,
   l10n: PEER_L10N,
   purpose: PROFILE === 'consultant' ? OPTIONS_BOOKKEEPER_PURPOSE : BOOKKEEPER_PURPOSE,
 

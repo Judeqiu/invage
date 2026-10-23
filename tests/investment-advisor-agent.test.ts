@@ -83,8 +83,8 @@ describe('InvestmentAdvisor local agent', () => {
     expect(investmentAdvisorExtension.purpose).toMatch(/invoke_local_agent/);
   });
 
-  it('defaults LLM routing to heavy', () => {
-    expect(investmentAdvisorExtension.llmRouting).toEqual({ default: 'heavy' });
+  it('reserves vision routing for images', () => {
+    expect(investmentAdvisorExtension.llmRouting).toMatchObject({ default: 'daily', heavy: 'daily', has_images: 'vision' });
   });
 
   it('room @mention label is a single token (no spaces)', () => {

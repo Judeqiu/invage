@@ -6,6 +6,7 @@
  * Domain owns: portfolio tools, market analysis, investment skills, domain enrich.
  */
 
+import { TEXT_AND_IMAGE_ROUTING, TEXT_HEAVY_HEURISTICS } from './agents/llm-routing.js';
 import type { DomainExtension, EnrichMessageContext, Skill } from 'utarus';
 import {
   resolveUserBySlackUser,
@@ -176,20 +177,8 @@ export const invageExtension: DomainExtension = {
 
   skills: INVAGE_SKILLS,
 
-  /**
-   * WalletStreet is the fast orchestrator: always DeepSeek (`daily`).
-   * Process-wide UTARUS_LLM_ROUTE_HEAVY_* would otherwise escalate long /
-   * "deep dive" turns to Kimi k3 — wrong for host routing latency.
-   * Specialists (InvestmentAdvisor, FinancialPlanner, …) keep their own heavy defaults.
-   * Vision (images) still uses host has_images when the user attaches photos.
-   */
-  llmRouting: {
-    default: 'daily',
-  },
-  /** Empty heuristics = no heavy_chars / heavy_keyword escalate for this agent. */
-  llmHeavyHeuristics: {
-    keywords: [],
-  },
+  llmRouting: TEXT_AND_IMAGE_ROUTING,
+  llmHeavyHeuristics: TEXT_HEAVY_HEURISTICS,
 
   // Credit rates required at boot (utarus ≥ 1.17) even when paywall is off.
   // Do NOT set plans / UTARUS_BILLING_ENABLED until Stripe prices exist.

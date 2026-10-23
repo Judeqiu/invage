@@ -55,8 +55,8 @@ describe('Real Estate Expert local agent', () => {
     expect(realEstateExpertExtension.purpose).toMatch(/create_task/);
   });
 
-  it('defaults LLM routing to heavy', () => {
-    expect(realEstateExpertExtension.llmRouting).toEqual({ default: 'heavy' });
+  it('reserves vision routing for images', () => {
+    expect(realEstateExpertExtension.llmRouting).toMatchObject({ default: 'daily', heavy: 'daily', has_images: 'vision' });
   });
 
   it('registers RE skills only', () => {

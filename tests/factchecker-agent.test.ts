@@ -86,7 +86,7 @@ describe('Factchecker local agent', () => {
   });
 
   it('defaults LLM routing to daily (fast audit; tools carry accuracy)', () => {
-    expect(factcheckerExtension.llmRouting).toEqual({ default: 'daily' });
+    expect(factcheckerExtension.llmRouting).toMatchObject({ default: 'daily', heavy: 'daily', has_images: 'vision' });
     expect(factcheckerExtension.llmHeavyHeuristics).toEqual({ keywords: [] });
   });
 

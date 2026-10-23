@@ -5,6 +5,7 @@
  * before host final synthesis. Not a storyteller, planner, or bookkeeper.
  */
 
+import { TEXT_AND_IMAGE_ROUTING, TEXT_HEAVY_HEURISTICS } from './llm-routing.js';
 import type { DomainExtension, EnrichMessageContext, Skill } from 'utarus';
 import {
   resolveUserBySlackUser,
@@ -196,19 +197,9 @@ export const factcheckerExtension: DomainExtension = {
 
   skills: FACTCHECKER_SKILLS,
 
-  /**
-   * Daily (DeepSeek flash) — accuracy comes from re-running tools + typed verdict,
-   * not from a heavy model. Heavy/k3 made nested consults 3+ minutes and broke
-   * Web SSE (client "Connection error: network error" after long invoke_local_agent).
-   */
-  llmRouting: {
-    default: 'daily',
-  },
+  llmRouting: TEXT_AND_IMAGE_ROUTING,
 
-  /** Empty heuristics — never escalate factcheck consults to heavy mid-turn. */
-  llmHeavyHeuristics: {
-    keywords: [],
-  },
+  llmHeavyHeuristics: TEXT_HEAVY_HEURISTICS,
 
   async enrichMessage(ctx: EnrichMessageContext): Promise<string> {
     let investor: InvestorState | null = null;

@@ -116,8 +116,8 @@ describe('stock research workflow publication', () => {
     const def = createStockResearchWorkflow({ collect, publish, now: () => now }); const ctx = context();
     const result = await def.run(ctx);
     expect(def.agent_budget).toBe(2); expect(ctx.worker).toHaveBeenCalledTimes(1); expect(ctx.parallelVerify).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(ctx.worker).mock.calls.every(([spec]) => spec.llmProfile === 'heavy' && spec.task.includes('one bare JSON object'))).toBe(true);
-    expect(vi.mocked(ctx.parallelVerify).mock.calls[0][0][0].llmProfile).toBe('heavy');
+    expect(vi.mocked(ctx.worker).mock.calls.every(([spec]) => spec.llmProfile === 'default' && spec.task.includes('one bare JSON object'))).toBe(true);
+    expect(vi.mocked(ctx.parallelVerify).mock.calls[0][0][0].llmProfile).toBe('default');
     expect(publish).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ ownerUserId: ctx.ownerUserId,
       filename: 'stock-research-TEST-run-123.html', html: expect.stringContaining('Peer comparison & ranking') }));
     expect(result.body).toContain('https://test.example.com/api/files/stock.html/view');

@@ -6,6 +6,7 @@
  * the same user YAML as WalletStreet.
  */
 
+import { TEXT_AND_IMAGE_ROUTING, TEXT_HEAVY_HEURISTICS } from './llm-routing.js';
 import type { DomainExtension, EnrichMessageContext, Skill } from 'utarus';
 import {
   resolveUserBySlackUser,
@@ -176,9 +177,8 @@ export const realEstateExpertExtension: DomainExtension = {
 
   skills: REAL_ESTATE_EXPERT_SKILLS,
 
-  llmRouting: {
-    default: 'heavy',
-  },
+  llmRouting: TEXT_AND_IMAGE_ROUTING,
+  llmHeavyHeuristics: TEXT_HEAVY_HEURISTICS,
 
   async enrichMessage(ctx: EnrichMessageContext): Promise<string> {
     let investor: InvestorState | null = null;

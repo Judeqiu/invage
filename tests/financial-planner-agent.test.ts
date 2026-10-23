@@ -47,8 +47,8 @@ describe('FinancialPlanner local agent', () => {
     expect(financialPlannerExtension.purpose).toMatch(/agent KB|search_kb/i);
   });
 
-  it('defaults LLM routing to heavy (Kimi k3 profile on host)', () => {
-    expect(financialPlannerExtension.llmRouting).toEqual({ default: 'heavy' });
+  it('reserves vision routing for images', () => {
+    expect(financialPlannerExtension.llmRouting).toMatchObject({ default: 'daily', heavy: 'daily', has_images: 'vision' });
   });
 
   it('has optimize_payment_plan + build_payment_plan while Bookkeeper does not', () => {

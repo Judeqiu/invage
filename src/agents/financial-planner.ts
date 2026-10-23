@@ -6,6 +6,7 @@
  * help the user save money. Shares the same user books as WalletStreet.
  */
 
+import { TEXT_AND_IMAGE_ROUTING, TEXT_HEAVY_HEURISTICS } from './llm-routing.js';
 import type { DomainExtension, EnrichMessageContext, Skill } from 'utarus';
 import {
   resolveUserBySlackUser,
@@ -209,13 +210,8 @@ export const financialPlannerExtension: DomainExtension = {
 
   skills: FINANCIAL_PLANNER_SKILLS,
 
-  /**
-   * FinancialPlanner defaults to Kimi k3 (host `heavy` profile) for careful numeric reasoning.
-   * Vision turns still inherit host `has_images` (also k3). Utility/title stay host daily.
-   */
-  llmRouting: {
-    default: 'heavy',
-  },
+  llmRouting: TEXT_AND_IMAGE_ROUTING,
+  llmHeavyHeuristics: TEXT_HEAVY_HEURISTICS,
 
   async enrichMessage(ctx: EnrichMessageContext): Promise<string> {
     let investor: InvestorState | null = null;

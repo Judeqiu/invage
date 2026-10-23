@@ -6,6 +6,7 @@
  * playbook wizard stay on Bookkeeper / WalletStreet; payment plans on FinancialPlanner.
  */
 
+import { TEXT_AND_IMAGE_ROUTING, TEXT_HEAVY_HEURISTICS } from './llm-routing.js';
 import type { DomainExtension, EnrichMessageContext, Skill } from 'utarus';
 import {
   resolveUserBySlackUser,
@@ -181,12 +182,8 @@ export const investmentAdvisorExtension: DomainExtension = {
 
   skills: INVESTMENT_ADVISOR_SKILLS,
 
-  /**
-   * InvestmentAdvisor defaults to heavy (Kimi k3 on host) for careful multi-step thesis work.
-   */
-  llmRouting: {
-    default: 'heavy',
-  },
+  llmRouting: TEXT_AND_IMAGE_ROUTING,
+  llmHeavyHeuristics: TEXT_HEAVY_HEURISTICS,
 
   async enrichMessage(ctx: EnrichMessageContext): Promise<string> {
     let investor: InvestorState | null = null;
