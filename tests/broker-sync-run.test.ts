@@ -42,28 +42,24 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.clearAllMocks(); rmSync(root, { recursive: true, force: true });
   delete process.env.UTARUS_DATA_ROOT; });
 
-it.each(['manual', 'scheduled'] as const)('retries a failed %s sync 30 minutes after failure', async trigger => {
+it.each(['manual', 'scheduled'] as const)('does not create an account retry schedule after a failed %s sync', async trigger => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date('2026-10-15T01:00:00Z'));
   vi.spyOn(adapters.ibkr, 'fetchRaw').mockImplementation(async () => {
-    // The retry delay starts when the attempt fails, even for a slow request.
+    // Slow failures must not recreate the retired retry schedule.
     vi.setSystemTime(new Date(Date.now() + 5 * 60 * 1000));
     throw new Error('Broker unavailable');
   });
   await expect(syncBrokerAccount({ state: structuredClone(stored), revision }, id, undefined, trigger))
     .rejects.toThrow('Broker unavailable');
-  expect(readBrokerAccountModel(stored).connections[id].sync_schedule).toEqual({
-    frequency: 'daily', next_run_at: '2026-10-15T01:35:00.000Z',
-  });
+  expect(readBrokerAccountModel(stored).connections[id].sync_schedule).toBeUndefined();
   expect(notices.failure).toHaveBeenLastCalledWith(stored.user.id, 'Interactive Brokers', 'Main',
-    'Broker unavailable', { retryScheduled: true });
+    'Broker unavailable', { retryScheduled: false });
 
   vi.setSystemTime(new Date('2026-10-15T01:35:00Z'));
   await expect(syncBrokerAccount({ state: structuredClone(stored), revision }, id, undefined, 'scheduled'))
     .rejects.toThrow('Broker unavailable');
-  expect(readBrokerAccountModel(stored).connections[id].sync_schedule).toEqual({
-    frequency: 'daily', next_run_at: '2026-10-15T02:10:00.000Z',
-  });
+  expect(readBrokerAccountModel(stored).connections[id].sync_schedule).toBeUndefined();
 });
 
 it('preserves automatic sync being turned off while a sync is failing', async () => {
@@ -78,7 +74,7 @@ it('preserves automatic sync being turned off while a sync is failing', async ()
     'Broker unavailable', { retryScheduled: false });
 });
 
-it('does not announce a retry if saving the retry schedule fails', async () => {
+it('does not announce a retry if saving failure status fails', async () => {
   vi.spyOn(adapters.ibkr, 'fetchRaw').mockRejectedValue(new Error('Broker unavailable'));
   mocks.save.mockRejectedValueOnce(new Error('State unavailable'));
   await expect(syncBrokerAccount({ state: structuredClone(stored), revision }, id))

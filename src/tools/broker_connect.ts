@@ -23,8 +23,8 @@ export function createListBrokerAccountsTool(): AgentTool {
     execute: async (_id, raw) => {
       try {
         const { state } = await resolveInvestorFromChannel(raw as ChannelIds);
-        const accounts = publicBrokerAccounts(state).connections.map(({ id, broker_id, label, account_id, channel, enabled, status, last_sync, sync_schedule }) =>
-          ({ id, broker_id, label, account_id, channel, enabled, status, last_sync, sync_schedule }));
+        const accounts = publicBrokerAccounts(state).connections.map(({ id, broker_id, label, account_id, channel, enabled, status, last_sync }) =>
+          ({ id, broker_id, label, account_id, channel, enabled, status, last_sync }));
         return ok(accounts.length
           ? `Configured broker accounts (${accounts.length}):\n${accounts.map(a => `- ${a.label} (${a.broker_id}), channel=${a.channel}, account=${a.account_id ?? 'unbound'}, ${a.status}, last_sync=${JSON.stringify(a.last_sync)}`).join('\n')}`
           : 'No broker accounts are configured for this user.', { accounts });

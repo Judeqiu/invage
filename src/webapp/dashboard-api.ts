@@ -321,7 +321,7 @@ export function createDashboardApiRouter(): Router {
         return {
           id, broker_id: conn.broker_id, channel: conn.channel, label: conn.label,
           account_id: conn.account_id ?? null, enabled: conn.enabled,
-          schedule: conn.sync_schedule?.frequency ?? null,
+          schedule: conn.enabled && conn.account_id ? 'daily' : null,
           last_success_at: successful?.observed_at ?? prior?.at ?? (conn.last_sync?.ok ? conn.last_sync.at : null),
           position_as_of: successful?.as_of ?? prior?.as_of ?? (conn.last_sync?.ok ? conn.last_sync.as_of ?? null : null),
           last_attempt: conn.last_sync ?? null,

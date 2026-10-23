@@ -170,3 +170,13 @@ describe('option observation episodes', () => {
     });
   });
 });
+
+it('uses the shared daily cadence instead of retired hourly or weekly account settings', () => {
+  const s = state();
+  s.broker_connections = { ibkr: { broker_id: 'ibkr', source_id: 'source', channel: 'ibkr', label: 'Main', enabled: true,
+    account_id: 'U1', config: { activity_query_id: '111' }, sync_schedule: { frequency: 'hourly', next_run_at: '2026-10-01T13:00:00Z' } } };
+  observe(s, '2026-10-01', true);
+  expect(buildOptionEpisodes(s, new Date('2026-10-01T15:00:00Z'))[0].status).toBe('open');
+  (s.broker_connections.ibkr as import('../src/state/portfolio-state.js').BrokerAccountConnection).sync_schedule!.frequency = 'weekly';
+  expect(buildOptionEpisodes(s, new Date('2026-10-02T14:00:00Z'))[0].status).toBe('unverified');
+});

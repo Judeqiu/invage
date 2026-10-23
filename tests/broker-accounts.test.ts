@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { InvestorState } from '../src/state/portfolio-state.js';
 import {
   addBrokerAccount, addBrokerSource, ibkrStatements, patchBrokerAccount, previewBrokerAccount, publicBrokerAccounts,
-  persistBrokerAccountModel, readBrokerAccountModel, resolveBrokerAccountId, nextBrokerSyncAt,
+  persistBrokerAccountModel, readBrokerAccountModel, resolveBrokerAccountId,
 } from '../src/brokers/accounts.js';
 import { adapters } from '../src/brokers/adapter.js';
 
@@ -21,38 +21,31 @@ function flex(id: string, cash: number): string {
 }
 
 describe('account-based broker connections', () => {
-  it('defaults new connections to daily sync and preserves an explicit opt-out', () => {
+  it('creates accounts without legacy schedules and retires saved hourly/daily/weekly settings', () => {
     const state = investor();
     const source = addBrokerSource(state, 'ibkr', { token: 'secret1234' });
-    const before = Date.now();
     const id = addBrokerAccount(state, { source_id: source, account_id: 'U1', label: 'Main',
       config: { activity_query_id: '111' } });
-    const schedule = publicBrokerAccounts(state).connections.find(c => c.id === id)!.sync_schedule!;
-    expect(schedule.frequency).toBe('daily');
-    expect(Date.parse(schedule.next_run_at)).toBeGreaterThanOrEqual(before + 86_400_000);
-    expect(Date.parse(schedule.next_run_at)).toBeLessThanOrEqual(Date.now() + 86_400_000);
-
-    patchBrokerAccount(state, id, { sync_frequency: null });
-    patchBrokerAccount(state, id, { label: 'Renamed' });
     expect(readBrokerAccountModel(state).connections[id].sync_schedule).toBeUndefined();
+    for (const frequency of ['hourly', 'daily', 'weekly'] as const) {
+      (state.broker_connections![id] as import('../src/state/portfolio-state.js').BrokerAccountConnection).sync_schedule = {
+        frequency, next_run_at: '2026-01-01T00:00:00Z' };
+      expect(readBrokerAccountModel(state).connections[id].sync_schedule).toBeUndefined();
+      expect(publicBrokerAccounts(state).connections.find(c => c.id === id)).not.toHaveProperty('sync_schedule');
+      patchBrokerAccount(state, id, { label: 'Renamed' });
+      expect(state.broker_connections![id]).not.toHaveProperty('sync_schedule');
+    }
   });
 
-  it('configures and validates account sync schedules', () => {
+  it('rejects attempts to restore per-account schedules while accepting old opt-out requests', () => {
     const state = investor();
     const source = addBrokerSource(state, 'ibkr', { token: 'secret1234' });
     const id = addBrokerAccount(state, { source_id: source, account_id: 'U1', label: 'Main',
       config: { activity_query_id: '111' } });
-    const before = Date.now();
-    patchBrokerAccount(state, id, { sync_frequency: 'hourly' });
-    const schedule = readBrokerAccountModel(state).connections[id].sync_schedule!;
-    expect(schedule.frequency).toBe('hourly');
-    expect(Date.parse(schedule.next_run_at)).toBeGreaterThanOrEqual(before + 3_600_000);
-    expect(Date.parse(schedule.next_run_at)).toBeLessThanOrEqual(Date.now() + 3_600_000);
-    patchBrokerAccount(state, id, { sync_frequency: 'hourly' });
-    expect(readBrokerAccountModel(state).connections[id].sync_schedule?.next_run_at).toBe(schedule.next_run_at);
-    expect(nextBrokerSyncAt('daily', new Date('2026-10-01T00:00:00Z'))).toBe('2026-10-02T00:00:00.000Z');
-    expect(nextBrokerSyncAt('weekly', new Date('2026-10-01T00:00:00Z'))).toBe('2026-10-08T00:00:00.000Z');
-    expect(() => patchBrokerAccount(state, id, { sync_frequency: 'monthly' as 'daily' })).toThrow(/Invalid sync frequency/);
+    for (const sync_frequency of ['hourly', 'daily', 'weekly', 'monthly']) {
+      expect(() => patchBrokerAccount(state, id, { sync_frequency: sync_frequency as 'daily' })).toThrow(/disabled/);
+      expect(readBrokerAccountModel(state).connections[id].sync_schedule).toBeUndefined();
+    }
     patchBrokerAccount(state, id, { sync_frequency: null });
     expect(readBrokerAccountModel(state).connections[id].sync_schedule).toBeUndefined();
   });

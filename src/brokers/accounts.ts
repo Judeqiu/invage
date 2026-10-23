@@ -115,15 +115,7 @@ function parseConnection(id: string, raw: unknown, sources: Record<string, Broke
   }
   if (o.last_sync != null) conn.last_sync = parseLastSync(o.last_sync, `broker_connections.${id}.last_sync`);
   if (o.metrics != null) conn.metrics = assertBrokerConnectionMetrics(o.metrics, `broker_connections.${id}.metrics`);
-  if (o.sync_schedule != null) {
-    const schedule = record(o.sync_schedule, `broker_connections.${id}.sync_schedule`);
-    if (Object.keys(schedule).some(k => k !== 'frequency' && k !== 'next_run_at') ||
-        !isSyncFrequency(schedule.frequency) || typeof schedule.next_run_at !== 'string' ||
-        !Number.isFinite(Date.parse(schedule.next_run_at))) {
-      throw new Error(`broker_connections.${id}.sync_schedule is invalid.`);
-    }
-    conn.sync_schedule = { frequency: schedule.frequency, next_run_at: schedule.next_run_at };
-  }
+  // Legacy per-account schedules are accepted on disk but retired on normalization.
   return conn;
 }
 function accountNamespace(conn: BrokerAccountConnection, sources: Record<string, BrokerAccessSource>): string {
@@ -203,6 +195,7 @@ export function readBrokerAccountModel(state: InvestorState): BrokerAccountModel
 
 export function persistBrokerAccountModel(state: InvestorState, model: BrokerAccountModel): void {
   validateUniqueness(model);
+  for (const connection of Object.values(model.connections)) delete connection.sync_schedule;
   state.broker_sources = model.sources;
   state.broker_connections = model.connections;
   delete (state as InvestorState & { ibkr_flex?: unknown }).ibkr_flex;
@@ -230,13 +223,6 @@ function requiredComplete(def: BrokerConnectorDef, values: Record<string, string
   return def.credentialFields.every(f => !f.required || Boolean(values[f.id]?.trim()));
 }
 export type SyncFrequency = 'hourly' | 'daily' | 'weekly';
-export function isSyncFrequency(value: unknown): value is SyncFrequency {
-  return value === 'hourly' || value === 'daily' || value === 'weekly';
-}
-export function nextBrokerSyncAt(frequency: SyncFrequency, from: Date): string {
-  const hours = frequency === 'hourly' ? 1 : frequency === 'daily' ? 24 : 168;
-  return new Date(from.getTime() + hours * 60 * 60 * 1000).toISOString();
-}
 function publicValue(value: string | undefined, secret: boolean): { configured: boolean; value?: string; last4?: string } {
   if (!value) return { configured: false };
   if (!secret) return { configured: true, value };
@@ -268,7 +254,6 @@ export function publicBrokerAccounts(state: InvestorState) {
       return {
         id, broker_id: conn.broker_id, source_id: conn.source_id, label: conn.label,
         account_id: conn.account_id ?? null, channel: conn.channel, enabled: conn.enabled,
-        sync_schedule: conn.sync_schedule ?? null,
         account_binding_editable: canRebind(state, conn),
         status, config: Object.fromEntries(def.credentialFields.filter(f => configFields(def.id).has(f.id))
           .map(f => [f.id, publicValue(conn.config[f.id], f.type === 'secret')])),
@@ -332,13 +317,13 @@ export function addBrokerAccount(state: InvestorState, args: {
   model.connections[id] = {
     broker_id: def.id, source_id: args.source_id, label: nonempty(args.label, 'label'),
     account_id, channel, enabled: true, config,
-    sync_schedule: { frequency: 'daily', next_run_at: nextBrokerSyncAt('daily', new Date()) },
   };
   persistBrokerAccountModel(state, model);
   return id;
 }
 export function patchBrokerAccount(state: InvestorState, id: string, patch: {
   label?: string; enabled?: boolean; account_id?: string; config?: Record<string, string | null>;
+  /** Retired client field: only null is accepted to clear an old setting. */
   sync_frequency?: SyncFrequency | null;
 }): void {
   const model = readBrokerAccountModel(state);
@@ -361,19 +346,10 @@ export function patchBrokerAccount(state: InvestorState, id: string, patch: {
     if (typeof patch.enabled !== 'boolean') throw new Error('enabled must be boolean.');
     conn.enabled = patch.enabled;
   }
-  if (patch.sync_frequency !== undefined) {
-    if (patch.sync_frequency === null) delete conn.sync_schedule;
-    else {
-      if (!isSyncFrequency(patch.sync_frequency)) throw new Error('Invalid sync frequency.');
-      if (!conn.account_id) throw new Error('Select a broker account before scheduling sync.');
-      if (!requiredComplete(getBrokerConnector(conn.broker_id), combinedCredentials(model, conn))) {
-        throw new Error('Required broker fields are incomplete.');
-      }
-      if (conn.sync_schedule?.frequency !== patch.sync_frequency) {
-        conn.sync_schedule = { frequency: patch.sync_frequency, next_run_at: nextBrokerSyncAt(patch.sync_frequency, new Date()) };
-      }
-    }
+  if (patch.sync_frequency !== undefined && patch.sync_frequency !== null) {
+    throw new Error('Per-account sync schedules are disabled and cannot be enabled. All enabled accounts sync daily at 2 pm Singapore time.');
   }
+  delete conn.sync_schedule;
   if (patch.config) {
     const def = getBrokerConnector(conn.broker_id);
     const allowed = configFields(conn.broker_id);
@@ -567,22 +543,16 @@ export async function syncBrokerAccount(snapshot: InvestorSnapshot, id: string, 
       if (raw && !archivePath) archivePath = archive(state.user.id, conn, raw, at.slice(0, 10), false, message);
       recordBrokerSyncRun(state.user.id, conn.channel, { id: syncId, at, trigger, ok: false, error: message,
         ...(rawId() ? { raw_data_id: rawId() } : {}) });
-      let retryScheduled = false;
       try {
         const fresh = await loadInvestor(state.user.id);
         const current = readBrokerAccountModel(fresh.state);
         if (current.connections[id]) {
           current.connections[id].last_sync = { at, ok: false, error: message };
-          const schedule = current.connections[id].sync_schedule;
-          if (schedule) {
-            schedule.next_run_at = new Date(Date.now() + 30 * 60 * 1000).toISOString();
-          }
           persistBrokerAccountModel(fresh.state, current);
           await saveInvestor(fresh);
-          retryScheduled = !!schedule && current.connections[id].enabled;
         }
       } finally {
-        await publishBrokerSyncFailure(state.user.id, def.displayName, conn.label, message, { retryScheduled });
+        await publishBrokerSyncFailure(state.user.id, def.displayName, conn.label, message, { retryScheduled: false });
       }
       throw new Error(message);
     }

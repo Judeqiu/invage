@@ -26,6 +26,7 @@ function fixture(userId = 'alice'): InvestorSnapshot {
 }
 function app() {
   const app = express();
+  app.use(express.json());
   app.use((req, _res, next) => {
     const userId = req.headers['x-user'];
     if (userId) Object.assign(req, { user: { userId } });
@@ -156,4 +157,24 @@ it('withholds the snapshot when a new account is linked during manual sync', asy
   await vi.waitFor(() => expect(job.status).toBe('completed'));
   expect(mocks.capture).not.toHaveBeenCalled();
   expect(job).toMatchObject({ snapshotStatus: 'skipped', error: expect.stringContaining('accounts changed') });
+});
+
+it('rejects legacy schedule creation through the API and omits retired schedule controls from account data', async () => {
+  const snapshot = fixture('00000000-0000-4000-8000-000000000071');
+  const id = Object.keys(snapshot.state.broker_connections!)[0];
+  (snapshot.state.broker_connections![id] as import('../src/state/portfolio-state.js').BrokerAccountConnection).sync_schedule = {
+    frequency: 'hourly', next_run_at: '2026-01-01T00:00:00Z' };
+  mocks.session.mockResolvedValue(snapshot);
+  const server = app();
+  for (const sync_frequency of ['hourly', 'daily', 'weekly']) {
+    const response = await request(server).patch('/broker-accounts/' + id).set('x-user', 'alice').send({ sync_frequency });
+    expect(response.status).toBe(400);
+    expect(response.body.message).toContain('disabled');
+  }
+  const accounts = await request(server).get('/broker-accounts').set('x-user', 'alice');
+  expect(accounts.status).toBe(200);
+  expect(accounts.body.connections.find(account => account.id === id)).not.toHaveProperty('sync_schedule');
+  const saved = await request(server).patch('/broker-accounts/' + id).set('x-user', 'alice').send({ label: 'Updated' });
+  expect(saved.status).toBe(200);
+  expect(snapshot.state.broker_connections![id]).not.toHaveProperty('sync_schedule');
 });

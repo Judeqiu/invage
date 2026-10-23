@@ -156,12 +156,7 @@ function existingCard(c) {
       <button data-action="token-check" data-id="${esc(c.id)}" ${busy ? 'disabled' : ''}>Check token</button>` : ''}</div>
       <h3>Account settings</h3>
       ${fields(b, 'connection').filter(f => f.id !== 'acc_id' && f.id !== 'account_id' && f.id !== 'account').map(f => fieldHtml(f, c.config, 'config')).join('')}
-      <label class="field" for="sync-frequency">Automatic sync
-        <select id="sync-frequency" ${!c.account_id ? 'disabled' : ''}>
-          ${[['', 'Off'], ['hourly', 'Every hour'], ['daily', 'Every day'], ['weekly', 'Every week']].map(([value, label]) =>
-            `<option value="${value}" ${c.sync_schedule?.frequency === value || !c.sync_schedule && !value ? 'selected' : ''}>${label}</option>`).join('')}
-        </select></label>
-      <p class="hint">${c.sync_schedule ? `Next automatic sync: ${esc(when(c.sync_schedule.next_run_at))}${!c.enabled ? ' · Paused while this account is disabled' : ''}` : 'Automatic sync is off.'}</p>
+      <p class="hint">Enabled accounts sync together daily at 2 pm Singapore time. Use Sync brokers to sync all accounts now.</p>
       <div class="actions"><button data-action="save-account" data-id="${esc(c.id)}" ${busy ? 'disabled' : ''}>Save account</button></div>
       ${b.id === 'futubull' ? '' : guide(b)}
       <h3>Sync history</h3>
@@ -321,7 +316,6 @@ async function action(node) {
       await call(`/broker-accounts/${encodeURIComponent(id)}`, 'PATCH', {
         label: document.getElementById('account-label').value.trim(),
         enabled: document.getElementById('account-enabled').checked,
-        sync_frequency: document.getElementById('sync-frequency').value || null,
         ...(!c.account_binding_editable || !document.getElementById('account-binding')?.value.trim() ? {}
           : { account_id: document.getElementById('account-binding').value.trim() }),
         config: values('config', b, c.config),

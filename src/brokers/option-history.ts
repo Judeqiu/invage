@@ -370,10 +370,8 @@ export function buildOptionEpisodes(state: InvestorState, now = new Date()): Opt
     if (episode.first_seen_absent != null) continue;
     const connection = connections[episode.connection_id];
     const last = latestByChannel.get(episode.channel);
-    const frequency = connection && 'sync_schedule' in connection ? connection.sync_schedule?.frequency : undefined;
-    const interval = frequency === 'hourly' ? 1 :
-      frequency === 'daily' ? 24 :
-      frequency === 'weekly' ? 168 : null;
+    // All enabled, bound accounts now participate in the shared daily batch.
+    const interval = connection?.enabled && 'account_id' in connection && connection.account_id ? 24 : null;
     const late = interval != null && last != null &&
       now.getTime() - Date.parse(last.observed_at) > (interval + 1) * 3600_000;
     if (episode.uncertain_as_of || connection?.enabled === false || connection?.last_sync?.ok === false || late || cExpired(episode.contract.expiry, now)) {
