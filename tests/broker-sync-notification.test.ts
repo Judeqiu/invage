@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { InvestorState } from '../src/state/portfolio-state.js';
 import { brokerSyncFacts, captureBrokerSyncSnapshot, fallbackBrokerSyncSummary,
-  publishBrokerSyncSuccess, publishBrokerSyncFailure } from '../src/brokers/sync-notification.js';
+  withBrokerSyncBatchNotifications, publishBrokerSyncSuccess, publishBrokerSyncFailure } from '../src/brokers/sync-notification.js';
 import type { BrokerApplyResult } from '../src/brokers/statement.js';
 
 function state(): InvestorState {
@@ -77,4 +77,52 @@ describe('broker sync notification', () => {
     expect(body.split(note)).toHaveLength(2);
     expect(body).toContain('No holdings or cash changes');
   });
+});
+
+it('sends one combined notice after all brokers finish, preserving failures and coverage notes', async () => {
+  const notify = vi.fn(async () => ({ notification: {} as never, delivery: [] }));
+  const summarize = vi.fn(async () => 'unused');
+  const facts = brokerSyncFacts('IBKR', 'Main', captureBrokerSyncSnapshot(state(), 'ibkr-1'), captureBrokerSyncSnapshot(state(), 'ibkr-1'), applied, true);
+  facts.coverage_notes = ['One source row was unavailable'];
+  const notice = { userId: 'alice', date: '2026-10-23', accounts: [
+    { label: 'IBKR · Main', status: 'succeeded' }, { label: 'Tiger · Savings', status: 'failed' }], snapshotStatus: 'skipped' as const };
+  await withBrokerSyncBatchNotifications(notice, async () => {
+    await publishBrokerSyncSuccess('alice', false, facts, { notify, summarize });
+    await publishBrokerSyncFailure('alice', 'Tiger', 'Savings', 'Broker unavailable', { notify });
+    expect(notify).not.toHaveBeenCalled();
+  }, notify);
+  expect(summarize).not.toHaveBeenCalled();
+  expect(notify).toHaveBeenCalledOnce();
+  expect(notify.mock.calls[0][0]).toMatchObject({ userId: 'alice', status_hint: 'failure', title: 'Broker sync needs attention' });
+  expect(notify.mock.calls[0][0].body).toContain('IBKR');
+  expect(notify.mock.calls[0][0].body).toContain('Tiger Savings: Broker unavailable');
+  expect(notify.mock.calls[0][0].body.split('One source row was unavailable')).toHaveLength(2);
+});
+
+it('isolates simultaneous users and leaves standalone sync notifications enabled', async () => {
+  const notify = vi.fn(async () => ({ notification: {} as never, delivery: [] }));
+  const summarize = vi.fn(async (_user, _admin, facts) => facts.broker + ' standalone');
+  const facts = brokerSyncFacts('IBKR', 'Main', captureBrokerSyncSnapshot(state(), 'ibkr-1'), captureBrokerSyncSnapshot(state(), 'ibkr-1'), applied, true);
+  const run = (userId: string) => withBrokerSyncBatchNotifications({ userId, date: '2026-10-23', accounts: [{ label: userId, status: 'succeeded' }] }, async () => {
+    await Promise.resolve();
+    await publishBrokerSyncSuccess(userId, false, { ...facts, account: userId }, { notify, summarize });
+  }, notify);
+  await Promise.all([run('alice'), run('bob')]);
+  expect(notify).toHaveBeenCalledTimes(2);
+  expect(notify.mock.calls.find(([notice]) => notice.userId === 'alice')![0].body).not.toContain('IBKR bob');
+  await publishBrokerSyncSuccess('outside', false, facts, { notify, summarize });
+  expect(notify).toHaveBeenCalledTimes(3);
+  expect(summarize).toHaveBeenCalledOnce();
+});
+
+it('does not notify for an empty batch, and notification failure does not fail synced data', async () => {
+  const notify = vi.fn(async () => { throw new Error('delivery unavailable'); });
+  const notice = { userId: 'alice', date: '2026-10-23', accounts: [] as { label: string; status: string }[] };
+  await withBrokerSyncBatchNotifications(notice, async () => {}, notify);
+  expect(notify).not.toHaveBeenCalled();
+  notice.accounts.push({ label: 'IBKR', status: 'succeeded' });
+  const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+  try { await expect(withBrokerSyncBatchNotifications(notice, async () => 'saved', notify)).resolves.toBe('saved'); }
+  finally { log.mockRestore(); }
+  expect(notify).toHaveBeenCalledOnce();
 });

@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { completeSimple } from '@earendil-works/pi-ai/compat';
 import { checkTurnAllowed, getLlmCallOptions, notifyUser, recordLlm, resolveUtilityLlm } from 'utarus';
 import type { Holding } from '../market/types.js';
@@ -146,9 +147,56 @@ export interface BrokerSyncNotificationDeps {
 }
 const defaultDeps: BrokerSyncNotificationDeps = { summarize: llmSummary, notify: notifyUser };
 
+export interface BrokerSyncBatchNotice {
+  userId: string;
+  date: string;
+  accounts: { label: string; status: string }[];
+  snapshotStatus?: 'pending' | 'saved' | 'skipped' | 'failed';
+  calculationStatus?: 'ready' | 'pending' | 'failed';
+  error?: string;
+  retryScheduled?: boolean;
+}
+const batchNotifications = new AsyncLocalStorage<{
+  notice: BrokerSyncBatchNotice; successes: BrokerSyncFacts[]; failures: string[];
+}>();
+
+/** Collect account notices in this async batch only; other users and standalone syncs remain isolated. */
+export async function withBrokerSyncBatchNotifications<T>(notice: BrokerSyncBatchNotice, work: () => Promise<T>,
+  notify: typeof notifyUser = notifyUser): Promise<T> {
+  const collected = { notice, successes: [] as BrokerSyncFacts[], failures: [] as string[] };
+  try { return await batchNotifications.run(collected, work); }
+  catch (error) { notice.error ??= 'The broker sync batch could not finish.'; throw error; }
+  finally {
+    if (notice.accounts.length || collected.successes.length || collected.failures.length) {
+      const failed = !!notice.error || notice.accounts.some(account => account.status !== 'succeeded') ||
+        collected.failures.length > 0 || notice.calculationStatus === 'failed';
+      const pending = notice.calculationStatus === 'pending';
+      const lines = notice.accounts.map(account => `${account.label}: ${account.status === 'succeeded' ? 'synced' : account.status === 'failed' ? 'failed' : 'not synced'}.`);
+      lines.unshift(`${notice.accounts.filter(account => account.status === 'succeeded').length} of ${notice.accounts.length} accounts synced.`);
+      lines.push(...collected.successes.map(fallbackBrokerSyncSummary), ...collected.failures);
+      const notes = [...new Set(collected.successes.flatMap(facts => (facts.coverage_notes ?? [])
+        .map(note => `${facts.broker} ${facts.account}: ${note}`)))];
+      if (notice.snapshotStatus === 'saved') lines.push(`Snapshot saved for ${notice.date}.`);
+      else if (notice.snapshotStatus === 'skipped') lines.push('A complete batch snapshot was not saved.');
+      if (notice.calculationStatus === 'ready') lines.push('Portfolio aggregates updated.');
+      else if (pending) lines.push('Portfolio aggregates are still being prepared.');
+      if (notice.error) lines.push(notice.error);
+      if (notice.retryScheduled) lines.push('Incomplete work will automatically retry in 30 minutes.');
+      if (notes.length) lines.push('Data notes:\n' + notes.join('\n'));
+      try {
+        await notify({ userId: notice.userId, title: failed ? 'Broker sync needs attention' : pending ? 'Broker sync imported' : 'Broker sync complete',
+          body: `${notice.date}\n${lines.join('\n')}`, source: 'system',
+          severity: failed ? 'medium' : 'info', status_hint: failed ? 'failure' : pending ? undefined : 'success', href: '/settings/brokers' });
+      } catch (error) { console.error('[broker/sync-notification] batch publish failed:', error); }
+    }
+  }
+}
+
 /** Notification failures never turn a persisted broker sync into a failed sync. */
 export async function publishBrokerSyncSuccess(slug: string, isAdmin: boolean, facts: BrokerSyncFacts,
   deps: BrokerSyncNotificationDeps = defaultDeps): Promise<void> {
+  const batch = batchNotifications.getStore();
+  if (batch?.notice.userId === slug) { batch.successes.push(facts); return; }
   let summary = fallbackBrokerSyncSummary(facts);
   // Keep notes out of the model-written summary so they appear exactly once,
   // including when model summarization fails or omits the coverage detail.
@@ -165,6 +213,12 @@ export async function publishBrokerSyncSuccess(slug: string, isAdmin: boolean, f
 
 export async function publishBrokerSyncFailure(slug: string, broker: string, account: string, message: string,
   { notify = notifyUser, retryScheduled = false }: { notify?: typeof notifyUser; retryScheduled?: boolean } = {}): Promise<void> {
+  const batch = batchNotifications.getStore();
+  if (batch?.notice.userId === slug) {
+    batch.failures.push(`${broker} ${account}: ${message.slice(0, 500)}`);
+    batch.notice.retryScheduled ||= retryScheduled;
+    return;
+  }
   try {
     await notify({ userId: slug, title: `${broker} sync failed`,
       body: `${account}: ${message.slice(0, 500)}.` +

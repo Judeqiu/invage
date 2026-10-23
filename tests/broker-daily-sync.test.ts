@@ -1,4 +1,6 @@
-import { describe, expect, it, vi } from 'vitest';
+vi.mock('utarus', async original => ({ ...await original<typeof import('utarus')>(), notifyUser: vi.fn(async () => ({ notification: {}, delivery: [] })) }));
+import { notifyUser } from 'utarus';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { InvestorSnapshot } from '../src/state/investor-store.js';
 import { addBrokerAccount, addBrokerSource, patchBrokerAccount } from '../src/brokers/accounts.js';
 import { runDailyBrokerSyncs } from '../src/brokers/daily-sync.js';
@@ -37,6 +39,7 @@ function fixture() {
   };
   return { users, alice, addUser, deps, events };
 }
+beforeEach(() => vi.mocked(notifyUser).mockClear());
 const at = (time = '06:00:00', date = '2026-10-23') => new Date(`${date}T${time}Z`);
 
 describe('daily 2 pm Singapore broker sync', () => {
@@ -55,6 +58,9 @@ describe('daily 2 pm Singapore broker sync', () => {
     ]);
     await runDailyBrokerSyncs(at('06:01:00'), f.deps);
     expect(f.deps.capturePortfolioSnapshot).toHaveBeenCalledTimes(2);
+    expect(notifyUser).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(notifyUser).mock.calls.map(([notice]) => notice.userId)).toEqual(['alice', 'bob']);
+    expect(vi.mocked(notifyUser).mock.calls[0][0].body).toContain('Snapshot saved for 2026-10-23');
     await runDailyBrokerSyncs(at('05:59:59', '2026-10-24'), f.deps);
     expect(f.deps.syncBrokerAccount).toHaveBeenCalledTimes(4);
     await runDailyBrokerSyncs(at('06:00:00', '2026-10-24'), f.deps);

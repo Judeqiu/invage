@@ -1,3 +1,6 @@
+import { withBrokerSyncBatchNotifications, type BrokerSyncBatchNotice } from './sync-notification.js';
+import { singaporeDate } from '../report/daily-changes.js';
+import { getBrokerConnector } from './catalog.js';
 import { runDailyBrokerSyncs } from './daily-sync.js';
 import { listUserIds } from 'utarus';
 import { loadInvestor, saveInvestor } from '../state/investor-store.js';
@@ -20,22 +23,34 @@ export async function runDueBrokerSyncs(now = new Date(), deps: typeof runtime =
       console.error('[broker/scheduler] scan', slug, error);
       continue;
     }
-    for (const id of ids) {
-      try {
-        const snapshot = await deps.loadInvestor(slug);
-        const model = readBrokerAccountModel(snapshot.state);
-        const conn = model.connections[id];
-        const schedule = conn?.sync_schedule;
-        if (!conn?.enabled || !conn.account_id || !schedule || brokerSyncInProgress(slug, id) ||
-            Date.parse(schedule.next_run_at) > now.getTime()) continue;
-        schedule.next_run_at = nextBrokerSyncAt(schedule.frequency, now);
-        persistBrokerAccountModel(snapshot.state, model);
-        await deps.saveInvestor(snapshot);
-        await deps.syncBrokerAccount(snapshot, id, undefined, 'scheduled');
-      } catch (error) {
-        console.error('[broker/scheduler] sync', slug, id, error);
+    const notice: BrokerSyncBatchNotice = { userId: slug, date: singaporeDate(now.toISOString()), accounts: [] };
+    await withBrokerSyncBatchNotifications(notice, async () => {
+      for (const id of ids) {
+        let result: BrokerSyncBatchNotice['accounts'][number] | undefined;
+        try {
+          const snapshot = await deps.loadInvestor(slug);
+          notice.userId = snapshot.state.user.id;
+          const model = readBrokerAccountModel(snapshot.state);
+          const conn = model.connections[id];
+          const schedule = conn?.sync_schedule;
+          if (!conn?.enabled || !conn.account_id || !schedule || brokerSyncInProgress(slug, id) ||
+              Date.parse(schedule.next_run_at) > now.getTime()) continue;
+          const alreadySynced = conn.last_sync?.ok && Date.parse(conn.last_sync.at) >= Date.parse(schedule.next_run_at);
+          schedule.next_run_at = nextBrokerSyncAt(schedule.frequency, now);
+          persistBrokerAccountModel(snapshot.state, model);
+          await deps.saveInvestor(snapshot);
+          if (alreadySynced) continue;
+          result = { label: `${getBrokerConnector(conn.broker_id).displayName} · ${conn.label}`, status: 'running' };
+          notice.accounts.push(result);
+          const synced = await deps.syncBrokerAccount(snapshot, id, undefined, 'scheduled');
+          result.status = 'succeeded';
+          if (synced.aggregation?.status === 'failed' || notice.calculationStatus !== 'failed') notice.calculationStatus = synced.aggregation?.status;
+        } catch (error) {
+          if (result) result.status = 'failed';
+          console.error('[broker/scheduler] sync', slug, id, error);
+        }
       }
-    }
+    });
   }
 }
 
@@ -45,8 +60,9 @@ export function startBrokerSyncScheduler(): { stop: () => Promise<void> } {
   const tick = () => {
     if (stopped || active) return;
     active = (async () => {
-      await runDailyBrokerSyncs();
-      await runDueBrokerSyncs();
+      const now = new Date();
+      await runDailyBrokerSyncs(now);
+      await runDueBrokerSyncs(now);
     })().catch(error => console.error('[broker/scheduler]', error))
       .finally(() => { active = undefined; });
   };

@@ -1,3 +1,5 @@
+import { withBrokerSyncBatchNotifications, type BrokerSyncBatchNotice } from './sync-notification.js';
+import { getBrokerConnector } from './catalog.js';
 import { singaporeDate } from '../report/daily-changes.js';
 import { brokerBatchAccounts, captureBrokerBatchSnapshot, finishBrokerSyncBatch } from './sync-batch.js';
 import { randomUUID } from 'node:crypto';
@@ -34,9 +36,13 @@ export function createBrokerSyncJobs(overrides: Partial<typeof runtime> = {}) {
           .map(([id, conn]) => ({ id, label: conn.label, status: 'pending' })),
       };
       jobs.set(userId, job);
+      if (!job.accounts.length) { job.status = 'completed'; job.snapshotStatus = 'skipped'; job.calculationStatus = 'ready'; return job; }
       // Reload before each account: successful syncs update the investor revision.
       // Sequential imports also avoid competing writes to shared portfolio state.
-      void (async () => {
+      const labels = Object.fromEntries(Object.entries(readBrokerAccountModel(snapshot.state).connections)
+        .map(([id, conn]) => [id, `${getBrokerConnector(conn.broker_id).displayName} · ${conn.label}`]));
+      const notice: BrokerSyncBatchNotice = { userId, date: job.syncDate, accounts: [] };
+      void withBrokerSyncBatchNotifications(notice, async () => {
         job.calculationStatus = 'ready';
         try {
           for (const account of job.accounts) {
@@ -64,8 +70,15 @@ export function createBrokerSyncJobs(overrides: Partial<typeof runtime> = {}) {
         } catch {
           job.snapshotStatus = 'failed';
           job.error = 'Could not finish saving the portfolio snapshot and aggregates. Sync brokers again to retry.';
-        } finally { job.status = 'completed'; }
-      })();
+        } finally {
+          notice.accounts = job.accounts.map(account => ({ label: labels[account.id], status: account.status }));
+          notice.snapshotStatus = job.snapshotStatus;
+          notice.calculationStatus = job.calculationStatus;
+          notice.error = job.error;
+        }
+      }).finally(() => { job.status = 'completed'; }).catch(error => {
+        console.error('[broker/sync-notification] batch failed:', error);
+      });
       return job;
     },
   };
