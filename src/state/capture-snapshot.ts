@@ -169,5 +169,5 @@ export async function capturePortfolioSnapshot(state: InvestorState, date = new 
   }
   const aggregation = await refreshPortfolioAfterSync(state.user.id, true);
   if (aggregation.status === 'failed') throw new Error('Snapshot saved, but portfolio calculations failed. Retry to finish preparing the saved totals.');
-  return { snapshot, fileName, live, cash, contingentCashObligation, positionsValue, totalPL, totalValue, positions };
+  return { aggregation, snapshot, fileName, live, cash, contingentCashObligation, positionsValue, totalPL, totalValue, positions };
 }

@@ -3,12 +3,14 @@ import express from 'express';
 import request from 'supertest';
 import type { InvestorSnapshot } from '../src/state/investor-store.js';
 
-const mocks = vi.hoisted(() => ({ session: vi.fn(), load: vi.fn(), sync: vi.fn() }));
+const mocks = vi.hoisted(() => ({ session: vi.fn(), load: vi.fn(), sync: vi.fn(), capture: vi.fn() }));
 vi.mock('utarus', async original => ({ ...await original<typeof import('utarus')>(), loadSessionState: mocks.session }));
 vi.mock('../src/state/investor-store.js', () => ({ loadInvestor: mocks.load, saveInvestor: vi.fn() }));
 vi.mock('../src/brokers/accounts.js', async original => ({
   ...await original<typeof import('../src/brokers/accounts.js')>(), syncBrokerAccount: mocks.sync,
 }));
+vi.mock('../src/state/capture-snapshot.js', () => ({ capturePortfolioSnapshot: mocks.capture }));
+import { createBrokerSyncJobs } from '../src/brokers/sync-all.js';
 import { createBrokerConnectionsRouter } from '../src/webapp/broker-api.js';
 import { addBrokerAccount, addBrokerSource, patchBrokerAccount } from '../src/brokers/accounts.js';
 
@@ -32,7 +34,7 @@ function app() {
   app.use(createBrokerConnectionsRouter());
   return app;
 }
-beforeEach(() => vi.resetAllMocks());
+beforeEach(() => { vi.resetAllMocks(); mocks.capture.mockResolvedValue({ aggregation: { status: 'ready' } }); });
 
 it('starts asynchronously, deduplicates active jobs, isolates users, and continues after a failed account', async () => {
   const snapshot = fixture();
@@ -57,6 +59,8 @@ it('starts asynchronously, deduplicates active jobs, isolates users, and continu
   expect(completed.body.status).toBe('completed');
   expect(completed.body.accounts.map((a: { status: string }) => a.status)).toEqual(['succeeded', 'failed', 'succeeded']);
   expect(mocks.sync.mock.calls.map(call => call[0].revision)).toEqual([1, 2, 3]);
+  expect(mocks.capture).not.toHaveBeenCalled();
+  expect(completed.body.snapshotStatus).toBe('skipped');
   expect(JSON.stringify(completed.body)).not.toMatch(/secret-token|private detail/);
   expect((await request(server).post('/broker-sync').set('x-user', 'alice')).body.id).not.toBe(started.body.id);
 });
@@ -89,4 +93,60 @@ it('exposes session-scoped sync timestamps and account states without credential
   expect(JSON.stringify(response.body)).not.toMatch(/secret-token|activity_query_id|2026-10-21/);
   const other = await request(server).get('/broker-sync/status').set('x-user','bob');
   expect(other.body.updatedAt).toBeNull();
+});
+
+it('uses the daily batch eligibility, snapshots after all imports, and waits for final aggregates', async () => {
+  const snapshot = fixture();
+  // Enabled but not bound/discovered accounts are ineligible in the daily flow too.
+  const unbound = addBrokerAccount(snapshot.state, { source_id: Object.keys(snapshot.state.broker_sources!)[0], account_id: 'UNBOUND', label: 'Unbound', config: { activity_query_id: '123' } });
+  delete snapshot.state.broker_connections![unbound].account_id;
+  const events: string[] = [];
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  mocks.load.mockResolvedValue(snapshot);
+  mocks.sync.mockImplementation(async (_snapshot, id) => { events.push(id); return { aggregation: { status: 'failed' } }; });
+  mocks.capture.mockImplementation(async (_state, date) => { events.push('snapshot:' + date); await gate; return { aggregation: { status: 'ready' } }; });
+  const jobs = createBrokerSyncJobs({ now: () => new Date('2026-10-23T15:59:59Z') });
+  const job = jobs.start(snapshot);
+  expect(job.accounts.map(a => a.id)).not.toContain(unbound);
+  await vi.waitFor(() => expect(mocks.capture).toHaveBeenCalledOnce());
+  expect(events).toEqual([...job.accounts.map(a => a.id), 'snapshot:2026-10-23']);
+  expect(mocks.capture.mock.calls[0][2]).toEqual({ allowEmpty: true });
+  expect(job.status).toBe('running');
+  expect(jobs.start(snapshot).id).toBe(job.id);
+  release();
+  await vi.waitFor(() => expect(job.status).toBe('completed'));
+  expect(job).toMatchObject({ snapshotStatus: 'saved', calculationStatus: 'ready', syncDate: '2026-10-23' });
+  // Manual sync runs again even if the daily batch already completed today.
+  snapshot.state.daily_broker_sync = { date: job.syncDate, synced_accounts: {}, completed_at: '2026-10-23T06:00:00Z' };
+  expect(jobs.start(snapshot).id).not.toBe(job.id);
+  await vi.waitFor(() => expect(mocks.capture).toHaveBeenCalledTimes(2));
+});
+
+it('dates snapshots in Singapore and reports finalization failure without leaking private errors', async () => {
+  const snapshot = fixture();
+  mocks.load.mockResolvedValue(snapshot);
+  mocks.sync.mockResolvedValue({ aggregation: { status: 'ready' } });
+  mocks.capture.mockRejectedValue(new Error('private token details'));
+  const jobs = createBrokerSyncJobs({ now: () => new Date('2026-10-23T16:00:00Z') });
+  const job = jobs.start(snapshot);
+  await vi.waitFor(() => expect(job.status).toBe('completed'));
+  expect(job).toMatchObject({ syncDate: '2026-10-24', snapshotStatus: 'failed' });
+  expect(job.accounts.every(a => a.status === 'succeeded')).toBe(true);
+  expect(job.error).toContain('snapshot and aggregates');
+  expect(JSON.stringify(job)).not.toMatch(/private token details|secret-token/);
+});
+
+it('withholds the snapshot when a new account is linked during manual sync', async () => {
+  const snapshot = fixture();
+  mocks.load.mockResolvedValue(snapshot);
+  mocks.sync.mockImplementationOnce(async () => {
+    addBrokerAccount(snapshot.state, { source_id: Object.keys(snapshot.state.broker_sources!)[0], account_id: 'NEW', label: 'New', config: { activity_query_id: '123' } });
+    return { aggregation: { status: 'ready' } };
+  }).mockResolvedValue({ aggregation: { status: 'ready' } });
+  const jobs = createBrokerSyncJobs();
+  const job = jobs.start(snapshot);
+  await vi.waitFor(() => expect(job.status).toBe('completed'));
+  expect(mocks.capture).not.toHaveBeenCalled();
+  expect(job).toMatchObject({ snapshotStatus: 'skipped', error: expect.stringContaining('accounts changed') });
 });

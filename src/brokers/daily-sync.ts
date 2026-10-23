@@ -1,20 +1,13 @@
 import { listUserIds } from 'utarus';
 import { loadInvestor, saveInvestor } from '../state/investor-store.js';
-import { capturePortfolioSnapshot } from '../state/capture-snapshot.js';
-import type { InvestorState } from '../state/portfolio-state.js';
-import { brokerSyncInProgress, readBrokerAccountModel, syncBrokerAccount } from './accounts.js';
+import { brokerBatchAccounts as accounts, captureBrokerBatchSnapshot, finishBrokerSyncBatch } from './sync-batch.js';
+import { brokerSyncInProgress, syncBrokerAccount } from './accounts.js';
 
 const runtime = { listUserIds, loadInvestor, saveInvestor, syncBrokerAccount,
   brokerSyncInProgress,
-  capturePortfolioSnapshot: (state: InvestorState, date: string) => capturePortfolioSnapshot(state, date, { allowEmpty: true }) };
+  capturePortfolioSnapshot: captureBrokerBatchSnapshot };
 const RETRY_MS = 30 * 60_000;
 const LEASE_MS = 6 * 60 * 60_000;
-
-function accounts(state: InvestorState): Record<string, string> {
-  return Object.fromEntries(Object.entries(readBrokerAccountModel(state).connections)
-    .filter(([, conn]) => conn.enabled && conn.account_id)
-    .map(([id, conn]) => [id, JSON.stringify([conn.broker_id, conn.source_id, conn.account_id, conn.channel])]));
-}
 
 /** Every user is scanned on each tick, so existing and future accounts opt in automatically. */
 export async function runDailyBrokerSyncs(now = new Date(), deps: typeof runtime = runtime): Promise<void> {
@@ -60,9 +53,8 @@ export async function runDailyBrokerSyncs(now = new Date(), deps: typeof runtime
       }
       const fresh = await deps.loadInvestor(slug);
       batch = fresh.state.daily_broker_sync!;
-      const current = accounts(fresh.state);
-      if (Object.keys(current).length && Object.entries(current).every(([id, key]) => batch.synced_accounts[id] === key)) {
-        await deps.capturePortfolioSnapshot(fresh.state, date);
+      const captured = await finishBrokerSyncBatch(fresh.state, date, batch.synced_accounts, deps.capturePortfolioSnapshot);
+      if (captured) {
         batch.completed_at = new Date().toISOString();
         delete batch.retry_after;
       } else {

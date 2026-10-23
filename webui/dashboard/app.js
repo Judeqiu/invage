@@ -2783,7 +2783,7 @@ async function syncBrokers(existingJob) {
   syncProgress.classList.remove('hidden');
   syncProgress.value = 0;
   syncStatus.textContent = 'Starting broker sync…';
-  syncDetails.textContent = 'Syncing enabled broker accounts, then refreshing your dashboard.';
+  syncDetails.textContent = 'Syncing enabled broker accounts, saving totals and a dated snapshot, then refreshing your dashboard.';
   try {
     let job = existingJob;
     const jobId = job.id;
@@ -2793,7 +2793,7 @@ async function syncBrokers(existingJob) {
       const current = job.accounts.find(a => a.status === 'running');
       syncProgress.value = job.accounts.length ? completed / job.accounts.length * 80 : 80;
       syncStatus.textContent = `Syncing brokers · ${completed} of ${job.accounts.length} accounts finished`;
-      syncDetails.textContent = current ? `Syncing ${current.label}…` : 'Finishing broker sync…';
+      syncDetails.textContent = current ? `Syncing ${current.label}…` : 'Saving portfolio totals and snapshot…';
       if (job.status === 'completed') break;
       await new Promise(resolve => setTimeout(resolve, 1000));
       job = await brokerSyncRequest();
@@ -2807,6 +2807,9 @@ async function syncBrokers(existingJob) {
     refreshingAfterSync = true;
     const refreshed = await load(true);
     if (!refreshed) throw new Error('Broker sync finished, but the dashboard refresh failed. Use Retry loading to try again.');
+    if (job.error) throw new Error(job.error);
+    if (job.calculationStatus === 'failed') throw new Error('Broker sync finished, but saved aggregate calculations failed. Sync brokers again to retry.');
+    if (job.calculationStatus === 'pending') throw new Error('Broker sync finished. Saved aggregate calculations are still being prepared; retry loading shortly.');
     handledSyncJobs.add(jobId);
     syncProgress.value = 100;
     syncStatus.textContent = failed.length

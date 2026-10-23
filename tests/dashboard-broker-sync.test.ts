@@ -11,7 +11,7 @@ it.skipIf(!existsSync(chrome)).each(['index.html', 'v2.html'])('%s tracks header
   let refreshes = 0;
   let failRefresh = false;
   let refresh: ServerResponse | undefined;
-  let job: { id: string; status: string; accounts: { id: string; label: string; status: string }[] } | null = null;
+  let job: { id: string; status: string; error?: string; accounts: { id: string; label: string; status: string }[] } | null = null;
   const payload = { empty: true, model: null, displayName: 'Sync test' };
   const frame = (event: unknown) => `data: ${JSON.stringify(event)}\n\n`;
   const server = createServer((req, res) => {
@@ -125,6 +125,19 @@ it.skipIf(!existsSync(chrome)).each(['index.html', 'v2.html'])('%s tracks header
     refresh!.end(frame({type:'result',payload}));
     await dashboard.waitForFunction(()=>!(document.getElementById('dashboardRetry') as HTMLButtonElement).disabled);
     expect(await dashboard.$eval('#brokerSyncPanel',node=>getComputedStyle(node).display)).toBe('none');
+    await page.click('#headerSync');
+    await dashboard.waitForFunction(() => document.getElementById('brokerSyncDetails')!.textContent!.includes('Main broker'));
+    job!.accounts.forEach(account => { account.status = 'succeeded'; });
+    await dashboard.waitForFunction(() => document.getElementById('brokerSyncDetails')!.textContent!.includes('Saving portfolio totals and snapshot'));
+    expect(refreshes).toBe(4);
+    expect(await dashboard.$eval('#dashboardRetry', node => (node as HTMLButtonElement).disabled)).toBe(true);
+    job!.error = 'Could not finish saving the portfolio snapshot and aggregates. Sync brokers again to retry.';
+    job!.status = 'completed';
+    await vi.waitFor(() => expect(refreshes).toBe(5), { timeout: 5000 });
+    refresh!.end(frame({ type: 'result', payload }));
+    await dashboard.waitForSelector('#dashboardRetry:enabled');
+    expect(await dashboard.$eval('#brokerSyncStatus', node => node.textContent)).toContain('snapshot and aggregates');
+    expect(await dashboard.$eval('#brokerSyncPanel', node => getComputedStyle(node).display)).not.toBe('none');
     expect(errors).toEqual([]);
   } finally {
     await browser.close(); server.closeAllConnections();
