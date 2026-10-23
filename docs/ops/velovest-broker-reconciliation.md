@@ -98,3 +98,8 @@ SQL outages can still delay completion; queued work is not reported as completed
 For rsync deployments, set the committed staging root to mode 0755 before
 invoking canonical fast-deploy. Rsync copies that root mode to the installation,
 which must remain traversable by the `velovest` service account.
+
+IBKR's `IBKR_FLEX_UNSPECIFIED` clock is retained as unverified local time,
+not passed to IANA time-zone conversion. Its broker-reported effects still
+import; only position-based inference for such rows is skipped. No UTC default
+is invented and this does not queue an otherwise valid history import.

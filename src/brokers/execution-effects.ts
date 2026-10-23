@@ -51,6 +51,10 @@ export function reconcileExecutionEffects(history: BrokerHistory, observations: 
   }
   for (const rows of groups.values()) {
     const contract = rows[0];
+    // Flex may intentionally retain a local clock without a verified zone.
+    // Keep broker-reported effects; do not infer UTC or block history ingestion.
+    try { new Intl.DateTimeFormat('en', {timeZone:contract.clock}); }
+    catch(error) { if(error instanceof RangeError)continue;throw error; }
     const terms = contract.option!;
     const matches = (o: OptionObservation['options'][number]) => o.underlying === contract.symbol && o.right === terms.right &&
       o.expiry === terms.expiry && equal(String(o.strike), terms.strike) && equal(String(o.multiplier), contract.multiplier!) && o.currency === contract.currency;

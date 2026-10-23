@@ -44,6 +44,10 @@ describe('evidence-based execution effects', () => {
     if (reason === 'lifecycle delivery') h.sync.gaps.push({kind:'coverage',reference:'roll',reason:'Lifecycle delivery retained in raw evidence'});
     expect(reconcileExecutionEffects(h,a).executions.map(e=>e.effect)).toEqual(['unknown','unknown']);
   });
+  it.each(['unknown','close'] as const)('retains %s broker effects without interpreting an unspecified Flex clock as a time zone',effect=>{
+    const h=history();h.executions.forEach(e=>{e.clock='IBKR_FLEX_UNSPECIFIED';e.effect=effect});
+    expect(reconcileExecutionEffects(h,anchors())).toEqual(h);
+  });
   it('rejects an explicit classification contradicted by the position proof', () => {
     const h=history(); h.executions[0].effect='open';
     expect(()=>reconcileExecutionEffects(h,anchors())).toThrow(/Conflicting execution effects/);
