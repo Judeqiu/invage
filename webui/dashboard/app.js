@@ -2768,12 +2768,24 @@ function updateActionButtons() {
   if (!loading && !syncingBrokers && pendingHeaderSync) void followHeaderSync();
 }
 async function brokerSyncRequest() {
-  const response = await fetch('/api/domain/invage/broker-sync', {
-    credentials: 'include', signal: AbortSignal.timeout(20000),
-  });
-  if (!response.ok) throw new Error(response.status === 401
-    ? 'Your session has ended. Sign in again.' : 'Could not check broker sync. Click Sync brokers to reconnect.');
-  return response.json();
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const response = await fetch('/api/domain/invage/broker-sync', {
+        credentials: 'include', signal: AbortSignal.timeout(20000),
+      });
+      if (!response.ok) throw Object.assign(new Error(response.status === 401 || response.status === 403
+        ? 'Your session has ended. Sign in again.' : 'Could not check broker sync. Click Sync brokers to reconnect.'),
+        { retryable: response.status >= 500 || response.status === 429 });
+      return await response.json();
+    } catch (error) {
+      const transient = error?.retryable === true || error?.name === 'TimeoutError' || error?.name === 'AbortError' || error instanceof TypeError;
+      if (!transient) throw error;
+      syncPanel.classList.remove('hidden');
+      syncStatus.textContent = 'Sync continues · Reconnecting to progress…';
+      syncDetails.textContent = 'Progress is temporarily unavailable. Reconnecting automatically; you do not need to start another sync.';
+      await new Promise(resolve => setTimeout(resolve, Math.min(1000 * (attempt + 1), 5000)));
+    }
+  }
 }
 async function syncBrokers(existingJob) {
   if (loading || syncingBrokers) return;
@@ -2793,7 +2805,7 @@ async function syncBrokers(existingJob) {
       const current = job.accounts.find(a => a.status === 'running');
       syncProgress.value = job.accounts.length ? completed / job.accounts.length * 80 : 80;
       syncStatus.textContent = `Syncing brokers · ${completed} of ${job.accounts.length} accounts finished`;
-      syncDetails.textContent = current ? `Syncing ${current.label}…` : 'Saving portfolio totals and snapshot…';
+      syncDetails.textContent = current ? `Importing ${current.label}…` : 'Saving portfolio totals and snapshot…';
       if (job.status === 'completed') break;
       await new Promise(resolve => setTimeout(resolve, 1000));
       job = await brokerSyncRequest();
@@ -2818,6 +2830,7 @@ async function syncBrokers(existingJob) {
     if (!failed.length && job.accounts.length) syncPanel.classList.add('hidden');
   } catch (error) {
     syncStatus.textContent = error instanceof Error ? error.message : 'Broker sync was interrupted. Click Sync brokers to reconnect.';
+    syncDetails.textContent = 'Your existing portfolio remains available. Check the sync status above or retry loading.';
   } finally {
     syncProgress.classList.add('hidden');
     refreshingAfterSync = false;

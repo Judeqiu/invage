@@ -177,7 +177,7 @@ export function createBrokerConnectionsRouter(): Router {
       res.setHeader('Cache-Control', 'private, no-store');
       res.json({ running: job?.status === 'running', updatedAt: latest, items,
         message: job?.status === 'running'
-          ? job.accounts.length && job.accounts.every(account => account.status === 'succeeded')
+          ? job.accounts.length && job.accounts.every(account => account.status === 'succeeded' || account.status === 'failed')
             ? 'Saving portfolio totals and snapshot…' : 'Syncing enabled broker accounts…'
           : job?.error ? job.error : failed ? `${failed} account${failed === 1 ? '' : 's'} failed to sync. Check Brokers for details.` : undefined });
     } catch (e) { accountError(res, e); }

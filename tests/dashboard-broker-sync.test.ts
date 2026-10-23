@@ -8,6 +8,8 @@ const chrome = process.env.CHROME_BINARY || '/usr/bin/chromium';
 it.skipIf(!existsSync(chrome)).each(['index.html', 'v2.html'])('%s tracks header broker sync through refresh, failures, and reload', async (dashboardFile) => {
   const root = resolve('webui');
   let posts = 0;
+  let slowPoll = false;
+  let unavailablePoll = false;
   let refreshes = 0;
   let failRefresh = false;
   let refresh: ServerResponse | undefined;
@@ -24,6 +26,15 @@ it.skipIf(!existsSync(chrome)).each(['index.html', 'v2.html'])('%s tracks header
       </script>`);
     }
     if (url.pathname.endsWith('/broker-sync')) {
+      if (req.method === 'GET' && slowPoll) {
+        slowPoll = false;
+        setTimeout(() => res.end(JSON.stringify(job)), 600);
+        return;
+      }
+      if (req.method === 'GET' && unavailablePoll) {
+        unavailablePoll = false;
+        res.statusCode = 503; res.end('Temporarily unavailable'); return;
+      }
       res.setHeader('Content-Type', 'application/json');
       if (req.method === 'POST') {
         posts++;
@@ -58,6 +69,10 @@ it.skipIf(!existsSync(chrome)).each(['index.html', 'v2.html'])('%s tracks header
   const browser = await puppeteer.launch({ executablePath: chrome, headless: true, args: ['--no-sandbox'] });
   try {
     const page = await browser.newPage();
+    await page.evaluateOnNewDocument(() => {
+      const timeout = AbortSignal.timeout.bind(AbortSignal);
+      AbortSignal.timeout = ms => timeout(ms === 20000 ? 250 : ms);
+    });
     const errors: string[] = [];
     page.on('pageerror', e => errors.push(e.message));
     const origin = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
@@ -73,6 +88,12 @@ it.skipIf(!existsSync(chrome)).each(['index.html', 'v2.html'])('%s tracks header
     expect(await dashboard.$('#dashboardRefresh')).toBeNull();
     expect(await dashboard.$('#status')).toBeNull();
     expect(refreshes).toBe(0);
+    slowPoll = true;
+    await dashboard.waitForFunction(() => document.getElementById('brokerSyncStatus')!.textContent!.includes('Reconnecting'));
+    expect(await dashboard.$eval('#dashboardRetry', n => (n as HTMLButtonElement).disabled)).toBe(true);
+    expect(await dashboard.$eval('#brokerSyncDetails', n => n.textContent)).toContain('do not need to start another sync');
+    expect(posts).toBe(1);
+    unavailablePoll = true;
     job!.accounts[0].status = 'succeeded'; job!.accounts[1].status = 'running';
     await dashboard.waitForFunction(() => (document.getElementById('brokerSyncProgress') as HTMLProgressElement).value === 40);
     await page.reload();
@@ -143,4 +164,4 @@ it.skipIf(!existsSync(chrome)).each(['index.html', 'v2.html'])('%s tracks header
     await browser.close(); server.closeAllConnections();
     await new Promise<void>(resolve => server.close(() => resolve()));
   }
-}, 25000);
+}, 35000);

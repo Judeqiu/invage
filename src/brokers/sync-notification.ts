@@ -1,3 +1,4 @@
+import { withPortfolioRefreshBatch } from '../state/projection-events.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { completeSimple } from '@earendil-works/pi-ai/compat';
 import { checkTurnAllowed, getLlmCallOptions, notifyUser, recordLlm, resolveUtilityLlm } from 'utarus';
@@ -164,7 +165,7 @@ const batchNotifications = new AsyncLocalStorage<{
 export async function withBrokerSyncBatchNotifications<T>(notice: BrokerSyncBatchNotice, work: () => Promise<T>,
   notify: typeof notifyUser = notifyUser): Promise<T> {
   const collected = { notice, successes: [] as BrokerSyncFacts[], failures: [] as string[] };
-  try { return await batchNotifications.run(collected, work); }
+  try { return await batchNotifications.run(collected, () => withPortfolioRefreshBatch(notice.userId, work, result => { notice.calculationStatus = result.status; })); }
   catch (error) { notice.error ??= 'The broker sync batch could not finish.'; throw error; }
   finally {
     if (notice.accounts.length || collected.successes.length || collected.failures.length) {

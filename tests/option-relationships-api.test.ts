@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { InvestorState } from '../src/state/portfolio-state.js';
 import { addBrokerAccount, addBrokerSource, readBrokerAccountModel } from '../src/brokers/accounts.js';
-import { optionRelationshipsForState } from '../src/webapp/option-relationships-data.js';
+import { optionRelationshipsForState, prepareOptionRelationships } from '../src/webapp/option-relationships-data.js';
 import { createDashboardApiRouter } from '../src/webapp/dashboard-api.js';
 import { loadInvestor } from '../src/state/investor-store.js';
 import { parseRelationshipArchive } from '../src/brokers/option-relationships.js';
@@ -183,13 +183,19 @@ it('filters roll groups, coverage and gaps by selected broker across custom acco
   expect(unknown.body.coverage).toEqual([]);
 });
 
-it('materializes full retained history beyond the interactive archive budget', () => {
+it('materializes full retained history beyond the interactive archive budget while serving other work', async () => {
   archive(owner);
   const channel = Object.values(readBrokerAccountModel(state).connections)[0].channel;
   const directory = join(root, 'drive', owner, 'broker-sync', channel);
   for (let i = 0; i < 500; i++) writeFileSync(join(directory, `empty-${i}.xml`), '<FlexStatement accountId="A"><Trades/></FlexStatement>');
   expect(() => optionRelationshipsForState(state)).toThrow('relationship scan limit');
-  const result = optionRelationshipsForState(state, {}, { background: true });
+  let responsive = false;
+  const request = new Promise<void>(resolve => setImmediate(() => { responsive = true; resolve(); }));
+  const result = await prepareOptionRelationships(state);
+  expect(responsive).toBe(true);
+  await request;
   expect(result.groups).toHaveLength(1);
   expect(result.coverage[0].archives).toBe(501);
+  expect(result).toEqual(optionRelationshipsForState(state, {}, { background: true }));
+  expect(() => optionRelationshipsForState(state)).toThrow('relationship scan limit');
 });

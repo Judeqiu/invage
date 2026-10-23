@@ -1,3 +1,4 @@
+import { setImmediate as yieldToRequests } from 'node:timers/promises';
 import { BrokerArchiveAccountMismatchError } from '../brokers/errors.js';
 import { listRawData, fetchRawData, type RawFile } from '../raw-data/store.js';
 import { readBrokerAccountModel } from '../brokers/accounts.js';
@@ -6,7 +7,7 @@ import { buildOptionRelationships, buildOptionVerticalSpreads, groupOptionRelati
 import type { InvestorState } from '../state/portfolio-state.js';
 import { addDecimals } from '../brokers/option-executions.js';
 import { assertBrokerHistory,verifiedHistoryMultipliers } from '../brokers/history.js';
-import { cachedDashboardCalculation } from './dashboard-cache.js';
+import { cachedDashboardCalculation, cacheFingerprint, readDashboardCache, writeDashboardCache } from './dashboard-cache.js';
 
 const cache = new Map<string, RollFill[]>();
 const MAX_ARCHIVES = 500;
@@ -23,8 +24,7 @@ function readArchive(user: string, file: RawFile): Buffer {
 }
 export interface RelationshipFilters { channel?: string; q?: string; evidence?: string; from?: string; to?: string; asOf?: string; }
 
-/** Tenant-scoped, read-only archive backfill. No broker calls or current-lot restrictions. */
-export function optionRelationshipsForState(state: InvestorState, filters: RelationshipFilters = {}, options: { background?: boolean } = {}) {
+function relationshipInputs(state: InvestorState, filters: RelationshipFilters, background: boolean) {
   const files: RawFile[] = [];
   for (let offset = 0;;) {
     const page = listRawData(state.user.id, offset, 100);
@@ -34,15 +34,42 @@ export function optionRelationshipsForState(state: InvestorState, filters: Relat
   }
   const connections = Object.values(readBrokerAccountModel(state).connections).filter(c => c.account_id &&
     ['ibkr', 'tiger', 'moomoo', 'webull'].includes(c.broker_id));
-  const input = { background: options.background === true, files: files.map(f => [f.id, f.version]), filters,
+  const input = { background, files: files.map(f => [f.id, f.version]), filters,
     connections: connections.map(c => [c.channel, c.broker_id, c.account_id, c.label]),
     history: state.broker_history, executions: state.option_executions };
-  return cachedDashboardCalculation('relationships', state.user.id + ':' + JSON.stringify(filters), input,
-    () => calculateRelationships(state, filters, files, connections, options.background === true),
-    result => !result.gaps.some(gap => gap.source !== null));
+  return { files, connections, input, scope: state.user.id + ':' + JSON.stringify(filters) };
 }
 
-function calculateRelationships(state: InvestorState, filters: RelationshipFilters, files: RawFile[],
+/** Tenant-scoped, read-only archive backfill for bounded interactive queries. */
+export function optionRelationshipsForState(state: InvestorState, filters: RelationshipFilters = {}, options: { background?: boolean } = {}) {
+  const { files, connections, input, scope } = relationshipInputs(state, filters, options.background === true);
+  return cachedDashboardCalculation('relationships', scope, input, () => {
+    const scan = calculateRelationships(state, filters, files, connections, options.background === true);
+    let step = scan.next();
+    while (!step.done) step = scan.next();
+    return step.value;
+  }, result => !result.gaps.some(gap => gap.source !== null));
+}
+
+/** Full sync-time scan yields between archives so HTTP and sync progress remain responsive. */
+export async function prepareOptionRelationships(state: InvestorState) {
+  const filters: RelationshipFilters = {};
+  const { files, connections, input, scope } = relationshipInputs(state, filters, true);
+  const fingerprint = cacheFingerprint(input);
+  const cached = readDashboardCache<ReturnType<typeof optionRelationshipsForState>>('relationships', scope, fingerprint, 24 * 60 * 60 * 1000);
+  if (cached) return cached;
+  const scan = calculateRelationships(state, filters, files, connections, true);
+  let step = scan.next();
+  while (!step.done) {
+    await yieldToRequests();
+    step = scan.next();
+  }
+  const result = step.value;
+  if (!result.gaps.some(gap => gap.source !== null)) writeDashboardCache('relationships', scope, fingerprint, result);
+  return result;
+}
+
+function* calculateRelationships(state: InvestorState, filters: RelationshipFilters, files: RawFile[],
   connections: ReturnType<typeof readBrokerAccountModel>['connections'][string][], background: boolean) {
   const groups = []; const spreads = []; const historyGaps: Array<{ channel: string; reason: string; blocksTotals?: boolean }> = [];
   const gaps: Array<{ channel: string; source: string | null; reason: string }> = [];
@@ -68,6 +95,7 @@ function calculateRelationships(state: InvestorState, filters: RelationshipFilte
     const fills: RollFill[] = [];
     let reconciliationBlocked = false;
     for (const file of selected) {
+      yield;
       const key = JSON.stringify([state.user.id, conn.channel, conn.account_id, file.id, file.version, [...(verifiedMultipliers ?? [])]]);
       try {
         let parsed = cache.get(key);

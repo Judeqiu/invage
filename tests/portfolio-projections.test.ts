@@ -32,7 +32,7 @@ function fixture(now = () => '2026-10-23T06:00:00Z') {
   return { calculate, refresh };
 }
 it('persists NAV, account scopes and Positions/Insights together as a private atomic generation', async () => {
-  const { refresh } = fixture();
+  const { refresh, calculate } = fixture();
   await refresh('00000000-0000-4000-8000-000000000021');
   const saved = readPortfolioProjection(state)!;
   expect(saved.dashboard.model?.live).toMatchObject({ totalValue: 1700, totalCost: 1000, totalPL: 200, cashAmount: 500 });
@@ -40,6 +40,7 @@ it('persists NAV, account scopes and Positions/Insights together as a private at
   expect((saved.dashboard.pageProjections?.positions.all as any).totals).toMatchObject({ cost: 1000, value: 1200, pnl: 200 });
   expect((saved.dashboard.pageProjections?.insights.all as any).nav).toBe(1700);
   expect(saved.openTrades.rows).toEqual([]);
+  expect(calculate.mock.calls[0][4].relationships).toEqual(saved.relationships);
   const directory = join(root, 'derived/portfolio');
   expect(readdirSync(directory)).toHaveLength(1);
   expect(statSync(join(directory, readdirSync(directory)[0])).mode & 0o777).toBe(0o600);

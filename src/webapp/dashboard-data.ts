@@ -230,7 +230,7 @@ export async function loadDashboardForSlug(
   priceOverride?: Record<string, number>,
   benchmarkOverride?: BenchmarkData | null,
   onProgress?: (progress: DashboardLoadProgress) => void,
-  options: { snapshot?: InvestorSnapshot; refreshHistory?: boolean; startedAt?: number } = {},
+  options: { snapshot?: InvestorSnapshot; relationships?: ReturnType<typeof optionRelationshipsForState>; refreshHistory?: boolean; startedAt?: number } = {},
 ): Promise<DashboardPayload> {
   let counts: Partial<DashboardLoadProgress> = {};
   const startedAt = options.startedAt ?? performance.now();
@@ -496,7 +496,7 @@ export async function loadDashboardForSlug(
     () => openOptionTradeDetails(portfolio, state.option_executions, accountsByChannel, state.option_events));
   let optionHistoryGaps: Array<{ channel: string; reason: string; blocksTotals?: boolean }> = [];
   try {
-    const relationships = optionRelationshipsForState(state, {}, { background: Boolean(options?.snapshot) });
+    const relationships = options.relationships ?? optionRelationshipsForState(state, {}, { background: Boolean(options.snapshot) });
     attachLatestRollPremium(portfolio, optionTradeDetails, relationships.groups.flatMap(g => g.relationships), accountsByChannel);
     attachOpenVerticalSpreads(portfolio, optionTradeDetails, relationships.spreads, accountsByChannel);
     optionHistoryGaps = relationships.historyGaps;

@@ -76,7 +76,7 @@ export function createBrokerSyncJobs(overrides: Partial<typeof runtime> = {}) {
           notice.calculationStatus = job.calculationStatus;
           notice.error = job.error;
         }
-      }).finally(() => { job.status = 'completed'; }).catch(error => {
+      }).finally(() => { job.calculationStatus = notice.calculationStatus; job.status = 'completed'; }).catch(error => {
         console.error('[broker/sync-notification] batch failed:', error);
       });
       return job;

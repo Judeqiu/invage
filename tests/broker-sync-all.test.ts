@@ -1,3 +1,4 @@
+import { portfolioStateSaved, refreshPortfolioAfterSync, registerPortfolioRefresher } from '../src/state/projection-events.js';
 import { readAgentConfig, saveAgentConfig } from 'utarus';
 import { dashboardConfig } from '../src/webapp/dashboard-config.js';
 import { beforeEach, expect, it, vi } from 'vitest';
@@ -202,4 +203,29 @@ it('exposes the saved automatic-sync settings and keeps manual batches available
     expect(completed.body).toMatchObject({ status: 'completed', snapshotStatus: 'saved', calculationStatus: 'ready' });
     expect(mocks.sync).toHaveBeenCalledTimes(3);
   } finally { saveAgentConfig(dashboardConfig, original); }
+});
+
+it('imports all brokers before final calculations and waits before sending the single notification', async () => {
+  const snapshot = fixture();
+  let finish!: () => void;
+  const gate = new Promise<void>(resolve => { finish = resolve; });
+  const calculate = vi.fn(async () => { await gate; });
+  const unregister = registerPortfolioRefresher(calculate);
+  mocks.load.mockResolvedValue(snapshot);
+  mocks.sync.mockImplementation(async () => {
+    portfolioStateSaved(snapshot);
+    return { aggregation: await refreshPortfolioAfterSync(snapshot.state.user.id) };
+  });
+  try {
+    const job = createBrokerSyncJobs().start(snapshot);
+    await vi.waitFor(() => expect(calculate).toHaveBeenCalledOnce());
+    expect(mocks.sync).toHaveBeenCalledTimes(3);
+    expect(job.status).toBe('running');
+    expect(mocks.notify).not.toHaveBeenCalled();
+    finish();
+    await vi.waitFor(() => expect(job.status).toBe('completed'));
+    expect(job.calculationStatus).toBe('ready');
+    expect(mocks.notify).toHaveBeenCalledOnce();
+    expect(mocks.notify.mock.calls[0][0].body).toContain('Portfolio aggregates updated.');
+  } finally { finish(); unregister(); }
 });

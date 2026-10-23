@@ -2,17 +2,17 @@ import { attachDailyChanges } from '../report/daily-changes.js';
 import { buildBrokerProjections } from '../report/broker-projections.js';
 import { listUserIds } from 'utarus';
 import { loadInvestor } from './investor-store.js';
-import { registerPortfolioRefresher } from './projection-events.js';
+import { portfolioRefreshDeferred, registerPortfolioRefresher } from './projection-events.js';
 import { portfolioFingerprint, readDailyAggregateHistory, PROJECTION_VERSION, readPortfolioProjection, writePortfolioProjection, type PortfolioProjection } from './projection-store.js';
 import { loadDashboardForSlug } from '../webapp/dashboard-data.js';
 import { buildExecutionJournal } from '../brokers/option-executions.js';
 import { tradesOpenBook, tradesHistory } from '../webapp/trades-v2-data.js';
 import { optionHistoryForState } from '../webapp/option-history-data.js';
-import { optionRelationshipsForState } from '../webapp/option-relationships-data.js';
+import { prepareOptionRelationships } from '../webapp/option-relationships-data.js';
 import { buildPageProjections, buildTradeProjections } from '../report/page-projections.js';
 
 const runtime = { loadInvestor, loadDashboardForSlug, buildExecutionJournal, tradesOpenBook, tradesHistory,
-  optionHistoryForState, optionRelationshipsForState, buildPageProjections, buildTradeProjections, buildBrokerProjections };
+  optionHistoryForState, prepareOptionRelationships, buildPageProjections, buildTradeProjections, buildBrokerProjections };
 
 /** Serial per-user writes; recheck the source before publishing an atomic generation. */
 export function createPortfolioProjectionRefresher(overrides: Partial<typeof runtime> = {}) {
@@ -25,10 +25,10 @@ export function createPortfolioProjectionRefresher(overrides: Partial<typeof run
         const snapshot = await deps.loadInvestor(userId);
         const fingerprint = portfolioFingerprint(snapshot.state);
         if (!force && readPortfolioProjection(snapshot.state)) return;
-        const dashboard = await deps.loadDashboardForSlug(userId, undefined, undefined, undefined, { snapshot });
         const state = snapshot.state;
+        const relationships = await deps.prepareOptionRelationships(state);
+        const dashboard = await deps.loadDashboardForSlug(userId, undefined, undefined, undefined, { snapshot, relationships });
         const optionHistory = deps.optionHistoryForState(state);
-        const relationships = deps.optionRelationshipsForState(state, {}, { background: true });
         const tradeHistory = deps.tradesHistory({ ...state, option_observations: optionHistory.observations,
           option_events: optionHistory.events }, relationships.groups.flatMap(g => g.relationships));
         const conflicts = new Set(relationships.historyGaps.filter(g => g.blocksTotals).map(g => g.channel));
@@ -71,6 +71,7 @@ export function startPortfolioProjectionWorker() {
     active = (async () => {
       for (const userId of await listUserIds()) {
         if (stopped) break;
+        if (portfolioRefreshDeferred(userId)) continue;
         try { await refresh(userId); } catch (error) { console.error('[portfolio/projection] refresh', userId, error); }
       }
     })().catch(error => console.error('[portfolio/projection] scan', error)).finally(() => { active = undefined; });
