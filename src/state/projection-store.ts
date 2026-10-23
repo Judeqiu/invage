@@ -10,12 +10,13 @@ import type { tradesOpenBook, tradesHistory } from '../webapp/trades-v2-data.js'
 import type { optionHistoryForState } from '../webapp/option-history-data.js';
 import type { optionRelationshipsForState } from '../webapp/option-relationships-data.js';
 
-export const PROJECTION_VERSION = 3;
+export const PROJECTION_VERSION = 4;
 export interface PortfolioProjection {
   version: typeof PROJECTION_VERSION;
   userId: string;
   fingerprint: string;
   calculatedAt: string;
+  dailyAggregateHistory?: import('../report/daily-changes.js').DailyAggregateHistory;
   dashboard: DashboardPayload;
   brokers: Record<string, BrokerProjection>;
   journal: ReturnType<typeof buildExecutionJournal>;
@@ -50,6 +51,13 @@ function location(userId: string) {
   const directory = join(resolveDataRoot(), 'derived', 'portfolio');
   const key = createHash('sha256').update(userId).digest('hex');
   return { directory, file: join(directory, key + '.json') };
+}
+/** Read prior daily checkpoints even when source inputs have changed. Never used to serve page data. */
+export function readDailyAggregateHistory(userId: string) {
+  try {
+    const entry = JSON.parse(readFileSync(location(userId).file, 'utf8')) as PortfolioProjection;
+    return entry.userId === userId && entry.version === PROJECTION_VERSION ? entry.dailyAggregateHistory ?? {} : {};
+  } catch { return {}; }
 }
 /** Durable private read model: no TTL, eviction, market calls or calculation on reads. */
 export function readPortfolioProjection(state: InvestorState): PortfolioProjection | null {

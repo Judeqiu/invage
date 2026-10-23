@@ -18,12 +18,12 @@ beforeEach(() => {
     cash: { amount: 500, currency: 'USD', updated_at: '2026-10-23', channel: 'main' } };
 });
 afterEach(() => { rmSync(root, { recursive: true, force: true }); vi.restoreAllMocks(); });
-function fixture() {
+function fixture(now = () => '2026-10-23T06:00:00Z') {
   const calculate = vi.fn(async (_slug, _prices, _benchmark, _progress, options): Promise<DashboardPayload> => {
     const source = options.snapshot.state;
     const live = buildLivePositions(source.portfolio ?? {}, { AAPL: 120 }, {}, source.cash, null, undefined,
       { reportingCurrency: 'USD', fxRates: {} }, { allowEmpty: true });
-    return { slug: source.user.id, displayName: 'Owner', generatedAt: '2026-10-23T06:00:00Z',
+    return { slug: source.user.id, displayName: 'Owner', generatedAt: now(),
       empty: false, model: buildDashboardModel(live, []), benchmark: null, productProfile: 'full', productName: 'Test' };
   });
   const refresh = createPortfolioProjectionRefresher({
@@ -113,4 +113,19 @@ it('invalidates a replaced same-date snapshot even when the snapshot index is un
   expect(readPortfolioProjection(state)).toBeNull();
   await f.refresh(state.user.id);
   expect(f.calculate).toHaveBeenCalledTimes(2);
+});
+
+it('retains daily baselines across changed source fingerprints and worker restarts', async () => {
+  let date = '2026-10-22T06:00:00Z';
+  const first = fixture(() => date);
+  await first.refresh(state.user.id);
+  (state.cash as import('../src/state/portfolio-state.js').CashBalance).amount += 100;
+  date = '2026-10-23T06:00:00Z';
+  const restarted = fixture(() => date);
+  await restarted.refresh(state.user.id);
+  const scope = (readPortfolioProjection(state)!.dashboard.aggregatedViews!.live.merged as any);
+  expect(scope.dailyChanges.metrics.totalValue).toMatchObject({ delta: 100 });
+  (state.cash as import('../src/state/portfolio-state.js').CashBalance).amount += 50;
+  await restarted.refresh(state.user.id);
+  expect((readPortfolioProjection(state)!.dashboard.aggregatedViews!.live.merged as any).dailyChanges.metrics.totalValue.delta).toBe(150);
 });

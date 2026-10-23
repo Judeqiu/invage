@@ -318,7 +318,26 @@ function optionInstrumentButton(p, view, asOf) {
   return `<button type="button" class="option-instrument-link" aria-expanded="false" data-option-key="${escapeHtml(key)}" data-option-label="${escapeHtml(label)}" data-option-title="${escapeHtml(label)}" data-option-context="${escapeHtml(`${p.channel} · ${p.units} contracts · Snapshot ${asOf}`)}" data-option-discuss="${escapeHtml(optionDiscussionPrompt(p, view, asOf))}" aria-label="Discuss ${escapeHtml(label)}, ${escapeHtml(p.channel)}" title="Discuss with AI"${pendingDiscussions.has(key) ? ' disabled' : ''}>${escapeHtml(label)}</button>`;
 }
 
+function dailyChangeText(key, view) {
+  if (!view?.isLive) return '';
+  const daily = savedDashboardScope(view).dailyChanges;
+  const metric = daily?.metrics?.[key];
+  if (!metric) return '';
+  const amount = metric.unit === 'pp' ? `${fmtSigned(metric.delta)} pp`
+    : metric.unit === 'points' ? `${fmtSigned(metric.delta)} pts` : metric.unit === 'count' ? fmtSigned(metric.delta, 0) : `${metric.delta >= 0 ? '+' : ''}${fmtPrettyMoney(metric.delta, metric.unit, 2)}`;
+  return `${amount}${metric.percent == null ? '' : ` (${fmtSigned(metric.percent)}%)`} · Daily vs ${optionDateLabel(daily.previousDate)}`;
+}
+const dailyCardKeys = {
+  'Earned premium · Daily': 'realizedDaily', 'Earned premium · MTD': 'realizedMtd',
+  'Net premium · Daily': 'premium.daily', 'Net premium · MTD': 'premium.mtd',
+  'Brokerage fees · MTD': 'premium.fees', 'Cash available': 'cashAmount',
+  'Max assignment obligation': 'assignmentObligation', 'High-risk ITM exposure': 'risk.wheel.exposure',
+  'Probability-weighted exposure': 'risk.wheel.weighted', 'High-risk coverage': 'risk.wheel.cover',
+};
 function metricCardHtml(label, value, sub, help, valueClass) {
+  const view = payload?.model ? buildView(selectedDate, selectedChannel) : null;
+  const key = dailyCardKeys[label];
+  const change = dailyChangeText(!isWheelDesk && key?.startsWith('risk.wheel.') ? key.replace('risk.wheel.', 'risk.matching.') : key, view);
   const vcls = ['metric-value', valueClass || ''].filter(Boolean).join(' ');
   const helpBtn = help
     ? `<button type="button" class="help-dot" aria-label="Explanation" data-help="${escapeHtml(help)}">?</button>`
@@ -330,6 +349,7 @@ function metricCardHtml(label, value, sub, help, valueClass) {
     </div>
     <div class="${vcls}">${value}</div>
     ${sub ? `<div class="metric-sub">${sub}</div>` : ''}
+    ${change ? `<div class="metric-sub daily-change">${escapeHtml(change)}</div>` : ''}
   </div>`;
 }
 
@@ -1207,24 +1227,10 @@ function renderOverview(view) {
       el.navDelta.className = 'metric-sub down';
       el.navDelta.textContent = 'NAV unavailable · missing currency or FX data';
     } else {
-    const hist = payload.model?.history || [];
-    const prior = [...hist].reverse().find((h) => h.date < asOf) || hist[hist.length - 1];
-    if (view.isLive && hist.length > 0 && hist[hist.length - 1].reportingCurrency === repCcy) {
-      const last = hist[hist.length - 1];
-      const delta = view.totalValue - last.totalValue;
-      const pct = last.totalValue ? (delta / last.totalValue) * 100 : null;
-      el.navDelta.className = 'metric-sub ' + (delta > 0 ? 'up' : delta < 0 ? 'down' : '');
-      el.navDelta.textContent =
-        `${fmtSignedMoney0(delta, repCcy)}` +
-        (pct != null ? ` · ${fmtSigned(pct, 2)}% on ${optionDateLabel(last.date)}` : ` vs ${optionDateLabel(last.date)}`);
-    } else if (prior && prior.date !== asOf && prior.reportingCurrency === repCcy) {
-      const delta = view.totalValue - prior.totalValue;
-      el.navDelta.className = 'metric-sub ' + (delta > 0 ? 'up' : delta < 0 ? 'down' : '');
-      el.navDelta.textContent = `${fmtSignedMoney0(delta, repCcy)} vs ${optionDateLabel(prior.date)}`;
-    } else {
-      el.navDelta.className = 'metric-sub';
-      el.navDelta.textContent = view.isLive ? 'Live marks' : `Archived ${optionDateLabel(view.label)} · original currency and FX`;
-    }
+    const change = dailyChangeText('totalValue', view);
+    const delta = savedDashboardScope(view).dailyChanges?.metrics?.totalValue?.delta;
+    el.navDelta.className = 'metric-sub ' + (delta > 0 ? 'up' : delta < 0 ? 'down' : '');
+    el.navDelta.textContent = change || (view.isLive ? 'Live marks' : `Archived ${optionDateLabel(view.label)} · original currency and FX`);
     if (unverifiedOptionChannels(view).length) {
       el.navDelta.textContent += ' · option positions unverified';
     }
@@ -1245,8 +1251,10 @@ function renderOverview(view) {
     const realized = recordedRealizedForView(view, premiumDate);
     el.realizedPnlValue.textContent = realized.value == null ? '—' : fmtPrettyMoney(realized.value, repCcy, 2);
     el.realizedPnlValue.className = 'metric-value ' + (realized.value > 0 ? 'up' : realized.value < 0 ? 'down' : '');
-    el.realizedPnlMeta.textContent = realized.reason;
+    el.realizedPnlMeta.textContent = [realized.reason, dailyChangeText('realizedTotal', view)].filter(Boolean).join(' · ');
   }
+  const totalChange = dailyChangeText('premium.total', view);
+  if (totalChange && el.totalPremiumMeta) el.totalPremiumMeta.textContent += ' · ' + totalChange;
   const { stalePuts, assignmentObligation } = savedDashboardScope(view);
 
   if (el.kpiRow) {
@@ -1271,6 +1279,16 @@ function renderOverview(view) {
     ].join('') + (view.isLive ? brokerFundAssetsCards(payload, view.channelView) : '');
   }
 
+  const navCard = el.navValue?.closest('.metric-card');
+  navCard?.querySelector('.daily-aggregate-changes')?.remove();
+  const metrics = view.isLive ? savedDashboardScope(view).dailyChanges?.metrics : null;
+  if (navCard && metrics && Object.keys(metrics).length) {
+    const details = document.createElement('details');
+    details.className = 'daily-aggregate-changes';
+    details.innerHTML = '<summary>Daily aggregate changes</summary><p class="metric-sub">Changes in saved values; deposits, withdrawals and trades can affect these amounts.</p>' +
+      Object.entries(metrics).map(([key, metric]) => `<p class="metric-sub"><strong>${escapeHtml(metric.label)}</strong><br>${escapeHtml(dailyChangeText(key, view))}</p>`).join('');
+    navCard.append(details);
+  }
   renderExpiryRisk(view, asOf);
   renderChannelPills(view);
   installCardExplainButtons();
@@ -1300,7 +1318,7 @@ function renderV2Overview() {
     return clone.outerHTML;
   };
   const group = (title, content, className = '') => `<section class="v2-group ${className}"><h2 class="label-eyebrow">${title}</h2><div class="v2-group-body">${content}</div></section>`;
-  const premium = `<div class="metric-card v2-premium-card">${stat(kpis[0])}${stat(kpis[1])}${stat(el.totalPremiumCard, 'Total premium · Net')}${kpis[2] ? `<p class="metric-sub v2-fees">${escapeHtml([...kpis[2].querySelectorAll('.label-eyebrow, .metric-value')].map(node => node.textContent.trim()).join(': '))}</p>` : ''}</div>`;
+  const premium = `<div class="metric-card v2-premium-card">${stat(kpis[0])}${stat(kpis[1])}${stat(el.totalPremiumCard, 'Total premium · Net')}${kpis[2] ? `<p class="metric-sub v2-fees">${escapeHtml([...kpis[2].querySelectorAll('.label-eyebrow, .metric-value, .daily-change')].map(node => node.textContent.trim()).join(': '))}</p>` : ''}</div>`;
   let earnings = '';
   if (!el.realizedPnlCard.classList.contains('hidden')) {
     const view = payload?.model ? buildView(selectedDate, selectedChannel) : null;
@@ -2681,6 +2699,7 @@ function initDashboard(preserveSelection = false) {
 }
 
 function renderEmpty(body) {
+  el.navValue?.closest('.metric-card')?.querySelector('.daily-aggregate-changes')?.remove();
   window.OptionRiskView?.update({ payload: body, hasOptions: false, channel: selectedChannel, date: selectedDate, isLive: true });
   el.subtitle.textContent = `${body.displayName || body.slug} · empty portfolio`;
   el.error.classList.add('hidden');

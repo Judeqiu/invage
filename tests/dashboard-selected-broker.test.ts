@@ -1,3 +1,5 @@
+import { attachDailyChanges } from '../src/report/daily-changes.js';
+import type { PortfolioProjection } from '../src/state/projection-store.js';
 import { expect, it } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
@@ -45,6 +47,13 @@ function fixture() {
     brokerChannels: { retirement: { brokerId: 'ibkr', label: 'Retirement' }, savings: { brokerId: 'ibkr', label: 'Savings' }, other: { brokerId: 'tiger', label: 'Other' } } };
   dashboard.aggregatedViews = buildPageProjections(dashboard).dashboard;
   const brokers = buildBrokerProjections(state, dashboard, [], []);
+  const entry = { dashboard, brokers, calculatedAt: dashboard.generatedAt } as PortfolioProjection;
+  const yesterday = structuredClone(entry);
+  yesterday.calculatedAt = '2026-10-22T10:00:00Z';
+  for (const raw of Object.values(yesterday.dashboard.aggregatedViews!.live)) (raw as any).view.totalValue -= 10;
+  for (const [id, broker] of Object.entries(yesterday.brokers)) for (const raw of Object.values(broker.scopes.live)) (raw as any).view.totalValue -= id === 'ibkr' ? 20 : 30;
+  attachDailyChanges(yesterday);
+  attachDailyChanges(entry, yesterday.dailyAggregateHistory);
   return { ...dashboard, brokerAggregates: brokers, analysisContextId: 'selected-broker-test',
     dashboardConfig: { showTotalPremium: true, showRealizedPnl: true, showOptionRiskModelView: true } };
 }
@@ -78,10 +87,15 @@ it.skipIf(!existsSync(executablePath)).each(['index.html', 'v2.html'])('%s keeps
     await page.goto(origin + '/dashboard/' + fileName);
     await page.waitForSelector('[data-channel="broker:ibkr"]');
     expect(await page.$eval('#navValue', node => node.textContent)).toBe('$400.00');
+    expect(await page.$eval('#navDelta', node => node.textContent)).toContain('+$10');
+    expect(await page.$eval('.daily-aggregate-changes', node => node.textContent)).toContain('Unrealized P/L');
     await page.select('#dateSelect', '2026-10-22');
+    expect(await page.$('.daily-aggregate-changes')).toBeNull();
     expect(await page.$eval('#navValue', node => node.textContent)).toBe('$999.00');
     await page.click('[data-channel="broker:ibkr"]');
     expect(await page.$eval('#navValue', node => node.textContent)).toBe('$225.00');
+    expect(await page.$eval('#navDelta', node => node.textContent)).toContain('+$20');
+    expect(await page.$eval('#navDelta', node => node.textContent)).toContain('Daily vs 22-Oct-2026');
     expect(await page.$eval('#deskEyebrow', node => node.textContent)).toContain('IBKR');
     expect(await page.$eval('#totalPremiumValue', node => node.textContent)).toBe('$300.00');
     expect(await page.$eval('#openOptions', node => node.textContent)).toContain('AAPL');
@@ -115,9 +129,11 @@ it.skipIf(!existsSync(executablePath)).each(['index.html', 'v2.html'])('%s keeps
     expect(await page.$eval('#navValue', node => node.textContent)).toBe('$175.00');
     expect(await page.$eval('#dateSelect', node => (node as HTMLInputElement).disabled)).toBe(false);
     expect(await page.$eval('#openOptions', node => node.textContent)).toContain('MSFT');
+    expect(await page.$eval('#navDelta', node => node.textContent)).toContain('+$10.00');
     await page.select('#channelSelect', 'broker:tiger');
     expect(await page.$eval('#navValue', node => node.textContent)).toBe('$175.00');
     expect(await page.$eval('#totalPremiumValue', node => node.textContent)).toBe('$500.00');
+    expect(await page.$eval('#navDelta', node => node.textContent)).toContain('+$30.00');
     await page.select('#channelSelect', 'merged');
     expect(await page.$eval('#navValue', node => node.textContent)).toBe('$400.00');
     await page.setViewport({ width: 390, height: 844 });

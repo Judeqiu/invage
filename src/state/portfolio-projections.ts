@@ -1,8 +1,9 @@
+import { attachDailyChanges } from '../report/daily-changes.js';
 import { buildBrokerProjections } from '../report/broker-projections.js';
 import { listUserIds } from 'utarus';
 import { loadInvestor } from './investor-store.js';
 import { registerPortfolioRefresher } from './projection-events.js';
-import { portfolioFingerprint, PROJECTION_VERSION, readPortfolioProjection, writePortfolioProjection, type PortfolioProjection } from './projection-store.js';
+import { portfolioFingerprint, readDailyAggregateHistory, PROJECTION_VERSION, readPortfolioProjection, writePortfolioProjection, type PortfolioProjection } from './projection-store.js';
 import { loadDashboardForSlug } from '../webapp/dashboard-data.js';
 import { buildExecutionJournal } from '../brokers/option-executions.js';
 import { tradesOpenBook, tradesHistory } from '../webapp/trades-v2-data.js';
@@ -46,6 +47,7 @@ export function createPortfolioProjectionRefresher(overrides: Partial<typeof run
           tradeHistory: { ...tradeHistory, aggregates: deps.buildTradeProjections(tradeHistory.rows, true), gaps: [...optionHistory.gaps, ...relationships.historyGaps] }, optionHistory, relationships };
         const latest = await deps.loadInvestor(userId);
         if (portfolioFingerprint(latest.state) !== fingerprint) continue;
+        attachDailyChanges(entry, readDailyAggregateHistory(userId));
         writePortfolioProjection(entry);
         return;
       }
