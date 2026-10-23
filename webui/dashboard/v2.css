@@ -24,8 +24,6 @@ body { background-image: none; }
 .hero-copy { max-width: none; }
 .broker-pills { display: flex; align-items: center; flex-wrap: wrap; gap: .4rem; margin: 0; }
 .broker-pills .chip-btn { min-height: 34px; }
-.broker-logo-button { display: inline-flex; align-items: center; justify-content: center; gap: .4rem; min-width: 48px; padding: .2rem .6rem; }
-.broker-logo-button img { display: block; width: auto; height: 24px; max-width: 76px; object-fit: contain; background: white; border-radius: 5px; }
 .broker-account-label { max-width: 12ch; overflow: hidden; text-overflow: ellipsis; font-size: .65rem; }
 .hero-metrics, #kpiRow, #statusBadge { display: none !important; }
 .v2-summary { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: .8rem; }

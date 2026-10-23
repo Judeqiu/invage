@@ -54,8 +54,8 @@ it.skipIf(!existsSync(chrome))('fits the desk overview and tables, filters risk,
     await page.setViewport({width:1366,height:768});await page.goto(origin+'/shell');
     const frame=page.frames().find(frame=>frame.url().endsWith('/dashboard/v2.html'))!;
     await frame.waitForFunction(()=>document.getElementById('loadProgress')?.getAttribute('aria-valuenow')==='8');
-    expect(await frame.$$eval('#channelPills img',images=>images.map(image=>image.getAttribute('alt')))).toEqual(['IBKR','moomoo','Tiger Brokers','Webull']);
-    expect(await frame.$$eval('#channelPills img',images=>images.every(image=>(image as HTMLImageElement).complete && (image as HTMLImageElement).naturalWidth>0))).toBe(true);
+    expect(await frame.$$('#channelPills img')).toHaveLength(0);
+    expect(await frame.$$eval('#channelPills button', nodes => nodes.map(node => node.textContent))).toEqual(['All accounts', 'IBKR · custom-ibkr-account', 'moomoo · moomoo-main', 'Tiger Brokers · tiger-main', 'Webull · webull-main']);
     for(const [width,height] of [[1366,768],[1440,900],[1920,1080]]) {
       await page.setViewport({width,height});
       expect(await frame.evaluate(()=>document.getElementById('expiryRow')!.getBoundingClientRect().bottom<=innerHeight)).toBe(true);
@@ -73,7 +73,7 @@ it.skipIf(!existsSync(chrome))('fits the desk overview and tables, filters risk,
     expect(await frame.$eval('.risk-row',node=>node.textContent)).toContain('54.0%');
     await frame.click('[data-risk-level="ok"]');expect(await frame.$$('.risk-row')).toHaveLength(37);
     await frame.click('[data-risk-level="all"]');
-    await frame.click('[data-risk-broker="ibkr"]');expect(await frame.$$('.risk-row')).toHaveLength(10);
+    await frame.click('[data-risk-broker="custom-ibkr-account"]');expect(await frame.$$('.risk-row')).toHaveLength(10);
     await frame.click('[data-risk-broker="all"]');
     await frame.type('#riskSearch','MISS');await frame.waitForFunction(()=>document.querySelectorAll('.risk-row').length===1);
     expect(await frame.$eval('.risk-row td:nth-child(9)',node=>node.textContent)).toBe('—');
@@ -83,7 +83,7 @@ it.skipIf(!existsSync(chrome))('fits the desk overview and tables, filters risk,
     await frame.click('#channelPills [data-channel="custom-ibkr-account"]');
     expect(await frame.$$eval('.option-ledger-row td:last-child',nodes=>nodes.every(node=>node.textContent==='IBKR'))).toBe(true);
     await frame.click('#channelPills [data-channel="merged"]');
-    await frame.click('[data-option-broker="moomoo"]');expect(await frame.$$('.option-ledger-row')).toHaveLength(10);
+    await frame.click('[data-option-broker="moomoo-main"]');expect(await frame.$$('.option-ledger-row')).toHaveLength(10);
     await frame.click('[data-option-broker="all"]');await frame.type('#optionSearch','CALL $80');
     await frame.waitForFunction(()=>document.querySelectorAll('.option-ledger-row').length===1);
     expect(await frame.$eval('.option-ledger-row td:nth-child(3)',node=>node.textContent)).toBe('23.91');

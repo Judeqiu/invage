@@ -113,9 +113,7 @@ function selectedBroker(key = selectedChannel) {
 function selectionOptions() {
   const source = portfolioPayload || payload;
   const channels = source?.model?.live?.channels || [];
-  const brokers = Object.keys(source?.brokerAggregates || {});
-  return [{ id: MERGED_CHANNEL_VIEW, label: 'All platforms' },
-    ...brokers.map(id => ({ id: 'broker:' + id, label: (brokerNames[id] || id) + ' · All accounts', brokerId: id })),
+  return [{ id: MERGED_CHANNEL_VIEW, label: 'All accounts' },
     ...channels.map(id => ({ id, label: id === DEFAULT_CHANNEL ? 'Unassigned' :
       (source.brokerChannels?.[id] ? (brokerNames[source.brokerChannels[id].brokerId] || source.brokerChannels[id].brokerId) + ' · ' + source.brokerChannels[id].label : id) }))];
 }
@@ -138,11 +136,7 @@ function scopedHistorySelection(value) {
   return broker && value !== selectedChannel && !broker.channels.includes(value) ? selectedChannel : value;
 }
 function historySelectionOptions(connections) {
-  const broker = selectedBroker();
-  const scopes = broker ? [{ channel: selectedChannel, label: selectionLabel() + ' · All accounts' }] :
-    [{ channel: '', label: 'All brokers' }, ...Object.values(portfolioPayload?.brokerAggregates || {}).map(item =>
-      ({ channel: 'broker:' + item.brokerId, label: (brokerNames[item.brokerId] || item.brokerId) + ' · All accounts' }))];
-  return [...scopes, ...connections.filter(row => !broker || broker.channels.includes(row.channel))]
+  return [{ channel: '', label: 'All accounts' }, ...connections]
     .map(row => `<option value="${escapeHtml(row.channel)}">${escapeHtml(row.label || row.broker_id || row.channel)}</option>`).join('');
 }
 function selectionLabel() {
@@ -301,9 +295,8 @@ function brokerLabel(channel) {
   return `<span class="broker-name broker-${escapeHtml(brokerNames[broker.id] ? broker.id : 'other')}" title="${escapeHtml(broker.account)}">${escapeHtml(broker.name)}</span>`;
 }
 function brokerFilters(kind, selected, positions) {
-  const found = [...new Set(positions.map(p => brokerIdentity(p.channel).id))];
-  const ids = [...Object.keys(brokerNames).filter(id => found.includes(id)), ...found.filter(id => !brokerNames[id])];
-  return `<div class="option-filter-group broker-filters" role="group" aria-label="Filter by broker"><span class="label-eyebrow">Broker</span>${['all', ...ids].map(id => `<button type="button" class="chip-btn broker-filter${selected === id ? ' on' : ''} broker-${escapeHtml(brokerNames[id] ? id : 'other')}" data-${kind}-broker="${escapeHtml(id)}" aria-pressed="${selected === id}">${escapeHtml(id === 'all' ? 'All' : brokerNames[id] || id)}</button>`).join('')}</div>`;
+  const accounts = selectionOptions().filter(option => positions.some(p => p.channel === option.id));
+  return `<div class="option-filter-group broker-filters" role="group" aria-label="Filter by broker account"><span class="label-eyebrow">Broker account</span>${[{ id: 'all', label: 'All' }, ...accounts].map(({id, label}) => `<button type="button" class="chip-btn broker-filter${selected === id ? ' on' : ''}" data-${kind}-broker="${escapeHtml(id)}" aria-pressed="${selected === id}">${escapeHtml(label)}</button>`).join('')}</div>`;
 }
 function riskLevel(probability) {
   return probability == null ? 'muted' : probability > 0.6 ? 'danger' : probability >= 0.45 ? 'warning' : 'ok';
@@ -1571,7 +1564,7 @@ function wheelRiskTable(rows, radar, view, asOf) {
   const eligible = rows.filter(r => r.estimate.probability != null || (r.days >= 0 && r.days <= 7));
   const filtered = eligible.filter(r =>
     (riskRightFilter === 'all' || r.p.option.right === riskRightFilter) &&
-    (riskBrokerFilter === 'all' || brokerIdentity(r.p.channel).id === riskBrokerFilter) &&
+    (riskBrokerFilter === 'all' || r.p.channel === riskBrokerFilter) &&
     (riskLevelFilter === 'all' || riskLevel(r.estimate.probability) === riskLevelFilter) &&
     (!riskSearch || optionInstrumentLabel(r.p).toLowerCase().includes(riskSearch.toLowerCase()))
   ).sort((a,b) => (a.days ?? Infinity) - (b.days ?? Infinity) || (b.estimate.probability ?? -1) - (a.estimate.probability ?? -1));
@@ -1927,7 +1920,7 @@ function renderOpenOptions(view) {
   }
   const opts = allOptions.filter((p) =>
     (optionRightFilter === 'all' || p.option.right === optionRightFilter) &&
-    (!isWheelDesk || optionBrokerFilter === 'all' || brokerIdentity(p.channel).id === optionBrokerFilter) &&
+    (!isWheelDesk || optionBrokerFilter === 'all' || p.channel === optionBrokerFilter) &&
     (!isWheelDesk || !optionSearch || optionInstrumentLabel(p).toLowerCase().includes(optionSearch.toLowerCase())),
   );
   const chip = (kind, value, label, selected) =>
@@ -2067,17 +2060,8 @@ el.openOptions?.addEventListener('click', (event) => {
 
 function renderChannelPills(view) {
   if (!el.channelPills) return;
-  const channels = (portfolioPayload || payload)?.model?.live?.channels || [];
-  const pills = selectionOptions();
-  el.channelPills.innerHTML = pills
-    .map((p) => {
-      const on = p.id === selectedChannel ? ' on' : '';
-      const broker = p.brokerId ? { id: p.brokerId, name: brokerNames[p.brokerId] || p.brokerId, account: 'All accounts' } : brokerIdentity(p.id);
-      const logo = isWheelDesk && ['ibkr','moomoo','tiger','webull'].includes(broker.id);
-      const duplicates = channels.filter(ch => brokerIdentity(ch).id === broker.id).length > 1;
-      const content = logo ? `<img src="../broker-logos/${broker.id}.png" alt="${escapeHtml(broker.name)}" />${duplicates || p.brokerId ? `<span class="broker-account-label">${escapeHtml(broker.account)}</span>` : ''}` : escapeHtml(p.label);
-      return `<button type="button" class="chip-btn${on}${logo ? ' broker-logo-button' : ''}" data-channel="${escapeHtml(p.id)}" aria-pressed="${p.id === selectedChannel}" aria-label="${escapeHtml(logo ? `${broker.name} · ${broker.account}` : p.label)}" title="${escapeHtml(logo ? `${broker.name} · ${broker.account}` : p.label)}">${content}</button>`;
-    })
+  el.channelPills.innerHTML = selectionOptions()
+    .map(p => `<button type="button" class="chip-btn${p.id === selectedChannel ? ' on' : ''}" data-channel="${escapeHtml(p.id)}" aria-pressed="${p.id === selectedChannel}" title="${escapeHtml(p.label)}">${escapeHtml(p.label)}</button>`)
     .join('');
 }
 
@@ -2749,7 +2733,7 @@ function renderEmpty(body) {
   }
   if (el.channelPills) {
     el.channelPills.innerHTML =
-      '<button type="button" class="chip-btn on" data-channel="merged">All platforms</button>';
+      '<button type="button" class="chip-btn on" data-channel="merged">All accounts</button>';
   }
   if (el.expiryBlock) el.expiryBlock.classList.add('hidden');
   if (el.premiumBlock) el.premiumBlock.classList.add('hidden');
