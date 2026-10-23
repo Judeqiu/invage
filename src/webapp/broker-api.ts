@@ -1,3 +1,4 @@
+import { readBrokerSyncConfig } from './dashboard-config.js';
 import { saveInvestor, type InvestorSnapshot } from '../state/investor-store.js';
 import { createBrokerSyncJobs } from '../brokers/sync-all.js';
 /**
@@ -216,7 +217,7 @@ export function createBrokerConnectionsRouter(): Router {
       const snapshot = await sessionInvestor(req);
       const data = publicBrokerAccounts(snapshot.state);
       res.setHeader('Cache-Control', 'private, no-store');
-      res.json({ ...data, egress_ipv4: readFlexEgressIpv4(),
+      res.json({ ...data, automatic_sync: readBrokerSyncConfig(), egress_ipv4: readFlexEgressIpv4(),
         connections: data.connections.map(c => ({ ...c, latest_raw_data: latestBrokerRawData(snapshot.state.user.id, c.channel) })) });
     } catch (e) { accountError(res, e); }
   });

@@ -8,7 +8,7 @@ import { productDisplayName } from '../product-name.js';
 import { analysisContext, riskEnabled } from '../risk/context.js';
 import { createOptionRiskRouter } from './option-risk-api.js';
 import { createOptionIndexRouter } from './option-index-api.js';
-import { readDashboardConfig } from './dashboard-config.js';
+import { readBrokerSyncConfig, readDashboardConfig } from './dashboard-config.js';
 import { Router, type Request, type Response } from 'express';
 import { loadSessionState, targetUserId, type AuthUser } from 'utarus';
 import { requirePortfolioProjection, readPortfolioProjection, PortfolioProjectionUnavailable, type PortfolioProjection } from '../state/projection-store.js';
@@ -313,6 +313,7 @@ export function createDashboardApiRouter(): Router {
         (!asOf || row.executed_at.slice(0, 10) <= asOf) &&
         (!q || `${row.underlying} ${row.expiry} ${row.strike}`.toUpperCase().includes(q)))
         .sort((a, b) => b.executed_at.localeCompare(a.executed_at) || a.execution_id.localeCompare(b.execution_id)) : [];
+      const automaticSync = readBrokerSyncConfig();
       const connections = Object.entries(readBrokerAccountModel(state).connections).map(([id, conn]) => {
         const successful = observations
           .filter(row => row.connection_id === id && row.source === 'broker')
@@ -321,7 +322,7 @@ export function createDashboardApiRouter(): Router {
         return {
           id, broker_id: conn.broker_id, channel: conn.channel, label: conn.label,
           account_id: conn.account_id ?? null, enabled: conn.enabled,
-          schedule: conn.enabled && conn.account_id ? 'daily' : null,
+          schedule: automaticSync.enabled && conn.enabled && conn.account_id ? 'daily' : null,
           last_success_at: successful?.observed_at ?? prior?.at ?? (conn.last_sync?.ok ? conn.last_sync.at : null),
           position_as_of: successful?.as_of ?? prior?.as_of ?? (conn.last_sync?.ok ? conn.last_sync.as_of ?? null : null),
           last_attempt: conn.last_sync ?? null,

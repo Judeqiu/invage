@@ -1,4 +1,5 @@
 vi.mock('utarus', async original => ({ ...await original<typeof import('utarus')>(), notifyUser: vi.fn(async () => ({ notification: {}, delivery: [] })) }));
+import { readBrokerSyncConfig } from '../src/webapp/dashboard-config.js';
 import { notifyUser } from 'utarus';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { InvestorSnapshot } from '../src/state/investor-store.js';
@@ -138,4 +139,61 @@ describe('daily 2 pm Singapore broker sync', () => {
     expect(f.deps.syncBrokerAccount).toHaveBeenCalledTimes(4);
     errors.mockRestore();
   });
+});
+
+it('starts at the configured Singapore minute and does not rerun a completed date after a time change', async () => {
+  const f = fixture();
+  let config = { ...readBrokerSyncConfig(), time: '17:35', minuteOfDay: 17 * 60 + 35 };
+  const deps = { ...f.deps, readBrokerSyncConfig: () => config };
+  await runDailyBrokerSyncs(at('09:34:59'), deps);
+  expect(f.deps.syncBrokerAccount).not.toHaveBeenCalled();
+  await runDailyBrokerSyncs(at('09:35:00'), deps);
+  expect(f.deps.syncBrokerAccount).toHaveBeenCalledTimes(2);
+  expect(f.events.at(-1)).toBe('snapshot:alice:2026-10-23');
+  config = { ...config, time: '18:00', minuteOfDay: 18 * 60 };
+  await runDailyBrokerSyncs(at('10:00:00'), deps);
+  expect(f.deps.capturePortfolioSnapshot).toHaveBeenCalledOnce();
+  await runDailyBrokerSyncs(at('10:00:00', '2026-10-24'), deps);
+  expect(f.deps.capturePortfolioSnapshot).toHaveBeenCalledTimes(2);
+});
+
+it('pauses new batches and pending retries when disabled, and resumes from durable progress when enabled', async () => {
+  const f = fixture();
+  let enabled = false;
+  const deps = { ...f.deps, readBrokerSyncConfig: () => ({ ...readBrokerSyncConfig(), enabled }) };
+  await runDailyBrokerSyncs(at(), deps);
+  expect(f.deps.syncBrokerAccount).not.toHaveBeenCalled();
+  const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    enabled = true;
+    f.deps.syncBrokerAccount.mockRejectedValueOnce(new Error('Broker offline'));
+    await runDailyBrokerSyncs(at(), deps);
+    enabled = false;
+    await runDailyBrokerSyncs(at('06:30:00'), deps);
+    expect(f.deps.syncBrokerAccount).toHaveBeenCalledTimes(2);
+    expect(f.deps.capturePortfolioSnapshot).not.toHaveBeenCalled();
+    enabled = true;
+    await runDailyBrokerSyncs(at('07:00:00'), deps);
+    expect(f.deps.syncBrokerAccount).toHaveBeenCalledTimes(3);
+    expect(f.deps.capturePortfolioSnapshot).toHaveBeenCalledOnce();
+  } finally { log.mockRestore(); }
+});
+
+it('supports midnight and 23:59 Singapore schedules while retaining the original batch date on retries', async () => {
+  const midnight = fixture();
+  await runDailyBrokerSyncs(at('16:00:00'), { ...midnight.deps,
+    readBrokerSyncConfig: () => ({ ...readBrokerSyncConfig(), time: '00:00', minuteOfDay: 0 }) });
+  expect(midnight.events.at(-1)).toBe('snapshot:alice:2026-10-24');
+  const f = fixture();
+  const deps = { ...f.deps, readBrokerSyncConfig: () => ({ ...readBrokerSyncConfig(), time: '23:59', minuteOfDay: 1439 }) };
+  await runDailyBrokerSyncs(at('15:58:59'), deps);
+  expect(f.deps.syncBrokerAccount).not.toHaveBeenCalled();
+  const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    f.deps.syncBrokerAccount.mockRejectedValueOnce(new Error('Broker offline'));
+    await runDailyBrokerSyncs(at('15:59:00'), deps);
+    await runDailyBrokerSyncs(at('16:29:00'), deps);
+    expect(f.deps.syncBrokerAccount).toHaveBeenCalledTimes(3);
+    expect(f.events.at(-1)).toBe('snapshot:alice:2026-10-23');
+  } finally { log.mockRestore(); }
 });

@@ -1,3 +1,4 @@
+import { readBrokerSyncConfig } from '../webapp/dashboard-config.js';
 import { withBrokerSyncBatchNotifications, type BrokerSyncBatchNotice } from './sync-notification.js';
 import { getBrokerConnector } from './catalog.js';
 import { listUserIds } from 'utarus';
@@ -5,17 +6,21 @@ import { loadInvestor, saveInvestor } from '../state/investor-store.js';
 import { brokerBatchAccounts as accounts, captureBrokerBatchSnapshot, finishBrokerSyncBatch } from './sync-batch.js';
 import { brokerSyncInProgress, readBrokerAccountModel, syncBrokerAccount } from './accounts.js';
 
-const runtime = { listUserIds, loadInvestor, saveInvestor, syncBrokerAccount,
+const runtime = { readBrokerSyncConfig, listUserIds, loadInvestor, saveInvestor, syncBrokerAccount,
   brokerSyncInProgress,
   capturePortfolioSnapshot: captureBrokerBatchSnapshot };
 const RETRY_MS = 30 * 60_000;
 const LEASE_MS = 6 * 60 * 60_000;
 
 /** Every user is scanned on each tick, so existing and future accounts opt in automatically. */
-export async function runDailyBrokerSyncs(now = new Date(), deps: typeof runtime = runtime): Promise<void> {
+export async function runDailyBrokerSyncs(now = new Date(), overrides: Partial<typeof runtime> = {}): Promise<void> {
+  const deps = { ...runtime, ...overrides };
+  const config = deps.readBrokerSyncConfig();
+  if (!config.enabled) return;
   // Singapore is UTC+8 year-round; the batch date is fixed before any network work.
   const singapore = new Date(now.getTime() + 8 * 60 * 60_000);
   const today = singapore.toISOString().slice(0, 10);
+  const due = singapore.getUTCHours() * 60 + singapore.getUTCMinutes() >= config.minuteOfDay;
   for (const slug of await deps.listUserIds()) {
     const notice: BrokerSyncBatchNotice = { userId: slug, date: today, accounts: [] };
     await withBrokerSyncBatchNotifications(notice, async () => {
@@ -27,8 +32,8 @@ export async function runDailyBrokerSyncs(now = new Date(), deps: typeof runtime
         let batch = snapshot.state.daily_broker_sync;
         if (batch?.lease_until && Date.parse(batch.lease_until) > now.getTime()) return;
         if (batch?.retry_after && Date.parse(batch.retry_after) > now.getTime()) return;
-        if (!batch || (batch.date !== today && (batch.completed_at || singapore.getUTCHours() >= 14))) {
-          if (singapore.getUTCHours() < 14) return;
+        if (!batch || (batch.date !== today && (batch.completed_at || due))) {
+          if (!due) return;
           batch = { date: today, synced_accounts: {} };
         }
         const completed = batch;

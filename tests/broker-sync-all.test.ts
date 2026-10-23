@@ -1,3 +1,5 @@
+import { readAgentConfig, saveAgentConfig } from 'utarus';
+import { dashboardConfig } from '../src/webapp/dashboard-config.js';
 import { beforeEach, expect, it, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
@@ -173,8 +175,31 @@ it('rejects legacy schedule creation through the API and omits retired schedule 
   }
   const accounts = await request(server).get('/broker-accounts').set('x-user', 'alice');
   expect(accounts.status).toBe(200);
+  expect(accounts.body.automatic_sync).toMatchObject({ enabled: true, time: '14:00', timezone: 'Asia/Singapore' });
   expect(accounts.body.connections.find(account => account.id === id)).not.toHaveProperty('sync_schedule');
   const saved = await request(server).patch('/broker-accounts/' + id).set('x-user', 'alice').send({ label: 'Updated' });
   expect(saved.status).toBe(200);
   expect(snapshot.state.broker_connections![id]).not.toHaveProperty('sync_schedule');
+});
+
+it('exposes the saved automatic-sync settings and keeps manual batches available when disabled', async () => {
+  const original = readAgentConfig(dashboardConfig);
+  try {
+    saveAgentConfig(dashboardConfig, { ...original, automatic_broker_sync_enabled: false,
+      automatic_broker_sync_hour: '17', automatic_broker_sync_minute: '35' });
+    const snapshot = fixture('00000000-0000-4000-8000-000000000072');
+    mocks.session.mockResolvedValue(snapshot);
+    mocks.load.mockResolvedValue(snapshot);
+    mocks.sync.mockResolvedValue({ aggregation: { status: 'ready' } });
+    const server = app();
+    const accounts = await request(server).get('/broker-accounts').set('x-user', 'alice');
+    expect(accounts.status).toBe(200);
+    expect(accounts.body.automatic_sync).toMatchObject({ enabled: false, time: '17:35', timezone: 'Asia/Singapore' });
+    const started = await request(server).post('/broker-sync').set('x-user', 'alice');
+    expect(started.status).toBe(202);
+    await vi.waitFor(() => expect(mocks.capture).toHaveBeenCalledOnce());
+    const completed = await request(server).get('/broker-sync').set('x-user', 'alice');
+    expect(completed.body).toMatchObject({ status: 'completed', snapshotStatus: 'saved', calculationStatus: 'ready' });
+    expect(mocks.sync).toHaveBeenCalledTimes(3);
+  } finally { saveAgentConfig(dashboardConfig, original); }
 });

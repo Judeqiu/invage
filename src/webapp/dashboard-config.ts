@@ -2,9 +2,21 @@ import { readAgentConfig, type AgentConfigDefinition } from 'utarus';
 
 export const dashboardConfig: AgentConfigDefinition = {
   id: 'invage-dashboard',
-  title: 'Portfolio dashboard',
-  description: 'Dashboard metrics, option positions view and standalone calculator visibility.',
+  title: 'Portfolio dashboard & automatic sync',
+  description: 'Automatic broker syncing, dashboard metrics, option positions view and standalone calculator visibility.',
   fields: [{
+    id: 'automatic_broker_sync_enabled', type: 'boolean', label: 'Enable automatic broker syncing', default: true,
+    description: 'Sync all enabled broker accounts for all users daily, then save aggregates and a dated snapshot. Turning this off pauses automatic runs and retries; Sync brokers remains available.',
+  }, {
+    id: 'automatic_broker_sync_hour', type: 'select', label: 'Automatic sync hour (Singapore time)', default: '14',
+    description: 'Daily start time in Singapore (UTC+8). Defaults to 2 pm. Changes apply on the next scheduler tick; a completed batch is not repeated on the same date.',
+    options: Array.from({ length: 24 }, (_, hour) => ({ value: String(hour).padStart(2, '0'),
+      label: `${String(hour).padStart(2, '0')} — ${hour % 12 || 12} ${hour >= 12 ? 'pm' : 'am'}` })),
+  }, {
+    id: 'automatic_broker_sync_minute', type: 'select', label: 'Automatic sync minute', default: '00',
+    description: 'Minute past the selected hour. Incomplete batches retry every 30 minutes while automatic syncing is enabled.',
+    options: Array.from({ length: 60 }, (_, minute) => ({ value: String(minute).padStart(2, '0'), label: String(minute).padStart(2, '0') })),
+  }, {
     id: 'dashboard_version', type: 'select', label: 'Dashboard version', default: 'v1',
     description: 'Choose the classic dashboard or the new Wheel Desk. Both use the same portfolio calculations, cache and broker data. Refresh the app after changing this setting.',
     options: [{ value: 'v1', label: 'V1 — Classic dashboard' }, { value: 'v2', label: 'V2 — Wheel Desk' }],
@@ -77,3 +89,11 @@ function projectRiskCostModel(config: Record<string, string | number | boolean>)
     reference:'Management-configured generic fee and slippage estimates; not account-specific verified broker charges' };
 }
 export const readOptionRiskCostModel = () => projectRiskCostModel(readAgentConfig(dashboardConfig));
+
+/** Deployment-wide schedule, read afresh on every scheduler tick. */
+export function readBrokerSyncConfig() {
+  const config = readAgentConfig(dashboardConfig);
+  const hour = String(config.automatic_broker_sync_hour), minute = String(config.automatic_broker_sync_minute);
+  return { enabled: config.automatic_broker_sync_enabled === true, time: `${hour}:${minute}`,
+    timezone: 'Asia/Singapore' as const, minuteOfDay: Number(hour) * 60 + Number(minute) };
+}

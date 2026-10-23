@@ -78,6 +78,12 @@ function historyHtml(c) {
 }
 function broker(id) { return data.catalog.find(c => c.id === id); }
 function source(id) { return data.sources.find(s => s.id === id); }
+function automaticSyncHint() {
+  const config = data.automatic_sync;
+  return config?.enabled === false
+    ? 'Automatic syncing is disabled in Management → Agent configuration. Use Sync brokers to sync all accounts now.'
+    : `Enabled accounts sync together daily at ${esc(config?.time || '14:00')} Singapore time. Configure this in Management → Agent configuration. Use Sync brokers to sync all accounts now.`;
+}
 function fields(b, role) { return b.fields.filter(f => f.role === role); }
 function fieldHtml(f, value, prefix) {
   const existing = value?.[f.id];
@@ -156,7 +162,7 @@ function existingCard(c) {
       <button data-action="token-check" data-id="${esc(c.id)}" ${busy ? 'disabled' : ''}>Check token</button>` : ''}</div>
       <h3>Account settings</h3>
       ${fields(b, 'connection').filter(f => f.id !== 'acc_id' && f.id !== 'account_id' && f.id !== 'account').map(f => fieldHtml(f, c.config, 'config')).join('')}
-      <p class="hint">Enabled accounts sync together daily at 2 pm Singapore time. Use Sync brokers to sync all accounts now.</p>
+      <p class="hint">${automaticSyncHint()}</p>
       <div class="actions"><button data-action="save-account" data-id="${esc(c.id)}" ${busy ? 'disabled' : ''}>Save account</button></div>
       ${b.id === 'futubull' ? '' : guide(b)}
       <h3>Sync history</h3>
