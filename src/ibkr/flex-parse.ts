@@ -46,6 +46,7 @@ export interface FlexCashRow {
 }
 
 export interface FlexSkip {
+  blocking?: boolean;
   kind: 'position' | 'cash' | 'event';
   reason: string;
   symbol?: string;
@@ -334,6 +335,7 @@ export function parseFlexQueryXml(xml: string | Buffer, includeHistory = true): 
           kind: 'cash',
           currency: parsed.currency,
           reason: 'endingCash < 0 is not stored',
+          blocking: false,
         });
         continue;
       }

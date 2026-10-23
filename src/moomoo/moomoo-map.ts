@@ -193,7 +193,7 @@ function mapFunds(d: unknown, asOf: string, skipped: BrokerSkip[]): {
       metrics ??= { as_of: asOf, currency };
       metrics.fund_assets = amount;
       if (amount > 0) skipped.push({ kind: 'position', currency,
-        reason: `Fund assets ${amount.toFixed(2)} ${currency} recorded as an account total only. Moomoo does not return individual fund holdings; fund lot count, units and cost basis are unavailable. This total is separate from cash and excluded from itemized NAV and P/L.` });
+        blocking: false, reason: `Fund assets ${amount.toFixed(2)} ${currency} recorded as an account total only. Moomoo does not return individual fund holdings; fund lot count, units and cost basis are unavailable. This total is separate from cash and excluded from itemized NAV and P/L.` });
     }
   }
   return { cash, metrics };

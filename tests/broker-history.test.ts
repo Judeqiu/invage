@@ -83,6 +83,12 @@ describe('shared broker history',()=>{
     await expect(applyBrokerStatement({state:s,revision:1},'moomoo',{account_id:'A',as_of:'2026-10-14',cash:[],lots:[],skipped:[{kind:'position',reason:'Position sleeve unavailable'}]},undefined,undefined,undefined,{requireCompleteSnapshot:true})).rejects.toThrow('current snapshot is incomplete');
     expect(s).toEqual(before);
   });
+  it('allows explicitly documented nonblocking account totals while preserving their notices',async()=>{
+    const s=state();
+    const skipped=[{kind:'position' as const,reason:'Fund account aggregate retained separately',blocking:false}];
+    const result=await applyBrokerStatement({state:s,revision:1},'moomoo',{account_id:'A',as_of:'2026-10-14',cash:[],lots:[],skipped},undefined,undefined,undefined,{requireCompleteSnapshot:true});
+    expect(result.skipped).toEqual(skipped);expect(s.option_observations?.[0].skipped_positions).toBe(0);
+  });
   it('locks account binding when retained history is the only imported data',()=>{
     const s=state(),source=addBrokerSource(s,'ibkr',{token:'secret'}),id=addBrokerAccount(s,{source_id:source,account_id:'A',label:'A',config:{activity_query_id:'1'}});
     const channel=readBrokerAccountModel(s).connections[id].channel,h=history('ibkr');h.channel=channel;h.executions.forEach(e=>e.channel=channel);s.broker_history={[channel]:h};

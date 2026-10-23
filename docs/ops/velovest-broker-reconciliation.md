@@ -65,11 +65,15 @@ complete history interval. A deferred history fetch or attachment-archive
 failure does not advance the saved history checkpoint. The queued request
 retains its original Full/incremental mode.
 
-Live syncs reject incomplete current positions or cash before changing either
+Live syncs reject malformed or unavailable current positions or cash before changing either
 holdings or books. A failed Tiger position sleeve is recorded as unavailable,
 rather than silently becoming evidence of zero holdings. Primary endpoint
 failures therefore preserve the previous complete snapshot and remain retryable;
-optional historical failures allow a complete current snapshot to save.
+optional historical failures allow a complete supported current snapshot to save.
+Documented nonblocking omissions retain their existing notices: IBKR negative
+cash is outside the current books model, and MooMoo fund aggregates are retained
+as account totals rather than fabricated itemized fund holdings. These do not
+trigger endless retries or change the supported accounting representation.
 
 The account API, scheduler and legacy connector/tool routes share these rules.
 Known optimistic revision conflicts reload current state and reapply the same

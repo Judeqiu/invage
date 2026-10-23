@@ -157,7 +157,7 @@ export async function applyBrokerStatement(
       throw new Error('Broker statement account/channel differs from selected connection.');
     }
   }
-  if(observation?.requireCompleteSnapshot && doc.skipped.some(s=>s.kind==='position'||s.kind==='cash')) throw new Error('Broker current snapshot is incomplete; retained the previous holdings and cash for automatic retry.');
+  if(observation?.requireCompleteSnapshot && doc.skipped.some(s=>(s.kind==='position'||s.kind==='cash')&&s.blocking!==false)) throw new Error('Broker current snapshot is incomplete; retained the previous holdings and cash for automatic retry.');
   const channel = connection?.channel ?? getBrokerConnector(connectorId).channel;
   assertStatementNotOlder(state, connectorId, channel, doc.as_of);
   // All adapters and custom parsers pass through this before any books writes.

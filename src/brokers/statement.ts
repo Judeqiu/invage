@@ -17,6 +17,8 @@ import {
 } from '../state/portfolio-state.js';
 
 export interface BrokerSkip {
+  /** Explicitly documented out-of-model totals are nonblocking; malformed current data is not. */
+  blocking?: boolean;
   kind: 'position' | 'cash' | 'event';
   reason: string;
   symbol?: string;
@@ -185,6 +187,10 @@ function assertSkip(raw: unknown, i: number): BrokerSkip {
     throw new Error(`Broker statement skipped[${i}].reason is required.`);
   }
   const skip: BrokerSkip = { kind: r.kind, reason: r.reason.trim() };
+  if (r.blocking !== undefined) {
+    if(typeof r.blocking !== 'boolean') throw new Error('Broker skip blocking must be boolean.');
+    skip.blocking=r.blocking;
+  }
   if (r.symbol != null) {
     if (typeof r.symbol !== 'string' || !r.symbol.trim()) {
       throw new Error(`Broker statement skipped[${i}].symbol must be a non-empty string when set.`);

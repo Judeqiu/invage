@@ -76,6 +76,7 @@ function withFlexIdentity(holding: Holding, pos: FlexOpenPosition): Holding {
 
 export function brokerSkipFromFlex(skip: FlexSkip): BrokerSkip {
   const out: BrokerSkip = { kind: skip.kind, reason: skip.reason };
+  if (skip.blocking !== undefined) out.blocking=skip.blocking;
   if (skip.symbol) out.symbol = skip.symbol;
   if (skip.currency) out.currency = skip.currency;
   return out;

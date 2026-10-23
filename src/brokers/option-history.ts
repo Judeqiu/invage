@@ -109,7 +109,7 @@ export function optionObservationFromStatement(args: {
   rawDataId?: string;
   syncId: string;
 }): OptionObservation {
-  const skippedPositions = args.statement.skipped.filter(row => row.kind === 'position');
+  const skippedPositions = args.statement.skipped.filter(row => row.kind === 'position' && row.blocking !== false);
   return {
     id: args.syncId, broker_id: args.brokerId, connection_id: args.connectionId,
     channel: args.channel, account_id: args.statement.account_id,
