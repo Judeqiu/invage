@@ -182,3 +182,14 @@ it('filters roll groups, coverage and gaps by selected broker across custom acco
   expect(unknown.body.groups).toEqual([]);
   expect(unknown.body.coverage).toEqual([]);
 });
+
+it('materializes full retained history beyond the interactive archive budget', () => {
+  archive(owner);
+  const channel = Object.values(readBrokerAccountModel(state).connections)[0].channel;
+  const directory = join(root, 'drive', owner, 'broker-sync', channel);
+  for (let i = 0; i < 500; i++) writeFileSync(join(directory, `empty-${i}.xml`), '<FlexStatement accountId="A"><Trades/></FlexStatement>');
+  expect(() => optionRelationshipsForState(state)).toThrow('relationship scan limit');
+  const result = optionRelationshipsForState(state, {}, { background: true });
+  expect(result.groups).toHaveLength(1);
+  expect(result.coverage[0].archives).toBe(501);
+});

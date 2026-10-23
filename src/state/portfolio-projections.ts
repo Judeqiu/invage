@@ -28,7 +28,7 @@ export function createPortfolioProjectionRefresher(overrides: Partial<typeof run
         const dashboard = await deps.loadDashboardForSlug(userId, undefined, undefined, undefined, { snapshot });
         const state = snapshot.state;
         const optionHistory = deps.optionHistoryForState(state);
-        const relationships = deps.optionRelationshipsForState(state);
+        const relationships = deps.optionRelationshipsForState(state, {}, { background: true });
         const tradeHistory = deps.tradesHistory({ ...state, option_observations: optionHistory.observations,
           option_events: optionHistory.events }, relationships.groups.flatMap(g => g.relationships));
         const conflicts = new Set(relationships.historyGaps.filter(g => g.blocksTotals).map(g => g.channel));

@@ -496,7 +496,7 @@ export async function loadDashboardForSlug(
     () => openOptionTradeDetails(portfolio, state.option_executions, accountsByChannel, state.option_events));
   let optionHistoryGaps: Array<{ channel: string; reason: string; blocksTotals?: boolean }> = [];
   try {
-    const relationships = optionRelationshipsForState(state);
+    const relationships = optionRelationshipsForState(state, {}, { background: Boolean(options?.snapshot) });
     attachLatestRollPremium(portfolio, optionTradeDetails, relationships.groups.flatMap(g => g.relationships), accountsByChannel);
     attachOpenVerticalSpreads(portfolio, optionTradeDetails, relationships.spreads, accountsByChannel);
     optionHistoryGaps = relationships.historyGaps;

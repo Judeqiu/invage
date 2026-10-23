@@ -24,7 +24,7 @@ function readArchive(user: string, file: RawFile): Buffer {
 export interface RelationshipFilters { channel?: string; q?: string; evidence?: string; from?: string; to?: string; asOf?: string; }
 
 /** Tenant-scoped, read-only archive backfill. No broker calls or current-lot restrictions. */
-export function optionRelationshipsForState(state: InvestorState, filters: RelationshipFilters = {}) {
+export function optionRelationshipsForState(state: InvestorState, filters: RelationshipFilters = {}, options: { background?: boolean } = {}) {
   const files: RawFile[] = [];
   for (let offset = 0;;) {
     const page = listRawData(state.user.id, offset, 100);
@@ -34,16 +34,16 @@ export function optionRelationshipsForState(state: InvestorState, filters: Relat
   }
   const connections = Object.values(readBrokerAccountModel(state).connections).filter(c => c.account_id &&
     ['ibkr', 'tiger', 'moomoo', 'webull'].includes(c.broker_id));
-  const input = { files: files.map(f => [f.id, f.version]), filters,
+  const input = { background: options.background === true, files: files.map(f => [f.id, f.version]), filters,
     connections: connections.map(c => [c.channel, c.broker_id, c.account_id, c.label]),
     history: state.broker_history, executions: state.option_executions };
   return cachedDashboardCalculation('relationships', state.user.id + ':' + JSON.stringify(filters), input,
-    () => calculateRelationships(state, filters, files, connections),
+    () => calculateRelationships(state, filters, files, connections, options.background === true),
     result => !result.gaps.some(gap => gap.source !== null));
 }
 
 function calculateRelationships(state: InvestorState, filters: RelationshipFilters, files: RawFile[],
-  connections: ReturnType<typeof readBrokerAccountModel>['connections'][string][]) {
+  connections: ReturnType<typeof readBrokerAccountModel>['connections'][string][], background: boolean) {
   const groups = []; const spreads = []; const historyGaps: Array<{ channel: string; reason: string; blocksTotals?: boolean }> = [];
   const gaps: Array<{ channel: string; source: string | null; reason: string }> = [];
   const coverage: Array<{ channel: string; broker_id: string; account_id: string; label: string;
@@ -63,7 +63,8 @@ function calculateRelationships(state: InvestorState, filters: RelationshipFilte
       conn.channel === conn.broker_id && conn.broker_id === 'moomoo' && /^moomoo-executions\/[^/]+-moomoo\.json$/.test(f.id)) &&
       /\.(xml|json)$/.test(f.id) && !f.id.endsWith('-before.json'));
     archives += selected.length; bytes += selected.reduce((sum, f) => sum + f.bytes, 0);
-    if (archives > MAX_ARCHIVES || bytes > MAX_BYTES) throw new Error('Retained history exceeds the relationship scan limit; narrow the broker filter');
+    // Background materialization scans the full retained history; request budgets must not block every portfolio page.
+    if (!background && (archives > MAX_ARCHIVES || bytes > MAX_BYTES)) throw new Error('Retained history exceeds the relationship scan limit; narrow the broker filter');
     const fills: RollFill[] = [];
     let reconciliationBlocked = false;
     for (const file of selected) {
