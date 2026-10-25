@@ -17,7 +17,12 @@ import { trackHttpApp, listenHttp } from '../../node_modules/utarus/dist/lifecyc
 import { config as dotenvConfig } from 'dotenv';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import type { Express } from 'express';
+import express, { type Express } from 'express';
+import cookieParser from 'cookie-parser';
+import { requireAuth } from 'utarus';
+import { personalRiskManifest } from './experience-settings.js';
+import { readBridgeRuntimeConfig } from '../../node_modules/utarus/dist/webapp/bridge-config.js';
+import { createTransport } from '../../node_modules/utarus/dist/lifecycle/transport.js';
 import type { Framework } from 'utarus';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -48,7 +53,33 @@ const INVAGE_EXTRA_ROUTERS = [
  * Full WebUI for the agent process (chat needs the in-memory agent pool).
  */
 export function buildInvageApp(framework: Framework): Express {
-  return buildWebApp(framework, { extraRouters: INVAGE_EXTRA_ROUTERS });
+  // The outer app supplies personal manifest filtering before framework-owned routes.
+  const app = express();
+  app.use(cookieParser());
+  app.get('/api/webui/manifest', requireAuth, personalRiskManifest);
+  app.use(buildWebApp(framework, { extraRouters: INVAGE_EXTRA_ROUTERS }));
+  return app;
+}
+
+/** Same HTTP drain contract as Utarus, with the personal manifest wrapper. */
+export async function startInvageWebApp(framework: Framework, port: number) {
+  readBridgeRuntimeConfig();
+  const work = new InteractiveLifecycle();
+  const app = buildInvageApp(framework);
+  trackHttpApp(app, operation => work.run(() => framework.runInteractive(operation)));
+  const server = await listenHttp(app, port);
+  const transport = createTransport(async () => {
+    const drained = work.stop();
+    const closed = new Promise<void>((resolve, reject) => {
+      server.close(error => error ? reject(error) : resolve());
+      server.closeAllConnections();
+    });
+    const results = await Promise.allSettled([closed, drained]);
+    const errors = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected').map(r => r.reason);
+    if (errors.length) throw new AggregateError(errors, 'HTTP shutdown failed');
+  });
+  server.on('error', error => {void transport.fail(error).catch(failure => console.error('[Web]', failure));});
+  return {app,stop:transport.stop,closed:transport.closed};
 }
 
 /**

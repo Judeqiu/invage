@@ -3,6 +3,8 @@
  * Mounted by DomainExtension.webUi at /api/domain/invage (auth: user).
  */
 
+import { createExperienceSettingsRouter, riskPageEnabled } from './experience-settings.js';
+import { buildAccountRisk } from './account-risk-data.js';
 import { readProductProfile } from '../agents/roster.js';
 import { productDisplayName } from '../product-name.js';
 import { analysisContext, riskEnabled } from '../risk/context.js';
@@ -20,6 +22,7 @@ import { latestSuccessfulBrokerSyncRun } from '../brokers/sync-history.js';
 import { optionHistoryForState } from './option-history-data.js';
 import { isBooksEnabled } from '../books/db.js';
 import { loadBookPage } from './book-data.js';
+import type { InvestorState } from '../state/portfolio-state.js';
 import { getPortfolio } from '../state/portfolio-state.js';
 import { canonicalOptionUnderlying } from '../brokers/option-symbol.js';
 import { getTreasury, getReportingCurrency, setTreasury, type HouseholdInvestorState } from '../state/household-state.js';
@@ -33,6 +36,20 @@ function matchesDashboardSelection(projection: PortfolioProjection, selection: s
 
 export function createDashboardApiRouter(): Router {
   const router = Router();
+  router.use('/experience-settings', createExperienceSettingsRouter());
+  router.get('/account-risk', async (req, res) => {
+    res.setHeader('Cache-Control', 'private, no-store');
+    if (!(req as Request & {user?: AuthUser}).user?.userId) {res.status(401).json({message:'Sign in to view account risk.'}); return;}
+    try {
+      const snapshot = await loadSessionState(req);
+      const state = snapshot.state as InvestorState;
+      if (!riskPageEnabled(state)) {res.status(403).json({error:'page_disabled',message:'Enable Risk in Settings → Your experience.'}); return;}
+      const saved = requirePortfolioProjection(state);
+      res.json(buildAccountRisk(state, saved.dashboard));
+    } catch (error) {
+      res.status(error instanceof PortfolioProjectionUnavailable ? 503 : 500).json({message:'Risk data is unavailable. Sync your brokers, then retry.'});
+    }
+  });
   router.use((_req, res, next) => { res.setHeader('Cache-Control', 'private, no-store'); next(); });
   router.put('/trades-v2/:optionId/note', async (req: Request, res: Response) => {
     res.setHeader('Cache-Control','private, no-store');

@@ -365,6 +365,7 @@ describe('createInvageWebUi brokers section', () => {
   it('registers Brokers iframe and session API', () => {
     const ui = createInvageWebUi();
     expect(ui.settingsSections).toEqual([
+      {id:'experience',title:'Your experience',description:'Choose the optional pages in your workspace',icon:'layout-dashboard',iframeSrc:'/domain-assets/invage/settings/experience/index.html',iframeHeightPx:460},
       {
         id: 'portfolio',
         title: 'Portfolio',

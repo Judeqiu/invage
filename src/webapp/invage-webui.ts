@@ -135,7 +135,7 @@ export function createInvageWebUi(): DomainWebUiExtension {
     navLabels: { chat: consultant ? 'AI Chat' : 'Chat' },
     ...(consultant ? {shell: {
       variant: 'trading' as const,
-      primaryNavIds: ['dashboard','positions','trades','insights','chat','brokers'],
+      primaryNavIds: ['dashboard','positions','trades','insights','account-risk','chat','brokers'],
       workspaceLabel: 'Wheel · trader desk',
       syncAction: {label:'Sync brokers',statusPath:'/api/domain/invage/broker-sync/status',actionPath:'/api/domain/invage/broker-sync'},
       logo: 'velovest-wordmark.png',
@@ -174,6 +174,7 @@ export function createInvageWebUi(): DomainWebUiExtension {
         icon: 'list',
         order: 13,
       },
+      {id:'account-risk',label:'Risk',path:'/risk',icon:'shield',order:14.5},
       {
         id: 'insights',
         label: 'Insights',
@@ -183,6 +184,7 @@ export function createInvageWebUi(): DomainWebUiExtension {
       },
     ].filter(item => item.id !== 'option-risk' || readDashboardConfig().showOptionRiskCalculator); },
     get routes() { return ([
+      {path:'/risk',pageKind:'iframe',iframeSrc:'/domain-assets/invage/account-risk/index.html',title:'Account risk'},
       {
         path: '/option-risk',
         pageKind: 'iframe',
@@ -249,6 +251,7 @@ export function createInvageWebUi(): DomainWebUiExtension {
       },
     ] satisfies NonNullable<DomainWebUiExtension['routes']>).filter(route => route.path !== '/option-risk' || readDashboardConfig().showOptionRiskCalculator); },
     settingsSections: [
+      {id:'experience',title:'Your experience',description:'Choose the optional pages in your workspace',icon:'layout-dashboard',iframeSrc:'/domain-assets/invage/settings/experience/index.html',iframeHeightPx:460},
       {
         id: 'portfolio',
         title: 'Portfolio',

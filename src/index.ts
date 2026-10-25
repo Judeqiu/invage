@@ -12,6 +12,7 @@ async function main(): Promise<void> {
   const database = await openDatabaseRuntime({ env: process.env, mode: 'personal', onError: error => { throw error; } });
   const release = bindDatabaseRuntime(database);
   let framework: Framework | undefined;
+  let webTransport: {stop(): Promise<void>} | undefined;
   let projectionWorker: { stop: () => Promise<void> } | undefined;
   let brokerScheduler: { stop: () => Promise<void> } | undefined;
   let stopping: Promise<void> | undefined;
@@ -20,7 +21,7 @@ async function main(): Promise<void> {
     if (error !== undefined) { console.error('[FATAL]', error); process.exitCode = 1; }
     if (!stopping) stopping = (async () => {
       try { await startup; } catch (error) { console.error('[Startup]', error); process.exitCode = 1; }
-      try { await brokerScheduler?.stop(); if (framework) await framework.stop(); }
+      try { await brokerScheduler?.stop(); await webTransport?.stop(); if (framework) await framework.stop(); }
       finally {
         try { await projectionWorker?.stop(); }
         finally { release(); await database.close(); }
@@ -53,12 +54,10 @@ async function main(): Promise<void> {
     if (process.env.WEBAPP_PORT) {
       const port = Number(process.env.WEBAPP_PORT);
       if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid WEBAPP_PORT');
-      const { onboardRouter } = await import('./onboard/api.js');
-      const { createFaviconRouter } = await import('./webapp/favicon.js');
-      observe(await framework.startWebApp({ port, extraRouters: [
-        { path: '/', router: createFaviconRouter() },
-        { path: '/api/onboard', router: onboardRouter },
-      ] }));
+      const { startInvageWebApp } = await import('./webapp/server.js');
+      const handle = await startInvageWebApp(framework, port);
+      webTransport = handle;
+      observe(handle);
     }
     if (stopping) return;
     const { startPortfolioProjectionWorker } = await import('./state/portfolio-projections.js');
