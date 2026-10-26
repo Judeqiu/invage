@@ -1,6 +1,6 @@
 # Velovest trading shell
 
-The consultant product profile opts into Utarus's optional `webUi.shell` trading layout. Other Invage profiles keep the classic layout. The shell logo uses the supplied Velovest.ai artwork and tagline, stored locally at `webui/velovest-logo.jpeg`.
+The consultant product profile opts into Utarus's optional `webUi.shell` trading layout. Other Invage profiles keep the classic layout. The shell logo uses dark-theme Velovest.ai artwork at `webui/velovest-logo-dark.png`: cyan circular arrows, white/cyan wordmark and the original pale-blue tagline on the header navy. The original supplied reference remains at `webui/velovest-logo.jpeg`.
 
 Primary navigation matches the reference: Dashboard, Positions, Trades, Insights, AI Chat and Brokers. Brokers opens the existing `/settings/brokers` page; old broker URLs retain their redirects. Other destinations, Management where permitted, notification badges, account identity and sign-out remain accessible through More. Workspace displays `Wheel · trader desk` as a product label; it is not an account switch.
 

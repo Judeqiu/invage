@@ -9,7 +9,7 @@
     style.textContent = `
       .trading-shell.velovest-dashboard .domain-page-frame { height: calc(100dvh - var(--velovest-header-size, var(--shell-header-height))); }
       .trading-shell.velovest-dashboard .trading-header { font-family: "Proxima Nova", Arial, Verdana, sans-serif; }
-      .trading-shell.velovest-dashboard .trading-brand img { width: 220px; height: 61px; }
+      .trading-shell.velovest-dashboard .trading-brand img { width: 220px; height: 61px; object-fit: cover; object-position: center; }
       .trading-shell.velovest-dashboard.velovest-scrolled .trading-header { margin-top: calc(-1 * var(--velovest-header-size)); visibility: hidden; }
       .trading-shell.velovest-dashboard.velovest-scrolled .domain-page-frame { height: 100dvh; }
       .trading-shell.velovest-dashboard:focus-within .trading-header:focus-within { margin-top: 0; visibility: visible; }
