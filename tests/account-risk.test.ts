@@ -96,4 +96,16 @@ describe('account risk evidence', () => {
     }
   });
 
+  it('identifies a calculated deficit, retaining its broker inputs and separating it from a reported value', () => {
+    const {state,payload}=riskFixture();
+    state.broker_connections!.a.metrics={as_of:'2026-10-26',currency:'USD',broker_net_assets:44305.2827,maintenance_margin:49580.2164,
+      excess_liquidity:44305.2827-49580.2164,excess_liquidity_basis:'broker_net_assets_minus_maintenance'};
+    const a=buildAccountRisk(state,payload,now).accounts.find(a=>a.channel==='a')!;
+    expect(a.excess).toBeCloseTo(-5274.9337,8);expect(a.excessCalculated).toBe(true);
+    expect(a.status).toBe('urgent');expect(a.findings[0].title).toMatch(/Calculated/);
+    expect(a.brokerNetAssets).toBe(44305.2827);
+    expect(a.coverage.join(' ')).toMatch(/not a separately reported/);
+    expect(()=>assertBrokerConnectionMetrics({...state.broker_connections!.a.metrics,excess_liquidity:1})).toThrow(/matching/);
+  });
+
 });

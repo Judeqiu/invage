@@ -41,7 +41,14 @@ it('reviews account evidence, funding arithmetic, mobile layout, and personal op
     await page.click('[data-channel="b"]');assert.equal(await page.$eval('#funding',e=>e.disabled),true);assert.match(await page.$eval('#headline',e=>e.textContent),/Short options/);
     await page.click('[data-channel="a"]');await page.setViewport({width:390,height:844});
     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.screenshot({path:'/tmp/velovest-risk-mobile.png',fullPage:true});
-    fail=true;await page.click('#refresh');await page.waitForSelector('#failed:not([hidden])');assert.equal(await page.$eval('#content',e=>e.hidden),true);
+    state.broker_connections.a.metrics={as_of:asOf,currency:'USD',broker_net_assets:44305.2827,maintenance_margin:49580.2164,excess_liquidity:44305.2827-49580.2164,excess_liquidity_basis:'broker_net_assets_minus_maintenance'};
+    Object.assign(data,buildAccountRisk(state,payload,now));
+    await page.click('#refresh');await page.waitForFunction(()=>document.getElementById('headline').textContent.includes('Calculated'));
+    assert.match(await page.$eval('#metrics',e=>e.textContent),/-\$5,274\.93/);
+    assert.match(await page.$eval('#metrics',e=>e.textContent),/Broker net assets − maintenance margin/);
+    assert.equal(await page.$eval('#severity',e=>e.textContent),'Check broker now');
+    await page.click('.finding summary');assert.match(await page.$eval('.finding .detail',e=>e.textContent),/44,305\.28.*49,580\.22/);
+        fail=true;await page.click('#refresh');await page.waitForSelector('#failed:not([hidden])');assert.equal(await page.$eval('#content',e=>e.hidden),true);
     fail=false;enabled=false;await page.click('#retry');await page.waitForSelector('#disabled:not([hidden])');
     await page.goto(origin+'/settings/experience/index.html');await page.waitForFunction(()=>!document.getElementById('enabled').disabled);
     await page.click('#enabled');saveFail=true;await page.click('#save');await page.waitForFunction(()=>document.getElementById('message').classList.contains('error'));assert.equal(enabled,false);assert.equal(await page.$eval('#enabled',e=>e.checked),true);

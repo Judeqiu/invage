@@ -6,6 +6,7 @@ import { moomooAdapter } from '../src/moomoo/moomoo-adapter.js';
 import { addBrokerSource, addBrokerAccount, discoverBrokerAccounts, readBrokerAccountModel, publicBrokerAccounts } from '../src/brokers/accounts.js';
 import { getBrokerConnector } from '../src/brokers/catalog.js';
 import type { InvestorState } from '../src/state/portfolio-state.js';
+import { fetchMooMooFundsSnapshot } from '../src/moomoo/moomoo-client.js';
 import { mergeBrokerHistory } from '../src/brokers/history.js';
 
 const private_key = generateKeyPairSync('ed25519').privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
@@ -50,6 +51,16 @@ function transport(options: { withOrder?: boolean; feeResponse?: unknown } = {})
 }
 
 describe('Futubull cloud access', () => {
+  it('refreshes only authorized account funds and recovers clock skew without positions or history', async () => {
+    const mock=transport();
+    const result=await fetchMooMooFundsSnapshot({...credentials,broker:'futubull',acc_id:accountId,sign_alg:'Ed25519'}, {fetchImpl:mock.transport.fetch});
+    expect(result.acc_id).toBe(accountId);expect(result.funds.s).toBe('ok');
+    expect(Number.isFinite(Date.parse(result.fetched_at))).toBe(true);
+    expect(mock.urls.filter(u=>u.pathname.endsWith('/funds'))).toHaveLength(1);
+    expect(mock.urls.some(u=>u.pathname.endsWith('/positions')||u.pathname.includes('history'))).toBe(false);
+    expect(mock.urls.some(u=>u.pathname.endsWith('/server-time'))).toBe(true);
+  });
+
   it('fetches Futubull fees once per parent and records them using authoritative parent currency', async () => {
     const mock = transport({withOrder:true});
     const raw = await futubullAdapter.fetchRaw({...credentials,acc_id:accountId},{transport:mock.transport,history:plan});

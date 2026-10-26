@@ -59,9 +59,10 @@ export function buildAccountRisk(state: InvestorState, payload: DashboardPayload
     }));
     const assignmentCashGap = grossPutObligation !== null && cash !== null ? grossPutObligation > 0 ? Math.max(0,grossPutObligation-cash) : 0 : null;
     const excess = finite(metrics?.excess_liquidity) ? metrics.excess_liquidity : null;
+    const excessCalculated = metrics?.excess_liquidity_basis === 'broker_net_assets_minus_maintenance';
     const buyingPower = finite(metrics?.buying_power) ? metrics.buying_power : null;
     const findings: Array<{kind:string;title:string;body:string;action:string;priority:number}> = [];
-    if (metricsFresh && excess !== null && excess <= 0) findings.push({kind:'margin',title:'No reported margin cushion',body:'Excess liquidity is at or below zero in the broker snapshot.',action:'Check live margin and liquidation notices with your broker now.',priority:100});
+    if (metricsFresh && excess !== null && excess <= 0) findings.push({kind:'margin',title:excessCalculated ? 'Calculated margin cushion is exhausted' : 'No reported margin cushion',body:excessCalculated ? 'Broker net assets minus maintenance margin is at or below zero.' : 'Excess liquidity is at or below zero in the broker snapshot.',action:'Check live margin and liquidation notices with your broker now.',priority:100});
     else if (metricsFresh && buyingPower === 0) findings.push({kind:'margin',title:'No reported buying power',body:'The broker snapshot reports zero capacity for new trades.',action:'Check live buying power before adding exposure.',priority:90});
     if (holdingsFresh && expiries.some(p => p.dte <= 1)) findings.push({kind:'expiry',title:expiries[0].dte === 0 ? 'Options expire today' : 'Options expire tomorrow',body:`${expiries.filter(p => p.dte <= 1).length} option lines need a settlement decision.`,action:'Confirm the broker’s last trading time, exercise cutoff and settlement instructions.',priority:95});
     if (holdingsFresh && assignmentCashGap !== null && assignmentCashGap > 0 && lines.length) findings.push({kind:'assignment',title:'Put assignment exceeds cash',body:'Gross purchases exceed recorded cash if all physical short puts are assigned.',action:'Review cash or closing alternatives in the broker’s margin preview.',priority:80});
@@ -78,12 +79,13 @@ export function buildAccountRisk(state: InvestorState, payload: DashboardPayload
       ...(excess === null ? ['Excess liquidity is not supplied by this connection.'] : []),
       ...(!complete ? ['A complete put obligation total is unavailable: some positions were not imported, or currency, FX, contract size, or quantity is missing.'] : []),
       ...(cash === null ? ['Account cash is unavailable in the reporting currency.'] : []),
+      ...(excessCalculated ? ['Excess liquidity is calculated from broker-reported net assets minus maintenance margin in the same funds response and currency. It is not a separately reported broker excess-liquidity field. Verify live broker status.'] : []),
       'Broker risk status, equity with loan value, and warning thresholds are not supplied. The exact broker warning trigger cannot be confirmed.',
     ];
     return {channel,label:connection?.label || payload.brokerChannels?.[channel]?.label || channel,
       brokerId:connection?.broker_id ?? payload.brokerChannels?.[channel]?.brokerId ?? null,
       asOf,holdingsFresh,metricsAsOf:metrics?.as_of ?? null,metricsFresh,metricsCurrency:metrics?.currency ?? null,
-      excess,buyingPower,maintenanceMargin:finite(metrics?.maintenance_margin) ? metrics.maintenance_margin : null,
+      excess,excessCalculated,brokerNetAssets:metrics?.broker_net_assets ?? null,buyingPower,maintenanceMargin:finite(metrics?.maintenance_margin) ? metrics.maintenance_margin : null,
       currency:ccy,cash,grossPutObligation,assignmentCashGap,putLines:lines,concentration,upcoming,expiries,callDeliveries,
       nav:totals?.navComplete === true && finite(totals.totalValue) ? totals.totalValue : null,
       findings:findings.sort((a,b) => b.priority-a.priority),coverage,

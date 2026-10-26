@@ -151,6 +151,30 @@ function mapOptionPosition(
   return { lot: { ticker: holdingBaseKey(mapKey), currency, holding } };
 }
 
+/** Broker-specific formula, using one funds response and its explicit display currency.
+ * https://www.futuhk.com/cn/support/topic2_433
+ * Never substitute itemized portfolio NAV, cash, securities market value or buying power.
+ */
+export function mapMooMooMarginMetrics(d: unknown, asOf: string): BrokerConnectionMetrics | undefined {
+  const rec = asRecord(d);
+  if (!rec) return undefined;
+  const power = parseNum(rec.power), maintenance = parseNum(rec.maintenance_margin);
+  const reportedCurrency = String(rec.currency ?? '').trim().toUpperCase();
+  const hasCurrency = /^[A-Z]{3,4}$/.test(reportedCurrency);
+  const metrics: BrokerConnectionMetrics = {as_of:asOf,currency:hasCurrency ? reportedCurrency : 'USD'};
+  if (power != null && power >= 0) metrics.buying_power = power;
+  if (maintenance != null && maintenance >= 0) metrics.maintenance_margin = maintenance;
+  const netAssets = parseNum(rec.total_assets);
+  if (hasCurrency && netAssets != null) {
+    metrics.broker_net_assets = netAssets;
+    if (metrics.maintenance_margin != null && Number.isFinite(netAssets - metrics.maintenance_margin)) {
+      metrics.excess_liquidity = netAssets - metrics.maintenance_margin;
+      metrics.excess_liquidity_basis = 'broker_net_assets_minus_maintenance';
+    }
+  }
+  return Object.keys(metrics).length > 2 ? metrics : undefined;
+}
+
 function mapFunds(d: unknown, asOf: string, skipped: BrokerSkip[]): {
   cash: BrokerCashSleeve[];
   metrics?: BrokerConnectionMetrics;
@@ -167,22 +191,10 @@ function mapFunds(d: unknown, asOf: string, skipped: BrokerSkip[]): {
     }
     cash.push({ currency: iso, amount });
   }
-  const power = parseNum(rec.power);
-  const maintenance_margin = parseNum(rec.maintenance_margin);
   const reportedCurrency = String(rec.currency ?? '').trim().toUpperCase();
   const hasCurrency = /^[A-Z]{3,4}$/.test(reportedCurrency);
-  // USD is the requested display currency for legacy margin-only snapshots.
   const currency = hasCurrency ? reportedCurrency : 'USD';
-  let metrics: BrokerConnectionMetrics | undefined;
-  if (power != null || maintenance_margin != null) {
-    if ((power == null || power >= 0) && (maintenance_margin == null || maintenance_margin >= 0)) {
-      metrics = { as_of: asOf, currency };
-      if (power != null && power >= 0) metrics.buying_power = power;
-      if (maintenance_margin != null && maintenance_margin >= 0) {
-        metrics.maintenance_margin = maintenance_margin;
-      }
-    }
-  }
+  let metrics = mapMooMooMarginMetrics(rec, asOf);
   // Cloud exposes only the aggregate value, not the fund identities/units/costs.
   // Keep it separate from both free cash and itemized position accounting.
   if (rec.funds_assets != null && rec.funds_assets !== '') {

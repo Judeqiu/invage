@@ -263,6 +263,10 @@ export interface BrokerConnectionMetrics {
   buying_power?: number;
   /** May be negative when the broker reports a margin deficit. */
   excess_liquidity?: number;
+  /** Same-currency net assets returned by the broker, not reconstructed portfolio NAV. */
+  broker_net_assets?: number;
+  /** Omitted for a directly reported excess-liquidity value. */
+  excess_liquidity_basis?: 'broker_net_assets_minus_maintenance';
   maintenance_margin?: number;
   /** Broker-reported aggregate fund value; not cash, a lot, or a cost basis. */
   fund_assets?: number;
@@ -428,7 +432,7 @@ export function assertCashBalance(raw: unknown): CashBalance {
   return result;
 }
 
-const METRICS_NUMBER_KEYS = ['buying_power', 'excess_liquidity', 'maintenance_margin', 'fund_assets'] as const;
+const METRICS_NUMBER_KEYS = ['buying_power', 'excess_liquidity', 'maintenance_margin', 'fund_assets', 'broker_net_assets'] as const;
 
 /** Fail-fast validation for optional broker margin snapshot. */
 export function assertBrokerConnectionMetrics(
@@ -439,7 +443,7 @@ export function assertBrokerConnectionMetrics(
     throw new Error(`${ctx} must be an object.`);
   }
   const o = raw as Record<string, unknown>;
-  const allowed = new Set(['as_of', 'currency', ...METRICS_NUMBER_KEYS]);
+  const allowed = new Set(['as_of', 'currency', 'excess_liquidity_basis', ...METRICS_NUMBER_KEYS]);
   for (const k of Object.keys(o)) {
     if (!allowed.has(k)) {
       throw new Error(`${ctx}: unknown field "${k}".`);
@@ -459,11 +463,19 @@ export function assertBrokerConnectionMetrics(
   for (const key of METRICS_NUMBER_KEYS) {
     const v = o[key];
     if (v == null) continue;
-    const signed = key === 'excess_liquidity';
+    const signed = key === 'excess_liquidity' || key === 'broker_net_assets';
     if (typeof v !== 'number' || !Number.isFinite(v) || (!signed && v < 0)) {
       throw new Error(`${ctx}.${key} must be a finite number${signed ? '' : ' ≥ 0'} when set.`);
     }
     result[key] = v;
+  }
+  if (o.excess_liquidity_basis != null) {
+    if (o.excess_liquidity_basis !== 'broker_net_assets_minus_maintenance' ||
+        result.broker_net_assets == null || result.maintenance_margin == null || result.excess_liquidity == null ||
+        Math.abs(result.excess_liquidity - (result.broker_net_assets - result.maintenance_margin)) > 1e-8) {
+      throw new Error(`${ctx}.excess_liquidity_basis needs matching broker net assets, maintenance margin and calculated excess liquidity.`);
+    }
+    result.excess_liquidity_basis = o.excess_liquidity_basis;
   }
   if (METRICS_NUMBER_KEYS.every(key => result[key] == null)) {
     throw new Error(

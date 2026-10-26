@@ -408,20 +408,28 @@ function pickAccId(authorized: MooMooEnvelope, stored?: string): string {
   );
 }
 
-export async function fetchMooMooRawBundle(
+/** Funds-only refresh: validates the bound account and reuses signed requests/skew recovery. */
+export async function fetchMooMooFundsSnapshot(
   credentials: MooMooCredentials,
-  opts?: { fetchImpl?: typeof fetch; history?: BrokerHistorySyncPlan },
-): Promise<MooMooRawBundle> {
+  opts?: {fetchImpl?: typeof fetch},
+) {
   const fetchImpl = opts?.fetchImpl ?? fetch;
   const authorized = await fetchAuthorizedEnvelope(credentials, fetchImpl);
   const acc_id = pickAccId(authorized, credentials.acc_id);
   const funds = await getWithSkewRetry({
     path: `/api/v1.0/accounts/${encodeURIComponent(acc_id)}/funds`,
-    query: 'currency=USD',
-    credentials,
-    fetchImpl,
+    query: 'currency=USD', credentials, fetchImpl,
   });
   failIfError(funds, 'funds');
+  return {acc_id,authorized,funds,fetched_at:new Date().toISOString()};
+}
+
+export async function fetchMooMooRawBundle(
+  credentials: MooMooCredentials,
+  opts?: { fetchImpl?: typeof fetch; history?: BrokerHistorySyncPlan },
+): Promise<MooMooRawBundle> {
+  const fetchImpl = opts?.fetchImpl ?? fetch;
+  const {authorized,acc_id,funds} = await fetchMooMooFundsSnapshot(credentials, {fetchImpl});
   const positions = await getWithSkewRetry({
     path: `/api/v1.0/accounts/${encodeURIComponent(acc_id)}/positions`,
     credentials,

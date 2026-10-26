@@ -5,7 +5,7 @@ import { getBrokerAdapter } from '../src/brokers/adapter.js';
 import { getBrokerConnector } from '../src/brokers/catalog.js';
 import { BrokerParseError } from '../src/brokers/errors.js';
 import { fetchMooMooAuthorizedAccounts, fetchMooMooRawBundle } from '../src/moomoo/moomoo-client.js';
-import { looksLikeOptionCode, mapMooMooBundleToStatement } from '../src/moomoo/moomoo-map.js';
+import { looksLikeOptionCode, mapMooMooBundleToStatement, mapMooMooMarginMetrics } from '../src/moomoo/moomoo-map.js';
 import { moomooSignContent, parseSignAlg, signMooMooRequest } from '../src/moomoo/moomoo-sign.js';
 import type { MooMooEnvelope, MooMooRawBundle } from '../src/moomoo/moomoo-types.js';
 import { sourceReconConnector } from '../src/recon/index.js';
@@ -61,6 +61,26 @@ function bundle(over: Partial<MooMooRawBundle> = {}): MooMooRawBundle {
 }
 
 describe('MooMoo mapping', () => {
+  it.each([['44305.2827','49580.2164',-5274.9337],['60000','49580.2164',10419.7836],['100','100',0],['-100','100',-200]])(
+    'calculates a signed cushion from the same broker funds response: %s - %s', (total_assets,maintenance_margin,expected) => {
+      const metrics=mapMooMooMarginMetrics({currency:'USD',total_assets,maintenance_margin},'2026-10-26')!;
+      expect(metrics.excess_liquidity).toBeCloseTo(expected,8);
+      expect(metrics.excess_liquidity_basis).toBe('broker_net_assets_minus_maintenance');
+      const statement=mapMooMooBundleToStatement(bundle({funds:{s:'ok',d:{currency:'USD',total_assets,maintenance_margin,us_cash:'1'}}}),'moomoo');
+      expect(assertBrokerStatement(statement).metrics).toEqual({...metrics,as_of:'2026-09-17'});
+    });
+  it.each([
+    {total_assets:'100',maintenance_margin:'10'},
+    {currency:'$',total_assets:'100',maintenance_margin:'10'},
+    {currency:'USD',total_assets:'',maintenance_margin:'10'},
+    {currency:'USD',total_assets:'Infinity',maintenance_margin:'10'},
+    {currency:'USD',total_assets:'100',maintenance_margin:'NaN'},
+    {currency:'USD',total_assets:'100',maintenance_margin:'-1'},
+    {currency:'USD',cash:'100',market_val:'100',securities_assets:'100',power:'100',available_funds:'100',maintenance_margin:'10'},
+  ])('does not invent margin capacity from missing or different inputs: %j', fields => {
+    expect(mapMooMooMarginMetrics(fields,'2026-10-26')?.excess_liquidity).toBeUndefined();
+  });
+
   it('retains account fund assets without inventing lots, cash or a cost basis', () => {
     const original = mapMooMooBundleToStatement(bundle(), 'moomoo');
     const stmt = assertBrokerStatement(mapMooMooBundleToStatement(bundle({
