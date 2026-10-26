@@ -36,14 +36,14 @@ it.skipIf(!existsSync(chrome))('fits the desk overview and tables, filters risk,
   const server=createServer(async(req,res)=>{
     const url=new URL(req.url!,'http://localhost');
     const json=(body:unknown)=>{res.setHeader('Content-Type','application/json');res.end(JSON.stringify(withPageProjections(body)));};
-    if(url.pathname==='/shell') {res.setHeader('Content-Type','text/html');return res.end('<body style="margin:0"><style>.domain-page-frame{height:calc(100dvh - 68px)}.trading-brand{display:inline-flex;align-items:center}.trading-brand img{display:block}</style><div class="trading-shell" style="height:100dvh;overflow:hidden;display:flex;flex-direction:column;--shell-header-height:68px"><header class="trading-header" style="min-height:68px;flex-shrink:0;background:#090e16;color:#ddd"><a class="trading-brand"><img src="/velovest-logo-dark.png" alt="Velovest.ai Intelligent Investment Technology"></a></header><iframe class="domain-page-frame" src="/dashboard/v2.html" style="display:block;width:100%;border:0;flex-shrink:0"></iframe></div>');}
+    if(url.pathname==='/shell') {res.setHeader('Content-Type','text/html');return res.end('<body style="margin:0"><style>.domain-page-frame{height:calc(100dvh - 68px)}.trading-brand{display:inline-flex;align-items:center}.trading-brand img{display:block}</style><div class="trading-shell" style="height:100dvh;overflow:hidden;display:flex;flex-direction:column;--shell-header-height:68px"><header class="trading-header" style="min-height:68px;flex-shrink:0;background:#090e16;color:#ddd"><a class="trading-brand"><img src="/velovest-logo-dark.webp" alt="Velovest.ai Intelligent Investment Technology"></a></header><iframe class="domain-page-frame" src="/dashboard/v2.html" style="display:block;width:100%;border:0;flex-shrink:0"></iframe></div>');}
     if(url.pathname.endsWith('/dashboard')) return json(dashboard);
     if(url.pathname.endsWith('/broker-sync')) return json(null);
     if(url.pathname.endsWith('/option-history')) return json({episodes:[],connections:[],gaps:[],next_offset:null});
     if(url.pathname==='/api/chat/messages') {let body='';for await(const chunk of req) body+=chunk;prompts.push(JSON.parse(body).text);return json({conversationId:'contract-discussion-'+prompts.length});}
     const file=resolve(root,'.'+url.pathname);
     if(!file.startsWith(root+'/')||!existsSync(file)){res.statusCode=404;return res.end();}
-    res.setHeader('Content-Type',({'.html':'text/html','.js':'text/javascript','.css':'text/css','.png':'image/png'} as Record<string,string>)[extname(file)] || 'application/octet-stream');res.end(readFileSync(file));
+    res.setHeader('Content-Type',({'.html':'text/html','.js':'text/javascript','.css':'text/css','.png':'image/png','.webp':'image/webp'} as Record<string,string>)[extname(file)] || 'application/octet-stream');res.end(readFileSync(file));
   });
   await new Promise<void>(done=>server.listen(0,'127.0.0.1',done));
   const browser=await puppeteer.launch({executablePath:chrome,headless:true,args:['--no-sandbox']});
