@@ -394,7 +394,7 @@ function cssBarCard(title, rows, caption, options = {}) {
   return `<div class="metric-card"${options.id ? ` id="${esc(options.id)}"` : ''}>
     <div class="label-eyebrow">${esc(title)}</div>
     <div class="bar-list" style="margin-top:0.75rem">${rows.slice(0, limit).map(renderRow).join('')}</div>
-    ${more.length ? `<details class="bar-more"><summary><span class="bar-expand-label">Show ${more.length} more</span><span class="bar-collapse-label">Show fewer</span></summary><div class="bar-list">${more.map(renderRow).join('')}</div></details>` : ''}
+    ${more.length ? `<details class="bar-more"${options.expanded ? ' open' : ''}><summary><span class="bar-expand-label">Show ${more.length} more</span><span class="bar-collapse-label">Show less</span></summary><div class="bar-list">${more.map(renderRow).join('')}</div></details>` : ''}
     ${caption ? `<div class="metric-sub bar-caption">${options.help ? `<button class="help-dot" type="button" aria-label="Explain option premium by stock" data-help="${esc(options.help)}">?</button> ` : ''}${esc(caption)}</div>` : ''}
   </div>`;
 }

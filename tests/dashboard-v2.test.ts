@@ -118,6 +118,7 @@ it.skipIf(!existsSync(executablePath))('renders V2 with shared data, clarifies m
     expect(await frame.$('#premiumConcentrationCard .bar-fill')).not.toBeNull();
     expect(await frame.$('#openPnlExpiryCard .bar-fill.down')).not.toBeNull();
     expect(await frame.$('.premium-history')).toBeNull();
+    expect(await frame.$('#premiumEngine .bar-more')).toBeNull();
     expect(await frame.$eval('#v2Summary', n => n.textContent)).toContain('Net risk capital');
     expect(await frame.$eval('#v2Summary', n => n.textContent)).not.toContain('Daily aggregate changes');
     expect(await frame.$eval('#v2Summary', n => n.textContent)).toContain('Brokerage fees · Total');
@@ -156,6 +157,38 @@ it.skipIf(!existsSync(executablePath))('renders V2 with shared data, clarifies m
     await preview.screenshot({ path: '/tmp/invage-dashboard-v2-mobile.png', fullPage: true });
     await (await preview.$('#premiumBlock'))!.screenshot({ path: '/tmp/invage-premium-engine-mobile.png' });
     await preview.close();
+    // Every premium-engine chart keeps all categories and exposes a five-row preview.
+    const manyOptions: any = {};
+    dashboard.equityPrices = {};
+    for (let i = 1; i <= 7; i++) {
+      const underlying = 'STOCK' + i;
+      manyOptions[underlying + '-PUT'] = { instrument: 'option', units: 1, avg_price: 100, currency: 'USD', channel: 'ibkr',
+        option: { underlying, right: 'put', side: 'short', strike: 10, multiplier: 100, expiry: `2027-${String(i).padStart(2, '0')}-15`, settlement: 'physical', mark: 50 } };
+      dashboard.equityPrices[underlying] = 12;
+    }
+    dashboard.model = buildDashboardModel(buildLivePositions(manyOptions, dashboard.equityPrices), []);
+    await frame.goto(origin + '/dashboard/v2.html');
+    await frame.waitForSelector('#premiumEngine .bar-more');
+    const chartIds = ['openPremiumExpiryCard', 'premiumConcentrationCard', 'openPremiumUnderlyingCard', 'openPnlExpiryCard'];
+    for (const id of chartIds) {
+      const card = '#' + id;
+      expect(await frame.$$(card + ' > .bar-list > .bar-row')).toHaveLength(5);
+      expect(await frame.$$(card + ' .bar-row')).toHaveLength(7);
+      expect(await frame.$eval(card + ' .bar-more', n => (n as HTMLDetailsElement).open)).toBe(false);
+      expect(await frame.$eval(card + ' summary', n => n.textContent)).toContain('Show 2 more');
+      await frame.click(card + ' summary');
+      await expect.poll(() => frame.$eval(card + ' .bar-more', n => (n as HTMLDetailsElement).open)).toBe(true);
+      expect(await frame.$$eval(card + ' .bar-row', nodes => nodes.filter(n => n.getBoundingClientRect().height > 0).length)).toBe(7);
+      expect(await frame.$eval(card + ' .bar-collapse-label', n => getComputedStyle(n).display)).not.toBe('none');
+    }
+    // Redrawing with a broker filter retains independent chart choices.
+    await frame.click('#openPremiumExpiryCard summary');
+    await expect.poll(() => frame.$eval('#openPremiumExpiryCard .bar-more', n => (n as HTMLDetailsElement).open)).toBe(false);
+    await frame.click('#channelPills [data-channel="ibkr"]');
+    expect(await frame.$eval('#openPremiumExpiryCard .bar-more', n => (n as HTMLDetailsElement).open)).toBe(false);
+    expect(await frame.$eval('#premiumConcentrationCard .bar-more', n => (n as HTMLDetailsElement).open)).toBe(true);
+    await frame.click('#premiumConcentrationCard summary');
+    expect(await frame.$$eval('#premiumConcentrationCard .bar-row', nodes => nodes.filter(n => n.getBoundingClientRect().height > 0).length)).toBe(5);
     dashboard.dashboardConfig.showTotalPremium = false;
     dashboard.dashboardConfig.showRealizedPnl = false;
     await frame.goto(origin + '/dashboard/v2.html');

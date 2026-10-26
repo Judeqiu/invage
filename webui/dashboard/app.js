@@ -105,6 +105,15 @@ let optionHistoryError = '';
 let optionHistoryRequest = 0;
 let historySearchTimer = null;
 const collapsedOptionMonths = new Set();
+// Keep each chart's disclosure choice when filters or refreshed data redraw it.
+const premiumChartExpansion = new Map();
+el.premiumEngine?.addEventListener('toggle', event => {
+  const details = event.target;
+  if (details.matches?.('details.bar-more')) {
+    premiumChartExpansion.set(details.closest('.metric-card').id, details.open);
+  }
+}, true);
+
 
 function selectedBroker(key = selectedChannel) {
   const id = key?.startsWith('broker:') ? key.slice(7) : null;
@@ -1923,7 +1932,7 @@ function renderPremiumEngine(view) {
     if (!isWheelDesk) return premiumChartCard(title, values, caption, options);
     const entries = [...values].map(([label, row]) => ({ label: options.monthly ? monthLabel(label) : label, value: row,
       display: row == null ? '—' : options.percent ? row.toFixed(1) + '%' : fmtPrettyMoney(row, ccy, 2) }));
-    return cssBarCard(title, entries, caption, options);
+    return cssBarCard(title, entries, caption, { ...options, limit: 5, expanded: premiumChartExpansion.get(options.id) === true });
   };
   const openCards = chart('Net option premium by expiry month', book.premiumByExpiry, 'Open book · before fees', { ...common, id: 'openPremiumExpiryCard', type: 'area', monthly: true, help: openHelp }) +
     chart('NAV concentration', book.concentration, 'Signed market value as % of NAV', { id: 'premiumConcentrationCard', percent: true, help: 'Signed market value divided by NAV, including option liabilities. Unavailable when NAV is incomplete or non-positive.' }) +
