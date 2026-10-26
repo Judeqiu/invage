@@ -8,14 +8,14 @@ afterEach(() => {process.env.INVAGE_PRODUCT_PROFILE=profile;});
 it('enables the reference shell only for the consultant profile, retaining all report and broker routes', () => {
   process.env.INVAGE_PRODUCT_PROFILE='consultant';
   const webUi=createInvageWebUi(),manifest=buildWebUiManifest({webUi} as never);
-  expect(manifest.shell).toMatchObject({variant:'trading',primaryNavIds:['dashboard','positions','trades','insights','account-risk','chat','brokers'],workspaceLabel:'Wheel · trader desk',syncAction:{label:'Sync brokers',statusPath:'/api/domain/invage/broker-sync/status',actionPath:'/api/domain/invage/broker-sync'},logoUrl:'/domain-assets/invage/velovest-logo-dark.png'});
+  expect(manifest.shell).toMatchObject({variant:'trading',primaryNavIds:['dashboard','positions','trades','insights','account-risk','chat','brokers'],workspaceLabel:'Wheel · trader desk',syncAction:{label:'Sync brokers',statusPath:'/api/domain/invage/broker-sync/status',actionPath:'/api/domain/invage/broker-sync'},logoUrl:'/domain-assets/invage/velovest-logo-readable.png'});
   expect(manifest.nav.find(n=>n.id==='chat')?.label).toBe('AI Chat');
   expect(createInvageChromeCatalogs().en['nav.chat']).toBe('AI Chat');
   expect(manifest.nav.find(n=>n.id==='brokers')?.path).toBe('/settings/brokers');
   expect(manifest.settingsSections.some(n=>n.id==='brokers')).toBe(true);
   expect(manifest.nav.some(n=>n.id==='admin'&&n.adminOnly)).toBe(true);
   for(const id of ['dashboard','positions','trades','insights']) expect(manifest.routes.some(r=>r.path==='/'+id)).toBe(true);
-  expect(existsSync(join(invageWebUiStaticDir(),'velovest-logo-dark.png'))).toBe(true);
+  expect(existsSync(join(invageWebUiStaticDir(),'velovest-logo-readable.png'))).toBe(true);
   process.env.INVAGE_PRODUCT_PROFILE='full';
   const classic=buildWebUiManifest({webUi:createInvageWebUi()} as never);
   expect(createInvageChromeCatalogs().en['nav.chat']).toBe('Chat');

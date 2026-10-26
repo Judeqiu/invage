@@ -1,0 +1,9 @@
+Tool: built-in image_gen reference-image editing, transparent_background=false.
+Reference: webui/velovest-logo-dark.png
+Selected output: webui/velovest-logo-readable.png
+Verified native output dimensions: 2095 x 751 pixels. The tool returned these dimensions despite the requested 3840 x 1376 canvas; this file is not described as a 4K master.
+
+Design direction: preserve the circular arrows and complete Velovest.ai identity; enlarge and strengthen the tagline, split it into INTELLIGENT INVESTMENT / TECHNOLOGY, brighten its contrast, and use a larger uncropped header presentation. Preserve the original dark asset separately.
+
+Final refinement prompt:
+Output resolution: 3840 × 1376 pixels, high-resolution 4K wide PNG master. Enlarge and refine this exact supplied logo at the highest native output resolution available. Preserve every element and layout: cyan two-arrow circular icon, white Velovest and cyan .ai, two-line tagline 'INTELLIGENT INVESTMENT' then 'TECHNOLOGY', bold light ice-white lettering. Improve the line quality to flawlessly smooth clean vector-like contours. Remove ALL surface texture, streaks, paper effects, bevels, grain, noise, outlines and shadows from the letters. Wordmark and tagline must be mathematically clean uniformly filled flat white/light-ice shapes, smooth antialiasing, sharp polished typography. Exact solid navy background #090E16. Keep the bigger two-line tagline for legibility. Tightly trimmed outer margins, preserve icon proportions and spelling. No added decoration. This is production-quality clean logo artwork, not a textured illustration. Prioritize correct 3840-pixel-wide output and perfectly smooth flat typography.

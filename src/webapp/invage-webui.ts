@@ -138,7 +138,7 @@ export function createInvageWebUi(): DomainWebUiExtension {
       primaryNavIds: ['dashboard','positions','trades','insights','account-risk','chat','brokers'],
       workspaceLabel: 'Wheel · trader desk',
       syncAction: {label:'Sync brokers',statusPath:'/api/domain/invage/broker-sync/status',actionPath:'/api/domain/invage/broker-sync'},
-      logo: 'velovest-logo-dark.png',
+      logo: 'velovest-logo-readable.png',
     }} : {}),
     navOrder: { chat: 15, notifications: 16, notes: 17, tasks: 18, settings: 19 },
     hiddenNav: ['workflows'],
