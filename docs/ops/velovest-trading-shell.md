@@ -79,3 +79,10 @@ The v2 page applies a scoped same-origin shell style while mounted: the logo/nav
 Live Premium engine expiry-month and underlying charts use each rolled position's latest verified net roll cash flow once: replacement opening proceeds plus the closing-leg debit. They do not add the replacement opening proceeds again or substitute its full book cost. A $1,950 replacement sale with a $1,135 buyback therefore contributes $815. Roll debits and zero are preserved; unknown roll cash or missing FX makes the affected bucket unavailable. Other positions retain their opening-cost basis, and archived charts retain snapshot cost rather than applying today's roll evidence retrospectively. Chart help and captions identify the basis.
 
 Lifetime/daily/MTD premium remains the deduplicated execution cash-flow journal: each actual opening or closing fill is counted once; roll summaries are not added as extra transactions. NAV, concentration, book cost, unrealized P&L and recorded realized P&L keep their own accounting bases. Portfolio projection version 5 invalidates pre-correction saved calculations and lets the background worker rebuild them, including broker/account scopes. No source trade records or database schema are changed.
+
+
+The workspace description badge is omitted. Critical header typography and logo
+layout are injected into the consultant SPA HTML before first paint: 220 × 61
+CSS pixels on desktop and 165 × 46 on mobile. The iframe scroll helper controls
+header scrolling only; it no longer changes logo geometry after loading. This
+also keeps direct Chat and Brokers navigation consistent with report pages.

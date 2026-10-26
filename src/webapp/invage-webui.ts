@@ -136,7 +136,6 @@ export function createInvageWebUi(): DomainWebUiExtension {
     ...(consultant ? {shell: {
       variant: 'trading' as const,
       primaryNavIds: ['dashboard','positions','trades','insights','account-risk','chat','brokers'],
-      workspaceLabel: 'Wheel · trader desk',
       syncAction: {label:'Sync brokers',statusPath:'/api/domain/invage/broker-sync/status',actionPath:'/api/domain/invage/broker-sync'},
       logo: 'velovest-logo-dark.webp',
     }} : {}),

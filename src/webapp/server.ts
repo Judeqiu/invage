@@ -20,6 +20,7 @@ import { fileURLToPath } from 'url';
 import express, { type Express } from 'express';
 import cookieParser from 'cookie-parser';
 import { requireAuth } from 'utarus';
+import { tradingShellFirstPaint } from './trading-shell.js';
 import { personalRiskManifest } from './experience-settings.js';
 import { readBridgeRuntimeConfig } from '../../node_modules/utarus/dist/webapp/bridge-config.js';
 import { createTransport } from '../../node_modules/utarus/dist/lifecycle/transport.js';
@@ -55,6 +56,7 @@ const INVAGE_EXTRA_ROUTERS = [
 export function buildInvageApp(framework: Framework): Express {
   // The outer app supplies personal manifest filtering before framework-owned routes.
   const app = express();
+  if (framework.extension.webUi?.shell?.variant === 'trading') app.use(tradingShellFirstPaint);
   app.use(cookieParser());
   app.get('/api/webui/manifest', requireAuth, personalRiskManifest);
   app.use(buildWebApp(framework, { extraRouters: INVAGE_EXTRA_ROUTERS }));
