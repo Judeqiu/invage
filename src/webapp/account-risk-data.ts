@@ -3,10 +3,15 @@ import type { DashboardPayload } from './dashboard-data.js';
 import { readBrokerAccountModel } from '../brokers/accounts.js';
 
 const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
-const day = (value: string) => Date.parse(value.slice(0,10) + 'T00:00:00Z');
+const day = (value: string) => {
+  const date = value.slice(0,10);
+  const parsed = Date.parse(date + 'T00:00:00Z');
+  return /^\d{4}-\d{2}-\d{2}$/.test(date) && Number.isFinite(parsed) && new Date(parsed).toISOString().slice(0,10) === date ? parsed : NaN;
+};
 const age = (date: string | undefined, now: Date) => date && Number.isFinite(day(date)) ? Math.floor((now.getTime() - day(date)) / 86400000) : null;
 export function buildAccountRisk(state: InvestorState, payload: DashboardPayload, now = new Date()) {
   const live = payload.model?.live;
+  const valuationDate = new Intl.DateTimeFormat('en-CA', {timeZone:'America/New_York',year:'numeric',month:'2-digit',day:'2-digit'}).format(now);
   const connections = Object.values(readBrokerAccountModel(state).connections);
   const channels = [...new Set([...connections.map(c => c.channel),...(live?.channels ?? []),...(live?.positions ?? []).map(p => p.channel)])];
   const reportingCurrency = live?.reportingCurrency ?? live?.cashCurrency ?? null;
@@ -26,7 +31,8 @@ export function buildAccountRisk(state: InvestorState, payload: DashboardPayload
       const rate = live?.fxApplied ? live.fxRates?.[currency] : null;
       return finite(rate) && rate > 0 ? amount * rate : null;
     };
-    const shortOptions = positions.filter(p => p.instrument === 'option' && p.option?.side === 'short');
+    const options = positions.filter(p => p.instrument === 'option' && p.option);
+    const shortOptions = options.filter(p => p.option?.side === 'short');
     const puts = shortOptions.filter(p => p.option?.right === 'put' && p.option.settlement === 'physical');
     const lines = puts.map(p => {
       const o = p.option!;
@@ -41,18 +47,28 @@ export function buildAccountRisk(state: InvestorState, payload: DashboardPayload
     const groups = new Map<string,number>();
     for (const p of lines) if (p.obligation !== null) groups.set(p.underlying,(groups.get(p.underlying) ?? 0) + p.obligation);
     const concentration = grossPutObligation !== null && grossPutObligation > 0 ? [...groups].map(([underlying,amount]) => ({underlying,amount,share:amount/grossPutObligation})).sort((a,b) => b.amount-a.amount) : [];
-    const upcoming = shortOptions.flatMap(p => {
-      const dte = Math.round((day(p.option!.expiry) - day(now.toISOString())) / 86400000);
-      return Number.isFinite(dte) && dte >= 0 && dte <= 14 ? [{ticker:p.ticker,underlying:p.option!.underlying,expiry:p.option!.expiry,right:p.option!.right,contracts:p.units,dte,settlement:p.option!.settlement}] : [];
-    }).sort((a,b) => a.dte-b.dte);
+    const expiries = options.flatMap(p => {
+      const o = p.option!;
+      const dte = Math.round((day(o.expiry) - day(valuationDate)) / 86400000);
+      return Number.isFinite(dte) && dte >= 0 && dte <= 14 ? [{ticker:p.ticker,underlying:o.underlying,expiry:o.expiry,right:o.right,side:o.side,strike:o.strike,contracts:p.units,dte,settlement:o.settlement}] : [];
+    }).sort((a,b) => a.dte-b.dte || a.ticker.localeCompare(b.ticker));
+    const upcoming = expiries.filter(p => p.side === 'short');
+    const callDeliveries = shortOptions.filter(p => p.option!.right === 'call' && p.option!.settlement === 'physical').map(p => ({
+      ticker:p.ticker,underlying:p.option!.underlying,expiry:p.option!.expiry,
+      shares:finite(p.units) && p.units > 0 && finite(p.option!.multiplier) && p.option!.multiplier > 0 ? p.units * p.option!.multiplier : null,
+    }));
+    const assignmentCashGap = grossPutObligation !== null && cash !== null ? grossPutObligation > 0 ? Math.max(0,grossPutObligation-cash) : 0 : null;
     const excess = finite(metrics?.excess_liquidity) ? metrics.excess_liquidity : null;
     const buyingPower = finite(metrics?.buying_power) ? metrics.buying_power : null;
-    const findings: Array<{kind:string;title:string;body:string;priority:number}> = [];
-    if (metricsFresh && excess !== null && excess <= 0) findings.push({kind:'margin',title:'No reported margin cushion',body:'The broker snapshot reports no excess liquidity. Check the live broker account before adding exposure; its requirements may have changed.',priority:100});
-    else if (metricsFresh && buyingPower === 0) findings.push({kind:'margin',title:'No reported buying power',body:'The broker reports zero buying power. A cash balance does not establish capacity to open new positions.',priority:90});
-    if (holdingsFresh && grossPutObligation !== null && cash !== null && grossPutObligation > cash) findings.push({kind:'assignment',title:'Put purchase obligations exceed recorded cash',body:'If every recorded physical short put were assigned, gross purchases would exceed cash in this account. This excludes hedge offsets and is not a margin-call forecast.',priority:80});
-    if (holdingsFresh && upcoming.length) findings.push({kind:'expiry',title:'Short options expire within 14 days',body:'Review settlement and funding before expiry. Assignment can occur before expiry; this list does not predict whether it will happen.',priority:75});
-    if (holdingsFresh && concentration[0]?.share >= .5 && lines.length > 1) findings.push({kind:'concentration',title:`${concentration[0].underlying} dominates put purchase obligations`,body:'Different strikes and expiries still depend on the same underlying. This measures gross put obligations, not portfolio loss or delta exposure.',priority:60});
+    const findings: Array<{kind:string;title:string;body:string;action:string;priority:number}> = [];
+    if (metricsFresh && excess !== null && excess <= 0) findings.push({kind:'margin',title:'No reported margin cushion',body:'Excess liquidity is at or below zero in the broker snapshot.',action:'Check live margin and liquidation notices with your broker now.',priority:100});
+    else if (metricsFresh && buyingPower === 0) findings.push({kind:'margin',title:'No reported buying power',body:'The broker snapshot reports zero capacity for new trades.',action:'Check live buying power before adding exposure.',priority:90});
+    if (holdingsFresh && expiries.some(p => p.dte <= 1)) findings.push({kind:'expiry',title:expiries[0].dte === 0 ? 'Options expire today' : 'Options expire tomorrow',body:`${expiries.filter(p => p.dte <= 1).length} option lines need a settlement decision.`,action:'Confirm the broker’s last trading time, exercise cutoff and settlement instructions.',priority:95});
+    if (holdingsFresh && assignmentCashGap !== null && assignmentCashGap > 0 && lines.length) findings.push({kind:'assignment',title:'Put assignment exceeds cash',body:'Gross purchases exceed recorded cash if all physical short puts are assigned.',action:'Review cash or closing alternatives in the broker’s margin preview.',priority:80});
+    if (holdingsFresh && callDeliveries.length) findings.push({kind:'delivery',title:'Verify short-call share delivery',body:`${callDeliveries.length} physical short-call lines require shares if assigned.`,action:'Confirm deliverable shares and protective legs in this account.',priority:78});
+    if (holdingsFresh && upcoming.length && !findings.some(f => f.kind === 'expiry')) findings.push({kind:'expiry',title:'Short options expire within 14 days',body:`${upcoming.length} short-option lines; nearest expiry in ${upcoming[0].dte} calendar days.`,action:'Review settlement funding and any protective leg before expiry.',priority:75});
+    if (holdingsFresh && expiries.some(p => p.side === 'long') && !findings.some(f => f.kind === 'expiry')) findings.push({kind:'expiry',title:'Long options expire within 14 days',body:'Remaining option value can expire; exercise may create a stock or cash obligation.',action:'Review close, exercise and do-not-exercise instructions with your broker.',priority:70});
+    if (holdingsFresh && concentration[0]?.share >= .5 && lines.length > 1) findings.push({kind:'concentration',title:`${concentration[0].underlying}: ${Math.round(concentration[0].share*100)}% of put obligations`,body:'Different strikes and expiries share the same underlying.',action:'Review combined exposure before adding another position in this name.',priority:60});
     const coverage = [
       ...skipped.map(reason => `Broker import is incomplete: ${reason}`),
       ...(connection?.last_sync?.ok === false ? ['The most recent broker sync failed. Displayed figures come from the last available snapshot.'] : []),
@@ -68,7 +84,7 @@ export function buildAccountRisk(state: InvestorState, payload: DashboardPayload
       brokerId:connection?.broker_id ?? payload.brokerChannels?.[channel]?.brokerId ?? null,
       asOf,holdingsFresh,metricsAsOf:metrics?.as_of ?? null,metricsFresh,metricsCurrency:metrics?.currency ?? null,
       excess,buyingPower,maintenanceMargin:finite(metrics?.maintenance_margin) ? metrics.maintenance_margin : null,
-      currency:ccy,cash,grossPutObligation,putLines:lines,concentration,upcoming,
+      currency:ccy,cash,grossPutObligation,assignmentCashGap,putLines:lines,concentration,upcoming,expiries,callDeliveries,
       nav:totals?.navComplete === true && finite(totals.totalValue) ? totals.totalValue : null,
       findings:findings.sort((a,b) => b.priority-a.priority),coverage,
       status:findings.some(f => f.priority === 100) ? 'urgent' : findings.length ? 'review' : 'unassessed'};
@@ -78,6 +94,6 @@ export function buildAccountRisk(state: InvestorState, payload: DashboardPayload
     if (!overlap.has(p.underlying)) overlap.set(p.underlying,new Set());
     overlap.get(p.underlying)!.add(account.channel);
   }
-  return {generatedAt:now.toISOString(),calculatedAt:payload.generatedAt,currency:reportingCurrency,accounts,
+  return {generatedAt:now.toISOString(),valuationDate,calculatedAt:payload.generatedAt,currency:reportingCurrency,accounts,
     overlaps:[...overlap].filter(([,channels]) => channels.size > 1).map(([underlying,channels]) => ({underlying,channels:[...channels]}))};
 }

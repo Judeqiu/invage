@@ -1,4 +1,5 @@
 import {describe,it,expect} from 'vitest';
+import {assertBrokerConnectionMetrics} from '../src/state/portfolio-state.js';
 import {buildAccountRisk} from '../src/webapp/account-risk-data.js';
 import type {DashboardPayload} from '../src/webapp/dashboard-data.js';
 import type {InvestorState} from '../src/state/portfolio-state.js';
@@ -48,4 +49,51 @@ describe('account risk evidence', () => {
     const a=buildAccountRisk(state,payload,now).accounts.find(a=>a.channel==='a')!;
     expect(a.grossPutObligation).toBe(0);expect(a.putLines).toEqual([]);expect(a.upcoming).toHaveLength(2);
   });
+  it('quantifies the all-assigned cash gap without treating it as required margin', () => {
+    const {state,payload}=riskFixture();const a=buildAccountRisk(state,payload,now).accounts.find(a=>a.channel==='a')!;
+    expect(a.assignmentCashGap).toBe(45000);
+    expect(a.findings.find(f=>f.kind==='assignment')?.action).toMatch(/broker/);
+    expect(buildAccountRisk(state,payload,now).accounts.find(a=>a.channel==='b')!.assignmentCashGap).toBe(0);
+    payload.model!.live.byChannel[0].cashAmount=null;
+    expect(buildAccountRisk(state,payload,now).accounts.find(a=>a.channel==='a')!.assignmentCashGap).toBeNull();
+  });
+  it('prioritizes imminent expiry, while actual margin pressure stays first', () => {
+    const {state,payload}=riskFixture();payload.model!.live.positions[0].option!.expiry='2026-10-26';
+    let a=buildAccountRisk(state,payload,now).accounts.find(a=>a.channel==='a')!;
+    expect(a.findings[0].title).toBe('Options expire today');expect(a.status).toBe('review');
+    state.broker_connections!.a.metrics!.excess_liquidity=-100;
+    a=buildAccountRisk(state,payload,now).accounts.find(a=>a.channel==='a')!;
+    expect(a.findings[0].kind).toBe('margin');expect(a.status).toBe('urgent');
+  });
+  it('includes long options in settlement watch without adding them to put obligations', () => {
+    const {state,payload}=riskFixture();for (const p of payload.model!.live.positions) p.option!.side='long';
+    const a=buildAccountRisk(state,payload,now).accounts.find(a=>a.channel==='a')!;
+    expect(a.expiries).toHaveLength(2);expect(a.upcoming).toHaveLength(0);expect(a.grossPutObligation).toBe(0);
+    expect(a.findings.find(f=>f.kind==='expiry')?.title).toMatch(/Long options/);
+  });
+  it('reports gross call delivery without inferring naked-call or hedge coverage', () => {
+    const {state,payload}=riskFixture();payload.model!.live.positions[0].option!.right='call';
+    const a=buildAccountRisk(state,payload,now).accounts.find(a=>a.channel==='a')!;
+    expect(a.callDeliveries[0].shares).toBe(500);expect(a.findings.some(f=>f.kind==='delivery')).toBe(true);
+    expect(a.callDeliveries[0]).not.toHaveProperty('uncovered');
+    payload.model!.live.positions[0].option!.multiplier=NaN;
+    expect(buildAccountRisk(state,payload,now).accounts.find(a=>a.channel==='a')!.callDeliveries[0].shares).toBeNull();
+    payload.model!.live.positions[0].option!.settlement='cash';
+    expect(buildAccountRisk(state,payload,now).accounts.find(a=>a.channel==='a')!.callDeliveries).toEqual([]);
+  });
+  it('uses New York date for expiry and rejects invalid calendar dates', () => {
+    const {state,payload}=riskFixture();payload.model!.live.positions[0].option!.expiry='2026-10-26';
+    const result=buildAccountRisk(state,payload,new Date('2026-10-27T01:00:00Z'));
+    expect(result.valuationDate).toBe('2026-10-26');expect(result.accounts[0].expiries[0].dte).toBe(0);
+    payload.model!.live.positions[0].option!.expiry='2026-10-32';
+    expect(buildAccountRisk(state,payload,now).accounts[0].expiries.some(p=>p.ticker==='SOXL-A')).toBe(false);
+  });
+
+  it('accepts a broker margin deficit, rejects nonfinite liquidity and negative requirements', () => {
+    expect(assertBrokerConnectionMetrics({as_of:'2026-10-26',currency:'USD',excess_liquidity:-100}).excess_liquidity).toBe(-100);
+    for (const metrics of [{excess_liquidity:NaN},{excess_liquidity:Infinity},{maintenance_margin:-100},{buying_power:-100}]) {
+      expect(()=>assertBrokerConnectionMetrics({as_of:'2026-10-26',currency:'USD',...metrics})).toThrow();
+    }
+  });
+
 });

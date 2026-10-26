@@ -282,7 +282,7 @@ function mapPrimeAssets(data: unknown, account: string, asOf: string, skipped: B
     if (/^[A-Z]{3,4}$/.test(currency) && (buying_power != null || excess_liquidity != null || maintenance_margin != null)) {
       metrics = { as_of: asOf, currency };
       if (buying_power != null && buying_power >= 0) metrics.buying_power = buying_power;
-      if (excess_liquidity != null && excess_liquidity >= 0) metrics.excess_liquidity = excess_liquidity;
+      if (excess_liquidity != null) metrics.excess_liquidity = excess_liquidity;
       if (maintenance_margin != null && maintenance_margin >= 0) metrics.maintenance_margin = maintenance_margin;
     }
   }
@@ -319,7 +319,7 @@ function mapGlobalAssets(data: unknown, account: string, asOf: string, skipped: 
   if (/^[A-Z]{3,4}$/.test(currency) && (buying_power != null || excess_liquidity != null || maintenance_margin != null)) {
     metrics = { as_of: asOf, currency };
     if (buying_power != null && buying_power >= 0) metrics.buying_power = buying_power;
-    if (excess_liquidity != null && excess_liquidity >= 0) metrics.excess_liquidity = excess_liquidity;
+    if (excess_liquidity != null) metrics.excess_liquidity = excess_liquidity;
     if (maintenance_margin != null && maintenance_margin >= 0) metrics.maintenance_margin = maintenance_margin;
   }
   return { cash, metrics };

@@ -30,8 +30,13 @@ it('reviews account evidence, funding arithmetic, mobile layout, and personal op
     await page.goto(origin+'/account-risk/index.html');await page.waitForSelector('#content:not([hidden])');
     assert.match(await page.$eval('#headline',e=>e.textContent),/No reported buying power/);
     await page.click('.finding summary');assert.match(await page.$eval('.finding .detail',e=>e.textContent),/equity with loan value/);
+    assert.match(await page.$eval('#metrics',e=>e.textContent),/34,800/);
+    assert.match(await page.$eval('#expiry-watch',e=>e.textContent),/SOXL/);
+    assert.match(await page.$eval('#checks',e=>e.textContent),/Live price \/ IV stressNot assessed/);
+    await page.click('.review-panel summary');
     await page.$eval('#funding',e=>{e.value='10000';e.dispatchEvent(new Event('input'));});assert.match(await page.$eval('#funding-result',e=>e.textContent),/15,390/);
     assert.equal(await page.$$eval('#account-table tr',rows=>rows.length),2);
+    await page.click('.finding summary');await page.click('.review-panel summary');
     await page.screenshot({path:'/tmp/velovest-risk-desktop.png',fullPage:true});
     await page.click('[data-channel="b"]');assert.equal(await page.$eval('#funding',e=>e.disabled),true);assert.match(await page.$eval('#headline',e=>e.textContent),/Short options/);
     await page.click('[data-channel="a"]');await page.setViewport({width:390,height:844});

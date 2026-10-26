@@ -261,6 +261,7 @@ export interface BrokerConnectionMetrics {
   as_of: string;
   currency: string;
   buying_power?: number;
+  /** May be negative when the broker reports a margin deficit. */
   excess_liquidity?: number;
   maintenance_margin?: number;
   /** Broker-reported aggregate fund value; not cash, a lot, or a cost basis. */
@@ -458,8 +459,9 @@ export function assertBrokerConnectionMetrics(
   for (const key of METRICS_NUMBER_KEYS) {
     const v = o[key];
     if (v == null) continue;
-    if (typeof v !== 'number' || !Number.isFinite(v) || v < 0) {
-      throw new Error(`${ctx}.${key} must be a finite number ≥ 0 when set.`);
+    const signed = key === 'excess_liquidity';
+    if (typeof v !== 'number' || !Number.isFinite(v) || (!signed && v < 0)) {
+      throw new Error(`${ctx}.${key} must be a finite number${signed ? '' : ' ≥ 0'} when set.`);
     }
     result[key] = v;
   }

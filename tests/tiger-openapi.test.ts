@@ -138,6 +138,15 @@ function bundle(over: Partial<TigerRawBundle> = {}): TigerRawBundle {
 }
 
 describe('Tiger position mapping', () => {
+  it('preserves negative excess liquidity from Prime and Global broker snapshots', () => {
+    const prime = structuredClone(PRIME);
+    prime.data.segments.S.excessLiquidation = -250;
+    const global = {code:0,data:[{account:'1234567',summary:{currency:'USD',excessLiquidity:-250},marketValues:{USD:{currency:'USD',cashBalance:100}}}]};
+    for (const assets of [{method:'prime_assets' as const,envelope:prime},{method:'assets' as const,envelope:global}]) {
+      expect(mapTigerBundleToStatement(bundle({assets}), 'tiger').metrics?.excess_liquidity).toBe(-250);
+    }
+  });
+
   it('normalizes full OCC identifiers before constructing position keys', () => {
     const raw = structuredClone(bundle());
     const row = (raw.positions.OPT.data as { items: Record<string, unknown>[] }).items[0];
