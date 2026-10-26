@@ -1,6 +1,6 @@
 # Velovest trading shell
 
-The consultant product profile opts into Utarus's optional `webUi.shell` trading layout. Other Invage profiles keep the classic layout. The shell logo uses dark-theme Velovest.ai artwork at `webui/velovest-logo-readable.png`: cyan circular arrows, white/cyan wordmark and a larger, bolder two-line tagline on the header navy. The 2095-pixel-wide artwork renders at up to 280px on desktop and 220px on mobile without cropping. This supplies more than 7 source pixels per CSS pixel at the largest header size. The original dark treatment remains at `webui/velovest-logo-dark.png`. The original supplied reference remains at `webui/velovest-logo.jpeg`.
+The consultant product profile opts into Utarus's optional `webUi.shell` trading layout. Other Invage profiles keep the classic layout. The shell logo uses dark-theme Velovest.ai artwork at `webui/velovest-logo-dark.png`: cyan circular arrows, white/cyan wordmark and the original pale-blue tagline on the header navy. The original supplied reference remains at `webui/velovest-logo.jpeg`.
 
 Primary navigation matches the reference: Dashboard, Positions, Trades, Insights, AI Chat and Brokers. Brokers opens the existing `/settings/brokers` page; old broker URLs retain their redirects. Other destinations, Management where permitted, notification badges, account identity and sign-out remain accessible through More. Workspace displays `Wheel · trader desk` as a product label; it is not an account switch.
 
