@@ -8,8 +8,13 @@ const option = (overrides = {}) => ({
   ticker: 'AAPL PUT', instrument: 'option', currency: 'USD', cost: -600, value: -200, pl: 400,
   option: { underlying: 'AAPL', expiry: '2026-11-20', side: 'short' }, ...overrides,
 });
-function calculate(overrides = {}) {
+function calculate(overrides = {}, payload = {}) {
   return runInNewContext(`${calculator}\nopenBookPremiumData(view)`, {
+    payload,
+    tradeAmount: (view: any, row: any, amount: number) => {
+      const rate = row.currency === view.reportingCurrency ? 1 : view.fxRates?.[row.currency];
+      return typeof amount === 'number' && Number.isFinite(amount) && Number.isFinite(rate) && rate > 0 ? amount * rate : null;
+    },
     view: { positions: [], totalValue: 10000, reportingCurrency: 'USD', ...overrides },
     reportingCcyCode: (view: any) => view.reportingCurrency,
     optionUnderlyingLabel: (o: any) => o.underlying,
@@ -50,4 +55,49 @@ it('preserves zero and negative results, unknown expiries and NAV weights above 
   expect(result.concentration.get('AAPL')).toBe(120);
   expect(result.concentration.get('MSFT')).toBe(-20);
   expect(calculate({ positions: [option()], totalValue: 0 }).concentration.get('AAPL')).toBeNull();
+});
+
+
+it('counts a verified replacement roll net once instead of the full opening credit', () => {
+  const position = option({ ticker: 'AVGO CALL', cost: -1950, value: -630, pl: 1320,
+    option: { underlying: 'AVGO', expiry: '2026-12-18', side: 'short' } });
+  const result = calculate({ isLive: true, positions: [position] }, {
+    optionTradeDetails: { 'AVGO CALL': { currency: 'USD', stoGrossPremium: 1950, rollPremium: 815, rollDate: '2026-10-07' } },
+  });
+  expect(result.premiumByExpiry.get('2026-12')).toBe(815);
+  expect(result.premiumByUnderlying.get('AVGO')).toBe(815);
+  expect(result.pnlByExpiry.get('2026-12')).toBe(1320);
+  expect(result.concentration.get('AVGO')).toBe(-6.3);
+});
+
+it('preserves roll debits, zero, account-specific rows and native-to-reporting conversion exactly once', () => {
+  const positions = [option({ ticker: 'A', channel: 'first' }),
+    option({ ticker: 'B', channel: 'second', currency: 'SGD', cost: -450 }), option({ ticker: 'C' })];
+  const details = { A: { currency: 'USD', rollPremium: 815, rollDate: '2026-10-07' },
+    B: { currency: 'SGD', rollPremium: -50, rollDate: '2026-10-07' },
+    C: { currency: 'USD', rollPremium: 0, rollDate: '2026-10-07' } };
+  const result = calculate({ isLive: true, positions, fxRates: { SGD: .75 } }, { optionTradeDetails: details });
+  expect(result.premiumByExpiry.get('2026-11')).toBe(777.5);
+  expect(result.premiumByUnderlying.get('AAPL')).toBe(777.5);
+});
+
+it('withholds an affected bucket when a known roll cannot be verified, without falling back to its STO', () => {
+  for (const rollPremium of [null, undefined, NaN, Infinity, '815']) {
+    const result = calculate({ isLive: true, positions: [option()] }, {
+      optionTradeDetails: { 'AAPL PUT': { currency: 'USD', stoGrossPremium: 1950, rollDate: '2026-10-07', rollPremium } },
+    });
+    expect(result.premiumByExpiry.get('2026-11')).toBeNull();
+    expect(result.premiumByUnderlying.get('AAPL')).toBeNull();
+  }
+  const missingFx = calculate({ isLive: true, positions: [option()] }, {
+    optionTradeDetails: { 'AAPL PUT': { currency: 'SGD', rollDate: '2026-10-07', rollPremium: 815 } },
+  });
+  expect(missingFx.premiumByExpiry.get('2026-11')).toBeNull();
+});
+
+it("never applies today's roll evidence to an archived snapshot", () => {
+  const result = calculate({ isLive: false, positions: [option()] }, {
+    optionTradeDetails: { 'AAPL PUT': { currency: 'USD', rollDate: '2026-10-07', rollPremium: 815 } },
+  });
+  expect(result.premiumByExpiry.get('2026-11')).toBe(600);
 });

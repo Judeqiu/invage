@@ -496,7 +496,14 @@ function openBookPremiumData(view) {
     if (p.instrument !== 'option' || !p.option) continue;
     const month = /^\d{4}-\d{2}-\d{2}$/.test(p.option.expiry || '') ? p.option.expiry.slice(0, 7) : 'Unknown expiry';
     const cost = converted ? number(p.cost) : null;
-    const premium = cost == null ? null : -cost;
+    const trade = view.isLive ? payload?.optionTradeDetails?.[p.ticker] : null;
+    const rolled = trade && (Boolean(trade.rollDate) || trade.rollPremium !== undefined);
+    // A replacement opening credit is already part of the roll net. Use that
+    // net once, including its buyback debit, rather than counting the STO again.
+    const premium = rolled
+      ? converted && typeof trade.rollPremium === 'number' && Number.isFinite(trade.rollPremium)
+        ? tradeAmount(view, trade, trade.rollPremium) : null
+      : cost == null ? null : -cost;
     const pnl = converted && p.pricingMode !== 'cost' && p.markSource !== 'cost' ? number(p.pl) : null;
     sum(premiumByExpiry, month, premium);
     sum(premiumByUnderlying, underlying || 'Unspecified', premium);

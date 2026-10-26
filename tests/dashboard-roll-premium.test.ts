@@ -100,6 +100,8 @@ it.skipIf(!existsSync(chrome)).each(['v2.html', 'index.html'])('renders roll-awa
     await load();
     expect(await page.$eval(cell, n => n.textContent)).toBe('$815.00Latest roll');
     expect(await page.$eval(month, n => n.textContent)).toBe('$1,040.00');
+    expect(await page.$eval('#openPremiumExpiryCard', n => n.textContent)).toContain('$1,040.00');
+    expect(await page.$eval('#openPremiumUnderlyingCard', n => n.textContent)).toContain('$815.00');
     if (version === 'v2.html') {
       expect(await page.$eval(avgo + ' td:nth-child(5)', n => n.textContent)).toBe('19.50');
       expect(await page.$eval(avgo + ' td:nth-child(7)', n => n.textContent)).toContain('$1,320');
@@ -108,8 +110,10 @@ it.skipIf(!existsSync(chrome)).each(['v2.html', 'index.html'])('renders roll-awa
     await page.click('#channelPills [data-channel="moomoo-second"]');
     expect(await page.$eval(cell, n => n.textContent)).toBe('-$50.00Latest roll');
     expect(await page.$eval(month, n => n.textContent)).toBe('-$50.00');
+    expect(await page.$eval('#openPremiumUnderlyingCard', n => n.textContent)).toContain('-$50.00');
     await page.click('#channelPills [data-channel="merged"]');
     expect(await page.$eval(month, n => n.textContent)).toBe('$990.00');
+    expect(await page.$eval('#openPremiumExpiryCard', n => n.textContent)).toContain('$990.00');
     f.details['avgo-A'].rollPremium = null; await load();
     expect(await page.$eval(cell, n => n.textContent)).toBe('—');
     expect(await page.$eval(month, n => n.textContent)).toBe('—');

@@ -267,3 +267,19 @@ it('separates lifetime reported fees from MTD fees, excluding future fills and s
   expect(calculate(foreign).totalFees).toBeNull();
   expect(calculate(foreign, { fxRates: { SGD: .75 } }).totalFees).toBe(3.75);
 });
+
+
+it('counts each opening and closing execution once across repeated imports and successive rolls', () => {
+  const rows = [
+    { ...execution, execution_id: 'initial-open', executed_at: '2026-09-01T10:00:00', gross_premium: '500' },
+    { ...execution, execution_id: 'first-close', executed_at: '2026-09-05T10:00:00', side: 'buy', effect: 'close', gross_premium: '-300' },
+    { ...execution, execution_id: 'first-replacement', executed_at: '2026-09-05T10:00:00', strike: '110', contract_id: 'AMD-P-110', gross_premium: '600' },
+    { ...execution, execution_id: 'second-close', executed_at: '2026-09-10T10:00:00', strike: '110', contract_id: 'AMD-P-110', side: 'buy', effect: 'close', gross_premium: '-700' },
+    { ...execution, execution_id: 'second-replacement', executed_at: '2026-09-10T10:00:00', strike: '120', contract_id: 'AMD-P-120', gross_premium: '900' },
+  ] as OptionExecution[];
+  const journal = buildExecutionJournal([...rows, ...rows]);
+  expect(journal.executions).toHaveLength(5);
+  expect(journal.cumulative[0].gross_premium).toBe('1000');
+  expect(calculate([...rows, ...rows]).total).toBe(1000);
+  expect(calculate([...rows, ...rows]).mtd).toBe(1000);
+});

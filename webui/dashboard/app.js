@@ -1927,16 +1927,16 @@ function renderPremiumEngine(view) {
   const plHelp = 'Profit or loss from completed option trades, grouped by the month they ended. It is calculated from matched opening and closing trades, or reported directly by the broker. Partial subtotals exclude records that cannot be calculated. Fee treatment is shown for each month. Open positions and stock profit or loss are not included. Expand a month to see which stocks and brokers contribute.';
   const book = openBookPremiumData(view);
   const common = { ccy };
-  const openHelp = 'Opening credit on remaining short contracts minus opening cost on remaining long contracts, before fees. Grouped by expiry, not trade date. This is open-book cost basis, not lifetime cash flow or realized profit.';
+  const openHelp = 'For live rolled positions, uses the latest verified replacement opening credit plus the old-contract closing debit, once and before fees. Does not add the replacement opening credit again. An unverified roll is unavailable. Other positions use signed opening cost. Archived views use snapshot cost basis because live roll records cannot establish a historical roll. Grouped by current expiry or underlying, not trade date; this is not lifetime cash flow or realized profit.';
   const chart = (title, values, caption, options) => {
     if (!isWheelDesk) return premiumChartCard(title, values, caption, options);
     const entries = [...values].map(([label, row]) => ({ label: options.monthly ? monthLabel(label) : label, value: row,
       display: row == null ? '—' : options.percent ? row.toFixed(1) + '%' : fmtPrettyMoney(row, ccy, 2) }));
     return cssBarCard(title, entries, caption, { ...options, limit: 5, expanded: premiumChartExpansion.get(options.id) === true });
   };
-  const openCards = chart('Net option premium by expiry month', book.premiumByExpiry, 'Open book · before fees', { ...common, id: 'openPremiumExpiryCard', type: 'area', monthly: true, help: openHelp }) +
+  const openCards = chart('Net option premium by expiry month', book.premiumByExpiry, view.isLive ? 'Open book · net of verified roll buybacks' : 'Archived opening cost basis', { ...common, id: 'openPremiumExpiryCard', type: 'area', monthly: true, help: openHelp }) +
     chart('NAV concentration', book.concentration, 'Signed market value as % of NAV', { id: 'premiumConcentrationCard', percent: true, help: 'Signed market value divided by NAV, including option liabilities. Unavailable when NAV is incomplete or non-positive.' }) +
-    chart('Net option premium by underlying', book.premiumByUnderlying, 'Open book · before fees', { ...common, id: 'openPremiumUnderlyingCard', help: openHelp }) +
+    chart('Net option premium by underlying', book.premiumByUnderlying, view.isLive ? 'Open book · net of verified roll buybacks' : 'Archived opening cost basis', { ...common, id: 'openPremiumUnderlyingCard', help: openHelp }) +
     chart('Open P&L by expiry month', book.pnlByExpiry, 'Unrealized · before fees', { ...common, id: 'openPnlExpiryCard', type: 'pnl', monthly: true, help: 'Signed option market value minus signed opening cost, grouped by expiry month.' });
   if (isWheelDesk) { el.premiumEngine.innerHTML = openCards; return; }
   const historyCards = cssBarCard('Net Option Premium by Month', rows(data.byMonth), 'Before fees · recorded trades', { id: 'monthlyPremiumCard', limit: 5 }) +

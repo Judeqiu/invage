@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { mkdtempSync, rmSync, readdirSync, statSync, writeFileSync, mkdirSync, utimesSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync, utimesSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createPortfolioProjectionRefresher } from '../src/state/portfolio-projections.js';
@@ -129,4 +129,19 @@ it('retains daily baselines across changed source fingerprints and worker restar
   (state.cash as import('../src/state/portfolio-state.js').CashBalance).amount += 50;
   await restarted.refresh(state.user.id);
   expect((readPortfolioProjection(state)!.dashboard.aggregatedViews!.live.merged as any).dailyChanges.metrics.totalValue.delta).toBe(150);
+});
+
+
+it('recalculates pre-correction projections rather than serving stale gross roll premiums', async () => {
+  const { refresh, calculate } = fixture();
+  await refresh(state.user.id);
+  const directory = join(root, 'derived/portfolio');
+  const file = join(directory, readdirSync(directory)[0]);
+  const old = JSON.parse(readFileSync(file, 'utf8'));
+  old.version = 4;
+  writeFileSync(file, JSON.stringify(old));
+  expect(readPortfolioProjection(state)).toBeNull();
+  await refresh(state.user.id);
+  expect(calculate).toHaveBeenCalledTimes(2);
+  expect(readPortfolioProjection(state)?.version).toBe(5);
 });
