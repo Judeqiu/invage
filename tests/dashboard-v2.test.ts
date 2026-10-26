@@ -73,20 +73,20 @@ it.skipIf(!existsSync(executablePath))('renders V2 with shared data, clarifies m
     await page.setViewport({ width: 1440, height: 1100 });
     await page.goto(origin + '/shell');
     const frame = page.frames().find(f => f.url().includes('/dashboard/v2.html'))!;
-    await frame.waitForSelector('#v2Summary [data-card-explain]');
-    const labels = await frame.$$eval('#v2Summary > section > h2', nodes => nodes.map(n => n.textContent));
-    expect(labels).toEqual(['Premium & earnings', 'Account value', 'Cash & obligations']);
+    await frame.waitForSelector('#v2Summary .section-explain');
+    const labels = await frame.$$eval('#v2Summary > section > h2', nodes => nodes.map(n => n.childNodes[0].textContent));
+    expect(labels).toEqual(['Premium & earnings', 'Account value', 'Cash & exposure']);
     expect(await frame.$eval('#v2Summary', n => n.textContent)).toContain('$3,400.00');
     const earned = '#v2Summary .v2-earnings .metric-card:nth-child(2)';
     expect(await frame.$$eval(earned + ' .metric-value', nodes => nodes.map(n => n.textContent))).toEqual(['$90', '$270', '$270.00']);
-    await frame.click('.v2-premium-card [data-card-explain]');
+    await frame.click('.v2-earnings .section-explain');
     await frame.waitForSelector('#explainChoice[open]');
     expect(prompts).toHaveLength(0);
     await frame.select('#explainMetric', '1');
     await frame.click('#explainChoice button[value="explain"]');
     await expect.poll(() => prompts.length).toBe(1);
     expect(prompts[0]).toContain('Selected figure to explain: Net premium · MTD');
-    await frame.click(earned + ' [data-card-explain]');
+    await frame.click('.v2-earnings .section-explain');
     await frame.waitForSelector('#explainChoice[open]');
     await page.keyboard.press('Escape');
     expect(prompts).toHaveLength(1);
@@ -113,28 +113,23 @@ it.skipIf(!existsSync(executablePath))('renders V2 with shared data, clarifies m
     await frame.waitForSelector('#openOptions .option-ledger');
     expect(await frame.$eval('#expiryRow', n => n.textContent)).toContain('$23,000');
     expect(await frame.$eval('#openOptions', n => n.textContent)).toContain('AAPL');
-    expect(await frame.$$eval('#premiumEngine > .premium-chart', nodes => nodes.length)).toBe(4);
-    expect(await frame.$('#openPremiumExpiryCard .premium-area-line')).not.toBeNull();
-    expect(await frame.$('#premiumConcentrationCard .premium-donut-segment')).not.toBeNull();
-    expect(await frame.$('#openPremiumUnderlyingCard .premium-column')).not.toBeNull();
-    expect(await frame.$('#openPnlExpiryCard .premium-column-loss')).not.toBeNull();
-    expect(await frame.$('#openPnlExpiryCard .premium-column-gain')).not.toBeNull();
-    const areaSize = await frame.$eval('#openPremiumExpiryCard', n => n.getBoundingClientRect().width);
-    const donutSize = await frame.$eval('#premiumConcentrationCard', n => n.getBoundingClientRect().width);
-    expect(areaSize).toBeGreaterThan(donutSize * 1.8);
-
+    expect(await frame.$$eval('#premiumEngine > .metric-card', nodes => nodes.length)).toBe(4);
+    expect(await frame.$('#openPremiumExpiryCard .bar-fill')).not.toBeNull();
+    expect(await frame.$('#premiumConcentrationCard .bar-fill')).not.toBeNull();
+    expect(await frame.$('#openPnlExpiryCard .bar-fill.down')).not.toBeNull();
+    expect(await frame.$('.premium-history')).toBeNull();
+    expect(await frame.$eval('#v2Summary', n => n.textContent)).toContain('Net risk capital');
+    expect(await frame.$eval('#v2Summary', n => n.textContent)).not.toContain('Daily aggregate changes');
+    expect(await frame.$eval('#v2Summary', n => n.textContent)).toContain('Brokerage fees · Total');
     expect(await frame.$eval('#openPremiumExpiryCard', n => n.textContent)).toContain('Nov 2026');
     expect(await frame.$eval('#openPremiumExpiryCard', n => n.textContent)).toContain('$1,300.00');
     expect(await frame.$eval('#openPnlExpiryCard', n => n.textContent)).toContain('-$200.00');
     expect(await frame.$eval('#openPremiumUnderlyingCard', n => n.textContent)).toContain('$940.00');
-    await frame.click('.premium-history > summary');
-    expect(await frame.$eval('#monthlyPremiumCard', n => n.textContent)).toContain('$250.00');
     await frame.click('#channelPills [data-channel="ibkr"]');
     expect(await frame.$eval('#openPremiumExpiryCard', n => n.textContent)).toContain('$700.00');
-    expect(await frame.$eval('.premium-history', n => (n as HTMLDetailsElement).open)).toBe(true);
     await frame.click('#channelPills [data-channel="merged"]');
 
-    await frame.click('#expiryTable [data-card-explain]');
+    await frame.click('#expiryTitle .section-explain');
     await frame.waitForSelector('#explainChoice[open]');
     expect(await frame.$eval('#explainMetric', node => node.textContent)).toContain('Spot — 220.00');
     await frame.click('#explainChoice button[value="cancel"]');
@@ -150,8 +145,8 @@ it.skipIf(!existsSync(executablePath))('renders V2 with shared data, clarifies m
     for (const width of [390, 768, 1100]) {
       await page.setViewport({ width, height: 900 });
       expect(await frame.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-      expect(await frame.$$eval('.premium-chart', cards => cards.every(card => {
-        const caption = card.querySelector('.premium-chart-caption')!.getBoundingClientRect();
+      expect(await frame.$$eval('#premiumEngine > .metric-card', cards => cards.every(card => {
+        const caption = card.querySelector('.bar-caption')!.getBoundingClientRect();
         const explain = card.querySelector('.card-explain')!.getBoundingClientRect();
         return caption.bottom <= explain.top;
       }))).toBe(true);
@@ -164,12 +159,12 @@ it.skipIf(!existsSync(executablePath))('renders V2 with shared data, clarifies m
     dashboard.dashboardConfig.showTotalPremium = false;
     dashboard.dashboardConfig.showRealizedPnl = false;
     await frame.goto(origin + '/dashboard/v2.html');
-    await frame.waitForSelector('#v2Summary [data-card-explain]');
+    await frame.waitForSelector('#v2Summary .section-explain');
     expect(await frame.$eval('#v2Summary', n => n.textContent)).not.toContain('Earned premium');
     expect(await frame.$$eval('.v2-premium-card .v2-stat', nodes => nodes.length)).toBe(2);
     dashboard.empty = true; dashboard.model = null;
     await frame.goto(origin + '/dashboard/v2.html'); await frame.waitForSelector('#dashboard:not(.hidden)');
-    expect(await frame.$eval('#v2Summary', n => n.textContent)).toContain('Cash not recorded');
+    expect(await frame.$eval('#v2Summary', n => n.textContent)).toContain('Cash available');
     expect(errors).toEqual([]);
   } finally { await browser.close(); await new Promise<void>(r => server.close(() => r())); }
 }, 30000);

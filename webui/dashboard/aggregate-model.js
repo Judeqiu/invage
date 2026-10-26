@@ -67,11 +67,14 @@ function recordedPremiumForView(view, date) {
   const fees = fills.filter(row => row.executed_at.slice(0, 10) >= `${date.slice(0, 7)}-01`);
   const knownFees = fees.filter(row => row.commission != null).map(row => tradeAmount(view, row, -Number(row.commission)));
   const missingFees = fees.filter(row => row.commission == null).length;
+  const totalKnownFees = fills.filter(row => row.commission != null).map(row => tradeAmount(view, row, -Number(row.commission)));
   const historyGaps = (payload?.optionHistoryGaps || []).filter(g => channels.includes(g.channel));
   const dates = fills.map(row => row.executed_at.slice(0, 10)).sort();
   return { daily: sum(dailyFrom, date), dailyFrom, dailyDate: date,
     mtd: sum(`${date.slice(0, 7)}-01`, date), total: sum('', date), totalBasis: 'gross',
     fees: conflictingRecords ? null : fills.length && !fees.length ? 0 : fees.length && knownFees.length && knownFees.every(n => n != null) ? knownFees.reduce((a, b) => a + b, 0) : null,
+    totalFees: conflictingRecords ? null : !fills.length ? null : totalKnownFees.length && totalKnownFees.every(n => n != null) ? totalKnownFees.reduce((a, b) => a + b, 0) : null,
+    totalMissingFees: fills.filter(row => row.commission == null).length,
     missingFees, partial: missing.length > 0 || historyGaps.length > 0, firstTrade: dates[0], lastTrade: dates.at(-1),
     reason: missing.length || historyGaps.length ? 'Recorded trades only · incomplete history · before fees' : 'Recorded option trades · before fees',
     totalReason: conflictingRecords ? 'Conflicting broker records need reconciliation' : 'No recorded option cash flow or currencies cannot be combined without FX' };

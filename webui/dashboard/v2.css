@@ -174,3 +174,36 @@ footer { color: var(--muted-foreground); border-color: var(--border); font-size:
 [data-timeline-group]:hover .timeline-group-lane, [data-timeline-group]:focus .timeline-group-lane { fill: #353c56; }
 .timeline-group-label { fill: var(--foreground); }
 .timeline-group-range { stroke: #626b89; }
+
+/* October amendments: compact overview, readable headers and horizontal charts. */
+:root { --font-sans: "Proxima Nova", Arial, Verdana, sans-serif; --font-serif: var(--font-sans); --font-mono: var(--font-sans); }
+.section-explain { border: 0; background: transparent; color: var(--brand); font: 600 .72rem var(--font-sans); cursor: pointer; padding: .2rem .4rem; }
+.v2-summary .metric-card, .kpi-row .metric-card { padding: .55rem .7rem; }
+.v2-stat { min-height: 2.1rem; }
+.v2-fees { margin: .15rem 0 .3rem; padding: 0; border: 0; color: var(--muted-foreground); font-size: .68rem; }
+.v2-premium-period + .v2-premium-period { border-top: 1px solid var(--border); padding-top: .25rem; }
+.v2-group:last-child .v2-group-body { grid-template-columns: repeat(3,minmax(0,1fr)); }
+#expiryRow .daily-change, #expiryRow > .metric-card > .card-explain { display: none; }
+.broker-ibkr { color: #ff555f; } .broker-moomoo { color: #ff9e4a; } .broker-tiger { color: #f9df25; } .broker-webull { color: #80cfff; }
+.chip-btn.on .broker-name { color: #0a111d; }
+.chip-btn:has(.broker-name) { border-bottom: 3px solid; }
+.chip-btn:has(.broker-ibkr) { border-bottom-color: #ff555f; }
+.chip-btn:has(.broker-moomoo) { border-bottom-color: #ff9e4a; }
+.chip-btn:has(.broker-tiger) { border-bottom-color: #f9df25; }
+.chip-btn:has(.broker-webull) { border-bottom-color: #80cfff; }
+.risk-toolbar, .option-ledger-filters { padding: .45rem .6rem; gap: .35rem; }
+.risk-card .table-scroll { max-height: 640px; }
+.option-ledger-card .table-scroll { max-height: 600px; }
+.risk-table th, .risk-table td, .option-ledger th, .option-ledger td { padding: .27rem .35rem !important; line-height: 1.25; }
+.option-ledger { table-layout: auto !important; min-width: 1300px !important; }
+.option-ledger th { overflow: visible !important; text-overflow: clip !important; white-space: normal !important; min-width: 4ch; }
+.option-ledger .option-column-title { display: inline; overflow: visible; }
+#premiumEngine { grid-template-columns: repeat(2,minmax(0,1fr)); gap: .7rem; align-items: start; }
+#premiumEngine > .metric-card { grid-column: auto; min-width: 0; }
+#premiumEngine .bar-list { margin-top: .4rem !important; gap: .4rem; }
+#premiumEngine .bar-meta { font-size: .72rem; }
+#premiumEngine .bar-track { height: .3rem; }
+@media(max-width:900px) { .v2-group:last-child .v2-group-body { grid-template-columns: minmax(0,1fr); } }
+@media(max-width:600px) { #premiumEngine { grid-template-columns: minmax(0,1fr); } }
+#premiumEngine > #openPremiumExpiryCard, #premiumEngine > #premiumConcentrationCard { grid-column: auto; }
+#premiumEngine > .metric-card:has(> .card-explain) { padding-bottom: 2.8rem; }

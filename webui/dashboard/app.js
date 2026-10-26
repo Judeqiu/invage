@@ -238,7 +238,7 @@ function recordedRealizedForView(view, _date, from = '') { return savedDashboard
 
 function entrySpotHtml(trade, ccy) {
   const entry = trade?.entrySpot;
-  return entry ? `<span title="${escapeHtml(`${entry.basis === 'execution' ? 'Underlying price at execution' : 'Opening-day adjusted close; not the execution-time price'} · ${optionDateLabel(entry.date)}`)}">${fmtPrettyMoney(entry.price, ccy, 2)}<small class="entry-basis">${entry.basis === 'execution' ? 'At execution' : 'Adj. close'}</small></span>`
+  return entry ? `<span title="${escapeHtml(`${entry.basis === 'execution' ? 'Underlying price at execution' : 'Opening-day adjusted close; not the execution-time price'} · ${optionDateLabel(entry.date)}`)}">${fmtPrettyMoney(entry.price, ccy, 2)}<small class="entry-basis${isWheelDesk ? ' visually-hidden' : ''}">${entry.basis === 'execution' ? 'At execution' : 'Adj. close'}</small></span>`
     : '<span title="No verified opening price is available">—</span>';
 }
 
@@ -263,7 +263,7 @@ function openingPremiumHtml(trade) {
   const value = optionTradeCashFlow(trade);
   const rolled = Boolean(trade?.rollDate) || trade?.rollPremium !== undefined;
   return value == null ? `<span title="${rolled ? 'Latest roll cash flow is unverified; opening premium is not substituted' : 'Matching opening fills or their currency are unavailable'}">—</span>`
-    : `<span title="${rolled ? 'Latest roll: replacement opening proceeds plus closing-leg cash flow' : 'Reconciled opening cash flow'} · before fees">${fmtPrettyMoney(value, trade.currency, 2)}</span><small class="entry-basis">${rolled ? 'Latest roll' : 'Opening'}</small>`;
+    : `<span title="${rolled ? 'Latest roll: replacement opening proceeds plus closing-leg cash flow' : 'Reconciled opening cash flow'} · before fees">${fmtPrettyMoney(value, trade.currency, 2)}</span><small class="entry-basis${isWheelDesk ? ' visually-hidden' : ''}">${rolled ? 'Latest roll' : 'Opening'}</small>`;
 }
 
 function unverifiedOptionChannels(view) {
@@ -296,7 +296,7 @@ function brokerLabel(channel) {
 }
 function brokerFilters(kind, selected, positions) {
   const accounts = selectionOptions().filter(option => positions.some(p => p.channel === option.id));
-  return `<div class="option-filter-group broker-filters" role="group" aria-label="Filter by broker account"><span class="label-eyebrow">Broker account</span>${[{ id: 'all', label: 'All' }, ...accounts].map(({id, label}) => `<button type="button" class="chip-btn broker-filter${selected === id ? ' on' : ''}" data-${kind}-broker="${escapeHtml(id)}" aria-pressed="${selected === id}">${escapeHtml(label)}</button>`).join('')}</div>`;
+  return `<div class="option-filter-group broker-filters" role="group" aria-label="Filter by broker account"><span class="label-eyebrow">Broker account</span>${[{ id: 'all', label: 'All' }, ...accounts].map(({id, label}) => `<button type="button" class="chip-btn broker-filter${selected === id ? ' on' : ''}" data-${kind}-broker="${escapeHtml(id)}" aria-pressed="${selected === id}">${isWheelDesk && id !== 'all' ? brokerLabel(id) : escapeHtml(label)}</button>`).join('')}</div>`;
 }
 function riskLevel(probability) {
   return probability == null ? 'muted' : probability > 0.6 ? 'danger' : probability >= 0.45 ? 'warning' : 'ok';
@@ -1287,6 +1287,30 @@ function renderOverview(view) {
   installCardExplainButtons();
 }
 
+function netRiskCapitalCard(view) {
+  const risk = window.NetRiskCapital.calculate(view);
+  return metricCardHtml('Net risk capital', risk.unbounded ? 'Unbounded' : risk.value == null ? '—' : fmtPrettyMoney(risk.value, reportingCcyCode(view), 0),
+    'Estimated maximum loss across open options strategies', risk.reason);
+}
+
+function explanationScope(button) {
+  return button.dataset.sectionTitle ? button.closest('.v2-group, #section01ExistingPanel') : button.closest('.metric-card');
+}
+
+function installSectionExplanations() {
+  const sections = [...document.querySelectorAll('.v2-group')].map(section => [section, section.querySelector('h2')]);
+  sections.push([document.getElementById('section01ExistingPanel'), el.expiryTitle]);
+  for (const [section, heading] of sections) {
+    if (!section || !heading) continue;
+    section.querySelectorAll('[data-card-explain]').forEach(button => button.remove());
+    const button = document.createElement('button');
+    button.type = 'button'; button.className = 'section-explain'; button.dataset.cardExplain = '';
+    button.dataset.sectionTitle = heading.textContent.trim(); button.textContent = 'Explain';
+    button.setAttribute('aria-label', 'Explain ' + button.dataset.sectionTitle);
+    heading.append(button); prepareCardExplanation(button);
+  }
+}
+
 // The V2 overview reuses the calculated portfolio values and recorded premium figures.
 function renderV2Overview() {
   const summary = document.getElementById('v2Summary');
@@ -1297,6 +1321,8 @@ function renderV2Overview() {
     clone.querySelectorAll('[id]').forEach(item => item.removeAttribute('id'));
     clone.removeAttribute('id');
     clone.querySelectorAll('[data-card-explain]').forEach(item => item.remove());
+    clone.dataset.calculationNotes = [...clone.querySelectorAll('.metric-sub')].map(n => n.textContent).join(' · ');
+    clone.querySelectorAll('.metric-sub, .daily-aggregate-changes').forEach(item => item.remove());
     return clone.outerHTML;
   };
   const kpis = [...el.kpiRow.children];
@@ -1304,6 +1330,8 @@ function renderV2Overview() {
     if (!node || node.classList.contains('hidden')) return '';
     const clone = node.cloneNode(true);
     clone.querySelectorAll('[data-card-explain]').forEach(item => item.remove());
+    clone.dataset.calculationNotes = [...clone.querySelectorAll('.metric-sub')].map(n => n.textContent).join(' · ');
+    clone.querySelectorAll('.metric-sub, .daily-aggregate-changes').forEach(item => item.remove());
     clone.removeAttribute('id');
     clone.querySelectorAll('[id]').forEach(item => item.removeAttribute('id'));
     clone.className = 'v2-stat';
@@ -1311,7 +1339,10 @@ function renderV2Overview() {
     return clone.outerHTML;
   };
   const group = (title, content, className = '') => `<section class="v2-group ${className}"><h2 class="label-eyebrow">${title}</h2><div class="v2-group-body">${content}</div></section>`;
-  const premium = `<div class="metric-card v2-premium-card">${stat(kpis[0])}${stat(kpis[1])}${stat(el.totalPremiumCard, 'Total premium · Net')}${kpis[2] ? `<p class="metric-sub v2-fees">${escapeHtml([...kpis[2].querySelectorAll('.label-eyebrow, .metric-value, .daily-change')].map(node => node.textContent.trim()).join(': '))}</p>` : ''}</div>`;
+  const view = payload?.model ? buildView(selectedDate, selectedChannel) : null;
+  const premiumData = view ? recordedPremiumForView(view) : null;
+  const feeLine = (label, value, missing) => `<p class="v2-fees">${label}: ${value == null ? '—' : escapeHtml(fmtPrettyMoney(value, reportingCcyCode(view), 2))}${missing ? ' <button type="button" class="help-dot" data-help="Known reported fees only; some recorded fills have unreported fees. This subtotal may be incomplete." aria-label="Fee availability">i</button>' : ''}</p>`;
+  const premium = `<div class="metric-card v2-premium-card">${stat(kpis[0])}<div class="v2-premium-period">${stat(kpis[1])}${feeLine('Brokerage fees · MTD', premiumData?.fees, premiumData?.missingFees)}</div><div class="v2-premium-period">${stat(el.totalPremiumCard, 'Total premium · Net')}${el.totalPremiumCard.classList.contains('hidden') ? '' : feeLine('Brokerage fees · Total', premiumData?.totalFees, premiumData?.totalMissingFees)}</div></div>`;
   let earnings = '';
   if (!el.realizedPnlCard.classList.contains('hidden')) {
     const view = payload?.model ? buildView(selectedDate, selectedChannel) : null;
@@ -1331,7 +1362,7 @@ function renderV2Overview() {
     'This card shows a separately reported broker fund balance when available. An unavailable balance is not zero. Itemized fund holdings are already included in NAV; do not add them again.');
   summary.innerHTML = group('Premium & earnings', premium + earnings, 'v2-earnings') +
     group('Account value', copy(el.navValue.closest('.metric-card')) + funds) +
-    group('Cash & obligations', copy(kpis[3]) + copy(kpis[4]));
+    group('Cash & exposure', copy(kpis[3]) + copy(kpis[4]).replace('Max assignment obligation', 'Net assignment obligations') + netRiskCapitalCard(view));
 }
 
 function cardExplanationTargets(card) {
@@ -1339,9 +1370,11 @@ function cardExplanationTargets(card) {
   if (stats.length) return stats.map(node => [...node.querySelectorAll('.label-eyebrow, .metric-value')].map(part => part.textContent.trim()).join(' — '));
   const bars = [...card.querySelectorAll('.bar-meta')];
   if (bars.length) return bars.map(node => [...node.children].map(part => part.textContent.trim()).join(' — '));
+  const metrics = [...card.querySelectorAll('.metric-card')].filter(node => node.querySelector('.metric-value'));
+  const metricTargets = metrics.map(node => [...node.querySelectorAll('.label-eyebrow, .metric-value')].map(part => part.textContent.trim()).join(' — '));
   const rows = [...card.querySelectorAll('tbody tr')].filter(row => row.cells.length > 1);
   const headers = [...card.querySelectorAll('thead th')].map(cell => cell.textContent.replace(/\s+/g, ' ').trim());
-  return rows.flatMap(row => {
+  return metricTargets.concat(rows.flatMap(row => {
     const label = row.cells[0].cloneNode(true);
     label.querySelectorAll('button').forEach(button => button.replaceWith(button.dataset.optionLabel || ''));
     return [...row.cells].slice(1).flatMap((cell, i) => {
@@ -1349,11 +1382,11 @@ function cardExplanationTargets(card) {
       return /[0-9]/.test(value) || value === '—'
         ? [`${label.textContent.replace(/\s+/g, ' ').trim()} · ${headers[i + 1] || 'Value'} — ${value}`] : [];
     });
-  });
+  }));
 }
 
 function chooseCardExplanation(button) {
-  const targets = cardExplanationTargets(button.closest('.metric-card'));
+  const targets = cardExplanationTargets(explanationScope(button));
   if (targets.length < 2) { prepareCardExplanation(button); void startOptionDiscussion(button); return; }
   let dialog = document.getElementById('explainChoice');
   if (!dialog) {
@@ -1380,6 +1413,7 @@ function chooseCardExplanation(button) {
 function installCardExplainButtons() {
   renderV2Overview();
   el.dashboard.querySelectorAll('.metric-card').forEach(card => {
+    if (isWheelDesk && (card.closest('#v2Summary') || card.closest('#expiryBlock'))) return;
     if (card.closest('[inert]')) return;
     const heading = card.querySelector('.label-eyebrow, h3');
     if (!heading) return;
@@ -1395,18 +1429,19 @@ function installCardExplainButtons() {
     card.appendChild(button);
     prepareCardExplanation(button);
   });
+  if (isWheelDesk) installSectionExplanations();
   syncDiscussionButtons();
   highlightOptionDiscussion();
 }
 
 function prepareCardExplanation(button, selectedFigure) {
-  const card = button.closest('.metric-card');
-  const title = card.classList.contains('risk-card') ? 'Expiry & assignment' : card.querySelector('.label-eyebrow, h3').textContent.trim();
+  const card = explanationScope(button);
+  const title = button.dataset.sectionTitle || (card.classList.contains('risk-card') ? 'Expiry & assignment' : card.querySelector('.label-eyebrow, h3').textContent.trim());
   const content = card.cloneNode(true);
   content.querySelectorAll('button, svg, summary').forEach(node => node.remove());
   content.querySelectorAll('div, p, td, th, li, span').forEach(node => node.append(' '));
   const values = content.textContent.replace(/\s+/g, ' ').trim();
-  const notes = [...card.querySelectorAll('[data-help]')].map(node => node.dataset.help).join(' ');
+  const notes = [...card.querySelectorAll('[data-help], [data-calculation-notes]')].map(node => node.dataset.help || node.dataset.calculationNotes).join(' ');
   const asOf = selectedDate === 'live' ? payload?.generatedAt || 'latest' : selectedDate;
   const channel = selectedChannel === MERGED_CHANNEL_VIEW ? 'All brokers (merged)' : selectionLabel();
   const context = `${channel} · ${selectedDate === 'live' ? 'Latest view' : 'Historical snapshot'} · ${asOf}`;
@@ -1873,7 +1908,7 @@ function renderPremiumEngine(view) {
   const ccy = reportingCcyCode(view);
   const showRecordedPnlByMonth = payload.dashboardConfig?.showRecordedPnlByMonth === true;
   el.premiumHead.innerHTML = sectionHead('Section 02', 'Premium engine',
-    'Explore net option premium, NAV concentration and unrealized P&L from the selected open book. Expand recorded trade history for cash flow by trade month.');
+    'Explore net option premium, NAV concentration and unrealized P&L from the selected open book.');
   const rows = (entries, byAmount = false) => [...entries].sort(([a, av], [b, bv]) => {
     if (!byAmount) return b.localeCompare(a);
     if (av == null || bv == null) return av == null && bv == null ? a.localeCompare(b) : av == null ? 1 : -1;
@@ -1884,15 +1919,23 @@ function renderPremiumEngine(view) {
   const book = openBookPremiumData(view);
   const common = { ccy };
   const openHelp = 'Opening credit on remaining short contracts minus opening cost on remaining long contracts, before fees. Grouped by expiry, not trade date. This is open-book cost basis, not lifetime cash flow or realized profit.';
-  const openCards = premiumChartCard('Net option premium by expiry month', book.premiumByExpiry, 'Open book · before fees · ' + (ccy || 'portfolio currency'), { ...common, id: 'openPremiumExpiryCard', type: 'area', monthly: true, help: openHelp }) +
-    premiumChartCard('NAV concentration', book.concentration, 'Ring: absolute exposure · labels: signed % of NAV', { id: 'premiumConcentrationCard', percent: true, help: 'The ring shows each underlying’s share of absolute net market value, so negative positions can be drawn. Legend percentages show signed market value divided by NAV. Positions are grouped by underlying, including option assets and liabilities. Cash and fixed deposits are separate. Negative weights and weights over 100% are possible. Unavailable when NAV is incomplete or non-positive.' }) +
-    premiumChartCard('Net option premium by underlying', book.premiumByUnderlying, 'Open book · credits less debits · before fees', { ...common, id: 'openPremiumUnderlyingCard', help: openHelp }) +
-    premiumChartCard('Open P&L by expiry month', book.pnlByExpiry, 'Unrealized · excludes completed trades and fees', { ...common, id: 'openPnlExpiryCard', type: 'pnl', monthly: true, help: 'Signed option market value minus signed opening cost, grouped by expiry month. Uses dashboard valuation marks. Missing marks, cost-only valuations or missing FX make the affected bucket unavailable.' });
+  const chart = (title, values, caption, options) => {
+    if (!isWheelDesk) return premiumChartCard(title, values, caption, options);
+    const entries = [...values].map(([label, row]) => ({ label: options.monthly ? monthLabel(label) : label, value: row,
+      display: row == null ? '—' : options.percent ? row.toFixed(1) + '%' : fmtPrettyMoney(row, ccy, 2) }));
+    return cssBarCard(title, entries, caption, options);
+  };
+  const openCards = chart('Net option premium by expiry month', book.premiumByExpiry, 'Open book · before fees', { ...common, id: 'openPremiumExpiryCard', type: 'area', monthly: true, help: openHelp }) +
+    chart('NAV concentration', book.concentration, 'Signed market value as % of NAV', { id: 'premiumConcentrationCard', percent: true, help: 'Signed market value divided by NAV, including option liabilities. Unavailable when NAV is incomplete or non-positive.' }) +
+    chart('Net option premium by underlying', book.premiumByUnderlying, 'Open book · before fees', { ...common, id: 'openPremiumUnderlyingCard', help: openHelp }) +
+    chart('Open P&L by expiry month', book.pnlByExpiry, 'Unrealized · before fees', { ...common, id: 'openPnlExpiryCard', type: 'pnl', monthly: true, help: 'Signed option market value minus signed opening cost, grouped by expiry month.' });
+  if (isWheelDesk) { el.premiumEngine.innerHTML = openCards; return; }
   const historyCards = cssBarCard('Net Option Premium by Month', rows(data.byMonth), 'Before fees · recorded trades', { id: 'monthlyPremiumCard', limit: 5 }) +
     cssBarCard('Net Option Premium by Underlying', rows(data.byUnderlying, true), 'Before fees · includes recorded option purchases and sales', { id: 'underlyingPremiumCard', limit: 5, help: premiumHelp }) +
     (showRecordedPnlByMonth ? monthlyLineCard('Recorded P&L by Month', data, ccy, plHelp) : '');
   const historyOpen = el.premiumEngine.querySelector('.premium-history')?.open || false;
   el.premiumEngine.innerHTML = openCards + `<details class="premium-history"${historyOpen ? ' open' : ''}><summary>Recorded trade history <span>Cash flow by trade date${showRecordedPnlByMonth ? ' · completed-trade P&L' : ''}</span></summary><div class="grid-2 premium-history-grid">${historyCards || '<p class="empty">No recorded option trades in this view yet.</p>'}</div></details>`;
+
 }
 
 function renderOpenOptions(view) {
@@ -2038,7 +2081,7 @@ function renderOpenOptions(view) {
     ? 'The estimated price of one whole option contract in the broker snapshot. It includes the number of shares covered by that contract. For a short option, this estimates the cost to buy it back; its position value is shown as negative.'
     : 'The estimated price of one whole option contract saved in this snapshot. For a short option, this estimates the cost to buy it back; its position value is shown as negative.';
   el.openOptions.innerHTML = `${freshnessWarning}${filters}<div class="metric-card table-card option-ledger-card"><div class="table-scroll"><table class="report option-ledger">
-    <thead><tr>${columns.map((h) => `<th scope="col"><span class="option-column-title">${h.split('\n').map(line => `<span class="option-column-label">${escapeHtml(line)}</span>`).join(' ')}</span>${isWheelDesk && h === 'PREMIUM / ROLL' ? '<button type="button" class="help-dot" data-help="Recorded trade cash flow before fees: latest verified roll cash flow (replacement opening proceeds plus the closing leg), otherwise reconciled opening proceeds or cost. Credits are positive; debits are negative. Known but unverified rolls show unavailable, not the STO alone. Month totals use these same values and require complete data in one currency. Average price and unrealized P&amp;L retain their separate position cost basis." aria-label="Explain premium and roll cash flow">?</button>' : ''}${isWheelDesk && ['Last ($)','Avg Px'].includes(h) ? '<button type="button" class="help-dot" data-help="Price per underlying share. Market value and cost basis include the contract multiplier and quantity." aria-label="Explain option price units">?</button>' : ''}${h === 'Mark /\ncontract' ? `<button type="button" class="help-dot" data-help="${escapeHtml(markHelp)}" aria-label="What Mark means">?</button>` : ''}</th>`).join('')}</tr></thead>
+    <thead><tr>${columns.map((h) => `<th scope="col"><span class="option-column-title">${h.split('\n').map(line => `<span class="option-column-label">${escapeHtml(line)}</span>`).join(' ')}</span>${isWheelDesk && h === 'Entry Spot' ? '<button type="button" class="help-dot" data-help="Entry spot is the opening-day adjusted close, not the execution-time price, unless execution evidence is explicitly available. Hover over a value for its source and date." aria-label="Explain entry spot">i</button>' : ''}${isWheelDesk && h === 'PREMIUM / ROLL' ? '<button type="button" class="help-dot" data-help="Recorded trade cash flow before fees: latest verified roll cash flow (replacement opening proceeds plus the closing leg), otherwise reconciled opening proceeds or cost. Credits are positive; debits are negative. Known but unverified rolls show unavailable, not the STO alone. Month totals use these same values and require complete data in one currency. Average price and unrealized P&amp;L retain their separate position cost basis." aria-label="Explain premium and roll cash flow">?</button>' : ''}${isWheelDesk && ['Last ($)','Avg Px'].includes(h) ? '<button type="button" class="help-dot" data-help="Price per underlying share. Market value and cost basis include the contract multiplier and quantity." aria-label="Explain option price units">?</button>' : ''}${h === 'Mark /\ncontract' ? `<button type="button" class="help-dot" data-help="${escapeHtml(markHelp)}" aria-label="What Mark means">?</button>` : ''}</th>`).join('')}</tr></thead>
     <tbody>${body || `<tr><td colspan="${columns.length}" class="empty">No open option positions match these filters.</td></tr>`}</tbody>
   </table></div></div>`;
 }
@@ -2061,7 +2104,7 @@ el.openOptions?.addEventListener('click', (event) => {
 function renderChannelPills(view) {
   if (!el.channelPills) return;
   el.channelPills.innerHTML = selectionOptions()
-    .map(p => `<button type="button" class="chip-btn${p.id === selectedChannel ? ' on' : ''}" data-channel="${escapeHtml(p.id)}" aria-pressed="${p.id === selectedChannel}" title="${escapeHtml(p.label)}">${escapeHtml(p.label)}</button>`)
+    .map(p => `<button type="button" class="chip-btn${p.id === selectedChannel ? ' on' : ''}" data-channel="${escapeHtml(p.id)}" aria-pressed="${p.id === selectedChannel}" title="${escapeHtml(p.label)}">${isWheelDesk && !['merged', 'all'].includes(p.id) ? brokerLabel(p.id) : escapeHtml(p.label)}</button>`)
     .join('');
 }
 

@@ -258,3 +258,12 @@ it('handles the T-1 boundary across a year change and preserves unavailable hist
   expect(calculate([], {}, '2027-01-01').daily).toBeNull();
   expect(calculate(records.map(r => ({ ...r, currency: 'EUR' })), {}, '2027-01-01').daily).toBeNull();
 });
+
+it('separates lifetime reported fees from MTD fees, excluding future fills and surfacing missing fees', () => {
+  expect(calculate()).toMatchObject({ fees: 1, totalFees: 3, totalMissingFees: 0 });
+  const unknown = fills.map((row, i) => i === 0 ? { ...row, commission: null } : row);
+  expect(calculate(unknown)).toMatchObject({ fees: 1, totalFees: 2, missingFees: 0, totalMissingFees: 1 });
+  const foreign = [...fills, { ...execution, execution_id: 'fx-fee', currency: 'SGD' }];
+  expect(calculate(foreign).totalFees).toBeNull();
+  expect(calculate(foreign, { fxRates: { SGD: .75 } }).totalFees).toBe(3.75);
+});

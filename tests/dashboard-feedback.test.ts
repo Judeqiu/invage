@@ -36,7 +36,7 @@ it.skipIf(!existsSync(chrome))('fits the desk overview and tables, filters risk,
   const server=createServer(async(req,res)=>{
     const url=new URL(req.url!,'http://localhost');
     const json=(body:unknown)=>{res.setHeader('Content-Type','application/json');res.end(JSON.stringify(withPageProjections(body)));};
-    if(url.pathname==='/shell') {res.setHeader('Content-Type','text/html');return res.end('<body style="margin:0"><header style="height:68px;background:#090e16;color:#ddd">Velovest</header><iframe src="/dashboard/v2.html" style="display:block;width:100%;height:calc(100vh - 68px);border:0"></iframe>');}
+    if(url.pathname==='/shell') {res.setHeader('Content-Type','text/html');return res.end('<body style="margin:0"><style>.domain-page-frame{height:calc(100dvh - 68px)}</style><div class="trading-shell" style="height:100dvh;overflow:hidden;display:flex;flex-direction:column;--shell-header-height:68px"><header class="trading-header" style="height:68px;flex-shrink:0;background:#090e16;color:#ddd"><a class="trading-brand"><img src="/velovest-logo.jpeg" alt="Velovest.ai Intelligent Investment Technology"></a></header><iframe class="domain-page-frame" src="/dashboard/v2.html" style="display:block;width:100%;border:0;flex-shrink:0"></iframe></div>');}
     if(url.pathname.endsWith('/dashboard')) return json(dashboard);
     if(url.pathname.endsWith('/broker-sync')) return json(null);
     if(url.pathname.endsWith('/option-history')) return json({episodes:[],connections:[],gaps:[],next_offset:null});
@@ -55,7 +55,7 @@ it.skipIf(!existsSync(chrome))('fits the desk overview and tables, filters risk,
     const frame=page.frames().find(frame=>frame.url().endsWith('/dashboard/v2.html'))!;
     await frame.waitForFunction(()=>document.getElementById('loadProgress')?.getAttribute('aria-valuenow')==='8');
     expect(await frame.$$('#channelPills img')).toHaveLength(0);
-    expect(await frame.$$eval('#channelPills button', nodes => nodes.map(node => node.textContent))).toEqual(['All accounts', 'IBKR · custom-ibkr-account', 'moomoo · moomoo-main', 'Tiger Brokers · tiger-main', 'Webull · webull-main']);
+    expect(await frame.$$eval('#channelPills button', nodes => nodes.map(node => node.textContent))).toEqual(['All accounts', 'IBKR', 'moomoo', 'Tiger Brokers', 'Webull']);
     for(const [width,height] of [[1366,768],[1440,900],[1920,1080]]) {
       await page.setViewport({width,height});
       expect(await frame.evaluate(()=>document.getElementById('expiryRow')!.getBoundingClientRect().bottom<=innerHeight)).toBe(true);
@@ -63,9 +63,17 @@ it.skipIf(!existsSync(chrome))('fits the desk overview and tables, filters risk,
         expect(await frame.$eval(selector,node=>node.scrollWidth<=node.clientWidth+1)).toBe(true);
       }
     }
-    expect(await frame.$$eval('.risk-table th',nodes=>nodes.map(n=>n.textContent!.replace(/\?/g,'').trim()))).toEqual(['FIN INSTRUMENT (Discuss)','Pos','Days','Spot','Strike','Moneyness %','IV','If Assigned','Prob. ITM','Last ($)','Avg Px','Market Value','Unrealized P&L (%)','Broker']);
-    expect(await frame.$$eval('.option-ledger th',nodes=>nodes.map(n=>n.textContent!.replace(/\?/g,'').trim()))).toEqual(['FIN INSTRUMENT','Pos','Last ($)','PREMIUM / ROLL','Avg Px','MKT Value','Unrealized P&L (%)','Days','Opened','Spot','Entry Spot','Assignment','Broker']);
+    expect(await frame.$$eval('.risk-table th',nodes=>nodes.map(n=>n.textContent!.replace(/[?i]$/g,'').replace(/\?/g,'').trim()))).toEqual(['FIN INSTRUMENT (Discuss)','Pos','Days','Spot','Strike','Moneyness %','IV','If Assigned','Prob. ITM','Last ($)','Avg Px','Market Value','Unrealized P&L (%)','Broker']);
+    expect(await frame.$$eval('.option-ledger th',nodes=>nodes.map(n=>n.textContent!.replace(/[?i]$/g,'').replace(/\?/g,'').trim()))).toEqual(['FIN INSTRUMENT','Pos','Last ($)','PREMIUM / ROLL','Avg Px','MKT Value','Unrealized P&L (%)','Days','Opened','Spot','Entry Spot','Assignment','Broker']);
     expect(await frame.$eval('.risk-method',node=>node.textContent)).toContain('r = 4%, q = 0, T = DTE/365');
+    await page.setViewport({width:1440,height:900});
+    for (const [selector, count] of [['.risk-card .table-scroll',15],['.option-ledger-card .table-scroll',10]] as const) {
+      const capacity = await frame.$eval(selector, node => {
+        const row = node.querySelector('tbody tr:not(.option-month-total)')!;
+        return Math.floor((node.clientHeight - node.querySelector('thead')!.getBoundingClientRect().height) / row.getBoundingClientRect().height);
+      });
+      expect(capacity).toBeGreaterThanOrEqual(count);
+    }
     expect(await frame.$$('.risk-row')).toHaveLength(40); // Distant unknown quote is excluded; 7-day unknown remains.
     await frame.click('[data-risk-level="danger"]');expect(await frame.$$('.risk-row')).toHaveLength(1);
     expect(await frame.$eval('.risk-row',node=>node.textContent)).toContain('88.8%');
@@ -83,6 +91,8 @@ it.skipIf(!existsSync(chrome))('fits the desk overview and tables, filters risk,
     await frame.click('#channelPills [data-channel="custom-ibkr-account"]');
     expect(await frame.$$eval('.option-ledger-row td:last-child',nodes=>nodes.every(node=>node.textContent==='IBKR'))).toBe(true);
     await frame.click('#channelPills [data-channel="merged"]');
+    await frame.$eval('[data-option-broker="moomoo-main"]', node => node.scrollIntoView({block:'center'}));
+    await frame.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     await frame.click('[data-option-broker="moomoo-main"]');expect(await frame.$$('.option-ledger-row')).toHaveLength(10);
     await frame.click('[data-option-broker="all"]');await frame.type('#optionSearch','CALL $80');
     await frame.waitForFunction(()=>document.querySelectorAll('.option-ledger-row').length===1);
@@ -98,7 +108,9 @@ it.skipIf(!existsSync(chrome))('fits the desk overview and tables, filters risk,
     await page.setViewport({width:1366,height:768});await frame.evaluate(()=>window.scrollTo(0,0));
     await page.screenshot({path:'/tmp/velovest-feedback-desktop.png'});
     await frame.evaluate(()=>window.scrollTo(0,document.documentElement.scrollHeight));
-    expect(await frame.$eval('.options-workspace-head',node=>node.getBoundingClientRect().top)).toBeGreaterThanOrEqual(0);
+    await page.waitForFunction(() => getComputedStyle(document.querySelector('.trading-header')!).visibility === 'hidden');
+    expect(await page.$eval('.trading-header',node=>getComputedStyle(node).visibility)).toBe('hidden');
+    expect(await page.$eval('iframe',node=>node.getBoundingClientRect().height)).toBe(768);
     await page.screenshot({path:'/tmp/velovest-feedback-bottom.png'});
     for(const width of [320,390,768]) {
       await page.setViewport({width,height:844});await frame.evaluate(()=>window.scrollTo(0,0));

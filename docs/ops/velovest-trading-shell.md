@@ -1,6 +1,6 @@
 # Velovest trading shell
 
-The consultant product profile opts into Utarus's optional `webUi.shell` trading layout. Other Invage profiles keep the classic layout. The wordmark is the asset from the supplied Lovable reference, stored locally at `webui/velovest-wordmark.png`.
+The consultant product profile opts into Utarus's optional `webUi.shell` trading layout. Other Invage profiles keep the classic layout. The shell logo uses the supplied Velovest.ai artwork and tagline, stored locally at `webui/velovest-logo.jpeg`.
 
 Primary navigation matches the reference: Dashboard, Positions, Trades, Insights, AI Chat and Brokers. Brokers opens the existing `/settings/brokers` page; old broker URLs retain their redirects. Other destinations, Management where permitted, notification badges, account identity and sign-out remain accessible through More. Workspace displays `Wheel · trader desk` as a product label; it is not an account switch.
 
@@ -63,3 +63,13 @@ account metadata, broker/risk/search filters, AI discussion from both tables, de
 first-viewport coverage, Section 03 visibility at page bottom, mobile overflow, and
 legacy dashboard regressions. Broker artwork is copied from the supplied public
 reference; the Webull mark is its embedded PNG.
+
+## October 26 dashboard refinements
+
+Dashboard v2 uses the requested Proxima Nova, Arial, Verdana, sans-serif stack, compact cards, broker colors and single broker labels with account details on hover. Explain actions sit beside the overview and expiry headings, with calculation notes retained in their chat context. Daily comparison copy is omitted from the visible overview and expiry cards. MTD fees accompany MTD premium; lifetime reported fees accompany total premium, with missing fees identified in help. Premium cash-flow values retain their existing before-fees basis.
+
+Cash & exposure retains the existing gross short-put assignment amount under Net assignment obligations and adds Net risk capital. The risk card sums maximum expiry losses from signed recorded opening costs, before fees, netting option legs only within the same broker account, underlying, expiry and currency. Each piecewise-linear payoff is evaluated at zero and every strike, with the high-price call slope checked for unbounded loss. Strike payoffs convert to reporting currency once; recorded costs are already converted. It excludes shares, cash collateral and early assignment effects; different-expiry strategy maxima are summed conservatively. Missing terms/costs/FX produce unavailable, and net short calls produce Unbounded. These assumptions are visible in help.
+
+All four premium-engine charts use horizontal bars without removing categories. The recorded-trade-history expander is removed from v2; the dedicated History tab remains. Entry spot source/date remain on hover and in header help, while repetitive row sublabels are visually omitted. Table headers wrap and tables retain all rows, with desktop viewport capacity checked for at least 15 expiry rows and 10 open-option rows at 1440×900.
+
+The v2 page applies a scoped same-origin shell style while mounted: the logo/navigation scroll out above 40px and return at the top; the iframe fills the released height. Keyboard focus on header controls reveals the header, and page exit removes the scoped changes. Other routes retain the framework shell behavior. No framework upgrade, database migration or deployment is part of these source changes.
