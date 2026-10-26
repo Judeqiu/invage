@@ -1,0 +1,18 @@
+/* Shared portfolio typography, broker identity and compact section introductions. */
+:root { --font-sans:"Proxima Nova",Arial,Verdana,sans-serif; --font-serif:var(--font-sans); --font-mono:var(--font-sans); }
+body { font-family:var(--font-sans); }
+.page { max-width:none; padding:1rem 1.25rem 2rem; }
+h1,h2 { font-family:var(--font-sans); }
+.section-gap { display:flex; align-items:baseline; flex-wrap:wrap; gap:.45rem .75rem; margin:1.4rem 0 .65rem; }
+.section-gap .label-eyebrow { color:var(--brand); flex-shrink:0; }
+.section-gap h1,.section-gap h2 { font-size:1.25rem; line-height:1.3; margin:0; color:var(--ink); }
+.section-gap h1::before,.section-gap h2::before { content:""; display:inline-block; width:4px; height:1em; margin-right:.5rem; border-radius:3px; background:var(--gradient-brand); vertical-align:-.1em; }
+.section-gap p { flex:1 1 25rem; font-size:.78rem; line-height:1.4; color:var(--muted-foreground); margin:0; }
+[data-channel="ibkr"] { --broker-color:#f36b75; }
+[data-channel="moomoo"] { --broker-color:#f5a24a; }
+[data-channel="tiger"] { --broker-color:#e8c84c; }
+[data-channel="webull"] { --broker-color:#79c7ed; }
+.chip-btn[data-channel]:not([data-channel="all"]) { color:var(--broker-color,var(--foreground)); border-color:color-mix(in srgb,var(--broker-color,var(--border)) 55%,var(--border)); }
+.chip-btn[data-channel].on:not([data-channel="all"]) { background:color-mix(in srgb,var(--broker-color,var(--foreground)) 15%,var(--card)); border-color:var(--broker-color); box-shadow:inset 0 -2px var(--broker-color); }
+.chip-btn { min-height:28px; }
+@media(max-width:600px) { .page { padding:.85rem .65rem 1.5rem; } .section-gap { gap:.35rem .6rem; } .section-gap p { flex-basis:100%; } }

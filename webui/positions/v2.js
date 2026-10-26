@@ -2,7 +2,7 @@
   const $ = id => document.getElementById(id);
   let payload = null, channel = channelFromQuery(), loading = false;
   if (channel === 'merged') channel = 'all';
-  const name = ch => ({ all:'All', ibkr:'IBKR', moomoo:'MooMoo', tiger:'Tiger', webull:'Webull', default:'Unassigned' })[ch] || ch;
+  const name = ch => ({ all:'All', ibkr:'IBKR', moomoo:'moomoo', tiger:'Tiger', webull:'Webull', default:'Unassigned' })[ch] || ch;
   const number = value => value == null ? '—' : value.toLocaleString('en-US', { maximumFractionDigits:2 });
   const amount = (value, ccy) => value == null || !ccy ? '—' : money(value, ccy);
   const percent = (value, signed = false) => value == null ? '—' : `${signed && value > 0 ? '+' : ''}${value.toFixed(1)}%`;
@@ -24,17 +24,15 @@
     if (!view) { if (channel !== 'all') { channel = 'all'; return render(); } throw new Error('Saved positions are unavailable. Sync your brokers and retry.'); }
     if (channel !== 'all' && !view.channels.includes(channel)) { channel = 'all'; writeChannelQuery(channel); return render(); }
     $('positionsFilters').innerHTML = `<span class="label-eyebrow">Broker</span>${['all', ...view.channels].map(ch => `<button type="button" class="chip-btn${ch === channel ? ' on' : ''}" data-channel="${esc(ch)}" aria-pressed="${ch === channel}">${esc(name(ch))}</button>`).join('')}`;
-    $('positionsFreshness').textContent = `${view.stocks.length} ${view.stocks.length === 1 ? 'stock' : 'stocks'} · ${channel === 'all' ? 'combined across all brokers' : name(channel)} · ${view.dates.length ? view.dates.map(([ch, date]) => name(ch) + ' as of ' + date).join(' · ') : 'Broker dates unavailable'}`;
+    $('positionsFreshness').textContent = `${view.stocks.length} ${view.stocks.length === 1 ? 'stock' : 'stocks'} · ${channel === 'all' ? 'combined across all brokers' : name(channel)} · ${view.dates.length ? view.dates.map(([ch, date]) => name(ch) + ' as of ' + formatReportDate(date)).join(' · ') : 'Broker dates unavailable'}`;
     $('stocksTable').innerHTML = stocksTable(view.stocks, view, true);
     $('positionsCash').innerHTML = `<span>Cash available <strong>${esc(amount(view.cash, view.ccy))}</strong> · ${esc(channel === 'all' ? 'All brokers' : name(channel))}</span><span>${esc(view.ccy || 'Currency unavailable')} · Recorded cash; not buying power</span>`;
-    const rows = view.obligations.map(row => `<tr class="${row.highRisk ? 'risk-row' : ''}"><td><strong>${esc(row.ticker)}</strong>${row.stale ? '<small class="metric-sub">Broker date unverified</small>' : ''}</td><td>${amount(row.last, view.ccy)}</td><td>${number(row.shares)}</td><td>${number(row.putContracts)}</td><td>${amount(row.cashIfAssigned, view.ccy)}</td><td>${number(row.callContracts)}</td><td>${number(row.sharesIfCalled)}</td><td>${amount(row.premium, view.ccy)}${row.missingPremium ? `<small class="metric-sub">${row.missingPremium} unmatched; ${row.knownPremium ? 'known subtotal ' + esc(amount(row.premiumSubtotal, view.ccy)) : 'opening fills unavailable'}</small>` : ''}</td><td class="${toneClass(row.pnl)}">${safeSigned(row.pnl, view.ccy)}</td><td>${row.nearestDte == null ? '—' : row.nearestDte < 0 ? badge('Past expiry', 'warning') : `${row.nearestDte}d`}</td><td>${row.highRisk ? badge(`${row.highRisk} above 60%`, 'danger') : row.unscored ? badge('Unknown', 'muted') : badge('Clear', 'success')}${row.unscored ? `<small class="metric-sub">${row.unscored} unscored</small>` : ''}</td></tr>`).join('');
+    const rows = view.obligations.map(row => `<tr class="${row.highRisk ? 'risk-row' : ''}"><td><strong>${esc(row.ticker)}</strong>${row.stale ? '<small class="metric-sub">Broker date unverified</small>' : ''}</td><td>${amount(row.last, view.ccy)}</td><td>${number(row.shares)}</td><td>${number(row.putContracts)}</td><td>${amount(row.cashIfAssigned, view.ccy)}</td><td>${number(row.callContracts)}</td><td>${number(row.sharesIfCalled)}</td><td>${amount(row.premium, view.ccy)}${row.missingPremium ? ` <button type="button" class="pill pill-warning help-dot" aria-label="Missing premium records" data-help="${esc((row.knownPremium ? 'Known subtotal ' + amount(row.premiumSubtotal, view.ccy) + '. ' : '') + (row.premiumGaps || []).join('; '))}">${row.missingPremium} missing</button>` : ''}</td><td class="${toneClass(row.pnl)}">${safeSigned(row.pnl, view.ccy)}</td><td>${row.nearestDte == null ? '—' : row.nearestDte < 0 ? badge('Past expiry', 'warning') : `${row.nearestDte}d`}</td><td>${row.highRisk ? badge(`${row.highRisk} above 60%`, 'danger') : !row.unscored ? badge('Clear', 'success') : ''}${row.unscored ? ` <button type="button" class="pill pill-warning help-dot" aria-label="Unscored option risks" data-help="${esc((row.riskGaps || ['Matching prices unavailable']).join('; '))}">${row.unscored} unscored</button>` : ''}</td></tr>`).join('');
     $('obligationsTable').innerHTML = table(globalThis.PositionsV2.obligationColumns, rows,
       { 'Cash if assigned':amount(view.totals.cashIfAssigned, view.ccy), Premium:amount(view.totals.premium, view.ccy) },
       { Premium:'Reconciled opening proceeds, before fees, for still-open short options. Missing opening fills or FX leave the total unavailable; known subtotals are shown separately.', 'High risk':'Number of open short-option rows with matched-quote Prob. ITM above 60%. Missing matching quotes are unscored, never assumed safe.', 'Cash if assigned':'Gross physical-delivery short-put strike obligation, in reporting currency. Does not subtract available cash, premium or long-option protection.' }, 'Gross short-option assignment obligations');
     $('positionsFunds').hidden = !view.funds.length;
     $('fundsTable').innerHTML = view.funds.length ? stocksTable(view.funds, view) : '';
-    $('positionsWarnings').hidden = !view.warnings.length;
-    $('positionsWarnings').querySelector('ul').innerHTML = view.warnings.map(message => `<li>${esc(message)}</li>`).join('');
     $('positionsContent').setAttribute('aria-busy', 'false');
   }
   $('positionsFilters').addEventListener('click', event => {
@@ -44,14 +42,14 @@
   });
   async function load(refresh = false) {
     if (loading) return;
-    loading = true; $('positionsRefresh').disabled = true; $('positionsRetry').disabled = true;
+    loading = true; $('positionsRetry').disabled = true;
     $('positionsError').hidden = true; $('positionsProgress').hidden = false;
     $('positionsProgress').setAttribute('aria-valuenow', '0'); $('positionsProgress').firstElementChild.style.width = '0%';
     $('positionsStatus').textContent = payload ? 'Loading saved calculations…' : 'Reading your portfolio records…';
     const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 180000);
     try {
       const fresh = await globalThis.PortfolioLoader.load({ refresh, signal:controller.signal,
-        onSnapshot: cached => { payload = cached; render(); $('positionsStatus').textContent = `Snapshot ${cached.generatedAt || 'from the last successful load'} · Loading saved calculations…`; },
+        onSnapshot: cached => { payload = cached; render(); $('positionsStatus').textContent = `Snapshot ${formatReportDate(cached.generatedAt) || 'from the last successful load'} · Loading saved calculations…`; },
         onProgress: progress => {
           const value = Math.max(0, Math.min(6, progress.completedStages || 0));
           $('positionsProgress').setAttribute('aria-valuenow', String(value)); $('positionsProgress').firstElementChild.style.width = `${value / 6 * 100}%`;
@@ -59,20 +57,20 @@
         },
       });
       payload = fresh; render();
-      $('positionsStatus').textContent = `Portfolio valued ${fresh.generatedAt || 'date unavailable'} · Broker position dates shown below`;
+      $('positionsStatus').textContent = `Portfolio valued ${formatReportDate(fresh.generatedAt) || 'date unavailable'} · Broker position dates shown below`;
       $('positionsProgress').setAttribute('aria-valuenow', '6');
     } catch (error) {
       $('positionsError').hidden = false;
       $('positionsError').querySelector('p').textContent = error.name === 'AbortError' ? 'Portfolio loading timed out. Please retry.' : error.message || 'Could not load positions.';
-      $('positionsStatus').textContent = payload ? `Update failed · Showing snapshot ${payload.generatedAt || 'from the previous load'}` : 'Positions could not be loaded.';
+      $('positionsStatus').textContent = payload ? `Update failed · Showing snapshot ${formatReportDate(payload.generatedAt) || 'from the previous load'}` : 'Positions could not be loaded.';
       if (!payload) {
         const unavailable = '<p class="empty">Positions are unavailable. Use Retry loading above.</p>';
         $('stocksTable').innerHTML = unavailable; $('obligationsTable').innerHTML = unavailable;
       }
       $('positionsContent').setAttribute('aria-busy', 'false');
-    } finally { clearTimeout(timer); loading = false; $('positionsRefresh').disabled = false; $('positionsRetry').disabled = false; $('positionsProgress').hidden = true; }
+    } finally { clearTimeout(timer); loading = false; $('positionsRetry').disabled = false; $('positionsProgress').hidden = true; }
   }
-  $('positionsRefresh').addEventListener('click', () => void load(true));
+
   $('positionsRetry').addEventListener('click', () => void load());
   void load();
 })();

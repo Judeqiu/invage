@@ -80,3 +80,12 @@ The open book reads recorded state without market quote calls. History/archive c
 Tests cover ID backfill/idempotence, exact evidence preservation, broker/account/user isolation, partial closes and reopenings, explicit lifecycle events, incomplete evidence, conservative roll classification, independent V1/V2 configuration, private API caches, notes and conflicts, browser keyboard details, escaped text, all columns, native-currency cash, mobile layouts and error recovery. PostgreSQL integration checks encrypted state persistence, concurrent revision rejection, untouched financial journals and automatic IDs on future imports.
 
 Nine older cases fail on both this change and an isolated archive of base commit `06c2c3b`: three in `books-tools-parity.test.ts`, three in `execution-import.test.ts`, one in `execution-persistence.test.ts`, and two in `option-history-backfill.test.ts`. They use obsolete alias/authentication/owner fixtures (missing registered aliases or user UUIDs). The Trades v2 PostgreSQL, authenticated API, and valid-UUID archive tests pass; the older fixtures are outside this change.
+
+
+October 26 feedback update: the opening-cash input is removed. Net cash now
+shows cumulative reconciled opening premiums starting at zero in a single
+currency; it is not the broker cash balance. Calendar filters and collapsed
+months preserve earlier premium carry. Dates display as `23 Oct 2026`, including
+entry, expiry and inspector dates; raw IDs and stored date values remain intact.
+Compact rows fit 15 entries at 1440 × 900. Broker position dates remain available
+from the information control next to each broker. System IDs remain in details.

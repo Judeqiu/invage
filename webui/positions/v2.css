@@ -52,3 +52,16 @@ button:focus-visible, [tabindex]:focus-visible { outline:2px solid var(--brand-2
 .positions-table .pill-warning { color:var(--warning); }
 .positions-table .pill-danger { color:var(--danger); }
 .positions-table .pill-success { color:var(--success); }
+
+/* Fifteen standard rows fit before the table needs vertical scrolling. */
+.positions-table { font-size:.78rem; min-width:1080px; }
+.positions-table th,.positions-table td { padding:4px 9px; height:28px; line-height:20px; }
+.positions-table th { letter-spacing:.025em; font-weight:600; text-align:right; }
+.positions-table .column-total { margin:3px 0 0 auto; padding:1px 5px; font-size:.75rem; line-height:20px; }
+.positions-table .pill { padding:1px 6px; line-height:18px; }
+.positions-table .metric-sub { display:inline; margin-left:4px; }
+.positions-toolbar { padding:.5rem .65rem; gap:.5rem; }
+#positionsFreshness { margin:0; }
+.table-scroll { max-height:520px; }
+.positions-note { margin-top:.5rem; line-height:1.4; }
+.positions-table .pill.help-dot { width:auto; height:auto; border-radius:1rem; white-space:nowrap; }

@@ -91,6 +91,8 @@
   function install({ payload, channel, ccy, notes = '' }) {
     const context = `${channel === 'all' || channel === 'merged' ? 'All brokers (merged)' : channel} · Snapshot ${payload?.generatedAt || 'date unavailable'}`;
     const dates = Object.fromEntries(Object.entries(payload?.brokerAsOf || {}).filter(([ch]) => channel === 'all' || channel === 'merged' || ch === channel));
+    const sectionMode = document.body.hasAttribute('data-explain-sections');
+    const sections = new Map();
     document.querySelectorAll('#metrics .metric-card, #statistics .metric-card, #edge .metric-card, #patterns .metric-card, #conc .metric-card, [data-explain-figures]').forEach(card => {
       const heading = card.querySelector('.label-eyebrow, h3');
       const title = card.dataset.explainTitle || (heading ? clean(heading) : 'Option book');
@@ -101,6 +103,15 @@
       const calculation = [notes, ...[...card.querySelectorAll('p')].map(clean), ...[...card.querySelectorAll('[data-help]')].map(n => n.dataset.help)].filter(Boolean).join(' ');
       const descriptor = { title, figures, context, dates, ccy, notes: calculation };
       descriptor.key = JSON.stringify(descriptor);
+      if (sectionMode) {
+        const section = card.closest('section');
+        if (section) {
+          const group = sections.get(section) || { title: section.querySelector('h2')?.textContent || title, figures:[], context, dates, ccy, notes:notes, calculations:[] };
+          group.figures.push(...figures); group.calculations.push(...[...card.querySelectorAll('p')].map(clean), ...[...card.querySelectorAll('[data-help]')].map(n => n.dataset.help));
+          sections.set(section, group);
+        }
+        return;
+      }
       let button = card.querySelector('[data-insights-explain-button]');
       if (!button) {
         button = document.createElement('button'); button.type = 'button'; button.className = 'insights-explain'; button.dataset.insightsExplainButton = '';
@@ -114,6 +125,24 @@
       }
       button.setAttribute('aria-label', `Explain ${title}`); descriptors.set(button, descriptor);
     });
+    if (sectionMode) for (const section of document.querySelectorAll('#content section')) {
+      if (!sections.has(section)) sections.set(section, { title: section.querySelector('h2')?.textContent || 'Insights',
+        figures:['No recorded figures available in this section for the selected brokers.'], context, dates, ccy, notes, calculations:[] });
+    }
+    for (const [section, descriptor] of sections) {
+      descriptor.figures = [...new Set(descriptor.figures)];
+      descriptor.notes = [descriptor.notes, ...new Set(descriptor.calculations)].filter(Boolean).join(' ');
+      delete descriptor.calculations;
+      descriptor.key = JSON.stringify(descriptor);
+      let button = section.querySelector('[data-insights-explain-button]');
+      if (!button) {
+        button = document.createElement('button'); button.type = 'button';
+        button.className = 'chip-btn insights-explain-section'; button.dataset.insightsExplainButton = '';
+        button.addEventListener('click', () => choose(button));
+        section.querySelector('.section-gap').appendChild(button);
+      }
+      button.setAttribute('aria-label', `Explain ${descriptor.title}`); descriptors.set(button, descriptor);
+    }
     sync();
   }
   globalThis.InsightsExplain = Object.freeze({ install });

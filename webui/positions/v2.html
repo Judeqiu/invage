@@ -10,41 +10,40 @@
   <link rel="stylesheet" href="../report.css" />
   <link rel="stylesheet" href="../dashboard/v2.css" />
   <link rel="stylesheet" href="./v2.css" />
+  <link rel="stylesheet" href="../portfolio-pages.css" />
 </head>
 <body>
   <main class="page">
     <header class="positions-header">
       <div class="label-eyebrow">Positions / Equity book &amp; obligations</div>
-      <button id="positionsRefresh" type="button" class="chip-btn">Refresh positions</button>
     </header>
-    <p id="positionsStatus" role="status" aria-live="polite">Reading your portfolio records…</p>
+    <p id="positionsStatus" class="sr-only" role="status" aria-live="polite">Reading your portfolio records…</p>
     <div id="positionsProgress" class="positions-progress" role="progressbar" aria-label="Portfolio loading" aria-valuemin="0" aria-valuemax="6" aria-valuenow="0"><div></div></div>
     <div id="positionsError" class="positions-error" role="alert" hidden><p></p><button id="positionsRetry" class="chip-btn" type="button">Retry loading</button></div>
     <div id="positionsContent" aria-busy="true">
       <section aria-labelledby="stocksTitle">
-        <div class="section-gap"><div class="label-eyebrow">Section 01</div><h1 id="stocksTitle">Long stock positions</h1><p>Every recorded share held. Coverage pairs short calls with shares at the same broker channel before combining the totals; idle shares have no recorded physical-delivery call against them.</p></div>
+        <div class="section-gap"><div class="label-eyebrow">Section 01</div><h1 id="stocksTitle">Long stock positions</h1><p>Every share currently held. Covered shares already have an open call written against them; uncovered shares are idle capital available for the next covered call.</p></div>
         <div class="metric-card table-card">
           <div class="positions-toolbar"><div id="positionsFilters" role="group" aria-label="Broker filter"></div><p id="positionsFreshness"></p></div>
           <div id="stocksTable" class="table-scroll" role="region" aria-label="Stock positions" tabindex="0"><p class="empty">Preparing your equity book…</p></div>
         </div>
       </section>
       <section aria-labelledby="obligationsTitle">
-        <div class="section-gap"><div class="label-eyebrow">Section 02</div><h2 id="obligationsTitle">Assignment obligations by underlying</h2><p>Review short option contracts, possible cash purchases and share delivery, recorded opening premium, and positions with an estimated chance above 60% of finishing in the money.</p></div>
+        <div class="section-gap"><div class="label-eyebrow">Section 02</div><h2 id="obligationsTitle">Assignment obligations by underlying</h2><p>Contracts written, cash needed if short puts are assigned, shares called away, and contracts above a 60% chance of finishing in the money.</p></div>
         <div class="metric-card table-card">
           <div id="positionsCash" class="positions-toolbar"></div>
           <div id="obligationsTable" class="table-scroll" role="region" aria-label="Assignment obligations" tabindex="0"><p class="empty">Preparing your open option book…</p></div>
         </div>
-        <p class="positions-note">Premium is the reconciled opening cash flow for still-open short options, before fees. It is not realized profit. High risk counts open option rows, not contracts; missing matching quotes are marked unscored. Assignment figures are gross obligations and do not net protective long options or premium received.</p>
+        <p class="positions-note">Gross assignment obligations · Premium before fees · Hover or focus on data badges for missing records.</p>
       </section>
       <section id="positionsFunds" aria-labelledby="fundsTitle" hidden>
-        <div class="section-gap"><div class="label-eyebrow">Additional holdings</div><h2 id="fundsTitle">Fund positions</h2><p>Recorded fund holdings remain visible separately from the stock book. They are included in portfolio NAV.</p></div>
+        <div class="section-gap"><div class="label-eyebrow">Section 03</div><h2 id="fundsTitle">Fund positions</h2><p>Fund holdings included in portfolio NAV.</p></div>
         <div id="fundsTable" class="metric-card table-card table-scroll" role="region" aria-label="Fund positions" tabindex="0"></div>
       </section>
-      <details id="positionsWarnings" class="positions-warnings" hidden><summary>Data availability and valuation notes</summary><ul></ul></details>
-      <p class="positions-note">Money columns use the reporting currency. Average cost is total cost ÷ shares; Last is market value ÷ shares after currency conversion. Different native prices are combined by share quantity. A dash means a value cannot be verified from the current records. Broker dates and missing data remain visible.</p>
     </div>
     <footer>Recorded holdings · Broker snapshots · Market quotes change · Not financial advice</footer>
   </main>
+  <script src="../dashboard/scroll-shell.js"></script>
   <script src="../report.js"></script>
   <script src="../option-probability.js"></script>
   <script src="../portfolio-loader.js"></script>

@@ -60,8 +60,8 @@ it.skipIf(!existsSync(executablePath))('matches every mockup column, filters bot
     await page.goto(origin + '/positions/v2.html', { waitUntil:'domcontentloaded' });
     await page.waitForFunction(() => document.getElementById('positionsStatus')?.textContent?.startsWith('Snapshot'));
     expect(await page.$eval('#positionsContent', node => node.getAttribute('aria-busy'))).toBe('false');
-    expect(await page.$eval('#positionsWarnings', node => node.textContent)).toContain('München');
-    expect(await page.$('#positionsWarnings img')).toBeNull();
+    expect(await page.$('#positionsWarnings')).toBeNull();
+    expect(await page.$('#positionsRefresh')).toBeNull();
     const columnLabels = (selector: string) => page.$$eval(selector + ' .col-label', nodes => nodes.map(node => { const copy = node.cloneNode(true) as Element; copy.querySelectorAll('button').forEach(b => b.remove()); return copy.textContent!.trim(); }));
     expect(await columnLabels('#stocksTable')).toEqual(['Ticker','Shares','Avg cost','Total cost','Last','Market value','Unrealized P&L','Return','% of NAV','Covered','Broker']);
     expect(await columnLabels('#obligationsTable')).toEqual(['Ticker','Last','Shares held','Put contracts','Cash if assigned','Call contracts','Shares if called','Premium','Open P&L','Nearest expiry','High risk']);
@@ -75,7 +75,7 @@ it.skipIf(!existsSync(executablePath))('matches every mockup column, filters bot
     expect(new URL(page.url()).searchParams.get('channel')).toBe('tiger');
     await page.click('#positionsFilters [data-channel="all"]');
     stream!.end(event('result', { payload:dashboard }));
-    await page.waitForSelector('#positionsRefresh:enabled');
+    await page.waitForSelector('#positionsRetry:enabled');
     await page.screenshot({ path:'/tmp/invage-positions-v2-desktop.png', fullPage:true });
     for (const width of [390, 768, 1100]) {
       await page.setViewport({ width, height:900 });
@@ -85,9 +85,9 @@ it.skipIf(!existsSync(executablePath))('matches every mockup column, filters bot
     await page.$eval('#obligationsTable', node => { node.scrollLeft = node.scrollWidth; });
     expect(await page.$eval('#obligationsTable', node => node.scrollLeft)).toBeGreaterThan(0);
     await page.screenshot({ path:'/tmp/invage-positions-v2-mobile.png', fullPage:true });
-    mode = 'fail'; await page.click('#positionsRefresh'); await page.waitForSelector('#positionsError:not([hidden])');
-    expect(await page.$eval('#positionsStatus', node => node.textContent)).toContain('Showing snapshot');
-    expect(await page.$eval('#stocksTable tbody', node => node.textContent)).toContain('100 / 300');
+    mode = 'fail'; await page.reload(); await page.waitForSelector('#positionsError:not([hidden])');
+    expect(await page.$eval('#positionsStatus', node => node.textContent)).toContain('could not be loaded');
+    expect(await page.$eval('#stocksTable', node => node.textContent)).toContain('unavailable');
     mode = 'fresh'; await page.click('#positionsRetry');
     await page.waitForFunction(() => document.getElementById('positionsStatus')?.textContent?.startsWith('Portfolio valued'));
     expect(await page.$eval('#positionsError', node => node.hasAttribute('hidden'))).toBe(true);
@@ -96,7 +96,7 @@ it.skipIf(!existsSync(executablePath))('matches every mockup column, filters bot
     await page.waitForSelector('#positionsError:not([hidden])');
     expect(await page.$eval('#positionsError', node => node.textContent)).toContain('Loading stopped');
     expect(await page.$eval('#stocksTable', node => node.textContent)).toContain('Positions are unavailable');
-    expect(await page.$eval('#positionsRefresh', node => (node as HTMLButtonElement).disabled)).toBe(false);
+    expect(await page.$eval('#positionsRetry', node => (node as HTMLButtonElement).disabled)).toBe(false);
     expect(errors).toEqual([]);
   } finally { await browser.close(); server.closeAllConnections(); await new Promise<void>(r => server.close(() => r())); }
 }, 25000);

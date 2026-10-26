@@ -2,37 +2,37 @@
   const $ = id => document.getElementById(id), M = globalThis.InsightsV2;
   let payload = null, channel = channelFromQuery(), loading = false;
   if (channel === 'merged') channel = 'all';
-  const name = ch => ({all:'All platforms',ibkr:'IBKR',moomoo:'MooMoo',tiger:'Tiger',webull:'Webull',default:'Unassigned'})[ch] || ch;
+  const name = ch => ({all:'All platforms',ibkr:'IBKR',moomoo:'moomoo',tiger:'Tiger',webull:'Webull',default:'Unassigned'})[ch] || ch;
   const num = n => n == null || !Number.isFinite(n) ? '—' : n.toLocaleString('en-US',{maximumFractionDigits:2});
   const amount = (n,c) => n == null || !Number.isFinite(n) || !c ? '—' : money(n,c);
   const signed = (n,c) => n == null || !Number.isFinite(n) || !c ? '—' : signedMoney(n,c);
   const pct = n => n == null ? '—' : `${num(n)}%`;
   const tone = n => n == null ? '' : n > 0 ? 'up' : n < 0 ? 'down' : '';
   const card = (label,value,sub = '',className = '',help = '') => `<div class="metric-card ${className}"><div class="label-eyebrow">${esc(label)}${help ? ` <button type="button" class="help-dot" aria-label="About ${esc(label)}" data-help="${esc(help)}">?</button>` : ''}</div><div class="metric-value">${esc(value)}</div><div class="metric-sub">${esc(sub)}</div></div>`;
-  const contract = p => `${name(p.channel)} · ${p.ticker} ${p.side.toUpperCase()} ${p.right.toUpperCase()} ${amount(p.strike,p.nativeCurrency)} · ${p.expiry} ×${num(p.units)}`;
+  const contract = p => `${name(p.channel)} · ${p.ticker} ${p.side.toUpperCase()} ${p.right.toUpperCase()} ${amount(p.strike,p.nativeCurrency)} · ${formatReportDate(p.expiry)} ×${num(p.units)}`;
   const messageCard = (label,text,style = 'pattern-card') => `<div class="metric-card ${style}"><div class="label-eyebrow">${esc(label)}</div><p>${esc(text)}</p></div>`;
   function render() {
     const v = payload?.pageProjections?.insights?.[channel];
     if (!v) { if (channel !== 'all') { channel = 'all'; return render(); } throw new Error('Saved insights are unavailable. Sync your brokers and retry.'); }
     if (channel !== 'all' && !v.channels.includes(channel)) {channel = 'all';writeChannelQuery(channel);return render();}
     $('brokers').innerHTML = ['all',...v.channels].map(ch => `<button type="button" class="chip-btn${ch === channel ? ' on' : ''}" aria-pressed="${ch === channel}" data-channel="${esc(ch)}">${esc(name(ch))}</button>`).join('');
-    $('eyebrow').textContent = `Daily briefing · ${payload?.generatedAt || 'Snapshot date unavailable'}`;
-    $('summary').textContent = !payload?.model?.live ? payload?.message || 'No portfolio records are available yet.' : `${v.options} open option lines (${v.shorts} short, ${v.longs} long) and ${v.equities} equity lots${v.funds ? ", " + v.funds + " fund lots" : ""} across ${name(channel).toLowerCase()}. Recorded cash is ${amount(v.cash,v.ccy)} (${pct(v.cashWeight)} of NAV). Reconciled remaining short-option premium is ${amount(v.premium,v.ccy)}, with ${signed(v.optionPnl,v.ccy)} open option P&L. ${v.highRisk} short-option lines have an estimated Prob. ITM above 60%; ${v.unscored} are unscored.`;
+    $('eyebrow').textContent = `Daily briefing · ${formatReportDate(payload?.generatedAt) || 'Snapshot date unavailable'}`;
+    $('summary').textContent = !payload?.model?.live ? payload?.message || 'No portfolio records are available yet.' : `${v.options} option lines · ${v.equities} equity lots${v.funds ? ' · ' + v.funds + ' fund lots' : ''} · ${name(channel)}`;
     const unitemized = brokerFundAssets(payload,channel).some(r => r.amount > 0);
     $('metrics').innerHTML = card(unitemized ? 'Itemized NAV' : 'NAV',amount(v.nav,v.ccy),v.ccy || 'Reporting currency unavailable') +
       card('Unrealized P&L',signed(v.totalPnl,v.ccy),'All recorded holdings',tone(v.totalPnl)) +
       card('Cash',amount(v.cash,v.ccy),'Recorded free cash; not buying power') +
       card('Assignment cash',amount(v.obligation,v.ccy),'Gross physical-delivery short-put obligation') + brokerFundAssetsCards(payload,channel);
-    const risks = v.risks.slice(0,3).map((p,i) => messageCard(`Risk ${String(i+1).padStart(2,'0')}`,
+    const risks = v.risks.map((p,i) => messageCard(`Risk ${String(i+1).padStart(2,'0')}`,
       `${contract(p)} — ${p.probability == null ? 'Currently in the money; expiry probability unavailable' : 'Estimated Prob. ITM ' + pct(p.probability*100)} with ${num(p.dte)} days left.${p.obligation == null ? '' : ' Gross put assignment cash: ' + amount(p.obligation,v.ccy) + '.'}`,
       `risk-card${p.dte <= 21 ? ' urgent' : ''}`));
     if (v.cashGap > 0) risks.push(messageCard('Cash vs assignment',`Gross short-put purchase obligations of ${amount(v.obligation,v.ccy)} exceed recorded cash of ${amount(v.cash,v.ccy)} by ${amount(v.cashGap,v.ccy)}. Check collateral and funding at each broker; this comparison does not establish available margin.`,'risk-card'));
     if (v.expired) risks.push(messageCard('Past-expiry records',`${v.expired} option lines remain recorded past expiry. Refresh their broker records and verify the outcome; expiration or assignment is not inferred.`,'risk-card'));
     $('risks').innerHTML = risks.join('') || messageCard(v.options ? 'Assessed positions' : 'No option holdings',v.options ? 'No matching elevated-probability or near-expiry ITM risks were identified in the assessed positions. Review the coverage notes below.' : 'No recorded option positions in this broker scope.');
-    $('riskCoverage').textContent = `${v.shorts-v.unscored} of ${v.shorts} short-option lines scored · ${v.unscored} unscored${v.risks.length > 3 ? ' · Showing the first 3 of ' + v.risks.length + ' flagged lines' : ''}. Prob. ITM estimates finishing in the money, not the probability of early assignment. ${v.dates.length ? v.dates.map(([ch,date]) => name(ch) + ' as of ' + date).join(' · ') : 'Broker position dates unavailable.'}`;
+    $('riskCoverage').textContent = `${v.shorts-v.unscored} of ${v.shorts} short-option lines scored · ${v.unscored} unscored. Prob. ITM estimates finishing in the money, not the probability of early assignment. ${v.dates.length ? v.dates.map(([ch,date]) => name(ch) + ' as of ' + formatReportDate(date)).join(' · ') : 'Broker position dates unavailable.'}`;
     $('patterns').innerHTML = messageCard('Expiry profile',`${v.nearLines} of ${v.options} recorded option lines expire in the next 30 days, with ${amount(v.nearPremium,v.ccy)} of reconciled remaining short premium. Past-expiry records are counted separately.`) +
       messageCard('Concentration',v.concentration ? `${v.concentration.ticker} has the largest gross marked exposure: ${amount(v.concentration.value,v.ccy)}, or ${pct(v.concentration.navPct)} of NAV. This adds absolute market values across its holdings; it is not stock-equivalent notional or a normalized portfolio weight.` : 'Concentration cannot be ranked until all holdings in this scope have comparable marks and NAV.');
-    $('actions').innerHTML = v.actions.slice(0,3).map((p,i) => `<li><span class="rank">${String(i+1).padStart(2,'0')}</span><div>${esc(contract(p))}<br><strong>${esc(pct(p.capture))}</strong> of gross opening premium retained at the displayed mark. Review closing or rolling costs, liquidity and assignment exposure before deciding.<br><a target="_parent" href="/trades?channel=${encodeURIComponent(p.channel)}">Review ${esc(name(p.channel))} trades →</a></div></li>`).join('') || '<li class="empty">No review candidates meet the 50% retained-premium threshold with reconciled opening cash, a current comparable mark and a recent broker date. This is not a recommendation to hold.</li>';
+    $('actions').innerHTML = v.actions.map((p,i) => `<li><span class="rank">${String(i+1).padStart(2,'0')}</span><div>${esc(contract(p))}<br><strong>${esc(pct(p.capture))}</strong> of gross opening premium retained at the displayed mark. Review closing or rolling costs, liquidity and assignment exposure before deciding.<br><a target="_parent" href="/trades?channel=${encodeURIComponent(p.channel)}">Review ${esc(name(p.channel))} trades →</a></div></li>`).join('') || '<li class="empty">No review candidates meet the 50% retained-premium threshold with reconciled opening cash, a current comparable mark and a recent broker date. This is not a recommendation to hold.</li>';
     const rankingNote = v.rankingIncomplete ? 'Complete comparable P&L required' : 'No qualifying contributor';
     const bestSub = r => r ? `${signed(r.pnl,v.ccy)} open P&L · ${num(r.lines)} lines / ${num(r.contracts)} contracts` : rankingNote;
     $('statistics').innerHTML = [
@@ -66,7 +66,9 @@
     figures(stats[7], M.statLabels[7], [`Cash weight — ${pct(v.cashWeight)}`, `Recorded free cash — ${amount(v.cash,v.ccy)}`]);
     figures($('patterns').children[0], 'Expiry profile', [`Lines expiring within 30 days — ${num(v.nearLines)}`, `Recorded option lines — ${num(v.options)}`, `Reconciled remaining short premium within 30 days — ${amount(v.nearPremium,v.ccy)}`]);
     figures($('patterns').children[1], 'Concentration', v.concentration ? [`${v.concentration.ticker} · gross marked exposure — ${amount(v.concentration.value,v.ccy)}`, `${v.concentration.ticker} · gross exposure / NAV — ${pct(v.concentration.navPct)}`] : ['Concentration — unavailable; complete comparable marks and NAV required']);
-    [...$('risks').children].forEach(node => {
+    [...$('risks').children].forEach((node, i) => {
+      const risk = v.risks[i];
+      if (risk) figures(node, contract(risk), [`${contract(risk)} · Prob. ITM — ${pct(risk.probability == null ? null : risk.probability * 100)}`, `Days to expiry — ${num(risk.dte)}`, `Gross put assignment cash — ${amount(risk.obligation,v.ccy)}`]);
       const title = node.querySelector('.label-eyebrow')?.textContent;
       if (title === 'Cash vs assignment') figures(node, title, [`Gross put assignment cash — ${amount(v.obligation,v.ccy)}`, `Recorded cash — ${amount(v.cash,v.ccy)}`, `Cash shortfall vs gross assignment — ${amount(v.cashGap,v.ccy)}`]);
       if (title === 'Past-expiry records') figures(node, title, [`Past-expiry option lines — ${num(v.expired)}`]);
@@ -79,6 +81,7 @@
         ...(row.missingPremium ? [`${row.ticker} · known premium subtotal — ${amount(row.premiumSubtotal,v.ccy)} (${row.missingPremium} unmatched lines)`] : []),
       ]);
     });
+    figures($('actions').parentElement, 'Review candidates', v.actions.map(p => `${contract(p)} · premium retained — ${pct(p.capture)}`));
     InsightsExplain.install({ payload, channel, ccy: v.ccy, notes: [
       'Current recorded holdings only. Premium received is reconciled opening cash for remaining short contracts, before fees. Open P&L includes long and short options and is unrealized, not historical trading performance. Counts of lines differ from contract quantities. Assignment cash is the gross physical-delivery short-put purchase obligation, not broker margin or net spread risk. Cash is recorded free cash, not buying power. Average DTE is the unweighted arithmetic mean of option rows; LEAPs expire beyond 365 days. Average premium is per remaining short-option line. Concentration sums absolute marked values by underlying and divides by NAV. Rankings require complete comparable P&L.',
       ...v.warnings,
@@ -96,13 +99,13 @@
     const controller = new AbortController(),timer = setTimeout(() => controller.abort(),180000);
     try {
       const fresh = await globalThis.PortfolioLoader.load({refresh,signal:controller.signal,
-        onSnapshot:cached => {payload = cached;render();$('status').textContent = `Snapshot ${cached.generatedAt || 'from the previous successful load'} · Loading saved calculations…`;},
+        onSnapshot:cached => {payload = cached;render();$('status').textContent = `Snapshot ${formatReportDate(cached.generatedAt) || 'from the previous successful load'} · Loading saved calculations…`;},
         onProgress:p => {const n = Math.max(0,Math.min(6,p.completedStages || 0));$('progress').setAttribute('aria-valuenow',String(n));$('progress').firstElementChild.style.width = `${n/6*100}%`;if (!payload) $('status').textContent = `Preparing briefing · ${p.stage || 'records'}`;},
       });
-      payload = fresh;render();$('status').textContent = `Portfolio valued ${fresh.generatedAt || 'date unavailable'} · Broker position dates and data coverage shown below`;
+      payload = fresh;render();$('status').textContent = `Portfolio valued ${formatReportDate(fresh.generatedAt) || 'date unavailable'} · Broker position dates and data coverage shown below`;
     } catch(error) {
       $('error').hidden = false;$('error').querySelector('p').textContent = error.name === 'AbortError' ? 'Briefing loading timed out. Please retry.' : error.message || 'Could not load the briefing.';
-      $('status').textContent = payload ? `Update failed · Showing snapshot ${payload.generatedAt || 'from the previous load'}` : 'Briefing unavailable · Retry loading.';
+      $('status').textContent = payload ? `Update failed · Showing snapshot ${formatReportDate(payload.generatedAt) || 'from the previous load'}` : 'Briefing unavailable · Retry loading.';
       if (!payload) { $('risks').innerHTML = '<p class="empty">Insights are unavailable. Use Retry loading above.</p>'; }
       $('content').setAttribute('aria-busy','false');
     } finally {clearTimeout(timer);loading = false;$('refresh').disabled = $('retry').disabled = false;$('progress').hidden = true;}

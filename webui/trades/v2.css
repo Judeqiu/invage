@@ -91,3 +91,21 @@ button:focus-visible,select:focus-visible,input:focus-visible,[tabindex]:focus-v
 @media(max-width:600px) { .journal-header .label-eyebrow { font-size:.56rem; } .journal-filters { gap:.65rem; } .journal-filters label { flex:1 1 40%; } .journal-filters :is(select,input) { width:100%; max-width:none; min-width:0; } #entryCount { margin-left:0; } .detail-grid { grid-template-columns:1fr 1fr; } .journal-table th,.journal-table td { padding:.8rem .7rem; } }
 
 @media(min-width:900px) { #tradeDetail[data-mode="maximized"] .detail-grid { grid-template-columns:repeat(3,minmax(0,1fr)); } }
+
+.journal-hero { margin:.75rem 0 .5rem; gap:1rem; }
+.journal-hero h1 { font-size:1.5rem; margin:.45rem 0; }
+.journal-hero p { font-size:.75rem; line-height:1.4; }
+.hero-filters { gap:.4rem; }
+.journal-status { margin:.35rem 0; }
+.journal-filters { margin:.65rem 0; gap:.5rem; }
+.journal-filters label { gap:.2rem; }
+.journal-filters select { height:30px; padding:.25rem .5rem; }
+.table-scroll { max-height:550px; }
+.journal-table { min-width:1120px; }
+.journal-table th,.journal-table td { padding:3px 8px; height:28px; line-height:20px; }
+.journal-table .group th,.journal-table .month-summary :is(th,td) { padding:3px 8px; height:28px; }
+.journal-table .month-toggle { padding:0 .2rem; }
+.journal-table .row-link.mono { max-width:none; white-space:nowrap; line-height:20px; }
+.journal-badge { padding:0 4px; line-height:20px; }
+.broker-date { display:inline-block; margin-left:5px; border:0; font-size:.65rem; }
+.journal-note { line-height:1.4; margin:.5rem 0; }

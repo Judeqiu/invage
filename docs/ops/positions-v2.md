@@ -51,7 +51,7 @@ contracts do not imply a physical strike purchase/delivery obligation.
 
 V2 uses the private dashboard SSE snapshot/revalidation endpoint. A cached
 snapshot renders immediately, valuation continues, and a failed update leaves
-the timestamped snapshot visible with Retry. Refresh requests fresh data.
+the timestamped snapshot visible with Retry. Broker sync or page reload updates the view; the page has no separate Refresh positions button.
 Money is never summed across unconverted currencies. Unknown premium remains
 unknown, with an explicitly labeled known subtotal; position cost is not used
 to fabricate cash-flow history. Book-cost fallbacks cannot produce a current
@@ -62,3 +62,16 @@ No new identifier or data/schema migration is needed for this page. Existing
 books `accounts.id` UUIDs and option-history episode IDs retain their existing
 meanings; broker-native contract IDs remain broker identifiers. No positions,
 trade records, identities, quantities or financial journal entries are rewritten.
+
+
+October 26 feedback update: Positions, Trades and Insights share Proxima Nova
+with Arial, Verdana and sans-serif fallbacks, compact headings and broker text
+colors (IBKR red, moomoo orange, Tiger yellow, Webull light blue). Positions
+removes the introductory valuation line and the general valuation-notes panel.
+The shell header scrolls away using the same behavior as Dashboard.
+Stock and assignment tables fit at least 15 standard rows in a desktop view
+verified at 1440 × 900; smaller screens retain horizontal table scrolling.
+Missing premium and unscored-risk badges expose the affected contracts and
+reasons through keyboard focus or hover. Missing values remain unavailable.
+Lifecycle events without a native contract ID match by account and exact terms;
+conflicting IDs, accounts or terms are still rejected.

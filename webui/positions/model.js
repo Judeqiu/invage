@@ -68,8 +68,12 @@
         const detail = payload?.optionTradeDetails?.[p.ticker];
         return fresh(p) ? convert(detail?.stoGrossPremium, detail?.currency) : null;
       });
-      const probabilities = lines.map(p => fresh(p) && globalThis.OptionProbability.daysToExpiry(p.option.expiry, asOf) >= 0
-        ? globalThis.OptionProbability.finishItmProbability(p).probability : null);
+      const assessments = lines.map(p => !fresh(p) ? { probability:null, reason:'Broker position date is stale or unavailable' }
+        : globalThis.OptionProbability.daysToExpiry(p.option.expiry, asOf) < 0 ? { probability:null, reason:'Past-expiry position requires broker confirmation' }
+        : globalThis.OptionProbability.finishItmProbability(p));
+      const probabilities = assessments.map(a => a.probability);
+      const riskGaps = assessments.flatMap((a, i) => a.probability == null ? [`${lines[i].channel}: ${lines[i].ticker} — ${a.reason || 'Incomplete contract or quote'}`] : []);
+      const premiumGaps = lines.flatMap((p, i) => premiums[i] == null ? [`${p.channel}: ${p.ticker} — ${!fresh(p) ? 'Broker position date is stale or unavailable' : !finite(payload?.optionTradeDetails?.[p.ticker]?.stoGrossPremium) ? 'Opening fills do not reconcile to the remaining quantity' : 'Reporting currency conversion unavailable'}`] : []);
       const spot = payload?.equityPrices?.[ticker];
       const days = lines.map(p => globalThis.OptionProbability.daysToExpiry(p.option.expiry, asOf));
       return { ticker, last: finite(spot) && spot > 0 && lines.every(p => p.currency === ccy) ? spot : null,
@@ -82,7 +86,7 @@
         pnl: sum(lines.map(p => valued(p) && fresh(p) ? p.pl : null)),
         nearestDte: days.every(finite) ? Math.min(...days) : null,
         highRisk: probabilities.filter(p => p != null && p > 0.6).length,
-        unscored: probabilities.filter(p => p == null).length,
+        unscored: probabilities.filter(p => p == null).length, riskGaps, premiumGaps,
         stale: lines.some(p => !fresh(p)), nonPhysical: lines.some(p => p.option.settlement !== 'physical') };
     }).sort((a, b) => (a.cashIfAssigned == null) - (b.cashIfAssigned == null) || (b.cashIfAssigned || 0) - (a.cashIfAssigned || 0) || a.ticker.localeCompare(b.ticker));
     const totalCost = sum(stocks.map(p => p.cost)), totalValue = sum(stocks.map(p => p.value));

@@ -77,3 +77,16 @@ it('attaches a vertical only to both reconciled lots from the exact opening fill
   expect(otherDetails.long.spread).toBeUndefined();
   expect(otherDetails.short.spread).toBeUndefined();
 });
+
+it('reconciles lifecycle events without a native contract ID using exact account and terms', () => {
+  const rows = [fill('old', '2026-09-01', 'sell', 'open', '1', '300'),
+    fill('new', '2026-10-01', 'sell', 'open', '2', '500')];
+  const event = { id:'assigned', broker_id:'ibkr', channel:'ibkr', account_id:'U1', underlying:'PATH',
+    right:'put', strike:'15', expiry:'2026-11-20', multiplier:'100', date:'2026-09-20',
+    kind:'assignment', settlement:'physical', contracts:'1', currency:'USD', source:'ibkr_flex' } as const;
+  const result = openOptionTradeDetails({ path:holding }, rows, { ibkr:'U1' }, [event]);
+  expect(result.path).toMatchObject({ stoGrossPremium:500, openingExecutionIds:['new'] });
+  for (const mismatch of [{ account_id:'U2' }, { strike:'16' }, { contract_id:'other' }]) {
+    expect(openOptionTradeDetails({ path:holding }, rows, { ibkr:'U1' }, [{ ...event, ...mismatch }])).toEqual({});
+  }
+});

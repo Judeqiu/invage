@@ -48,7 +48,7 @@ it.skipIf(!existsSync(executablePath))('renders cached five-section insights, al
     await page.setViewport({width:1440,height:1100});await page.goto(origin+'/insights/v2.html',{waitUntil:'domcontentloaded'});
     await page.waitForFunction(() => document.getElementById('status')?.textContent?.startsWith('Snapshot'));
     expect(await page.$eval('#content',n => n.getAttribute('aria-busy'))).toBe('false');
-    expect(await page.$$eval('section h2',ns => ns.map(n => n.textContent))).toEqual(["Today's risks",'Book patterns','Recommended actions','Book statistics','Premium and P&L by underlying']);
+    expect(await page.$$eval('section h2',ns => ns.map(n => n.textContent))).toEqual(["Portfolio overview", "Today's risks",'Book patterns','Recommended actions','Book statistics','Premium and P&L by underlying']);
     expect(await page.$$eval('#underlyings thead th',ns => ns.map(n => n.textContent))).toEqual(['Underlying','Contract lines','Premium received','Open P&L','Signal']);
     expect(await page.$$eval('#underlyings tbody tr',ns => ns.every(n => n.children.length === 5))).toBe(true);
     expect(await page.$$('#statistics > .metric-card')).toHaveLength(8);
@@ -56,7 +56,7 @@ it.skipIf(!existsSync(executablePath))('renders cached five-section insights, al
     expect(await page.$eval('#availability',n => n.textContent)).toContain('München');expect(await page.$('#availability img')).toBeNull();
     await page.click('[data-channel="tiger"]');expect(await page.$eval('#metrics',n => n.textContent)).toContain('$2,000.00');
     expect(await page.$eval('#underlyings',n => n.textContent)).toContain('No recorded option');
-    expect(await page.$eval('#summary',n => n.textContent)).toContain('0 open option lines');
+    expect(await page.$eval('#summary',n => n.textContent)).toContain('0 option lines');
     expect(new URL(page.url()).searchParams.get('channel')).toBe('tiger');
     await page.click('[data-channel="all"]');stream!.end(event('result',{payload}));await page.waitForSelector('#refresh:enabled');
     await page.screenshot({path:'/tmp/invage-insights-v2-desktop.png',fullPage:true});

@@ -20,3 +20,13 @@ Verification covers independent configuration, exact columns/statistics, remaini
 
 
 Both Insights versions provide explicit Explain buttons for aggregate cards. V2 also includes a button on each underlying row without adding a table column. Multi-figure cards offer a figure chooser before starting the conversation. Explanations use the dashboard side-chat protocol and include the displayed values, selected broker scope, snapshot timestamp, broker dates, currency and calculation/coverage notes. Existing conversations reopen without sending another prompt. Failed launches can retry their original immutable snapshot even after broker filtering or refresh. No explanation starts automatically; cancelling the chooser sends no message.
+
+
+October 26 feedback update: one Explain control in each section header opens a
+selector containing that section's figures. Overview, risks, patterns, actions,
+statistics and underlying totals all retain their selected broker and snapshot
+context. Empty sections offer an explanation of missing figures rather than
+reusing a previous broker's data. The older Insights page retains its existing
+controls. Risk and action lists now show every qualifying candidate. Typography,
+broker text colors, compact headings and scrolling shell behavior are shared
+with Positions and Trades.

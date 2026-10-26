@@ -67,13 +67,13 @@ it.skipIf(!existsSync(executablePath))('renders both exact column sets, lazy his
     const columns = () => page.$$eval('.journal-table thead .col-label',nodes => nodes.map(n => n.textContent));
     expect(await columns()).toEqual(['Entry date','ID','Ticker','Strategy','Strike','Expiry','Contracts','Premium','Returns %','Net cash','Broker']);
     expect(await page.$$eval('[data-row]',nodes => nodes.every(n => n.children.length === 11))).toBe(true);
-    expect(await page.$eval('#openingCash',n => (n as HTMLInputElement).disabled)).toBe(true);
+    expect(await page.$('#openingCash')).toBeNull();
     expect(await page.$('#journalTable img')).toBeNull();
     expect(await page.$$eval('.year-group th',ns => ns.map(n => n.textContent?.trim()))).toEqual(['2026 · 3 entries','2025 · 1 entry','Entry date unavailable · 1 entry']);
     expect(await page.$$eval('[data-month-toggle]',ns => ns.map(n => n.getAttribute('data-month-toggle')))).toEqual(['2026-09','2026-08','2025-12']);
     expect(await page.$$eval('.month-summary',ns => ns.every(n => [...n.children].reduce((sum,c) => sum + ((c as HTMLTableCellElement).colSpan || 1),0) === 11))).toBe(true);
-    await page.select('#ticker','AAPL'); await page.type('#openingCash','1000');
-    expect(await page.$eval('#journalTable table',n => n.textContent)).toContain('$1,300.06');
+    await page.select('#ticker','AAPL');
+    expect(await page.$eval('#journalTable table',n => n.textContent)).toContain('$300.06');
     await page.click('[data-detail]'); await page.waitForSelector('#tradeDetail[open]');
     expect(await page.$eval('#tradeDetail',n => n.matches(':modal'))).toBe(false);
     expect(await page.$$('[data-row][data-selected]')).toHaveLength(1);
@@ -122,9 +122,9 @@ it.skipIf(!existsSync(executablePath))('renders both exact column sets, lazy his
     expect(new URL(page.url()).searchParams.get('channel')).toBe('tiger');
     expect(await page.$eval('#journalTable table',n => n.textContent)).toContain('HKD');
     await page.click('#clear');
-    await page.select('#currency','USD');await page.type('#openingCash','1000');
+    await page.select('#currency','USD');
     const september = '.month-summary-group[aria-label="SEP-2026 totals"]';
-    expect(await page.$$eval(september+' td',ns => ns.map(n => n.textContent))).toEqual(['1','$300.06','2.00%','$1,600.06','']);
+    expect(await page.$$eval(september+' td',ns => ns.map(n => n.textContent))).toEqual(['1','$300.06','2.00%','$600.06','']);
     const beforeCollapse = await page.$$eval(september+' td',ns => ns.map(n => n.textContent));
     await page.focus('[data-month-toggle="2026-09"]');await page.keyboard.press('Enter');
     expect(await page.$eval('[data-month-toggle="2026-09"]',n => n.getAttribute('aria-expanded'))).toBe('false');
@@ -133,7 +133,7 @@ it.skipIf(!existsSync(executablePath))('renders both exact column sets, lazy his
     expect(await page.$eval('[data-month-toggle="2026-09"]',n => n === document.activeElement)).toBe(true);
     expect(openRequests).toBe(1);expect(await page.$('#tradeDetail[open]')).toBeNull();
     await page.select('#year','2026');await page.select('#month','09');
-    expect(await page.$eval(september,n => n.textContent)).toContain('$1,600.06');
+    expect(await page.$eval(september,n => n.textContent)).toContain('$600.06');
     expect(await page.$eval('[data-month-toggle="2026-09"]',n => n.getAttribute('aria-expanded'))).toBe('false');
     expect(await page.$eval('#entryCount',n => n.textContent)).toBe('1 entry');
     await page.keyboard.press('Tab');await page.click('[data-month-toggle="2026-09"]');

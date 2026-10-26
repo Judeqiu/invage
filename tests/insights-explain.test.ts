@@ -45,11 +45,12 @@ it.skipIf(!existsSync(executablePath)).each(['index.html', 'v2.html'])('explains
     await page.setRequestInterception(true); page.on('request', r => r.url().startsWith(origin) ? r.continue() : r.abort());
     await page.setViewport({ width: 1440, height: 1100 }); await page.goto(origin + '/shell');
     const frame = page.frames().find(f => f.url().includes('/insights/'))!;
-    const nav = '#metrics .metric-card:first-child [data-insights-explain-button]';
+    const nav = version === 'v2.html' ? 'section[aria-labelledby="overviewTitle"] [data-insights-explain-button]' : '#metrics .metric-card:first-child [data-insights-explain-button]';
+    const chooseFirst = async () => { if (version === 'v2.html') { await frame.waitForSelector('#insightsExplainChoice[open]'); await frame.click('#insightsExplainChoice button[value="explain"]'); } };
     await frame.waitForSelector(nav);
     expect(prompts).toHaveLength(0);
-    expect(await frame.$$eval('#metrics .metric-card', cards => cards.every(c => c.querySelectorAll('[data-insights-explain-button]').length === 1))).toBe(true);
-    await frame.focus(nav); await page.keyboard.press('Enter');
+    expect(await frame.$$eval(version === 'v2.html' ? 'section' : '#metrics .metric-card', cards => cards.every(c => c.querySelectorAll('[data-insights-explain-button]').length === 1))).toBe(true);
+    await frame.focus(nav); await page.keyboard.press('Enter'); await chooseFirst();
     await expect.poll(() => prompts.length).toBe(1);
     await frame.waitForSelector(nav + ':enabled');
     expect(prompts[0].text).toContain('$25,000.00');
@@ -60,12 +61,12 @@ it.skipIf(!existsSync(executablePath)).each(['index.html', 'v2.html'])('explains
     expect(prompts[0].composeSource).toEqual({ kind: 'host_seed' });
     await page.evaluate(() => document.querySelector('iframe')!.contentWindow!.postMessage({ type: 'utarus:chat-panel:closed' }, location.origin));
     await frame.waitForFunction(() => document.activeElement?.hasAttribute('data-insights-explain-button'));
-    await frame.click(nav); expect(prompts).toHaveLength(1);
+    await frame.click(nav); await chooseFirst(); expect(prompts).toHaveLength(1);
 
-    const multiple = version === 'v2.html' ? '#statistics .metric-card:nth-child(6) [data-insights-explain-button]' : '#edge .metric-card:nth-child(3) [data-insights-explain-button]';
+    const multiple = version === 'v2.html' ? 'section[aria-labelledby="statsTitle"] [data-insights-explain-button]' : '#edge .metric-card:nth-child(3) [data-insights-explain-button]';
     await frame.click(multiple); await frame.waitForSelector('#insightsExplainChoice[open]');
     await page.keyboard.press('Escape'); expect(prompts).toHaveLength(1);
-    await frame.click(multiple); await frame.select('#insightsExplainMetric', '1'); await frame.click('#insightsExplainChoice button[value="explain"]');
+    await frame.click(multiple); await frame.select('#insightsExplainMetric', version === 'v2.html' ? '13' : '1'); await frame.click('#insightsExplainChoice button[value="explain"]');
     await expect.poll(() => prompts.length).toBe(2);
     expect(prompts[1].text).toContain('Selected figure to explain:');
     if (version === 'v2.html') {
@@ -73,12 +74,11 @@ it.skipIf(!existsSync(executablePath)).each(['index.html', 'v2.html'])('explains
       const row = '#underlyings tbody tr:first-child';
       expect(await frame.$$eval(row + ' > *', ns => ns.length)).toBe(5);
       expect(await frame.$eval(row + ' th', n => n.textContent)).toBe('AAPL');
-      expect(await frame.$eval(row + ' [data-insights-explain-button]', n => n.textContent)).toBe('AAPL');
-      expect(await frame.$eval(row + ' [data-insights-explain-button]', n => n.getAttribute('title'))).toBe('Explain with AI');
-      await frame.click(row + ' [data-insights-explain-button]'); await frame.select('#insightsExplainMetric', '3'); await frame.click('#insightsExplainChoice button[value="explain"]');
+      expect(await frame.$(row + ' [data-insights-explain-button]')).toBeNull();
+      await frame.click('section[aria-labelledby="underlyingTitle"] [data-insights-explain-button]');
+      await frame.select('#insightsExplainMetric', '3'); await frame.click('#insightsExplainChoice button[value="explain"]');
       await expect.poll(() => prompts.length).toBe(3);
       expect(prompts.at(-1).text).toMatch(/Selected figure to explain: .+ · open P&L/);
-      expect(await frame.$eval(row + ' th', n => n.textContent)).toBe('AAPL');
     }
     await page.screenshot({ path: `/tmp/invage-insights-explain-${version}-desktop.png`, fullPage: true });
     for (const width of [390, 768, 1100]) {
@@ -93,7 +93,7 @@ it.skipIf(!existsSync(executablePath)).each(['index.html', 'v2.html'])('explains
     await page.setViewport({ width: 390, height: 844 }); await page.screenshot({ path: `/tmp/invage-insights-explain-${version}-mobile.png`, fullPage: true });
     await frame.click('[data-channel="ibkr"]'); delay = true; failChat = true;
     const before = prompts.length;
-    await frame.click(nav); await frame.waitForSelector(nav + ':disabled');
+    await frame.click(nav); await chooseFirst(); await frame.waitForSelector(nav + ':disabled');
     await expect.poll(() => release !== null).toBe(true);
     const retryId = await page.evaluate(() => (window as any).messages.filter((m: any) => m.type === 'utarus:chat-panel:open').at(-1).requestId);
     await frame.click('[data-channel="tiger"]');
@@ -106,7 +106,7 @@ it.skipIf(!existsSync(executablePath)).each(['index.html', 'v2.html'])('explains
     expect(prompts.at(-1).text).toContain('Selected Insights: ibkr');
     expect(prompts.at(-1).text).toContain('$9,000.00');
     await frame.waitForFunction(() => document.getElementById('insightsExplainStatus')?.textContent === '');
-    await frame.click(nav); await expect.poll(() => prompts.length).toBe(before + 3);
+    await frame.click(nav); await chooseFirst(); await expect.poll(() => prompts.length).toBe(before + 3);
     expect(prompts.at(-1).text).toContain('Selected Insights: tiger');
     expect(prompts.at(-1).text).toContain('$16,000.00');
     expect(errors).toEqual([]);

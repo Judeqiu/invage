@@ -408,3 +408,12 @@ function coverageForUnderlying(longUnits, shortCallDeliverable) {
     coveredShares: Math.min(longUnits, shortCallDeliverable),
   };
 }
+
+// A stable date-only display independent of browser locale and timezone.
+function formatReportDate(value) {
+  if (!value) return '—';
+  const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})(?:T|$)/);
+  if (!match) return String(value);
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return months[Number(match[2])-1] ? `${Number(match[3])} ${months[Number(match[2])-1]} ${match[1]}` : String(value);
+}

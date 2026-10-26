@@ -53,3 +53,18 @@ button:focus-visible,a:focus-visible,[tabindex]:focus-visible { outline:2px soli
 @media(max-width:900px) { .statistics-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .briefing-metrics { grid-template-columns:1fr 1fr; } }
 @media(max-width:600px) { .briefing-metrics .metric-value { font-size:1rem; } .insights-grid { grid-template-columns:1fr; } .insights-header .label-eyebrow { font-size:.56rem; } .statistics-grid { gap:.6rem; } .statistics-grid .metric-card { padding:.85rem; } .statistics-grid .label-eyebrow { font-size:.57rem; } .statistics-grid .metric-value { font-size:1.6rem; } }
 @media(prefers-reduced-motion:reduce) { .progress > div { transition:none; } }
+
+.insights-hero { margin:.75rem 0 .5rem; max-width:none; }
+.insights-hero h1 { font-size:1.6rem; margin:.3rem 0; }
+.insights-hero p { font-size:.8rem; line-height:1.4; }
+.pill-row { margin-top:.5rem; }
+.briefing-metrics { margin:.6rem 0; gap:.6rem; }
+.insights-grid,.statistics-grid { gap:.6rem; }
+.insights-grid .metric-card,.statistics-grid .metric-card,.review-card { padding:.75rem; }
+.insights-grid p { line-height:1.5; margin-top:.35rem; }
+.review-card li { line-height:1.5; gap:.6rem; }
+.review-card li + li { padding-top:.6rem; }
+.statistics-grid .metric-value { font-size:1.4rem; margin:.4rem 0 .25rem; }
+.metric-sub,.status,.insights-note { line-height:1.5; }
+.insights-table th,.insights-table td { padding:.4rem .65rem; }
+.insights-explain-section { margin-left:auto; color:var(--brand); align-self:center; }
