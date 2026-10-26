@@ -39,7 +39,7 @@ try {
     writeFileSync(join(directory,'evidence.json'),JSON.stringify({userId:snapshot.state.user.id,connectionId,accountId:conn.account_id,previousMetrics:conn.metrics??null,funds,metrics}),{flag:'wx',mode:0o600});
     if(flag==='--apply') {
       snapshot.state.broker_connections[connectionId].metrics=metrics;
-      snapshot.state.log.push({ts:funds.fetched_at,action:'broker_margin_refreshed',connector_id:connectionId,
+      snapshot.state.log.push({ts:funds.fetched_at.slice(0,10),action:'broker_margin_refreshed',connector_id:connectionId,
         reason:'Operator refreshed broker funds and calculated excess liquidity from broker net assets minus maintenance margin; holdings, cash and history unchanged.',evidence:directory});
       await saveState(snapshot.state,snapshot.revision);
     }
