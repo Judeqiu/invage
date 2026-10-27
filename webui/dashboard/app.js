@@ -321,7 +321,7 @@ function optionInstrumentButton(p, view, asOf) {
 }
 
 function dailyChangeText(key, view) {
-  if (!view?.isLive) return '';
+  if (payload?.dashboardConfig?.showDailyChanges !== true || !view?.isLive) return '';
   const daily = savedDashboardScope(view).dailyChanges;
   const metric = daily?.metrics?.[key];
   if (!metric) return '';
@@ -1230,8 +1230,8 @@ function renderOverview(view) {
       el.navDelta.textContent = 'NAV unavailable · missing currency or FX data';
     } else {
     const change = dailyChangeText('totalValue', view);
-    const delta = savedDashboardScope(view).dailyChanges?.metrics?.totalValue?.delta;
-    el.navDelta.className = 'metric-sub ' + (delta > 0 ? 'up' : delta < 0 ? 'down' : '');
+    const delta = change ? savedDashboardScope(view).dailyChanges?.metrics?.totalValue?.delta : null;
+    el.navDelta.className = 'metric-sub' + (change ? ' daily-change ' : ' ') + (delta > 0 ? 'up' : delta < 0 ? 'down' : '');
     el.navDelta.textContent = change || (view.isLive ? 'Live marks' : `Archived ${optionDateLabel(view.label)} · original currency and FX`);
     if (unverifiedOptionChannels(view).length) {
       el.navDelta.textContent += ' · option positions unverified';
@@ -1253,10 +1253,14 @@ function renderOverview(view) {
     const realized = recordedRealizedForView(view, premiumDate);
     el.realizedPnlValue.textContent = realized.value == null ? '—' : fmtPrettyMoney(realized.value, repCcy, 2);
     el.realizedPnlValue.className = 'metric-value ' + (realized.value > 0 ? 'up' : realized.value < 0 ? 'down' : '');
-    el.realizedPnlMeta.textContent = [realized.reason, dailyChangeText('realizedTotal', view)].filter(Boolean).join(' · ');
+    el.realizedPnlMeta.textContent = realized.reason;
+    el.realizedPnlCard.querySelector('.daily-change')?.remove();
+    const change = dailyChangeText('realizedTotal', view);
+    if (change) el.realizedPnlMeta.insertAdjacentHTML('afterend', `<div class="metric-sub daily-change">${escapeHtml(change)}</div>`);
   }
   const totalChange = dailyChangeText('premium.total', view);
-  if (totalChange && el.totalPremiumMeta) el.totalPremiumMeta.textContent += ' · ' + totalChange;
+  el.totalPremiumCard?.querySelector('.daily-change')?.remove();
+  if (totalChange && el.totalPremiumMeta) el.totalPremiumMeta.insertAdjacentHTML('afterend', `<div class="metric-sub daily-change">${escapeHtml(totalChange)}</div>`);
   const { stalePuts, assignmentObligation } = savedDashboardScope(view);
 
   if (el.kpiRow) {
@@ -1283,7 +1287,7 @@ function renderOverview(view) {
 
   const navCard = el.navValue?.closest('.metric-card');
   navCard?.querySelector('.daily-aggregate-changes')?.remove();
-  const metrics = view.isLive ? savedDashboardScope(view).dailyChanges?.metrics : null;
+  const metrics = payload.dashboardConfig?.showDailyChanges === true && view.isLive ? savedDashboardScope(view).dailyChanges?.metrics : null;
   if (navCard && metrics && Object.keys(metrics).length) {
     const details = document.createElement('details');
     details.className = 'daily-aggregate-changes';
@@ -1331,7 +1335,9 @@ function renderV2Overview() {
     clone.removeAttribute('id');
     clone.querySelectorAll('[data-card-explain]').forEach(item => item.remove());
     clone.dataset.calculationNotes = [...clone.querySelectorAll('.metric-sub')].map(n => n.textContent).join(' · ');
-    clone.querySelectorAll('.metric-sub, .daily-aggregate-changes').forEach(item => item.remove());
+    clone.querySelectorAll('.metric-sub:not(.daily-change)').forEach(item => {
+      if (!item.closest('.daily-aggregate-changes')) item.remove();
+    });
     return clone.outerHTML;
   };
   const kpis = [...el.kpiRow.children];
@@ -1340,7 +1346,9 @@ function renderV2Overview() {
     const clone = node.cloneNode(true);
     clone.querySelectorAll('[data-card-explain]').forEach(item => item.remove());
     clone.dataset.calculationNotes = [...clone.querySelectorAll('.metric-sub')].map(n => n.textContent).join(' · ');
-    clone.querySelectorAll('.metric-sub, .daily-aggregate-changes').forEach(item => item.remove());
+    clone.querySelectorAll('.metric-sub:not(.daily-change)').forEach(item => {
+      if (!item.closest('.daily-aggregate-changes')) item.remove();
+    });
     clone.removeAttribute('id');
     clone.querySelectorAll('[id]').forEach(item => item.removeAttribute('id'));
     clone.className = 'v2-stat';

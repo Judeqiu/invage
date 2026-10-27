@@ -183,7 +183,7 @@ footer { color: var(--muted-foreground); border-color: var(--border); font-size:
 .v2-fees { margin: .15rem 0 .3rem; padding: 0; border: 0; color: var(--muted-foreground); font-size: .68rem; }
 .v2-premium-period + .v2-premium-period { border-top: 1px solid var(--border); padding-top: .25rem; }
 .v2-group:last-child .v2-group-body { grid-template-columns: repeat(3,minmax(0,1fr)); }
-#expiryRow .daily-change, #expiryRow > .metric-card > .card-explain { display: none; }
+#expiryRow > .metric-card > .card-explain { display: none; }
 .broker-ibkr { color: #ff555f; } .broker-moomoo { color: #ff9e4a; } .broker-tiger { color: #f9df25; } .broker-webull { color: #80cfff; }
 .chip-btn.on .broker-name { color: #0a111d; }
 .chip-btn:has(.broker-name) { border-bottom: 3px solid; }

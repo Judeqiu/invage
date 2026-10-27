@@ -101,3 +101,16 @@ it('serves the persisted broker rollups through both index and dashboard APIs', 
   expect(dashboard.body.brokerAggregates).toEqual(index.body.brokers);
   expect(mocks.calculate).not.toHaveBeenCalled();
 });
+
+it('reads personal daily-change preferences without rebuilding saved calculations', async () => {
+  await persistPortfolioFixture(state);
+  for (const path of ['/dashboard', '/dashboard-cache']) {
+    expect((await request(app()).get(path)).body.dashboardConfig.showDailyChanges).toBe(false);
+  }
+  state.experience_settings = { show_daily_changes: true };
+  for (const path of ['/dashboard', '/dashboard-cache']) {
+    expect((await request(app()).get(path)).body.dashboardConfig.showDailyChanges).toBe(true);
+  }
+  expect((await request(app()).get('/dashboard?progress=1')).text).toContain('"showDailyChanges":true');
+  expect(mocks.calculate).not.toHaveBeenCalled();
+});

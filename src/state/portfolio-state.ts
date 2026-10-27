@@ -303,7 +303,7 @@ export interface BrokerAccountConnection {
 
 export interface InvestorState extends UserState {
   /** Personal optional pages; absent means off. */
-  experience_settings?: { account_risk?: boolean };
+  experience_settings?: { account_risk?: boolean; show_daily_changes?: boolean };
   /** Application-owned option-book and fill primary keys; additive, versioned identity index. */
   option_identities?: import('../brokers/option-identities.js').OptionIdentityIndex;
   /** User-authored thesis, keyed by the stable option-book primary key. */

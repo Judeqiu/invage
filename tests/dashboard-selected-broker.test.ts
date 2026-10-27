@@ -55,7 +55,7 @@ function fixture() {
   attachDailyChanges(yesterday);
   attachDailyChanges(entry, yesterday.dailyAggregateHistory);
   return { ...dashboard, brokerAggregates: brokers, analysisContextId: 'selected-broker-test',
-    dashboardConfig: { showTotalPremium: true, showRealizedPnl: true, showOptionRiskModelView: true } };
+    dashboardConfig: { showDailyChanges: true, showTotalPremium: true, showRealizedPnl: true, showOptionRiskModelView: true } };
 }
 const executablePath = process.env.CHROME_BINARY || '/usr/bin/chromium';
 it.skipIf(!existsSync(executablePath)).each(['index.html', 'v2.html'])('%s keeps account/all selection consistent across totals, history, risk scope and reload', async fileName => {
@@ -86,6 +86,18 @@ it.skipIf(!existsSync(executablePath)).each(['index.html', 'v2.html'])('%s keeps
     page.on('request', request => request.url().startsWith(origin) ? request.continue() : request.abort());
     await page.goto(origin + '/dashboard/' + fileName);
     await page.waitForSelector('[data-channel="retirement"]');
+    if (fileName === 'v2.html') {
+      expect(await page.$eval('#v2Summary .daily-change', node => node.textContent)).toContain('Daily vs');
+    }
+    delete (payload.dashboardConfig as any).showDailyChanges;
+    await page.reload();
+    await page.waitForSelector('[data-channel="retirement"]');
+    expect(await page.$('.daily-change')).toBeNull();
+    expect(await page.$('.daily-aggregate-changes')).toBeNull();
+    payload.dashboardConfig.showDailyChanges = true;
+    await page.reload();
+    await page.waitForSelector('[data-channel="retirement"]');
+
     expect(await page.$$('#channelPills img')).toHaveLength(0);
     expect(await page.$$eval('#channelSelect option', nodes => nodes.map(node => (node as HTMLOptionElement).value))).toEqual(['merged', 'other', 'retirement', 'savings']);
     expect(await page.$('[data-channel^="broker:"]')).toBeNull();

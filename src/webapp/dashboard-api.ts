@@ -3,7 +3,7 @@
  * Mounted by DomainExtension.webUi at /api/domain/invage (auth: user).
  */
 
-import { createExperienceSettingsRouter, riskPageEnabled } from './experience-settings.js';
+import { createExperienceSettingsRouter, riskPageEnabled, dailyChangesEnabled } from './experience-settings.js';
 import { buildAccountRisk } from './account-risk-data.js';
 import { readProductProfile } from '../agents/roster.js';
 import { productDisplayName } from '../product-name.js';
@@ -101,7 +101,7 @@ export function createDashboardApiRouter(): Router {
   router.use('/option-risk', createOptionRiskRouter());
   function dashboardBody(snapshot: Awaited<ReturnType<typeof loadInvestor>>, saved: PortfolioProjection = requirePortfolioProjection(snapshot.state)) {
     return { ...saved.dashboard, brokerAggregates: saved.brokers, productProfile: readProductProfile(), productName: productDisplayName(), displayName: snapshot.state.profile.display_name,
-      dashboardConfig: { ...readDashboardConfig(), showOptionRiskModelView: riskEnabled() },
+      dashboardConfig: { ...readDashboardConfig(), showOptionRiskModelView: riskEnabled(), showDailyChanges: dailyChangesEnabled(snapshot.state) },
       analysisContextId: riskEnabled() ? analysisContext(snapshot) : null };
   }
   router.get('/dashboard-cache', async (req: Request, res: Response) => {
