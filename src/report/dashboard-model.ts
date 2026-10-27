@@ -174,6 +174,8 @@ export interface LiveDashboardSlice {
   optionCount: number;
   equityCount: number;
   fundCount: number;
+  /** Original signed currency balances, before FX netting. */
+  cashBalances?: Array<{ amount: number; currency: string; channel: string }>;
   cashAmount: number | null;
   cashCurrency: string | null;
   /**
@@ -638,6 +640,7 @@ export function filterLiveByChannel(
       optionCount: chRow.optionCount,
       equityCount: chRow.equityCount,
       fundCount: chRow.fundCount,
+      cashBalances: live.cashBalances?.filter(c => c.channel === channel),
       cashAmount: chRow.cashAmount,
       cashCurrency: chRow.cashCurrency,
       cashChannel: cash != null ? channel : null,
@@ -680,6 +683,7 @@ export function filterLiveByChannel(
     optionCount: totals.optionCount,
     equityCount: totals.equityCount,
     fundCount: totals.fundCount,
+    cashBalances: live.cashBalances?.filter(c => c.channel === channel),
     cashAmount: totals.cashAmount,
     cashCurrency: totals.cashCurrency,
     cashChannel: cash != null ? channel : null,
@@ -948,6 +952,7 @@ export function buildLivePositions(
     optionCount: merged.optionCount,
     equityCount: merged.equityCount,
     fundCount: merged.fundCount,
+    cashBalances: cashes,
     cashAmount: merged.cashAmount,
     cashCurrency: merged.cashCurrency,
     cashChannel,

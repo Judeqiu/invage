@@ -68,15 +68,16 @@ function bundle(over: Partial<WebullRawBundle> = {}): WebullRawBundle {
 }
 
 describe('Webull mapping', () => {
-  it('books per-ISO cash (skip negatives, keep zeros) and long equities', () => {
+  it('books per-ISO cash (preserve debit balances and zeros) and long equities', () => {
     const stmt = mapWebullBundleToStatement(bundle(), 'webull');
     expect(stmt.account_id).toBe('LOJOQITOD49R6G9BPQM489CISA');
     expect(stmt.as_of).toBe('2026-09-17');
     expect(stmt.cash).toEqual([
       { currency: 'USD', amount: 7000 },
       { currency: 'HKD', amount: 0 },
+      { currency: 'CNH', amount: -12.5 },
     ]);
-    expect(stmt.skipped.some((s) => s.currency === 'CNH')).toBe(true);
+    expect(stmt.skipped.some((s) => s.currency === 'CNH')).toBe(false);
     expect(stmt.lots.map((l) => l.ticker)).toEqual(['AAPL', '0700.HK', 'AAPL-C-200-20260918-L']);
     expect(stmt.lots[0]?.holding.broker_ref?.native_id).toBe('POS-AAPL');
     const opt = stmt.lots[2]?.holding;
@@ -101,7 +102,8 @@ describe('Webull mapping', () => {
 
   it('does not book total_cash_balance', () => {
     const stmt = mapWebullBundleToStatement(bundle(), 'webull');
-    expect(stmt.cash.reduce((n, c) => n + c.amount, 0)).toBe(7000);
+    expect(stmt.cash).toContainEqual({currency:'USD',amount:7000});
+    expect(stmt.cash).not.toContainEqual(expect.objectContaining({amount:9000}));
   });
 
   it('skips multi-leg combo options', () => {

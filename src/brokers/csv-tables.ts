@@ -195,10 +195,6 @@ export function runCsvTablesSpec(
     if (!Number.isFinite(ending)) {
       throw new Error(`CSV parser: amount is not a number (${endingRaw})`);
     }
-    if (ending < 0) {
-      skipped.push({ kind: 'cash', currency: ccy, reason: 'amount < 0 is not stored' });
-      continue;
-    }
     if (!/^[A-Z]{3,4}$/.test(ccy)) {
       skipped.push({ kind: 'cash', currency: ccy, reason: 'not a 3–4 letter currency code' });
       continue;

@@ -177,9 +177,10 @@ describe('Tiger position mapping', () => {
     expect(opt.option?.settlement).toBe('physical');
     expect(stmt.cash).toEqual([
       { currency: 'USD', amount: 123844.77 },
+      { currency: 'HKD', amount: -92554.07 },
       { currency: 'SGD', amount: 0 },
     ]);
-    expect(stmt.skipped.some((s) => s.currency === 'HKD')).toBe(true);
+    expect(stmt.skipped.some((s) => s.currency === 'HKD')).toBe(false);
     expect(stmt.metrics?.buying_power).toBe(495623.1);
     expect(stmt.metrics?.excess_liquidity).toBe(125259.83);
     expect(stmt.cash.find((c) => c.amount === 5000)).toBeUndefined();

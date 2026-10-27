@@ -1,4 +1,4 @@
-import { HISTORY_PENDING_REASON } from './statement.js';
+import { formatBrokerSkip, HISTORY_PENDING_REASON } from './statement.js';
 import { reconcileExecutionEffects } from './execution-effects.js';
 import { saveInvestor, type InvestorSnapshot } from '../state/investor-store.js';
 import { mergeOptionExecutions } from './option-executions.js';
@@ -157,7 +157,10 @@ export async function applyBrokerStatement(
       throw new Error('Broker statement account/channel differs from selected connection.');
     }
   }
-  if(observation?.requireCompleteSnapshot && doc.skipped.some(s=>(s.kind==='position'||s.kind==='cash')&&s.blocking!==false)) throw new Error('Broker current snapshot is incomplete; retained the previous holdings and cash for automatic retry.');
+  if (observation?.requireCompleteSnapshot) {
+    const blocking = doc.skipped.filter(s => (s.kind === 'position' || s.kind === 'cash') && s.blocking !== false);
+    if (blocking.length) throw new Error('Broker current snapshot is incomplete; retained the previous holdings and cash for automatic retry. Details: ' + blocking.map(formatBrokerSkip).join('; '));
+  }
   const channel = connection?.channel ?? getBrokerConnector(connectorId).channel;
   assertStatementNotOlder(state, connectorId, channel, doc.as_of);
   // All adapters and custom parsers pass through this before any books writes.

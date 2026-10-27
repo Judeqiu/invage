@@ -332,7 +332,7 @@ function dailyChangeText(key, view) {
 const dailyCardKeys = {
   'Earned premium · Daily': 'realizedDaily', 'Earned premium · MTD': 'realizedMtd',
   'Net premium · Daily': 'premium.daily', 'Net premium · MTD': 'premium.mtd',
-  'Brokerage fees · MTD': 'premium.fees', 'Cash available': 'cashAmount',
+  'Brokerage fees · MTD': 'premium.fees', 'Cash available': 'cashAmount', 'Cash balance': 'cashAmount',
   'Max assignment obligation': 'assignmentObligation', 'High-risk ITM exposure': 'risk.wheel.exposure',
   'Probability-weighted exposure': 'risk.wheel.weighted', 'High-risk coverage': 'risk.wheel.cover',
 };
@@ -1263,6 +1263,8 @@ function renderOverview(view) {
   if (totalChange && el.totalPremiumMeta) el.totalPremiumMeta.insertAdjacentHTML('afterend', `<div class="metric-sub daily-change">${escapeHtml(totalChange)}</div>`);
   const { stalePuts, assignmentObligation } = savedDashboardScope(view);
 
+  const debitBalances = view.cashBalances?.filter(c => c.amount < 0) ?? [];
+  const debitNote = debitBalances.length ? 'Broker debits: ' + debitBalances.map(c => `${fmtPrettyMoney(c.amount, c.currency, 2)} ${c.currency}`).join('; ') + '. Included in net cash and deducted from NAV.' : '';
   if (el.kpiRow) {
     el.kpiRow.innerHTML = [
       metricCardHtml('Net premium · Daily', premium.daily == null ? '—' : fmtPrettyMoney(premium.daily, repCcy, 0),
@@ -1276,9 +1278,9 @@ function renderOverview(view) {
       metricCardHtml('Brokerage fees · MTD', premium.fees == null ? '—' : fmtPrettyMoney(premium.fees, repCcy, 2),
         premium.missingFees ? `Known fees only · ${premium.missingFees} fills with fees unreported` : 'Recorded option fill fees',
         'MTD means month to date. This totals the fees reported for recorded option trades in the displayed month. A positive amount is a cost; a negative amount is a refund or rebate. Fees that a broker has not reported are excluded, so the final cost may be higher.'),
-      metricCardHtml('Cash available', view.cashAmount != null ? fmtPrettyMoney(view.cashAmount, cashCcy, 0) : '—',
-        view.cashAmount != null ? 'Recorded cash · not deposits' : 'Cash not recorded',
-        'Cash shown in your latest broker snapshot, excluding fixed deposits. It does not include extra borrowing capacity. Whether you can use or withdraw it immediately depends on the broker and whether trades have settled.'),
+      metricCardHtml(view.cashAmount < 0 || debitBalances.length ? 'Cash balance' : 'Cash available', view.cashAmount != null ? fmtPrettyMoney(view.cashAmount, cashCcy, 0) : '—',
+        debitNote || (view.cashAmount != null ? (view.cashAmount < 0 ? 'Broker debit · deducted from NAV' : 'Net recorded cash · not deposits') : 'Cash not recorded'),
+        'Signed cash balances from your latest broker snapshot, excluding fixed deposits. Negative currency balances are broker debits and reduce net cash and NAV; positive cash in another currency does not erase the debit. It does not include extra borrowing capacity. Whether you can use or withdraw it immediately depends on the broker and whether trades have settled.'),
       metricCardHtml('Max assignment obligation', assignmentObligation == null ? '—' : fmtPrettyMoney(assignmentObligation, cashCcy, 0),
         assignmentObligation == null ? (stalePuts ? 'Put positions need a fresh broker sync' : 'Put currency or FX unavailable') : 'Gross short-put obligation',
         'Cash needed to buy the shares if all recorded short puts are assigned. For example, one put with a $100 strike covering 100 shares needs $10,000. The total does not subtract cash, premium received, or protection from other options. Compare it with your cash available.'),
@@ -1295,6 +1297,7 @@ function renderOverview(view) {
       Object.entries(metrics).map(([key, metric]) => `<p class="metric-sub"><strong>${escapeHtml(metric.label)}</strong><br>${escapeHtml(dailyChangeText(key, view))}</p>`).join('');
     navCard.append(details);
   }
+  if (debitNote) el.kpiRow?.children[3]?.querySelector('.metric-sub')?.classList.add('cash-debit-note');
   renderExpiryRisk(view, asOf);
   renderChannelPills(view);
   installCardExplainButtons();
@@ -1335,7 +1338,7 @@ function renderV2Overview() {
     clone.removeAttribute('id');
     clone.querySelectorAll('[data-card-explain]').forEach(item => item.remove());
     clone.dataset.calculationNotes = [...clone.querySelectorAll('.metric-sub')].map(n => n.textContent).join(' · ');
-    clone.querySelectorAll('.metric-sub:not(.daily-change)').forEach(item => {
+    clone.querySelectorAll('.metric-sub:not(.daily-change):not(.cash-debit-note)').forEach(item => {
       if (!item.closest('.daily-aggregate-changes')) item.remove();
     });
     return clone.outerHTML;
@@ -1346,7 +1349,7 @@ function renderV2Overview() {
     const clone = node.cloneNode(true);
     clone.querySelectorAll('[data-card-explain]').forEach(item => item.remove());
     clone.dataset.calculationNotes = [...clone.querySelectorAll('.metric-sub')].map(n => n.textContent).join(' · ');
-    clone.querySelectorAll('.metric-sub:not(.daily-change)').forEach(item => {
+    clone.querySelectorAll('.metric-sub:not(.daily-change):not(.cash-debit-note)').forEach(item => {
       if (!item.closest('.daily-aggregate-changes')) item.remove();
     });
     clone.removeAttribute('id');
@@ -1707,10 +1710,10 @@ function renderExpiryRisk(view, asOf) {
       radar.length ? 'down' : '',
     ),
     metricCardHtml(
-      'Cash available',
+      cash < 0 ? 'Cash balance' : 'Cash available',
       cash != null ? fmtPrettyMoney(cash, view.cashCurrency || reportingCcyCode(view), 0) : '—',
       '',
-      'Uninvested cash reported when the broker data was last fetched. It excludes extra borrowing capacity and may differ from your balance now.',
+      'Net cash reported when the broker data was last fetched. Negative balances are broker debits and reduce NAV. It excludes extra borrowing capacity and may differ from your balance now.',
     ),
     metricCardHtml(
       'High-risk coverage',

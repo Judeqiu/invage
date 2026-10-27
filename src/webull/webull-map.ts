@@ -79,10 +79,6 @@ function mapCash(balances: unknown, asOf: string, skipped: BrokerSkip[]): {
     if (!/^[A-Z]{3,4}$/.test(currency)) continue;
     const amount = parseNum(item.cash_balance);
     if (amount == null) continue;
-    if (amount < 0) {
-      skipped.push({ kind: 'cash', currency, reason: `negative cash ${amount}` });
-      continue;
-    }
     cash.push({ currency, amount });
     const bp = parseNum(item.buying_power);
     if (bp != null && bp >= 0 && (currency === 'USD' || buyingPower == null)) {

@@ -145,6 +145,8 @@ export async function postOpeningBalance(
     requestId: string;
     toolName?: string;
     externalRef?: string;
+    /** Trusted broker/import reconciliation may record debit cash. */
+    allowNegativeCash?: boolean;
   },
 ): Promise<{
   posted: PostedEntry;
@@ -157,7 +159,7 @@ export async function postOpeningBalance(
   const ccy = assertCurrency(args.currency);
   const valueDate = requireDate(args.valueDate, 'valueDate');
   const memo = requireMemo(args.memo);
-  if (!(args.amount > 0) || !Number.isFinite(args.amount)) {
+  if (!Number.isFinite(args.amount) || args.amount === 0 || (args.amount < 0 && !args.allowNegativeCash)) {
     throw new Error('post_opening_balance: amount must be a finite number > 0.');
   }
   const target = toMinor(args.amount);
@@ -180,6 +182,7 @@ export async function postOpeningBalance(
     toolName: args.toolName ?? 'post_opening_balance',
     memo,
     externalRef: args.externalRef,
+    allowNegativeCash: args.allowNegativeCash,
     lines: [
       { accountId: cash.id, amountMinor: target, currency: ccy },
       { accountId: equity.id, amountMinor: -target, currency: ccy },
@@ -212,6 +215,8 @@ export async function postCashAdjustment(
     requestId: string;
     toolName?: string;
     externalRef?: string;
+    /** Trusted broker/import reconciliation may record debit cash. */
+    allowNegativeCash?: boolean;
   },
 ): Promise<{
   posted: PostedEntry;
@@ -239,7 +244,7 @@ export async function postCashAdjustment(
   const cash = await cashAccount(client, ctx.householdId, args.channel, ccy);
   const prior = await getBalanceMinor(client, cash.id);
   const next = prior + delta;
-  if (next < 0n) {
+  if (next < 0n && delta < 0n && !args.allowNegativeCash) {
     throw new Error(
       `post_adjustment: cash would go negative on ${formatChannelLabel(normalizeChannelKey(args.channel))}/${ccy}: ` +
         `have ${fromMinor(prior)}, delta ${args.amount}.`,
@@ -263,6 +268,7 @@ export async function postCashAdjustment(
     toolName: args.toolName ?? 'post_adjustment',
     memo,
     externalRef: args.externalRef,
+    allowNegativeCash: args.allowNegativeCash,
     lines: [
       { accountId: cash.id, amountMinor: delta, currency: ccy },
       { accountId: contra.id, amountMinor: -delta, currency: ccy },
@@ -300,7 +306,7 @@ export async function setCashAbsolute(
     const cash = await cashAccount(client, ctx.householdId, args.channel, args.currency);
     return getBalanceMinor(client, cash.id);
   })();
-  if (prior === 0n && args.amount > 0) {
+  if (prior === 0n && args.amount !== 0) {
     const r = await postOpeningBalance(client, ctx, {
       amount: args.amount,
       currency: args.currency,
@@ -309,6 +315,7 @@ export async function setCashAbsolute(
       memo: args.memo ?? 'import_yaml opening balance',
       requestId: args.requestId,
       toolName: args.toolName ?? 'import_yaml',
+      allowNegativeCash: true,
     });
     return {
       posted: r.posted,
@@ -338,6 +345,7 @@ export async function setCashAbsolute(
     contra: 'adjustment',
     requestId: args.requestId,
     toolName: args.toolName ?? 'import_yaml',
+    allowNegativeCash: true,
   });
   return {
     posted: r.posted,

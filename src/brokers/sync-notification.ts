@@ -182,7 +182,7 @@ export async function withBrokerSyncBatchNotifications<T>(notice: BrokerSyncBatc
       if (notice.calculationStatus === 'ready') lines.push('Portfolio aggregates updated.');
       else if (pending) lines.push('Portfolio aggregates are still being prepared.');
       if (notice.error) lines.push(notice.error);
-      if (notice.retryScheduled) lines.push('Incomplete work will automatically retry in 30 minutes.');
+      if (notice.retryScheduled) lines.push('Incomplete work is queued for automatic retry.');
       if (notes.length) lines.push('Data notes:\n' + notes.join('\n'));
       try {
         await notify({ userId: notice.userId, title: failed ? 'Broker sync needs attention' : pending ? 'Broker sync imported' : 'Broker sync complete',
@@ -222,8 +222,8 @@ export async function publishBrokerSyncFailure(slug: string, broker: string, acc
   }
   try {
     await notify({ userId: slug, title: `${broker} sync failed`,
-      body: `${account}: ${message.slice(0, 500)}.` +
-        (retryScheduled ? " We'll automatically retry in 30 minutes. Your regular sync frequency stays the same." : '') +
+      body: `${account}: ${message.slice(0, 500).replace(/[.\s]+$/, '')}.` +
+        (retryScheduled ? " We'll retry automatically. Your regular sync frequency stays the same." : '') +
         ' Check Settings → Brokers → Sync history.',
       source: 'system', severity: 'medium', status_hint: 'failure', href: '/settings/brokers' });
   } catch (error) { console.error('[broker/sync-notification] publish failed:', error); }

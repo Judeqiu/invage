@@ -244,10 +244,6 @@ function cashFromCurrencyAssets(
     if (!/^[A-Z]{3,4}$/.test(ccy)) continue;
     const amount = parseNum(row.cashBalance ?? row.cash_balance);
     if (amount == null) continue;
-    if (amount < 0) {
-      skipped.push({ kind: 'cash', currency: ccy, reason: `negative cash ${amount}` });
-      continue;
-    }
     cash.push({ currency: ccy, amount });
   }
   return cash;

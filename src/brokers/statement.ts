@@ -33,7 +33,7 @@ export function formatBrokerSkip(skip: BrokerSkip): string {
 /** Free-cash sleeve on the connector channel. Same fields as YAML CashBalance minus channel/updated_at (apply stamps those). */
 export interface BrokerCashSleeve {
   currency: string;
-  /** Available cash — YAML `cash.amount`. */
+  /** Signed cash balance — YAML `cash.amount`; negative means a broker debit. */
   amount: number;
   settled_amount?: number;
   accrued_interest?: number;
@@ -119,16 +119,16 @@ function assertCashSleeve(raw: unknown, i: number): BrokerCashSleeve {
   if (typeof r.currency !== 'string' || !/^[A-Z]{3,4}$/.test(r.currency.trim().toUpperCase())) {
     throw new Error(`Broker statement cash[${i}].currency must be a 3–4 letter code.`);
   }
-  if (typeof r.amount !== 'number' || !Number.isFinite(r.amount) || r.amount < 0) {
-    throw new Error(`Broker statement cash[${i}].amount must be a finite number ≥ 0.`);
+  if (typeof r.amount !== 'number' || !Number.isFinite(r.amount)) {
+    throw new Error(`Broker statement cash[${i}].amount must be a finite signed number.`);
   }
   const sleeve: BrokerCashSleeve = {
     currency: r.currency.trim().toUpperCase(),
     amount: r.amount,
   };
   if (r.settled_amount != null) {
-    if (typeof r.settled_amount !== 'number' || !Number.isFinite(r.settled_amount) || r.settled_amount < 0) {
-      throw new Error(`Broker statement cash[${i}].settled_amount must be a finite number ≥ 0 when set.`);
+    if (typeof r.settled_amount !== 'number' || !Number.isFinite(r.settled_amount)) {
+      throw new Error(`Broker statement cash[${i}].settled_amount must be a finite signed number when set.`);
     }
     sleeve.settled_amount = r.settled_amount;
   }

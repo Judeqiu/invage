@@ -124,18 +124,19 @@ describe('MooMoo mapping', () => {
     expect(stmt.lots.length).toBeGreaterThan(0);
   });
 
-  it('books per-ISO cash (skip negatives, keep zeros) and long equities', () => {
+  it('books per-ISO cash (preserve debit balances and zeros) and long equities', () => {
     const stmt = mapMooMooBundleToStatement(bundle(), 'moomoo');
     expect(stmt.account_id).toBe('281756420273981734');
     expect(stmt.as_of).toBe('2026-09-17');
     expect(stmt.cash).toEqual([
       { currency: 'USD', amount: 7000 },
       { currency: 'HKD', amount: 0 },
+      { currency: 'CNH', amount: -1 },
       { currency: 'JPY', amount: 0 },
       { currency: 'SGD', amount: 0 },
       { currency: 'KRW', amount: 0 },
     ]);
-    expect(stmt.skipped.some((s) => s.currency === 'CNH')).toBe(true);
+    expect(stmt.skipped.some((s) => s.currency === 'CNH')).toBe(false);
     expect(stmt.lots.map((l) => l.ticker)).toEqual(['AAPL', '0700.HK', '0700.HK-C-390-20260629-L']);
     const opt = stmt.lots[2]?.holding;
     expect(opt?.instrument).toBe('option');

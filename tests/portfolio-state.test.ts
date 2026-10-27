@@ -174,9 +174,8 @@ describe('portfolio-state', () => {
   });
 
   it('assertCashBalance fails fast on invalid input', async () => {
-    expect(() => assertCashBalance({ amount: -1, currency: 'USD', updated_at: '2026-07-28' })).toThrow(
-      /≥ 0/,
-    );
+    expect(assertCashBalance({ amount: -1, currency: 'USD', updated_at: '2026-07-28' }).amount).toBe(-1);
+    expect(() => assertCashBalance({ amount: NaN, currency: 'USD', updated_at: '2026-07-28' })).toThrow(/finite/);
     expect(() => assertCashBalance({ amount: 10, currency: '', updated_at: '2026-07-28' })).toThrow(
       /currency/,
     );

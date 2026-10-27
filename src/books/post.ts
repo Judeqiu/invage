@@ -209,22 +209,13 @@ export async function postEntry(
     }
 
     const acc = accById.get(line.accountId)!;
-    if (acc.kind === 'cash' && nextBal < 0n && !args.allowNegativeCash) {
+    if (acc.kind === 'cash' && nextBal < 0n && nextBal < prevBal && !args.allowNegativeCash) {
       throw new Error(
         `Insufficient cash on account ${line.accountId}: would be ${fromMinor(nextBal)} ${acc.currency}.`,
       );
     }
-    if (
-      (acc.kind === 'cash' || acc.kind === 'deposit' || acc.kind === 'position') &&
-      nextBal < 0n &&
-      !args.allowNegativeCash
-    ) {
-      // deposits/positions money side also non-negative for asset accounts
-      if (acc.kind === 'deposit' || acc.kind === 'cash') {
-        throw new Error(
-          `Account ${acc.kind} balance would be negative (${fromMinor(nextBal)} ${acc.currency}).`,
-        );
-      }
+    if (acc.kind === 'deposit' && nextBal < 0n && !args.allowNegativeCash) {
+      throw new Error(`Account deposit balance would be negative (${fromMinor(nextBal)} ${acc.currency}).`);
     }
 
     await client.query(

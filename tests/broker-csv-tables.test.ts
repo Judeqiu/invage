@@ -121,3 +121,10 @@ describe('BrokerStatement (public books snapshot)', () => {
     expect(doc.cash[0].settled_amount).toBe(900);
   });
 });
+
+it('preserves negative CSV cash balances',()=>{
+  const csv=IBKR_CSV.replace('"10000","10000","USD"','"10000","-4955.41","USD"');
+  const statement=runCsvTablesSpec(csv,assertCsvTablesSpec(SPEC),'ibkr');
+  expect(statement.cash).toContainEqual({currency:'USD',amount:-4955.41});
+  expect(statement.skipped.filter(s=>s.kind==='cash')).toEqual([]);
+});

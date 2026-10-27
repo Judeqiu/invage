@@ -330,15 +330,6 @@ export function parseFlexQueryXml(xml: string | Buffer, includeHistory = true): 
         });
         continue;
       }
-      if (parsed.endingCash < 0) {
-        skipped.push({
-          kind: 'cash',
-          currency: parsed.currency,
-          reason: 'endingCash < 0 is not stored',
-          blocking: false,
-        });
-        continue;
-      }
       if (seenCcy.has(parsed.currency)) {
         skipped.push({
           kind: 'cash',

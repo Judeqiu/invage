@@ -185,10 +185,6 @@ function mapFunds(d: unknown, asOf: string, skipped: BrokerSkip[]): {
   for (const [field, iso] of Object.entries(CASH_FIELDS)) {
     const amount = parseNum(rec[field]);
     if (amount == null) continue;
-    if (amount < 0) {
-      skipped.push({ kind: 'cash', currency: iso, reason: `negative cash ${amount}` });
-      continue;
-    }
     cash.push({ currency: iso, amount });
   }
   const reportedCurrency = String(rec.currency ?? '').trim().toUpperCase();

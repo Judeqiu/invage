@@ -175,7 +175,7 @@ export function accumulateHoldingBuy(existing: Holding, purchase: Holding): Hold
 }
 
 /**
- * Settled / free cash available for deployment (not a holding).
+ * Signed recorded cash balance (not a holding). Broker debit balances reduce NAV.
  * Missing top-level `cash` means cash is unknown — never invent 0.
  *
  * Multi-broker + multi-currency: one CashBalance per
@@ -183,7 +183,7 @@ export function accumulateHoldingBuy(existing: Holding, purchase: Holding): Hold
  * as separate free-cash sleeves. Unassigned (no channel) allows one slot per currency.
  */
 export interface CashBalance {
-  /** Available cash amount. Must be finite and ≥ 0. */
+  /** Signed cash balance. Finite; a negative amount is a broker debit and reduces NAV. */
   amount: number;
   /**
    * Currency code (e.g. USD, HKD). Required when cash is recorded —
@@ -200,7 +200,7 @@ export interface CashBalance {
    */
   channel?: string;
   /**
-   * Settled cash when the broker reports it separately from available cash.
+   * Signed settled cash when the broker reports it separately from the cash balance.
    * Omit = unknown — not equal to `amount`. NAV / dry powder still use `amount`.
    */
   settled_amount?: number;
@@ -393,9 +393,6 @@ export function assertCashBalance(raw: unknown): CashBalance {
   if (typeof c.amount !== 'number' || !Number.isFinite(c.amount)) {
     throw new Error('cash.amount must be a finite number.');
   }
-  if (c.amount < 0) {
-    throw new Error('cash.amount must be ≥ 0.');
-  }
   if (typeof c.currency !== 'string' || c.currency.trim().length === 0) {
     throw new Error('cash.currency is required (e.g. USD, HKD) — no silent default.');
   }
@@ -414,8 +411,8 @@ export function assertCashBalance(raw: unknown): CashBalance {
   };
   if (channel != null) result.channel = channel;
   if (c.settled_amount != null) {
-    if (typeof c.settled_amount !== 'number' || !Number.isFinite(c.settled_amount) || c.settled_amount < 0) {
-      throw new Error('cash.settled_amount must be a finite number ≥ 0 when set.');
+    if (typeof c.settled_amount !== 'number' || !Number.isFinite(c.settled_amount)) {
+      throw new Error('cash.settled_amount must be a finite signed number when set.');
     }
     result.settled_amount = c.settled_amount;
   }
@@ -1210,7 +1207,7 @@ export function applyCashDelta(
   }
 
   const nextAmount = target.amount + cashDelta;
-  if (nextAmount < 0) {
+  if (nextAmount < 0 && cashDelta < 0) {
     throw new Error(
       `Insufficient cash on ${formatCashSlotLabel(target)}: have ${target.amount.toFixed(2)} ${target.currency}, ` +
         `need ${(-cashDelta).toFixed(2)} more for this trade ` +

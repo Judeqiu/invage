@@ -38,7 +38,6 @@ export async function booksApplyBrokerSnapshot(
   for (const row of statement.cash) {
     const currency = assertCurrency(row.currency);
     if (desiredCash.has(currency)) throw new Error(`Duplicate broker cash currency ${currency}.`);
-    if (row.amount < 0) throw new Error(`Broker ${channel} has negative ${currency} cash; books margin cash is not supported.`);
     desiredCash.set(currency, toMinor(row.amount));
   }
 
@@ -138,13 +137,13 @@ export async function booksApplyBrokerSnapshot(
       const target = desiredCash.get(currency) ?? 0n;
       const delta = target - prior;
       if (delta === 0n) continue;
-      if (prior === 0n && target > 0n) {
+      if (prior === 0n && target !== 0n) {
         await postOpeningBalance(client, ctx, {
           amount: fromMinor(target), currency, channel,
           valueDate: statement.as_of,
           requestId: newRequestId('broker-cash-opening'),
           memo: `Broker ${channel} ${statement.account_id} snapshot ${statement.as_of}: opening ${currency}`,
-          toolName: 'broker_sync', externalRef,
+          toolName: 'broker_sync', externalRef, allowNegativeCash: true,
         });
       } else {
         await postCashAdjustment(client, ctx, {
@@ -152,7 +151,7 @@ export async function booksApplyBrokerSnapshot(
           valueDate: statement.as_of,
           requestId: newRequestId('broker-cash-adjustment'),
           memo: `Broker ${channel} ${statement.account_id} snapshot ${statement.as_of}: reconcile ${currency}`,
-          contra: 'adjustment', toolName: 'broker_sync', externalRef,
+          contra: 'adjustment', toolName: 'broker_sync', externalRef, allowNegativeCash: true,
         });
       }
       journals++;

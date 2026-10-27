@@ -54,7 +54,8 @@ describe('broker sync notification', () => {
   it('explains the retry plan only when an automatic retry is scheduled', async () => {
     const notify = vi.fn(async () => ({ notification: {} as never, delivery: [] }));
     await publishBrokerSyncFailure('alice', 'IBKR', 'Main', 'fetch failed', { notify, retryScheduled: true });
-    expect(notify.mock.calls[0]?.[0].body).toContain("We'll automatically retry in 30 minutes. Your regular sync frequency stays the same.");
+    expect(notify.mock.calls[0]?.[0].body).toContain("We'll retry automatically. Your regular sync frequency stays the same.");
+    expect(notify.mock.calls[0]?.[0].body).not.toContain('30 minutes');
     expect(notify.mock.calls[0]?.[0].body).toContain('Check Settings → Brokers → Sync history.');
     await publishBrokerSyncFailure('alice', 'IBKR', 'Main', 'fetch failed', { notify });
     expect(notify.mock.calls[1]?.[0].body).not.toContain('retry');

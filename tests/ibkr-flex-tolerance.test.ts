@@ -47,3 +47,9 @@ describe('usable IBKR evidence without redundant fields', () => {
     expect(parseRelationshipArchive('ibkr', Buffer.from(iso), 'A', { id: 'test', version: '1' })[0].at).toBe('2026-10-20T10:00:00');
   });
 });
+
+it('retains debit currency cash instead of silently omitting a liability',()=>{
+  const statement=mapFlexDocToStatement(parseFlexQueryXml(xml.replace('endingCash="500"','endingCash="-4955.41"')),'ibkr-A');
+  expect(statement.cash).toContainEqual({currency:'USD',amount:-4955.41});
+  expect(statement.skipped.filter(s=>s.kind==='cash')).toEqual([]);
+});
