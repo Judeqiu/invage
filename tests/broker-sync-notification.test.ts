@@ -3,6 +3,7 @@ import type { InvestorState } from '../src/state/portfolio-state.js';
 import { brokerSyncFacts, captureBrokerSyncSnapshot, fallbackBrokerSyncSummary,
   withBrokerSyncBatchNotifications, publishBrokerSyncSuccess, publishBrokerSyncFailure } from '../src/brokers/sync-notification.js';
 import type { BrokerApplyResult } from '../src/brokers/statement.js';
+import { HISTORY_PENDING_REASON, HISTORY_REVIEW_REASON } from '../src/brokers/statement.js';
 
 function state(): InvestorState {
   return { user: { id: 'u', slug: 'alice', created_at: '2026-01-01' },
@@ -10,6 +11,29 @@ function state(): InvestorState {
 }
 const applied: BrokerApplyResult = { accountId: 'U1', asOf: '2026-10-02', channel: 'ibkr-1',
   lotsUpserted: 2, lotsRemoved: 1, cash: [], skipped: [], };
+
+it.each([HISTORY_PENDING_REASON,HISTORY_REVIEW_REASON])('does not label a saved snapshot with unfinished history as complete: %s',async reason=>{
+  const notify=vi.fn(async()=>({notification:{} as never,delivery:[]})),summarize=vi.fn(async()=> 'Current positions and cash saved.');
+  const facts=brokerSyncFacts('Tiger Brokers','Main',captureBrokerSyncSnapshot(state(),'tiger'),captureBrokerSyncSnapshot(state(),'tiger'),
+    {...applied,skipped:[{kind:'event',reason}]},true);
+  await publishBrokerSyncSuccess('alice',false,facts,{notify,summarize});
+  expect(notify.mock.calls[0][0].title).toMatch(/snapshot saved; history/);
+  expect(notify.mock.calls[0][0].status_hint).toBeUndefined();
+  expect(notify.mock.calls[0][0].body).toContain(reason);
+});
+
+it('does not report a daily batch with a history conflict as completely synced',async()=>{
+  const notify=vi.fn(async()=>({notification:{} as never,delivery:[]})),summarize=vi.fn(async()=> 'unused');
+  const facts=brokerSyncFacts('Tiger Brokers','Main',captureBrokerSyncSnapshot(state(),'tiger'),captureBrokerSyncSnapshot(state(),'tiger'),
+    {...applied,skipped:[{kind:'event',reason:HISTORY_REVIEW_REASON}]},true);
+  await withBrokerSyncBatchNotifications({userId:'alice',date:'2026-10-27',accounts:[{label:'Tiger',status:'succeeded'}]},async()=>{
+    await publishBrokerSyncSuccess('alice',false,facts,{notify,summarize});
+  },notify);
+  expect(notify).toHaveBeenCalledOnce();
+  expect(notify.mock.calls[0][0]).toMatchObject({title:'Broker snapshots saved; history needs review',severity:'medium'});
+  expect(notify.mock.calls[0][0].status_hint).toBeUndefined();
+  expect(notify.mock.calls[0][0].body).not.toContain('automatic retry');
+});
 
 describe('broker sync notification', () => {
   it('identifies position and cash changes only on the synced channel', () => {

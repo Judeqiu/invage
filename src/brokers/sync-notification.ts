@@ -4,7 +4,7 @@ import { completeSimple } from '@earendil-works/pi-ai/compat';
 import { checkTurnAllowed, getLlmCallOptions, notifyUser, recordLlm, resolveUtilityLlm } from 'utarus';
 import type { Holding } from '../market/types.js';
 import { getCashes, getPortfolio, type InvestorState } from '../state/portfolio-state.js';
-import { formatBrokerSkip, type BrokerApplyResult } from './statement.js';
+import { formatBrokerSkip, HISTORY_PENDING_REASON, HISTORY_REVIEW_REASON, type BrokerApplyResult } from './statement.js';
 
 interface PositionSnapshot {
   ticker: string;
@@ -171,7 +171,9 @@ export async function withBrokerSyncBatchNotifications<T>(notice: BrokerSyncBatc
     if (notice.accounts.length || collected.successes.length || collected.failures.length) {
       const failed = !!notice.error || notice.accounts.some(account => account.status !== 'succeeded') ||
         collected.failures.length > 0 || notice.calculationStatus === 'failed';
-      const pending = notice.calculationStatus === 'pending';
+      const historyReview = collected.successes.some(facts => facts.coverage_notes?.includes(HISTORY_REVIEW_REASON));
+      const historyPending = collected.successes.some(facts => facts.coverage_notes?.includes(HISTORY_PENDING_REASON));
+      const pending = notice.calculationStatus === 'pending' || historyReview || historyPending;
       const lines = notice.accounts.map(account => `${account.label}: ${account.status === 'succeeded' ? 'synced' : account.status === 'failed' ? 'failed' : 'not synced'}.`);
       lines.unshift(`${notice.accounts.filter(account => account.status === 'succeeded').length} of ${notice.accounts.length} accounts synced.`);
       lines.push(...collected.successes.map(fallbackBrokerSyncSummary), ...collected.failures);
@@ -180,14 +182,14 @@ export async function withBrokerSyncBatchNotifications<T>(notice: BrokerSyncBatc
       if (notice.snapshotStatus === 'saved') lines.push(`Snapshot saved for ${notice.date}.`);
       else if (notice.snapshotStatus === 'skipped') lines.push('A complete batch snapshot was not saved.');
       if (notice.calculationStatus === 'ready') lines.push('Portfolio aggregates updated.');
-      else if (pending) lines.push('Portfolio aggregates are still being prepared.');
+      else if (notice.calculationStatus === 'pending') lines.push('Portfolio aggregates are still being prepared.');
       if (notice.error) lines.push(notice.error);
       if (notice.retryScheduled) lines.push('Incomplete work is queued for automatic retry.');
       if (notes.length) lines.push('Data notes:\n' + notes.join('\n'));
       try {
-        await notify({ userId: notice.userId, title: failed ? 'Broker sync needs attention' : pending ? 'Broker sync imported' : 'Broker sync complete',
+        await notify({ userId: notice.userId, title: failed ? 'Broker sync needs attention' : historyReview ? 'Broker snapshots saved; history needs review' : pending ? 'Broker sync imported' : 'Broker sync complete',
           body: `${notice.date}\n${lines.join('\n')}`, source: 'system',
-          severity: failed ? 'medium' : 'info', status_hint: failed ? 'failure' : pending ? undefined : 'success', href: '/settings/brokers' });
+          severity: failed || historyReview ? 'medium' : 'info', status_hint: failed ? 'failure' : pending ? undefined : 'success', href: '/settings/brokers' });
       } catch (error) { console.error('[broker/sync-notification] batch publish failed:', error); }
     }
   }
@@ -203,12 +205,15 @@ export async function publishBrokerSyncSuccess(slug: string, isAdmin: boolean, f
   // including when model summarization fails or omits the coverage detail.
   const { coverage_notes, ...summaryFacts } = facts;
   const notes = [...new Set((coverage_notes ?? []).map(note => note.trim()).filter(Boolean))];
+  const historyReview = notes.includes(HISTORY_REVIEW_REASON);
+  const historyPending = historyReview || notes.includes(HISTORY_PENDING_REASON);
   try { summary = await deps.summarize(slug, isAdmin, summaryFacts); }
   catch (error) { console.warn('[broker/sync-notification] LLM fallback:', error instanceof Error ? error.message : String(error)); }
   try {
-    await deps.notify({ userId: slug, title: `${facts.broker} sync complete`,
+    await deps.notify({ userId: slug, title: historyReview ? `${facts.broker} snapshot saved; history needs review`
+      : historyPending ? `${facts.broker} snapshot saved; history pending` : `${facts.broker} sync complete`,
       body: summary + (notes.length ? `\n\nData notes:\n${notes.join('\n')}` : ''),
-      source: 'system', severity: 'info', status_hint: 'success', href: '/settings/brokers' });
+      source: 'system', severity: historyReview ? 'medium' : 'info', status_hint: historyPending ? undefined : 'success', href: '/settings/brokers' });
   } catch (error) { console.error('[broker/sync-notification] publish failed:', error); }
 }
 

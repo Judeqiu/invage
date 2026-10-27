@@ -1,4 +1,4 @@
-import { formatBrokerSkip, HISTORY_PENDING_REASON } from './statement.js';
+import { formatBrokerSkip, HISTORY_PENDING_REASON, HISTORY_REVIEW_REASON } from './statement.js';
 import { reconcileExecutionEffects } from './execution-effects.js';
 import { saveInvestor, type InvestorSnapshot } from '../state/investor-store.js';
 import { mergeOptionExecutions } from './option-executions.js';
@@ -185,11 +185,20 @@ export async function applyBrokerStatement(
   let executions: BrokerStatement['option_executions'];
   let optionEvents: BrokerStatement['option_events'];
   let historyError: string | undefined = observation?.historyError;
+  let historyReconciliationDeferred = false;
   try {
     optionEvents = doc.option_events === undefined ? undefined : mergeOptionLifecycleEvents(state.option_events ?? [], doc.option_events);
     history = doc.history ? reconcileExecutionEffects(mergeBrokerHistory(state.broker_history?.[channel], doc.history),
       observedState.option_observations ?? [], optionEvents ?? state.option_events ?? []) : undefined;
-    const incoming = history ? mergeOptionExecutions(doc.option_executions ?? [], optionExecutionsFromHistory(history)) : doc.option_executions;
+    // History has proved the whole-order fee allocation above. Keep its retained
+    // rounding remainder in the option projection too, but only if the source
+    // option fee agrees exactly with that same source history execution.
+    const retainedFees = new Map(history?.executions.map(row => [row.id, row.fee_cash]));
+    const sourceFees = new Map(doc.history?.executions.map(row => [row.id, row.fee_cash]));
+    const optionInput = doc.option_executions?.map(row => row.commission !== null &&
+      sourceFees.get(row.execution_id) === row.commission && retainedFees.get(row.execution_id) != null
+      ? { ...row, commission: retainedFees.get(row.execution_id)! } : row);
+    const incoming = history ? mergeOptionExecutions(optionInput ?? [], optionExecutionsFromHistory(history)) : optionInput;
     executions = incoming === undefined ? undefined : mergeOptionExecutions(state.option_executions ?? [], incoming);
     // Share the validated classification across both database projections. Merging
     // above has checked identity, quantities, time and all reported money first.
@@ -200,6 +209,7 @@ export async function applyBrokerStatement(
   } catch (error) {
     if (!observation?.deferHistoryConflicts || !observation.rawDataId) throw error;
     historyError = error instanceof Error ? error.message : String(error);
+    historyReconciliationDeferred = true;
     history = undefined; executions = undefined; optionEvents = undefined;
   }
   const stamped = stampLots(doc.lots, channel);
@@ -246,7 +256,10 @@ export async function applyBrokerStatement(
     lotsUpserted: stamped.length,
     lotsRemoved: removed,
     cash: doc.cash,
-    skipped: historyError && !doc.skipped.some(s=>s.reason===HISTORY_PENDING_REASON) ? [...doc.skipped, { kind: 'event', reason: HISTORY_PENDING_REASON }] : doc.skipped,
+    skipped: historyReconciliationDeferred
+      ? [...doc.skipped.filter(s => s.reason !== HISTORY_PENDING_REASON), { kind: 'event', reason: HISTORY_REVIEW_REASON }]
+      : historyError && !doc.skipped.some(s=>s.reason===HISTORY_PENDING_REASON) ? [...doc.skipped, { kind: 'event', reason: HISTORY_PENDING_REASON }] : doc.skipped,
+    ...(historyReconciliationDeferred ? { historyReconciliationDeferred: true as const } : {}),
     ...(history ? { historySync:history.sync } : {}),
   };
   if (beforeSave) beforeSave(result);

@@ -591,7 +591,7 @@ async function syncBrokerAccountUnlocked(snapshot: InvestorSnapshot, id: string,
       account_id: applied.accountId, lots_upserted: applied.lotsUpserted, lots_removed: applied.lotsRemoved,
       ...(rawId() ? { raw_data_id: rawId() } : {}) });
     applied.archivePath = archivePath;
-    complete = !applied.skipped.some(s => s.reason === HISTORY_PENDING_REASON);
+    complete = applied.historyReconciliationDeferred === true || !applied.skipped.some(s => s.reason === HISTORY_PENDING_REASON);
     finishBrokerSync(intent, complete);
     try {
       await publishBrokerSyncSuccess(state.user.id, state.user.admin === true,

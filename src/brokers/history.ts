@@ -1,4 +1,5 @@
 import { mergeExecutionEffect } from './execution-effects.js';
+import { preserveHistoryFeeAllocation } from './history-fee-allocation.js';
 import { addDecimals, decimal, validDate, mergeOptionExecutions, type OptionExecution } from './option-executions.js';
 
 export interface BrokerHistoryScope { broker_id: string; channel: string; account_id: string; }
@@ -148,8 +149,8 @@ export function planBrokerHistorySync(previous: BrokerHistory | undefined, accou
 }
 
 export function mergeBrokerHistory(previous: BrokerHistory | undefined, incoming: BrokerHistory): BrokerHistory {
-  const next = assertBrokerHistory(incoming);
   const old = previous ? assertBrokerHistory(previous) : undefined;
+  const next = preserveHistoryFeeAllocation(old, assertBrokerHistory(incoming));
   if (old && (old.account_id !== next.account_id || old.channel !== next.channel || old.broker_id !== next.broker_id)) throw new Error('Broker history cannot change account binding');
   if (old && Date.parse(next.sync.through) < Date.parse(old.sync.through)) throw new Error('Broker history checkpoint cannot move backwards');
   const executions = new Map<string, BrokerHistoryExecution>();

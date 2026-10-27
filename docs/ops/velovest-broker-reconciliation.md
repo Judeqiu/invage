@@ -20,12 +20,24 @@ cannot parse or reconcile. The original response stays archived, deferred
 history is logged, and its checkpoint does not advance. Account identity and
 current snapshot validation remain mandatory.
 
+For every broker, a complete unchanged order fee can retain its existing proportional
+per-fill allocation when only the rounding remainder moves between fills. Both
+fill sets must exactly reconcile to the same reported fee and filled quantity;
+each allocation must consist of the proportional floors plus one remainder.
+Missing fills, changed totals, prices, currencies and other economic conflicts
+remain rejected. The history and option projections retain the same allocation.
+
 Each account sync records an fsynced intent in `data/broker-sync-retries` before
 network or SQL work. No credentials are stored there. Failed work retries with
 backoff from 30 seconds to 15 minutes on the minute scheduler, including when
 PostgreSQL cannot load the account. An interrupted process's intent is recovered
 after its PID disappears; a six-hour lease prevents immediate replay of long-running work. Full-history
-requests survive retries. Pause, deletion or rebinding cancels obsolete work.
+requests survive transient retries. A deterministic historical reconciliation
+conflict after a successful current snapshot does not keep this retry intent:
+the archived history is retained for review and the next regular or manual sync.
+The notification explicitly says the snapshot was saved and history needs review,
+without reporting full success. Actual import failures and transient historical
+fetch/archive failures continue to retry. Pause, deletion or rebinding cancels obsolete work.
 The API returns HTTP 202 for an accepted durable retry, and Settings displays
 Retrying. Completion is reported only after data is saved. Each broker HTTP
 request has a 45-second abort signal; paginated imports retain their normal

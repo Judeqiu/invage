@@ -583,7 +583,7 @@ async function syncBrokerConnectionUnlocked(
       } catch(error) { if(!isInvestorRevisionConflict(error)||attempt>=2)throw error; }
     }
     applied.archivePath = archivePath;
-    complete = !applied.skipped.some(s=>s.reason===HISTORY_PENDING_REASON);
+    complete = applied.historyReconciliationDeferred === true || !applied.skipped.some(s=>s.reason===HISTORY_PENDING_REASON);
     finishBrokerSync(intent,complete);
     try {
       await publishBrokerSyncSuccess(slug, state.user.admin === true,

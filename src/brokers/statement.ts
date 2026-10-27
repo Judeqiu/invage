@@ -1,4 +1,5 @@
 export const HISTORY_PENDING_REASON = 'Historical reconciliation queued; current positions and cash are saved.';
+export const HISTORY_REVIEW_REASON = 'Historical reconciliation needs review; current positions and cash are saved. History will be retried at the next regular or manual sync.';
 /**
  * Canonical broker statement — the only apply input.
  * Catalog parsers (IBKR Flex XML, csv_tables) map vendor rows into this
@@ -71,6 +72,8 @@ export interface BrokerStatement {
 }
 
 export interface BrokerApplyResult {
+  /** A deterministic history conflict does not retry a successfully saved snapshot. */
+  historyReconciliationDeferred?: true;
   historySync?: BrokerHistory['sync'];
   accountId: string;
   asOf: string;
