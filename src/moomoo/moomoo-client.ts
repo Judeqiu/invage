@@ -4,7 +4,7 @@ import { BrokerHttpError, BrokerParseError } from '../brokers/errors.js';
 import { moomooNonce, moomooSignContent, parseSignAlg, signMooMooRequest, type MooMooSignAlg } from './moomoo-sign.js';
 import { looksLikeOptionCode } from '../brokers/option-symbol.js';
 import { envelopeOk, type MooMooEnvelope, type MooMooRawBundle } from './moomoo-types.js';
-import type { BrokerHistorySyncPlan } from '../brokers/history.js';
+import type { BrokerHistory, BrokerHistorySyncPlan } from '../brokers/history.js';
 import { parseMooMooOrderFees } from './moomoo-fees.js';
 
 export const MOOMOO_HOST = 'webapi.moomoo.com';
@@ -202,9 +202,9 @@ async function getWithSkewRetry(args: {
 
 /** Read all pages, rather than silently truncating at the default 50 fills / 90 days. */
 async function fetchHistory(accId: string, credentials: MooMooCredentials, fetchImpl: typeof fetch,
-  plan: BrokerHistorySyncPlan, resource: 'fills_history' | 'orders_history') {
+  plan: BrokerHistorySyncPlan, resource: 'fills_history' | 'orders_history', code?:string) {
   // Closed-only accounts must retain history too, even with no current options.
-  const markets = ['US', 'HK'];
+  const markets = code ? [code.split('.')[0]] : ['US', 'HK'];
   const start = String(BigInt(Date.parse(plan.from)) * 1000n);
   const end = String(BigInt(Date.parse(plan.through)) * 1000n);
   const rows: Record<string, unknown>[] = [];
@@ -214,7 +214,7 @@ async function fetchHistory(accId: string, credentials: MooMooCredentials, fetch
     for (let page = 0; ; page++) {
       if (page >= 1000) throw new BrokerParseError('MooMoo fill history exceeded the page limit; snapshot was not applied.');
       const args = { path: `/api/v1.0/accounts/${encodeURIComponent(accId)}/${resource}`,
-        query: new URLSearchParams({ trd_market: market, start, end, page_flag: pageFlag, page_size: '50' }).toString(),
+        query: new URLSearchParams({ trd_market: market, start, end, page_flag: pageFlag, page_size: '50', ...(code ? {code} : {}) }).toString(),
         credentials, fetchImpl };
       let env: MooMooEnvelope;
       for (let attempt = 0; ; attempt++) {
@@ -312,6 +312,20 @@ async function fetchOrderFees(accId: string, orders: Record<string, unknown>[], 
     }
   }
   return { rows, gaps };
+}
+
+async function fetchCashLogEvidence(accId:string,codes:string[],plan:BrokerHistorySyncPlan,credentials:MooMooCredentials,fetchImpl:typeof fetch) {
+ const groups:NonNullable<MooMooRawBundle['cash_logs']>=[],gaps:NonNullable<MooMooRawBundle['fee_gaps']>=[];
+ for(const code of codes){const group={code,from:plan.from,through:plan.through,complete:false,rows:[] as Record<string,unknown>[]};groups.push(group);let cursor='';const seen=new Set<string>();
+  try{for(;;){
+   const query=new URLSearchParams({code,begin_time:String(BigInt(Date.parse(plan.from))*1000n),end_time:String(BigInt(Date.parse(plan.through))*1000n),page_size:'20',...(cursor?{page_flag:cursor}:{})}).toString();
+   let env:MooMooEnvelope;for(let attempt=0;;attempt++){try{env=await getWithSkewRetry({path:`/api/v1.0/accounts/${encodeURIComponent(accId)}/cash_logs`,query,credentials,fetchImpl});failIfError(env,'cash_logs');break;}catch(error){if(!(error instanceof BrokerHttpError)||!['429','-12011'].includes(error.vendorCode??'')||attempt>=3)throw error;await new Promise(r=>setTimeout(r,1000*2**attempt));}}
+   const d=env.d as {cash_logs?:unknown;completed?:unknown;page_flag?:unknown};if(!Array.isArray(d?.cash_logs)||typeof d.completed!=='boolean'||d.cash_logs.some(r=>!r||typeof r!=='object'||Array.isArray(r)))throw Error('Incomplete cash logs');
+   group.rows.push(...d.cash_logs);if(d.completed){group.complete=true;break;}if(typeof d.page_flag!=='string'||!d.page_flag||seen.has(d.page_flag))throw Error('Cash log cursor did not advance');cursor=d.page_flag;seen.add(cursor);await new Promise(r=>setTimeout(r,650));
+  }}catch{gaps.push({reference:code,reason:'Cash-log fee evidence unavailable or incomplete; retry fee enrichment.'});}
+  await new Promise(r=>setTimeout(r,650));
+ }
+ return {groups,gaps};
 }
 
 function failIfError(env: MooMooEnvelope, what: string): void {
@@ -426,7 +440,7 @@ export async function fetchMooMooFundsSnapshot(
 
 export async function fetchMooMooRawBundle(
   credentials: MooMooCredentials,
-  opts?: { fetchImpl?: typeof fetch; history?: BrokerHistorySyncPlan },
+  opts?: { fetchImpl?: typeof fetch; history?: BrokerHistorySyncPlan; retainedHistory?:BrokerHistory },
 ): Promise<MooMooRawBundle> {
   const fetchImpl = opts?.fetchImpl ?? fetch;
   const {authorized,acc_id,funds} = await fetchMooMooFundsSnapshot(credentials, {fetchImpl});
@@ -444,14 +458,27 @@ export async function fetchMooMooRawBundle(
   const plan = opts?.history ?? { mode:'full', from:'2000-01-01T00:00:00.000Z', through:new Date().toISOString() };
   const fills_history = await fetchHistory(acc_id, credentials, fetchImpl, plan, 'fills_history');
   const orders_history = await fetchHistory(acc_id, credentials, fetchImpl, plan, 'orders_history');
+  const retained=opts?.retainedHistory;
+  if(retained&&(retained.account_id!==acc_id||retained.broker_id!==(credentials.broker??'moomoo')))throw new BrokerParseError('Retained fee history scope mismatch');
+  const pendingOrders=new Set(retained?.orders.filter(o=>o.legs.length>1&&retained.executions.some(e=>e.order_id===o.id&&e.fee_cash===null)).map(o=>o.id)??[]);
+  const pendingCodes=[...new Set(retained?.executions.filter(e=>e.instrument==='option'&&e.order_id&&pendingOrders.has(e.order_id)).map(e=>e.native_symbol)??[])];
+  const feePlan={...plan,from:retained&&retained.sync.from<plan.from?retained.sync.from:plan.from};
+  const fee_fills_history:NonNullable<MooMooRawBundle['fee_fills_history']>=[];const extraGaps:NonNullable<MooMooRawBundle['fee_gaps']>=[];
+  if(plan.mode==='incremental')for(const code of pendingCodes){try{const fetched=await fetchHistory(acc_id,credentials,fetchImpl,feePlan,'fills_history',code);fee_fills_history.push({code,from:feePlan.from,through:feePlan.through,rows:fetched.rows});}catch{extraGaps.push({reference:code,reason:'Retained fee fill history unavailable; pending fees were not discarded.'});}}
+  const allFills=[...fills_history.rows,...fee_fills_history.flatMap(g=>g.rows)];
   // Recent fills may belong to orders created before the incremental window.
-  const parents = [...orders_history.rows, ...fills_history.rows.filter(row => row.order_id != null)];
+  const parents = [...orders_history.rows, ...allFills.filter(row => row.order_id != null)];
   const details = await fetchOrderDetails(acc_id, parents, credentials, fetchImpl);
   const fees = await fetchOrderFees(acc_id,
-    [...orders_history.rows, ...details.rows], fills_history.rows, credentials, fetchImpl);
-    const option_basicinfo = await fetchOptionBasicInfo(positions, credentials, fetchImpl, fills_history.rows);
-    return { ...snapshot, option_basicinfo, fills_history, orders_history, orders_details: details.rows,
-      history_mode: plan.mode, history_gaps: details.gaps, orders_fees: fees.rows, fee_gaps: fees.gaps };
+    [...orders_history.rows, ...details.rows], allFills, credentials, fetchImpl);
+  const combos=new Set(details.rows.filter(o=>{const info=o.multi_leg_info as {leg_infos?:unknown[]} | undefined;return Array.isArray(info?.leg_infos)&&info.leg_infos.length>1;}).map(o=>String(o.order_id)));
+  const codes=[...new Set(allFills.filter(f=>combos.has(String(f.order_id))).map(f=>String(f.code)))];
+  const cash=await fetchCashLogEvidence(acc_id,codes,feePlan,credentials,fetchImpl);
+    const option_basicinfo = await fetchOptionBasicInfo(positions, credentials, fetchImpl, allFills);
+    const latestFunds = await getWithSkewRetry({path:`/api/v1.0/accounts/${encodeURIComponent(acc_id)}/funds`,query:'currency=USD',credentials,fetchImpl});
+    failIfError(latestFunds, 'funds');
+    return { ...snapshot, funds:latestFunds, fetched_at:new Date().toISOString(), option_basicinfo, fills_history, orders_history, orders_details: details.rows,
+      history_mode: plan.mode, history_gaps: details.gaps, orders_fees: fees.rows, cash_logs:cash.groups, fee_fills_history, fee_gaps:[...fees.gaps,...cash.gaps,...extraGaps] };
   } catch (error) {
     const option_basicinfo = await fetchOptionBasicInfo(positions, credentials, fetchImpl);
     return { ...snapshot, option_basicinfo, history_error: deferredHistoryReason('MooMoo/Futubull', error) };

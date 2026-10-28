@@ -8,6 +8,7 @@ export interface BrokerHistoryExecution extends BrokerHistoryScope {
   instrument: 'security' | 'option'; side: 'buy' | 'sell'; effect: 'open' | 'close' | 'mixed' | 'unknown';
   executed_at: string; clock: string; currency: string | null;
   quantity: string; price: string | null; multiplier: string | null; gross_cash: string | null; fee_cash: string | null;
+  fee_source?: { kind: 'cash_log'; references: string[] };
   option: { right: 'call' | 'put'; expiry: string; strike: string } | null;
 }
 export interface BrokerHistoryOrderLeg {
@@ -75,7 +76,7 @@ function economicEqual(a: string | null, b: string | null) {
 
 export function assertHistoryExecution(raw: unknown): BrokerHistoryExecution {
   const o = obj(raw);
-  keys(o, ['broker_id','channel','account_id','id','order_id','native_symbol','symbol','instrument','side','effect','executed_at','clock','currency','quantity','price','multiplier','gross_cash','fee_cash','option']);
+  keys(o, ['broker_id','channel','account_id','id','order_id','native_symbol','symbol','instrument','side','effect','executed_at','clock','currency','quantity','price','multiplier','gross_cash','fee_cash','option','fee_source']);
   const instrument = choice(o.instrument, ['security', 'option']);
   let option: BrokerHistoryExecution['option'] = null;
   if (o.option !== null) {
@@ -88,6 +89,7 @@ export function assertHistoryExecution(raw: unknown): BrokerHistoryExecution {
     instrument, side: choice(o.side, ['buy','sell']), effect: choice(o.effect, ['open','close','mixed','unknown']), executed_at: stamp(o.executed_at), clock: text(o.clock),
     currency: currency(o.currency), quantity: amount(o.quantity), price: nullableAmount(o.price), multiplier: nullableAmount(o.multiplier),
     gross_cash: nullableAmount(o.gross_cash), fee_cash: nullableAmount(o.fee_cash), option };
+  if(o.fee_source!==undefined){const source=obj(o.fee_source);keys(source,['kind','references']);if(source.kind!=='cash_log'||row.fee_cash===null||!Array.isArray(source.references)||!source.references.length||source.references.some((r:unknown)=>typeof r!=='string'||!/^[a-f0-9]{64}$/.test(r)))throw Error('Invalid cash-log fee provenance');row.fee_source={kind:'cash_log',references:source.references};}
   return row;
 }
 export function assertHistoryOrder(raw: unknown): BrokerHistoryOrder {
@@ -150,10 +152,10 @@ export function mergeBrokerHistory(previous: BrokerHistory | undefined, incoming
     if (!prior) { executions.set(row.id, row); continue; }
     const canonical = (v:string) => addDecimals(v,'0').replace(/\.0+$/,'').replace(/(\.\d*?)0+$/,'$1');
     const effect = mergeExecutionEffect(prior.effect, row.effect);
-    const core = (r: BrokerHistoryExecution) => ({ ...r, effect, quantity:canonical(r.quantity),price:null, option:r.option ? { ...r.option,strike:canonical(r.option.strike) } : null, symbol: null, multiplier: null, gross_cash: null, fee_cash: null });
+    const core = (r: BrokerHistoryExecution) => ({ ...r, effect, quantity:canonical(r.quantity),price:null, option:r.option ? { ...r.option,strike:canonical(r.option.strike) } : null, symbol: null, multiplier: null, gross_cash: null, fee_cash: null, fee_source: undefined });
     if (JSON.stringify(core(prior)) !== JSON.stringify(core(row)) || !economicEqual(prior.price, row.price) || !economicEqual(prior.multiplier, row.multiplier) ||
       !economicEqual(prior.gross_cash, row.gross_cash) || !economicEqual(prior.fee_cash, row.fee_cash) || prior.symbol && row.symbol && prior.symbol !== row.symbol) throw new Error(`Conflicting broker history execution ${row.id}`);
-    executions.set(row.id, { ...row, effect, price: row.price ?? prior.price, symbol: row.symbol ?? prior.symbol, multiplier: row.multiplier ?? prior.multiplier, gross_cash: row.gross_cash ?? prior.gross_cash, fee_cash: row.fee_cash ?? prior.fee_cash });
+    executions.set(row.id, { ...row, effect, price: row.price ?? prior.price, symbol: row.symbol ?? prior.symbol, multiplier: row.multiplier ?? prior.multiplier, gross_cash: row.gross_cash ?? prior.gross_cash, fee_cash: row.fee_cash ?? prior.fee_cash, ...((row.fee_source ?? prior.fee_source) ? {fee_source:row.fee_source ?? prior.fee_source} : {}) });
   }
   const orders = new Map<string, BrokerHistoryOrder>();
   for (const row of [...(old?.orders ?? []), ...next.orders]) {
@@ -167,7 +169,12 @@ export function mergeBrokerHistory(previous: BrokerHistory | undefined, incoming
   const gaps = retainedGaps.filter((g,i,all) => all.findIndex(other => other.kind === g.kind && other.reference === g.reference && other.reason === g.reason) === i).filter(g => g.kind !== 'metadata' || !g.reference ||
     !([...executions.values()].some(r => r.native_symbol === g.reference) &&
       [...executions.values()].filter(r => r.native_symbol === g.reference).every(r => r.multiplier !== null && r.symbol !== null)))
-    .filter(g => !(g.kind === 'coverage' && g.reason.startsWith('Order fees unavailable or invalid;') && g.reference && orders.get(g.reference)?.fees));
+    .filter(g => !(g.kind === 'coverage' && g.reason.startsWith('Order fees unavailable or invalid;') && g.reference && orders.get(g.reference)?.fees))
+    .filter(g => {
+      if (g.kind !== 'coverage' || !g.reference || !/^(Cash-log fee |Retained fee fill history)/.test(g.reason)) return true;
+      const relevant = [...executions.values()].filter(e => e.order_id === g.reference || e.native_symbol === g.reference);
+      return !relevant.length || relevant.some(e => e.fee_cash === null);
+    });
   const status = gaps.length ? 'partial' : next.sync.status === 'partial' && next.sync.gaps.length ? 'complete' : next.sync.status;
   const full = next.sync.mode === 'full' ? status === 'complete' : old?.sync.full_history_synced === true;
   return { ...next, executions: [...executions.values()].sort((a,b) => a.executed_at.localeCompare(b.executed_at) || a.id.localeCompare(b.id)),

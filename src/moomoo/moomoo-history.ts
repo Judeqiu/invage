@@ -1,3 +1,4 @@
+import { enrichMooMooCashFees } from './moomoo-cash-fees.js';
 import { decimal,addDecimals,negateDecimal } from '../brokers/option-executions.js';
 import { looksLikeOptionCode, parseBrokerOptionCode, optionUnderlyingFromBroker } from '../brokers/option-symbol.js';
 import { yahooSymbolFromBroker } from '../brokers/yahoo-symbol.js';
@@ -78,7 +79,8 @@ export function mapMooMooHistory(bundle: MooMooRawBundle, lots: BrokerLot[], cha
   const gap = (kind: BrokerHistoryGap['kind'], reference: string | null, reason: string) => {
     if (!gaps.some(g => g.kind === kind && g.reference === reference)) gaps.push({ kind, reference, reason });
   };
-  const executions: BrokerHistoryExecution[] = bundle.fills_history.rows.map(row => {
+  for (const group of bundle.cash_logs ?? []) for (const row of group.rows) assertAccount(row);
+  const mappedExecutions: BrokerHistoryExecution[] = [...bundle.fills_history.rows,...(bundle.fee_fills_history??[]).flatMap(g=>g.rows)].map(row => {
     assertAccount(row);
     const code = string(row.code), market = code.slice(0,code.indexOf('.')), native = code.slice(code.indexOf('.')+1);
     if (!['US','HK'].includes(market) || !native) throw new BrokerParseError('Unsupported Moomoo history market');
@@ -99,6 +101,9 @@ export function mapMooMooHistory(bundle: MooMooRawBundle, lots: BrokerLot[], cha
       currency:market === 'US' ? 'USD' : 'HKD', quantity, price, multiplier, gross_cash:gross === null ? null : direction.side === 'buy' ? negateDecimal(gross) : gross,
       fee_cash:null, option:parsed && !('skip' in parsed) ? { right:parsed.right, expiry:parsed.expiry, strike:String(parsed.strike) } : null };
   });
+  const byId=new Map<string,BrokerHistoryExecution>();
+  for(const row of mappedExecutions){const old=byId.get(row.id);if(old){const core=(r:BrokerHistoryExecution)=>({...r,quantity:null,price:null,gross_cash:null});if(JSON.stringify(core(old))!==JSON.stringify(core(row))||!['quantity','price','gross_cash'].every(k=>{const a=old[k as 'quantity'|'price'|'gross_cash'],b=row[k as 'quantity'|'price'|'gross_cash'];return a===null&&b===null||a!==null&&b!==null&&!/[1-9]/.test(addDecimals(a,negateDecimal(b)));}))throw new BrokerParseError('Conflicting repeated fee-history fill');}else byId.set(row.id,row);}
+  const executions=[...byId.values()];
   const orders = new Map<string, BrokerHistoryOrder>();
   const fees = new Map<string, BrokerOrderFees>();
   for (const row of [...(bundle.orders_history?.rows ?? []), ...(bundle.orders_details ?? [])]) {
@@ -126,6 +131,7 @@ export function mapMooMooHistory(bundle: MooMooRawBundle, lots: BrokerLot[], cha
       allocateMooMooFees(order, executions.filter(e => e.order_id === order.id));
     }
   }
+  if(bundle.cash_logs)for(const issue of enrichMooMooCashFees([...orders.values()],executions,bundle.cash_logs))gap(issue.kind,issue.reference,issue.reason);
   for (const id of fees.keys()) if (!orders.has(id)) gap('orders',id,'Reported fees retained in the raw archive; parent-order metadata unavailable.');
   for (const row of bundle.orders_details ?? []) {
     const info = row.multi_leg_info as { leg_infos?: unknown[] } | undefined;

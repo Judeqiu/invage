@@ -544,7 +544,7 @@ async function syncBrokerConnectionUnlocked(
     try {
       const previousHistory = state.broker_history?.[def.channel];
       const accountId = conn.last_sync?.account_id ?? conn.credentials.acc_id ?? conn.credentials.account ?? conn.credentials.account_id ?? previousHistory?.account_id ?? '';
-      raw = await adapter.fetchRaw(conn.credentials, { ...opts, accountId:accountId||undefined,channel:def.channel, history: planBrokerHistorySync(previousHistory, accountId, new Date(), intent.full) });
+      raw = await adapter.fetchRaw(conn.credentials, { ...opts, accountId:accountId||undefined,channel:def.channel, history: planBrokerHistorySync(previousHistory, accountId, new Date(), intent.full), retainedHistory:previousHistory });
       try {
         if (accountId) {
           await captureFetchedBrokerActivity(slug,{brokerId:id,channel:def.channel,accountId},raw,`sync:${randomUUID()}`);

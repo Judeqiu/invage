@@ -378,6 +378,7 @@ describe('MooMoo fetchRaw', () => {
     expect(urls.slice(1).filter(url => !url.includes('/fills_history') && !url.includes('/orders_history'))).toEqual([
       `https://webapi.moomoo.com/api/v1.0/accounts/${id}/funds?currency=USD`,
       `https://webapi.moomoo.com/api/v1.0/accounts/${id}/positions`,
+      `https://webapi.moomoo.com/api/v1.0/accounts/${id}/funds?currency=USD`,
     ]);
     expect(raw.funds).toEqual(FUNDS);
   });

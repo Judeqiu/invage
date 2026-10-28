@@ -89,6 +89,7 @@ describe('Moomoo historical data',()=>{
       if(u.pathname.endsWith('/authorized_trd_accs'))return Response.json({s:'ok',d:[{account_id:'A'}]});
       if(u.pathname.endsWith('/funds'))return Response.json(raw.funds);
       if(u.pathname.endsWith('/positions'))return Response.json(raw.positions);
+      if(u.pathname.endsWith('/cash_logs')){const code=u.searchParams.get('code')!,buy=code===closing;return Response.json({s:'ok',d:{completed:true,cash_logs:[{symbol:code.slice(3),transaction_name:`Option ${buy?'Buy':'Sell'} Fee`,cash_change:buy?'-1.29':'-2.59',balance:'Balance: 1 USD'},{symbol:code.slice(3),transaction_name:`Option ${buy?'Buy':'Sell'} Execution`,cash_change:buy?'-1135.00':'+1,950.00'}]}});}
       if(u.pathname.endsWith('/fees'))return Response.json({s:'ok',d:{order_id:'parent',currency:'USD',total_fee:'3.88',fees:[{type:'Commission',amount:'3.88'}]}});
       if(u.pathname.endsWith('/fills_history'))return Response.json({s:'ok',d:{order_fills:u.searchParams.get('trd_market')==='US'?raw.fills_history!.rows:[],completed:true}});
       if(u.pathname.endsWith('/orders_history')){

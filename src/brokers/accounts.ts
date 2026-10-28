@@ -404,9 +404,9 @@ export function ibkrStatements(raw: Buffer, channel: string, includeHistory = tr
   return out;
 }
 async function fetchStatements(model: BrokerAccountModel, conn: BrokerAccountConnection, connectionId: string, slug: string, transport?: AdapterTransport,
-  onRaw?: (body: Buffer) => void, history?: BrokerHistorySyncPlan, sourceRef?: string): Promise<{ raw: Buffer; statements: BrokerStatement[]; payload:BrokerRawPayload }> {
+  onRaw?: (body: Buffer) => void, history?: BrokerHistorySyncPlan, sourceRef?: string, retainedHistory?: import('./history.js').BrokerHistory): Promise<{ raw: Buffer; statements: BrokerStatement[]; payload:BrokerRawPayload }> {
   const adapter = getBrokerAdapter(conn.broker_id);
-  const raw = await adapter.fetchRaw(combinedCredentials(model, conn), { ...(transport ? { transport } : {}), ...(history ? { history } : {}), accountId:conn.account_id,channel:conn.channel });
+  const raw = await adapter.fetchRaw(combinedCredentials(model, conn), { ...(transport ? { transport } : {}), ...(history ? { history } : {}), accountId:conn.account_id,channel:conn.channel,retainedHistory });
   onRaw?.(raw.body);
   if (conn.account_id && sourceRef) await captureFetchedBrokerActivity(slug,
     {brokerId:conn.broker_id,channel:conn.channel,accountId:conn.account_id},raw,sourceRef);
@@ -530,7 +530,7 @@ async function syncBrokerAccountUnlocked(snapshot: InvestorSnapshot, id: string,
       if (!conn.account_id) throw new Error('Broker account binding is required.');
       if (!requiredComplete(def, credentials)) throw new Error('Required broker fields are incomplete.');
       const history = planBrokerHistorySync(state.broker_history?.[conn.channel], conn.account_id, new Date(), full);
-      const fetched = await fetchStatements(model, conn, id, state.user.id, transport, body => { raw = body; }, history, `sync:${syncId}`);
+      const fetched = await fetchStatements(model, conn, id, state.user.id, transport, body => { raw = body; }, history, `sync:${syncId}`, state.broker_history?.[conn.channel]);
       raw = fetched.raw;
       let statement = fetched.statements.find(s => s.account_id === conn.account_id);
       if (!statement) throw new Error(`Broker statement account mismatch: expected ${conn.account_id}.`);

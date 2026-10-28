@@ -42,7 +42,7 @@ export interface BrokerConnectorAdapter {
   readonly usesCsvTables: boolean;
   fetchRaw(
     credentials: Record<string, string>,
-    opts?: { transport?: AdapterTransport; history?: BrokerHistorySyncPlan; accountId?:string; channel?:string },
+    opts?: { transport?: AdapterTransport; history?: BrokerHistorySyncPlan; accountId?:string; channel?:string; retainedHistory?:BrokerHistory },
   ): Promise<BrokerRawPayload>;
   parseToStatement(raw: BrokerRawPayload, channel: string, includeHistory?: boolean): BrokerStatement;
 }

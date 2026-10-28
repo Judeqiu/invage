@@ -27,7 +27,7 @@ export function parseMooMooOrderFees(raw: Record<string, unknown>, orderId: stri
 }
 
 /** Only final, single-contract orders with all fills present can be allocated.
- * Combo charges stay on the parent: the API does not report leg-level fees. */
+ * Combo charges stay on the parent unless separate cash-log evidence verifies each leg. */
 export function allocateMooMooFees(order: BrokerHistoryOrder, fills: BrokerHistoryExecution[]): void {
   if (!order.fees || !fills.length || order.legs.length > 1 ||
       !['FILLED_ALL','CANCELLED_ALL','CANCELLED_PART','DELETED','FAILED','DISABLED'].includes(order.status) ||
