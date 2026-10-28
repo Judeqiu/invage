@@ -121,7 +121,7 @@ P/L. Nonpositive cost bases have no calculated percentage under the existing
 calculation convention; the report displays “Unavailable” while preserving any
 broker-reported percentage, including zero, in source details.
 
-The overview retains visible history/fee qualifications, labels itemized portfolio
+The overview retains visible history/fee qualifications within its metric cards, labels itemized portfolio
 value separately from aggregate broker fund balances, and distinguishes signed
 position cost basis from verified opening/roll cash flow. Gross put funding is
 separate from short-call share delivery by account and underlying; cash-settled
@@ -133,7 +133,7 @@ rebuilds the saved chart model to include signed position basis buckets.
 Broker Activity is an optional per-user display setting in Settings → Your
 experience. `experience_settings.show_broker_activity` defaults to false when
 absent; the dashboard receives it as `dashboardConfig.showBrokerActivity` on each
-response, including cached reports. Disabling hides the activity section and
-loads only source-status metadata (`?activity=0`), without retrieving activity
-rows. Sync, evidence capture, freshness status and position source details remain
-available. The preference is presentation only, not a new source-data access rule.
+response, including cached reports. Disabling hides the activity section and makes no activity requests. The separate
+dashboard freshness cards have been removed. Sync, evidence capture and position
+source details remain available. Source-status metadata remains available through
+`?activity=0` for explicit API callers. The preference is presentation only, not a new source-data access rule.

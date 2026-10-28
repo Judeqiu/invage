@@ -208,10 +208,8 @@ footer { color: var(--muted-foreground); border-color: var(--border); font-size:
 #premiumEngine > #openPremiumExpiryCard, #premiumEngine > #premiumConcentrationCard { grid-column: auto; }
 #premiumEngine > .metric-card:has(> .card-explain) { padding-bottom: 2.8rem; }
 
-.broker-report-status, .broker-activity { margin: 24px 0; }
-.broker-report-status > article { margin: 12px 0; padding: 16px; }
-.broker-report-status p, .broker-activity > p { font-size: 13px; line-height: 1.6; color: var(--muted-foreground, #a3aab8); }
-.broker-gap { color: #e9bd72 !important; }
+.broker-activity { margin: 24px 0; }
+.broker-activity > p { font-size: 13px; line-height: 1.6; color: var(--muted-foreground, #a3aab8); }
 .broker-activity-controls { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; margin: 16px 0; }
 .broker-activity-controls label { display: grid; gap: 6px; font-size: 12px; }
 .broker-activity-controls input, .broker-activity-controls select { background: #161b25; color: #e8ecf2; border: 1px solid #465063; border-radius: 6px; padding: 9px; max-width: 100%; }
@@ -221,11 +219,6 @@ footer { color: var(--muted-foreground); border-color: var(--border); font-size:
 .broker-source-dialog { background: #111722; color: #e8ecf2; border: 1px solid #465063; border-radius: 12px; width: min(900px, 90vw); max-height: 85vh; padding: 24px; }
 .broker-source-dialog::backdrop { background: #0009; }
 
-.broker-report-status { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(240px,100%),1fr)); gap: 10px; }
-.broker-report-status > h2, .broker-report-status > p { grid-column: 1 / -1; margin: 0; }
-.broker-report-status > article { margin: 0; padding: 12px; min-width: 0; overflow-wrap: anywhere; }
-.broker-report-status article p { margin: 6px 0; }
-.broker-report-status summary { font-size: 12px; cursor: pointer; }
 .broker-activity { min-width: 0; }
 .broker-activity .table-scroll { max-width: 100%; }
 #premiumEngine > .premium-history { grid-column: 1 / -1; }

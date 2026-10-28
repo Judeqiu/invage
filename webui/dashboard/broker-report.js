@@ -2,11 +2,10 @@
 (() => {
   'use strict';
   const host = document.getElementById('brokerActivity');
-  const status = document.getElementById('brokerReportStatus');
-  if (!host || !status) return;
+  if (!host) return;
   const api = '/api/domain/invage';
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  let report, selection = 'merged', reportDate = 'live', enabled = false, loadedActivity = false;
+  let report, selection = 'merged', enabled = false, loadedActivity = false;
   host.hidden = true;
   const filters = {search:'',category:'',instrument:'',account:''};
   let request;
@@ -26,14 +25,6 @@
   };
   function render() {
     if (!report) return;
-    const accounts = report.accounts.filter(matches);
-    status.innerHTML = `<h2>Broker freshness and history coverage</h2><p>Report selection: ${esc(reportDate === 'live' ? 'latest calculated report' : reportDate)}. Source status below is current; captured activity includes all recorded dates.</p>` + accounts.map(a =>
-      `<article class="metric-card"><strong>${esc(a.label || a.brokerId)} · ${esc(a.accountId || a.channel)}</strong>
-      <p>Last successful position snapshot: ${esc(a.snapshotDate || 'Unavailable')}</p>
-      <p>Latest sync: ${a.lastSync ? `${a.lastSync.ok ? 'Succeeded' : 'Failed'} · ${esc(a.lastSync.at)}` : 'Not recorded'}${a.lastSync?.error ? ` · ${esc(a.lastSync.error)}` : ''}</p>
-      <details><summary>History: ${a.history ? `${esc(a.history.status)} · ${esc(a.history.from)} through ${esc(a.history.through)}` : 'Coverage not established'}</summary>
-      ${(a.history?.gaps || []).map(g => `<p class="broker-gap">${esc(g.reason)}</p>`).join('')}
-      ${(a.lastSync?.not_imported || []).map(g => `<p class="broker-gap">${esc(g)}</p>`).join('')}</details></article>`).join('');
     if (!enabled) return;
     if (!loadedActivity) {host.innerHTML='<p>Loading captured broker activity…</p>';return;}
     const rows = report.activities.filter(matches);
@@ -54,12 +45,14 @@
       <div class="table-scroll"><table class="report"><thead><tr>${['Account','Type / instrument','Reported date','Symbol','Side / status','Quantity','Price','Amount','Currency','Fee','Source'].map(t=>`<th scope="col">${t}</th>`).join('')}</tr></thead><tbody>${visible.map(r => `<tr><td>${esc(r.brokerId)}<br>${esc(r.accountId)}</td><td>${esc(r.category)}<br>${r.instruments.map(esc).join(', ')}${r.category === 'lifecycle' ? `<small>${field(r,'lifecycle')}</small>` : ''}</td><td>${field(r,'date')}</td><td>${field(r,'symbol')}</td><td>${field(r,'side')}<br>${field(r,'status')}</td><td>${field(r,'quantity')}</td><td>${field(r,'price')}</td><td>${field(r,'amount')}</td><td>${field(r,'currency')}</td><td>${field(r,'fee')}</td><td><button type="button" class="chip-btn" data-activity-key="${esc(r.key)}">Source details</button><small>${esc(r.sourceId || 'No source ID')} · ${r.observations} observations · ${r.versions} versions</small></td></tr>`).join('') || '<tr><td colspan="11">No captured activity matches this selection.</td></tr>'}</tbody></table></div>`;
   }
   async function reload() {
+    if (!enabled) return;
     if (request) return request;
-    status.setAttribute('aria-busy','true');
-    const includeActivity = enabled;
-    request = get('/broker-activity' + (includeActivity ? '' : '?activity=0')).then(value => {report=value;loadedActivity=includeActivity;render();}).catch(error => {
-      status.innerHTML = `<p role="alert">${esc(error.message)}${report ? ' Previously loaded source data remains below.' : ''}</p><button type="button" class="chip-btn" data-activity-reload>Retry</button>`;
-    }).finally(()=>{request=null;status.removeAttribute('aria-busy');});
+    host.setAttribute('aria-busy','true');
+    request = get('/broker-activity').then(value => {report=value;loadedActivity=true;render();}).catch(error => {
+      if (!report) host.innerHTML = '';
+      host.querySelector('[data-activity-error]')?.remove();
+      host.insertAdjacentHTML('afterbegin', `<div data-activity-error><p role="alert">${esc(error.message)}${report ? ' Previously loaded source data remains below.' : ''}</p><button type="button" class="chip-btn" data-activity-reload>Retry</button></div>`);
+    }).finally(()=>{request=null;host.removeAttribute('aria-busy');});
     return request;
   }
   const dialog = document.createElement('dialog');
@@ -104,7 +97,6 @@
       else void reload();
     }
   }
-  window.BrokerReport = {setScope(value,date){selection=value;reportDate=date;render();},configure,reload};
+  window.BrokerReport = {setScope(value){selection=value;render();},configure,reload};
   window.addEventListener('message',event=>{if(event.origin===location.origin && event.data?.type==='utarus:header-sync:activity') reload();});
-  reload();
 })();

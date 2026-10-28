@@ -8,7 +8,7 @@ import {buildDashboardModel,buildLivePositions} from '../src/report/dashboard-mo
 import {activityFields,commonActivityFields} from '../src/brokers/activity-report.js';
 import {withPageProjections} from './helpers/portfolio-projection.js';
 const chrome=process.env.CHROME_BINARY||'/usr/bin/chromium';
-it.skipIf(!existsSync(chrome))('shows source freshness, all activity versions and signed basis without presenting unknowns as zero',async()=>{
+it.skipIf(!existsSync(chrome))('keeps freshness cards removed while showing all activity versions and signed basis without presenting unknowns as zero',async()=>{
  const root=resolve('webui');let fail=false,posts=0;const activityRequests:string[]=[];
  const fields=commonActivityFields([activityFields({code:'US.SK',qty:'-1',price:'-7.4400',amount:'0'}),activityFields({code:'US.SK',qty:'-1',price:'0'})]);
  const activities=[{key:'one',brokerId:'moomoo',channel:'moomoo',accountId:'A',category:'execution',sourceId:'deal',instruments:['option'],observations:2,versions:2,fields},
@@ -41,8 +41,7 @@ it.skipIf(!existsSync(chrome))('shows source freshness, all activity versions an
   await page.setRequestInterception(true);page.on('request',r=>r.url().startsWith(origin)?r.continue():r.abort());
   await page.setViewport({width:1440,height:1100});await page.goto(origin+'/dashboard/v2.html');
   await page.waitForSelector('[data-activity-key]');await page.waitForSelector('[data-broker-position]');
-  const status=await page.$eval('#brokerReportStatus',n=>n.textContent);
-  expect(status).toContain('2026-10-23');expect(status).toContain('Failed');expect(status).toContain('401 Unauthorized');
+  expect(await page.$('#brokerReportStatus')).toBeNull();
   expect(await page.$eval('#brokerActivity',n=>n.textContent)).toContain('2 of 2 grouped records');
   expect(await page.$eval('#brokerActivity',n=>n.textContent)).toContain('Multiple reported values');
   expect(await page.$eval('#brokerActivity',n=>n.textContent)).toContain('Source not provided');
@@ -65,18 +64,18 @@ it.skipIf(!existsSync(chrome))('shows source freshness, all activity versions an
   expect(await page.$eval('dialog[open] pre',n=>n.textContent)).toContain('"0"');await page.keyboard.press('Escape');
   await page.click('[data-broker-position]');await page.waitForFunction(()=>document.querySelector('dialog[open] pre')?.textContent?.includes('pl_ratio'));
   expect(await page.$eval('dialog[open] pre',n=>n.textContent)).toContain('"pl_ratio": "0"');await page.keyboard.press('Escape');
-  fail=true;await page.click('[data-activity-reload]');await page.waitForSelector('#brokerReportStatus [role="alert"]');
+  fail=true;await page.click('[data-activity-reload]');await page.waitForSelector('#brokerActivity [role="alert"]');
   expect(await page.$$('#brokerActivity tbody tr')).toHaveLength(1);
-  fail=false;await page.click('#brokerReportStatus [data-activity-reload]');await page.waitForSelector('#brokerReportStatus article');
+  fail=false;await page.click('#brokerActivity [data-activity-error] [data-activity-reload]');await page.waitForSelector('#brokerActivity [data-activity-key]');
   for(const width of [390,768,1440]){await page.setViewport({width,height:900});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);}
-  // A new user without the setting sees status but no activity table or full-activity request.
+  // A new user without the setting sees neither freshness cards nor activity requests.
   delete payload.dashboardConfig.showBrokerActivity;
   activityRequests.length=0;
-  await page.reload();await page.waitForSelector('#brokerReportStatus article');
+  await page.reload();
   await page.waitForSelector('#openOptions .option-ledger-row');
   expect(await page.$eval('#brokerActivity',n=>(n as HTMLElement).hidden)).toBe(true);
-  expect(activityRequests.length).toBeGreaterThan(0);
-  expect(activityRequests.every(q=>q==='?activity=0')).toBe(true);
+  expect(await page.$('#brokerReportStatus')).toBeNull();
+  expect(activityRequests).toEqual([]);
   expect(posts).toBe(0);expect(errors).toEqual([]);
   await page.screenshot({path:'/tmp/invage-broker-activity-desktop.png',fullPage:true});
   await page.setViewport({width:390,height:844});
