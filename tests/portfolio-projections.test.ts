@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, readFileSync, readdirSync, statSync, writeFileSync
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createPortfolioProjectionRefresher } from '../src/state/portfolio-projections.js';
-import { portfolioFingerprint, readPortfolioProjection } from '../src/state/projection-store.js';
+import { portfolioFingerprint, readPortfolioProjection, PROJECTION_VERSION } from '../src/state/projection-store.js';
 import { registerPortfolioRefresher, refreshPortfolioAfterSync } from '../src/state/projection-events.js';
 import { buildDashboardModel, buildLivePositions } from '../src/report/dashboard-model.js';
 import type { InvestorState } from '../src/state/portfolio-state.js';
@@ -143,5 +143,5 @@ it('recalculates pre-correction projections rather than serving stale gross roll
   expect(readPortfolioProjection(state)).toBeNull();
   await refresh(state.user.id);
   expect(calculate).toHaveBeenCalledTimes(2);
-  expect(readPortfolioProjection(state)?.version).toBe(5);
+  expect(readPortfolioProjection(state)?.version).toBe(PROJECTION_VERSION);
 });
