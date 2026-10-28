@@ -43,7 +43,7 @@
         <div class="hero-metrics" inert aria-hidden="true">
           <div class="metric-card nav-card">
             <div class="metric-head">
-              <div class="label-eyebrow" id="navLabel">Net asset value (NAV)</div>
+              <div class="label-eyebrow" id="navLabel">Itemized portfolio value</div>
               <button type="button" class="help-dot" aria-label="Explanation" data-help="An estimate of what your recorded portfolio is worth now: cash, shares, funds, long options and fixed deposits, minus the amount needed to buy back short options. Missing cash balances or prices can make this total incomplete.">?</button>
             </div>
             <div class="metric-value" id="navValue">—</div>
@@ -51,7 +51,7 @@
           </div>
           <div class="metric-card nav-card hidden" id="totalPremiumCard">
             <div class="metric-head">
-              <div class="label-eyebrow">Total premium</div>
+              <div class="label-eyebrow">Recorded option cash flow · Total</div>
               <button type="button" class="help-dot" aria-label="Explanation" data-help="Money received from selling options, minus money paid to buy options. Includes recorded opening and closing trades for long and short options, before brokerage fees. Fees appear separately. The recorded date range is shown below the amount. This is cash flow, not profit; missing trade history makes it incomplete.">?</button>
             </div>
             <div class="metric-value" id="totalPremiumValue">—</div>
@@ -59,8 +59,8 @@
           </div>
           <div class="metric-card nav-card hidden" id="realizedPnlCard">
             <div class="metric-head">
-              <div class="label-eyebrow">Earned premium · Realized P&amp;L</div>
-              <button type="button" class="help-dot" aria-label="Explain earned premium" data-help="Cumulative recorded option profit or loss from contracts that have closed, expired or settled, through the dashboard date. Closing results match the opening cost or credit to the closing proceeds or cost. Open contracts contribute no realized profit. Includes long and short options; excludes stock gains and losses. Assignment and exercise require broker-reported option P&amp;L. The fee basis and any incomplete history are shown below the amount.">?</button>
+              <div class="label-eyebrow">Recorded realized P/L</div>
+              <button type="button" class="help-dot" aria-label="Explain recorded realized P/L" data-help="Cumulative recorded option profit or loss from contracts that have closed, expired or settled, through the dashboard date. Closing results match the opening cost or credit to the closing proceeds or cost. Open contracts contribute no realized profit. Includes long and short options; excludes stock gains and losses. Assignment and exercise require broker-reported option P&amp;L. The fee basis and any incomplete history are shown below the amount.">?</button>
             </div>
             <div class="metric-value" id="realizedPnlValue">—</div>
             <div class="metric-sub" id="realizedPnlMeta"></div>
@@ -69,6 +69,7 @@
       </section>
 
       <div class="kpi-row" id="kpiRow" inert aria-hidden="true"></div>
+      <section id="brokerReportStatus" class="broker-report-status" aria-label="Broker sync status"><p>Loading broker source status…</p></section>
       <section id="v2Summary" class="v2-summary" aria-label="Portfolio overview"></section>
 
       <div id="expiryBlock">
@@ -169,6 +170,8 @@
       <div id="openOptions"></div>
       </div>
 
+      <section id="brokerActivity" class="broker-activity" aria-label="Broker activity"><p>Loading captured broker activity…</p></section>
+
       <select id="dateSelect" class="controls-hidden" aria-hidden="true"></select>
       <select id="channelSelect" class="controls-hidden" aria-hidden="true"></select>
       <span id="statusBadge" class="controls-hidden"></span>
@@ -186,6 +189,7 @@
   <script src="../option-probability.js"></script>
   <script src="./net-risk-capital.js"></script>
   <script src="./scroll-shell.js"></script>
+  <script src="./broker-report.js"></script>
   <script src="./app.js"></script>
 </body>
 </html>

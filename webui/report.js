@@ -265,13 +265,13 @@ function sliceLive(live, channel) {
 function brokerFundAssets(dash, channel) {
   return Object.entries(dash?.connectionMetrics || {})
     .filter(([ch, m]) => (!channel || channel === 'all' || channel === 'merged' || ch === channel) &&
-      Number.isFinite(m.fund_assets) && m.fund_assets >= 0 && /^[A-Z]{3,4}$/.test(m.currency))
+      Number.isFinite(m.fund_assets) && /^[A-Z]{3,4}$/.test(m.currency))
     .map(([ch, m]) => ({ channel: ch, amount: m.fund_assets, currency: m.currency, asOf: m.as_of }));
 }
 
 function brokerFundAssetsCards(dash, channel) {
   return brokerFundAssets(dash, channel).map(row => metricCard('Fund assets · broker',
-    money(row.amount, row.currency), `${channelLabel(row.channel)} · ${row.asOf}`)).join('');
+    money(row.amount, row.currency), `${channelLabel(row.channel)} · ${row.asOf} · Excluded from itemized portfolio value; overlap with itemized funds is unreconciled`)).join('');
 }
 
 function channelFromQuery() {

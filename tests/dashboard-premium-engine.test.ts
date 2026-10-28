@@ -29,6 +29,7 @@ it('nets long and short opening cost by expiry and underlying, without convertin
     { ticker: 'AAPL', instrument: 'equity', currency: 'USD', cost: 1000, value: 1200, pl: 200 },
   ], cashAmount: 9075, depositsAmount: 0 });
   expect([...result.premiumByExpiry]).toEqual([['2026-11', 450], ['2026-12', 100]]);
+  expect([...result.basisByExpiry]).toEqual([['2026-11', -450], ['2026-12', -100]]);
   expect([...result.premiumByUnderlying]).toEqual([['AAPL', 450], ['MSFT', 100]]);
   expect([...result.pnlByExpiry]).toEqual([['2026-11', 325], ['2026-12', -50]]);
   expect(result.concentration.get('AAPL')).toBe(10.75);
@@ -66,6 +67,7 @@ it('counts a verified replacement roll net once instead of the full opening cred
   });
   expect(result.premiumByExpiry.get('2026-12')).toBe(815);
   expect(result.premiumByUnderlying.get('AVGO')).toBe(815);
+  expect(result.basisByUnderlying.get('AVGO')).toBe(-1950);
   expect(result.pnlByExpiry.get('2026-12')).toBe(1320);
   expect(result.concentration.get('AVGO')).toBe(-6.3);
 });

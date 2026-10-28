@@ -485,6 +485,7 @@ function recordedMonthlyData(view, date) {
 function openBookPremiumData(view) {
   const premiumByExpiry = new Map(), premiumByUnderlying = new Map();
   const pnlByExpiry = new Map(), concentration = new Map();
+  const basisByExpiry = new Map(), basisByUnderlying = new Map();
   const ccy = reportingCcyCode(view);
   const sum = (map, key, value) => map.set(key,
     value == null || map.get(key) === null ? null : (map.get(key) || 0) + value);
@@ -498,6 +499,8 @@ function openBookPremiumData(view) {
     if (p.instrument !== 'option' || !p.option) continue;
     const month = /^\d{4}-\d{2}-\d{2}$/.test(p.option.expiry || '') ? p.option.expiry.slice(0, 7) : 'Unknown expiry';
     const cost = converted ? number(p.cost) : null;
+    sum(basisByExpiry, month, cost);
+    sum(basisByUnderlying, underlying || 'Unspecified', cost);
     const trade = view.isLive ? payload?.optionTradeDetails?.[p.ticker] : null;
     const rolled = trade && (Boolean(trade.rollDate) || trade.rollPremium !== undefined);
     // A replacement opening credit is already part of the roll net. Use that
@@ -514,7 +517,7 @@ function openBookPremiumData(view) {
   if (view.cashAmount != null) sum(concentration, 'Cash', number(view.cashAmount));
   if (view.depositCount || view.depositsAmount) sum(concentration, 'Fixed deposits', number(view.depositsAmount));
   const nav = view.navComplete !== false && Number.isFinite(view.totalValue) && view.totalValue > 0 ? view.totalValue : null;
-  return { premiumByExpiry, premiumByUnderlying, pnlByExpiry,
+  return { premiumByExpiry, premiumByUnderlying, basisByExpiry, basisByUnderlying, pnlByExpiry,
     concentration: new Map([...concentration].map(([name, value]) => [name, value == null || nav == null ? null : value / nav * 100])) };
 }
 

@@ -103,7 +103,7 @@ function driveHoldings(positions: LivePosition[], money: MoneyFormatter): string
       <td class="num">${money(p.value)}</td>
       <td class="num">${p.weightPct.toFixed(1)}%</td>
       <td class="num ${tone}">${money(p.pl)}</td>
-      <td class="num ${tone}">${formatPct(p.plPct)}</td>
+      <td class="num ${tone}">${p.avgCost <= 0 || p.pricingMode === 'cost' ? 'Unavailable' : formatPct(p.plPct)}</td>
     </tr>`;
     })
     .join('\n');
@@ -222,7 +222,7 @@ function emailHoldings(positions: LivePosition[], money: MoneyFormatter): string
       <td style="${tdStyle()}">${money(p.value)}</td>
       <td style="${tdStyle()}">${p.weightPct.toFixed(1)}%</td>
       <td style="${tdStyle('color:' + c)}">${money(p.pl)}</td>
-      <td style="${tdStyle('color:' + c)}">${formatPct(p.plPct)}</td>
+      <td style="${tdStyle('color:' + c)}">${p.avgCost <= 0 || p.pricingMode === 'cost' ? 'Unavailable' : formatPct(p.plPct)}</td>
     </tr>`;
     })
     .join('\n');

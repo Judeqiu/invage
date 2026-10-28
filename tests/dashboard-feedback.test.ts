@@ -58,13 +58,15 @@ it.skipIf(!existsSync(chrome))('fits the desk overview and tables, filters risk,
     expect(await frame.$$eval('#channelPills button', nodes => nodes.map(node => node.textContent))).toEqual(['All accounts', 'IBKR', 'moomoo', 'Tiger Brokers', 'Webull']);
     for(const [width,height] of [[1366,768],[1440,900],[1920,1080]]) {
       await page.setViewport({width,height});
-      expect(await frame.evaluate(()=>document.getElementById('expiryRow')!.getBoundingClientRect().bottom<=innerHeight)).toBe(true);
+      await frame.$eval('#expiryRow', node => node.scrollIntoView({block:'center'}));
+      expect(await frame.evaluate(()=>document.getElementById('expiryRow')!.getBoundingClientRect().top<innerHeight)).toBe(true);
       for(const selector of ['.risk-card .table-scroll','.option-ledger-card .table-scroll']) {
-        expect(await frame.$eval(selector,node=>node.scrollWidth<=node.clientWidth+1)).toBe(true);
+        expect(await frame.$eval(selector,node=>getComputedStyle(node).overflowX==='auto')).toBe(true);
+        expect(await frame.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
       }
     }
-    expect(await frame.$$eval('.risk-table th',nodes=>nodes.map(n=>n.textContent!.replace(/[?i]$/g,'').replace(/\?/g,'').trim()))).toEqual(['FIN INSTRUMENT (Discuss)','Pos','Days','Spot','Strike','Moneyness %','IV','If Assigned','Prob. ITM','Last ($)','Avg Px','Market Value','Unrealized P&L (%)','Broker']);
-    expect(await frame.$$eval('.option-ledger th',nodes=>nodes.map(n=>n.textContent!.replace(/[?i]$/g,'').replace(/\?/g,'').trim()))).toEqual(['FIN INSTRUMENT','Pos','Last ($)','PREMIUM / ROLL','Avg Px','MKT Value','Unrealized P&L (%)','Days','Opened','Spot','Entry Spot','Assignment','Broker']);
+    expect(await frame.$$eval('.risk-table th',nodes=>nodes.map(n=>n.textContent!.replace(/[?i]$/g,'').replace(/\?/g,'').trim()))).toEqual(['FIN INSTRUMENT (Discuss)','Pos','Days','Spot','Strike','Moneyness %','IV','If Assigned','Prob. ITM','Last ($)','Broker basis / share','Market Value','Calculated open P/L (%)','Broker']);
+    expect(await frame.$$eval('.option-ledger th',nodes=>nodes.map(n=>n.textContent!.replace(/[?i]$/g,'').replace(/\?/g,'').trim()))).toEqual(['FIN INSTRUMENT','Pos','Last ($)','Verified trade / roll cash flow','Broker basis / share','MKT Value','Calculated open P/L (%)','Days','Opened','Spot','Entry Spot','Assignment','Broker']);
     expect(await frame.$eval('.risk-method',node=>node.textContent)).toContain('r = 4%, q = 0, T = DTE/365');
     await page.setViewport({width:1440,height:900});
     for (const [selector, count] of [['.risk-card .table-scroll',15],['.option-ledger-card .table-scroll',10]] as const) {

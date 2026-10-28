@@ -133,7 +133,7 @@ it.skipIf(!existsSync(executable))('explains dashboard cards in side chat with t
     await page.waitForFunction(() => (window as any).messages.some((m: any) => m.type === 'utarus:chat-panel:ready'));
     expect(prompts).toHaveLength(2);
     expect(prompts[1].text).toContain(value);
-    expect(prompts[1].text).toContain('Net asset value (NAV)');
+    expect(prompts[1].text).toContain('Itemized portfolio value');
     expect(prompts[1].text).toContain('All brokers (merged)');
     expect(prompts[1].text).toContain(dashboard.generatedAt);
     expect(prompts[1].text).toContain('2026-10-14');
