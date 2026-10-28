@@ -56,6 +56,13 @@ prove exercise or expiry. Raw records remain intact and are not counted twice.
 
 A liquidation annotation is
 `{"execution_id":"retained closing fill ID","kind":"forced_liquidation","reference":"statement * at source location"}`.
+A liquidation-marked buy-to-close is accounted for exactly like an ordinary BTC.
+The close realizes profit or loss immediately for the matched quantity using
+opening proceeds, the buyback cost and known fees. It does not wait for a `*`
+marker or a statement import. The `*` is supporting source context, not a separate
+P&L calculation or an unresolved accounting condition. Partial closes leave the
+remaining quantity open; later market marks do not change an earlier close's
+realized result. Genuine corrected execution evidence can still reconcile it.
 Its classification and provenance appear in trade details; the API's ordinary
 buyback is not relabelled as broker-reported forced liquidation without evidence.
 

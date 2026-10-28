@@ -26,3 +26,21 @@ it('keeps recurring allocations rational until native currency presentation',()=
  expect(partialCloseSummary([o,c])).toMatchObject({net:'88.67',rounded:true,remaining:'2'});
  expect(partialCloseSummary([o,c,{...c,execution_id:'last',contracts:'2',executed_at:'2026-10-02T10:00:00',gross_premium:'-20',commission:'-1'}])).toMatchObject({gross:'270',net:'267',remaining:'0'});
 });
+
+it.each([
+ {closingCash:'-20',expected:'110.965'},
+ {closingCash:'-1014',expected:'-883.035'},
+])('treats liquidation-marked BTC $closingCash as ordinary realized P&L, independent of marks and later closes',({closingCash,expected})=>{
+ const s=tradesFixture();s.option_executions=[optionFill({gross_premium:'270',commission:'-1.49'}),optionFill({execution_id:'btc',contracts:'1',side:'buy',effect:'close',gross_premium:closingCash,commission:'-3.29',executed_at:'2026-10-22T11:09:53'})];
+ const ordinary=tradesHistory(s).rows[0];
+ s.broker_statement_evidence=[{version:1,broker_id:'ibkr',channel:'ibkr',account_id:'U1',source:{name:'Statement',sha256:'a'.repeat(64),reference:'Trades *'},contracts:[],lifecycle:[],annotations:[{execution_id:'btc',kind:'forced_liquidation',reference:'* next to BTC'}]}];
+ const marked=tradesHistory(s).rows[0];
+ expect(marked).toMatchObject({status:'Partially closed',realizedPnl:expected,remainingContracts:'1'});
+ expect(marked.realizedPnl).toBe(ordinary.realizedPnl);expect(marked.realizations).toEqual(ordinary.realizations);
+ expect(marked.notes.join(' ')).toContain('Forced liquidation');
+ s.portfolio!['AAPL-put'].option!.mark=99999;
+ expect(tradesHistory(s).rows[0].realizedPnl).toBe(expected);
+ s.option_executions.push(optionFill({execution_id:'later-btc',contracts:'1',side:'buy',effect:'close',gross_premium:'-30',commission:'-1',executed_at:'2026-10-23T11:09:53'}));
+ const fullyClosed=tradesHistory(s).rows[0];expect(fullyClosed.status).toBe('Closed');
+ expect(fullyClosed.realizations![0]).toEqual(marked.realizations![0]);
+});
