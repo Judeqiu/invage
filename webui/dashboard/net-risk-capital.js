@@ -1,5 +1,15 @@
 /* Expiry payoff bounds for open option strategies. Cost is already in reporting currency. */
 (function (root) {
+  // Brokers may report an OCC contract code in place of the underlying ticker.
+  // Use its root only when all encoded terms agree with this leg.
+  function underlyingKey(option) {
+    const raw = String(option.underlying || '').trim().toUpperCase();
+    const code = raw.replace(/\s+/g, '').match(/^([A-Z][A-Z0-9.]*?)(\d{6})([CP])(\d{1,8})$/);
+    if (!code) return raw;
+    const expiry = `20${code[2].slice(0, 2)}-${code[2].slice(2, 4)}-${code[2].slice(4, 6)}`;
+    return expiry === option.expiry && code[3] === (option.right === 'put' ? 'P' : 'C') &&
+      Number(code[4]) / 1000 === option.strike ? code[1] : null;
+  }
   function calculate(view) {
     if (!view || view.navComplete === false) return { value: null, reason: 'Position currency or FX unavailable.' };
     const groups = new Map();
@@ -11,7 +21,9 @@
       if (!o || !['long', 'short'].includes(o.side) || !['put', 'call'].includes(o.right) ||
           !o.underlying || !o.expiry || !(o.strike > 0) || !(o.multiplier > 0) || !(units > 0) ||
           p.cost == null || ![cost, units, o.strike, o.multiplier, rate].every(Number.isFinite) || !(rate > 0)) return { value: null, reason: 'Option terms, opening cost or FX unavailable.' };
-      const key = JSON.stringify([p.channel, o.underlying, o.expiry, p.currency]);
+      const underlying = underlyingKey(o);
+      if (!underlying) return { value: null, reason: 'Option underlying code disagrees with its contract terms.' };
+      const key = JSON.stringify([p.channel, underlying, o.expiry, p.currency]);
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push({ right: o.right, strike: o.strike, size: units * o.multiplier * (o.side === 'long' ? 1 : -1), cost, rate });
     }

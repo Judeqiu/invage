@@ -17,6 +17,17 @@ it('recognizes call spreads and unbounded net short calls', () => {
   expect(risk([leg('short', 'call', 100, -300), leg('long', 'call', 110, 100)]).value).toBe(800);
   expect(risk([leg('short', 'call', 100, -300)]).unbounded).toBe(true);
 });
+it('offsets protective legs whose underlying is reported as a verified broker contract code', () => {
+  const short = leg('short', 'call', 100, -300);
+  const long = leg('long', 'call', 105, 100);
+  for (const underlying of ['AAPL 261120C00105000', 'aapl261120c105000', ' aapl ']) {
+    expect(risk([short, { ...long, option: { ...long.option, underlying } }]).value).toBe(300);
+  }
+  // Mismatched terms must not turn an unrelated contract into protection.
+  const mismatch = { ...long, option: { ...long.option, underlying: 'AAPL 261120C00110000' } };
+  expect(risk([short, mismatch]).value).toBeNull();
+  expect(risk([short, { ...long, channel: 'other-account' }]).unbounded).toBe(true);
+});
 it('does not offset contracts across broker accounts or expiries', () => {
   expect(risk([leg('short', 'put', 100, -300), leg('long', 'put', 90, 100, { channel: 'tiger' })]).value).toBe(9800);
   const other = leg('long', 'call', 110, 100); other.option.expiry = '2026-12-18';
