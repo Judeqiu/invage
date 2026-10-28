@@ -1,5 +1,5 @@
 import { readBrokerAccountModel } from './accounts.js';
-import { createHash } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import type { InvestorState } from '../state/portfolio-state.js';
 import { assertBrokerHistory, optionExecutionsFromHistory } from './history.js';
 import { addDecimals, decimal, mergeOptionExecutions, negateDecimal } from './option-executions.js';
@@ -54,8 +54,7 @@ export function reconcileStatementEvidence(state: InvestorState, input: unknown)
   });
   for(const a of doc.annotations){keys(a,['execution_id','kind','reference']);if(a.kind!=='forced_liquidation'||!history.executions.some(e=>e.id===a.execution_id&&e.effect==='close'))throw Error('Liquidation annotation must link a retained closing fill');text(a.reference);}
   const prior=state.broker_statement_evidence??[];
-  const id=createHash('sha256').update(JSON.stringify(doc)).digest('hex');
-  const documents=prior.some(d=>createHash('sha256').update(JSON.stringify(d)).digest('hex')===id)?prior:[...prior,doc];
+  const documents=prior.some(d=>isDeepStrictEqual(d,doc))?prior:[...prior,doc];
   // An execution can be replaced by exactly one explicit lifecycle event.
   const events=mergeOptionLifecycleEvents(state.option_events??[],doc.lifecycle),links=new Set<string>();
   for(const e of events)for(const fill of e.replaces_execution_ids??[]){const key=JSON.stringify([e.channel,e.account_id,fill]);if(links.has(key))throw Error('Closing fill linked to multiple lifecycle events');links.add(key);}

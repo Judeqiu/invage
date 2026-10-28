@@ -39,3 +39,10 @@ it.each(['ibkr','moomoo','tiger','webull'])('reconciles statement evidence gener
  doc.broker_id=broker;for(const e of doc.lifecycle)e.broker_id=broker;
  expect(tradesHistory(reconcileStatementEvidence(s,doc)).rows[0]).toMatchObject({status:'Expired',realizedPnl:'300'});
 });
+
+it('keeps imports idempotent after PostgreSQL jsonb reorders every object key',()=>{
+ const {s,doc}=fixture();const first=reconcileStatementEvidence(s,doc);
+ const reorder=(v:any):any=>Array.isArray(v)?v.map(reorder):v&&typeof v==='object'?Object.fromEntries(Object.entries(v).reverse().map(([k,x])=>[k,reorder(x)])):v;
+ const persisted=reorder(first);const next=reconcileStatementEvidence(persisted,doc);
+ expect(next.broker_statement_evidence).toHaveLength(1);expect(next).toEqual(persisted);
+});
