@@ -19,3 +19,12 @@ Any addition of cards to the dashboard requires the user's explicit approval
 before implementation. A general request to review, improve, fix, or deploy the
 dashboard does not authorize adding cards. Describe the proposed cards and wait
 for approval before adding them.
+
+# Explicit approval for every UI change
+
+Any UI change requires the user's explicit approval before implementation.
+This includes changes to layouts, labels, sections, cards, controls, styling,
+and visibility. A general request to review, improve, fix, or deploy does not
+by itself authorize unspecified UI changes. Describe proposed UI changes and
+wait for approval. An explicit request for a specific UI change, including a
+rollback, authorizes that requested change; do not request the same approval again.

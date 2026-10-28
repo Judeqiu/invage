@@ -16,7 +16,7 @@ beforeEach(()=>{
 function app(){const a=express();a.use(express.json());a.use((req,_res,next)=>{if(req.headers['x-user'])(req as any).user={userId:req.headers['x-user']};next();});a.use('/settings',createExperienceSettingsRouter());a.get('/manifest',personalRiskManifest,(_req,res)=>res.json({sessionKey:'framework-owned',nav:[{id:'dashboard'},{id:'account-risk'}],routes:[{path:'/dashboard'},{path:'/risk'}]}));return a;}
 it('is off by default, saves for the signed-in user only, and preserves financial data',async()=>{
   const a=app();await request(a).get('/settings').expect(401);
-  expect((await request(a).get('/settings').set('x-user','a').expect(200)).body).toEqual({account_risk:false,show_daily_changes:false,show_broker_activity:false,revision:1});
+  expect((await request(a).get('/settings').set('x-user','a').expect(200)).body).toEqual({account_risk:false,show_daily_changes:false,revision:1});
   await request(a).put('/settings?slug=b').set('x-user','a').send({account_risk:true,revision:1}).expect(200);
   expect(users.a.state.experience_settings.account_risk).toBe(true);expect(users.b.state.experience_settings).toBeUndefined();expect(users.a.state.cash).toEqual({amount:100,currency:'USD'});
   expect((await request(a).get('/settings').set('x-user','b')).body.account_risk).toBe(false);
@@ -49,26 +49,11 @@ it('persists daily changes independently per user, validates writes, and support
   await request(a).put('/settings').set('x-user','a').send({show_daily_changes:'yes',revision:1}).expect(400);
   await request(a).put('/settings').set('x-user','a').send({show_daily_changes:true,revision:0}).expect(409);
   const enabled=await request(a).put('/settings?slug=b').set('x-user','a').send({show_daily_changes:true,revision:1}).expect(200);
-  expect(enabled.body).toEqual({account_risk:true,show_daily_changes:true,show_broker_activity:false,revision:2});
+  expect(enabled.body).toEqual({account_risk:true,show_daily_changes:true,revision:2});
   expect(users.a.state.cash).toEqual({amount:100,currency:'USD'});
   expect((await request(a).get('/settings').set('x-user','b')).body.show_daily_changes).toBe(false);
   await request(a).put('/settings').set('x-user','a').send({account_risk:false,revision:2}).expect(200);
   expect(users.a.state.experience_settings.show_daily_changes).toBe(true);
   await request(a).put('/settings').set('x-user','a').send({show_daily_changes:false,revision:3}).expect(200);
   expect(users.a.state.experience_settings.show_daily_changes).toBe(false);
-});
-
-it('keeps Broker Activity off by default and preserves each user’s other preferences and financial data',async()=>{
- const a=app();users.a.state.experience_settings={account_risk:true,show_daily_changes:true};
- expect((await request(a).get('/settings').set('x-user','a')).body.show_broker_activity).toBe(false);
- await request(a).put('/settings').set('x-user','a').send({show_broker_activity:'true',revision:1}).expect(400);
- await request(a).put('/settings').set('x-user','a').send({show_broker_activity:true,revision:0}).expect(409);
- const on=await request(a).put('/settings?slug=b').set('x-user','a').send({show_broker_activity:true,revision:1}).expect(200);
- expect(on.body).toEqual({account_risk:true,show_daily_changes:true,show_broker_activity:true,revision:2});
- expect(users.a.state.cash).toEqual({amount:100,currency:'USD'});
- expect((await request(a).get('/settings').set('x-user','b')).body.show_broker_activity).toBe(false);
- await request(a).put('/settings').set('x-user','a').send({account_risk:false,revision:2}).expect(200);
- expect(users.a.state.experience_settings.show_broker_activity).toBe(true);
- await request(a).put('/settings').set('x-user','a').send({show_broker_activity:false,revision:3}).expect(200);
- expect(users.a.state.experience_settings).toEqual({account_risk:false,show_daily_changes:true,show_broker_activity:false});
 });

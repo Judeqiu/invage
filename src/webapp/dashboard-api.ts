@@ -3,7 +3,7 @@
  * Mounted by DomainExtension.webUi at /api/domain/invage (auth: user).
  */
 
-import { createExperienceSettingsRouter, riskPageEnabled, dailyChangesEnabled, brokerActivityEnabled } from './experience-settings.js';
+import { createExperienceSettingsRouter, riskPageEnabled, dailyChangesEnabled } from './experience-settings.js';
 import { buildAccountRisk } from './account-risk-data.js';
 import { readProductProfile } from '../agents/roster.js';
 import { productDisplayName } from '../product-name.js';
@@ -24,7 +24,6 @@ import { isBooksEnabled } from '../books/db.js';
 import { loadBookPage } from './book-data.js';
 import type { InvestorState } from '../state/portfolio-state.js';
 import { getPortfolio } from '../state/portfolio-state.js';
-import { loadBrokerActivityReport, loadBrokerActivityDetails, loadBrokerPositionReport, parseActivityKey } from '../brokers/activity-report.js';
 import { canonicalOptionUnderlying } from '../brokers/option-symbol.js';
 import { getTreasury, getReportingCurrency, setTreasury, type HouseholdInvestorState } from '../state/household-state.js';
 import { saveInvestor, saveOptionJournalMetadata } from '../state/investor-store.js';
@@ -52,34 +51,6 @@ export function createDashboardApiRouter(): Router {
     }
   });
   router.use((_req, res, next) => { res.setHeader('Cache-Control', 'private, no-store'); next(); });
-  router.get('/broker-activity', async (req: Request, res: Response) => {
-    const user = (req as Request & {user?: AuthUser}).user;
-    if (!user?.userId) { res.status(401).json({error:'unauthorized'}); return; }
-    let key: unknown[] | undefined;
-    if (req.query.key !== undefined) {
-      try { key = parseActivityKey(req.query.key); }
-      catch { res.status(400).json({message:'Invalid activity reference'}); return; }
-    }
-    try {
-      const snapshot = await loadInvestor(await targetUserId(req,user));
-      res.json(key ? await loadBrokerActivityDetails(snapshot.state.user.id,key) : await loadBrokerActivityReport(snapshot.state, {includeActivity:req.query.activity !== '0'}));
-    } catch (error) {
-      console.error('Broker activity failed:',error);
-      res.status(503).json({message:'Broker source activity is unavailable. Retry to reload it.'});
-    }
-  });
-  router.get('/broker-position-report', async (req: Request, res: Response) => {
-    const user = (req as Request & {user?: AuthUser}).user;
-    if (!user?.userId) { res.status(401).json({error:'unauthorized'}); return; }
-    if (typeof req.query.position !== 'string') { res.status(400).json({message:'A position reference is required.'}); return; }
-    try {
-      const snapshot = await loadInvestor(await targetUserId(req,user));
-      res.json(await loadBrokerPositionReport(snapshot.state,req.query.position));
-    } catch (error) {
-      console.error('Broker position source failed:',error);
-      res.status(503).json({message:'Broker position source is unavailable. Retry to reload it.'});
-    }
-  });
   router.put('/trades-v2/:optionId/note', async (req: Request, res: Response) => {
     res.setHeader('Cache-Control','private, no-store');
     try {
@@ -130,7 +101,7 @@ export function createDashboardApiRouter(): Router {
   router.use('/option-risk', createOptionRiskRouter());
   function dashboardBody(snapshot: Awaited<ReturnType<typeof loadInvestor>>, saved: PortfolioProjection = requirePortfolioProjection(snapshot.state)) {
     return { ...saved.dashboard, brokerAggregates: saved.brokers, productProfile: readProductProfile(), productName: productDisplayName(), displayName: snapshot.state.profile.display_name,
-      dashboardConfig: { ...readDashboardConfig(), showOptionRiskModelView: riskEnabled(), showDailyChanges: dailyChangesEnabled(snapshot.state), showBrokerActivity: brokerActivityEnabled(snapshot.state) },
+      dashboardConfig: { ...readDashboardConfig(), showOptionRiskModelView: riskEnabled(), showDailyChanges: dailyChangesEnabled(snapshot.state) },
       analysisContextId: riskEnabled() ? analysisContext(snapshot) : null };
   }
   router.get('/dashboard-cache', async (req: Request, res: Response) => {

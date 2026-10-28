@@ -11,10 +11,6 @@ export function dailyChangesEnabled(state: Pick<InvestorState, 'experience_setti
   return state.experience_settings?.show_daily_changes === true;
 }
 
-export function brokerActivityEnabled(state: Pick<InvestorState, 'experience_settings'>): boolean {
-  return state.experience_settings?.show_broker_activity === true;
-}
-
 /** Keep framework manifest/auth/session-key handling; filter only this optional destination. */
 export const personalRiskManifest: RequestHandler = async (req, res, next) => {
   let enabled = false;
@@ -42,15 +38,14 @@ export function createExperienceSettingsRouter(): Router {
   router.get('/', async (req, res) => {
     try {
       const snapshot = await loadSessionState(req);
-      res.json({account_risk:riskPageEnabled(snapshot.state as InvestorState),show_daily_changes:dailyChangesEnabled(snapshot.state as InvestorState),show_broker_activity:brokerActivityEnabled(snapshot.state as InvestorState),revision:snapshot.revision});
+      res.json({account_risk:riskPageEnabled(snapshot.state as InvestorState),show_daily_changes:dailyChangesEnabled(snapshot.state as InvestorState),revision:snapshot.revision});
     } catch {res.status(503).json({message:'Your settings could not be loaded. Please retry.'});}
   });
   router.put('/', async (req, res) => {
-    const {account_risk, show_daily_changes, show_broker_activity, revision, ...extra} = req.body ?? {};
-    if ((account_risk === undefined && show_daily_changes === undefined && show_broker_activity === undefined) ||
+    const {account_risk, show_daily_changes, revision, ...extra} = req.body ?? {};
+    if ((account_risk === undefined && show_daily_changes === undefined) ||
       (account_risk !== undefined && typeof account_risk !== 'boolean') ||
-      (show_daily_changes !== undefined && typeof show_daily_changes !== 'boolean') ||
-      (show_broker_activity !== undefined && typeof show_broker_activity !== 'boolean') || !Number.isSafeInteger(revision) || revision < 0 || Object.keys(extra).length) {
+      (show_daily_changes !== undefined && typeof show_daily_changes !== 'boolean') || !Number.isSafeInteger(revision) || revision < 0 || Object.keys(extra).length) {
       res.status(400).json({message:'Send a page preference and its current revision.'}); return;
     }
     try {
@@ -60,9 +55,8 @@ export function createExperienceSettingsRouter(): Router {
       const preferences = {
         account_risk: account_risk ?? riskPageEnabled(state),
         show_daily_changes: show_daily_changes ?? dailyChangesEnabled(state),
-        show_broker_activity: show_broker_activity ?? brokerActivityEnabled(state),
       };
-      if (riskPageEnabled(state) !== preferences.account_risk || dailyChangesEnabled(state) !== preferences.show_daily_changes || brokerActivityEnabled(state) !== preferences.show_broker_activity) {
+      if (riskPageEnabled(state) !== preferences.account_risk || dailyChangesEnabled(state) !== preferences.show_daily_changes) {
         state.experience_settings = {...state.experience_settings, ...preferences};
         await saveState(state, snapshot.revision);
         snapshot.revision++;

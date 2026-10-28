@@ -271,7 +271,7 @@ function brokerFundAssets(dash, channel) {
 
 function brokerFundAssetsCards(dash, channel) {
   return brokerFundAssets(dash, channel).map(row => metricCard('Fund assets · broker',
-    money(row.amount, row.currency), `${channelLabel(row.channel)} · ${row.asOf} · Excluded from itemized portfolio value; overlap with itemized funds is unreconciled`)).join('');
+    money(row.amount, row.currency), `${channelLabel(row.channel)} · ${row.asOf}`)).join('');
 }
 
 function channelFromQuery() {

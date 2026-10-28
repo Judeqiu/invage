@@ -207,19 +207,3 @@ footer { color: var(--muted-foreground); border-color: var(--border); font-size:
 @media(max-width:600px) { #premiumEngine { grid-template-columns: minmax(0,1fr); } }
 #premiumEngine > #openPremiumExpiryCard, #premiumEngine > #premiumConcentrationCard { grid-column: auto; }
 #premiumEngine > .metric-card:has(> .card-explain) { padding-bottom: 2.8rem; }
-
-.broker-activity { margin: 24px 0; }
-.broker-activity > p { font-size: 13px; line-height: 1.6; color: var(--muted-foreground, #a3aab8); }
-.broker-activity-controls { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; margin: 16px 0; }
-.broker-activity-controls label { display: grid; gap: 6px; font-size: 12px; }
-.broker-activity-controls input, .broker-activity-controls select { background: #161b25; color: #e8ecf2; border: 1px solid #465063; border-radius: 6px; padding: 9px; max-width: 100%; }
-.broker-activity td { vertical-align: top; min-width: 100px; }
-.broker-activity small { display: block; font-size: 11px; color: #a3aab8; margin-top: 6px; }
-.broker-activity pre, .broker-source-dialog pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
-.broker-source-dialog { background: #111722; color: #e8ecf2; border: 1px solid #465063; border-radius: 12px; width: min(900px, 90vw); max-height: 85vh; padding: 24px; }
-.broker-source-dialog::backdrop { background: #0009; }
-
-.broker-activity { min-width: 0; }
-.broker-activity .table-scroll { max-width: 100%; }
-#premiumEngine > .premium-history { grid-column: 1 / -1; }
-.option-ledger td:first-child [data-broker-position] { display: block; margin-top: 3px; font-size: 10px; padding: 2px 6px; }

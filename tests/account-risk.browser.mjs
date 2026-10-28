@@ -10,11 +10,11 @@ it('reviews account evidence, funding arithmetic, mobile layout, and personal op
   const state={user:{id:'demo'},profile:{display_name:'Demo'},log:[],broker_sources:{source:{broker_id:'futubull',credentials:{}}},broker_connections:{a:{broker_id:'futubull',source_id:'source',label:'Futu · Main',channel:'a',enabled:true,config:{},metrics:{as_of:asOf,currency:'USD',excess_liquidity:5389.61,buying_power:0}},b:{broker_id:'futubull',source_id:'source',label:'Futu · Second account',channel:'b',enabled:true,config:{}}}};
   const pos=(key,channel,strike,units)=>({ticker:key,currency:'USD',channel,instrument:'option',units,option:{underlying:'SOXL',strike,expiry,side:'short',right:'put',multiplier:100,settlement:'physical'}});
   const payload={generatedAt:now.toISOString(),brokerAsOf:{a:asOf,b:asOf},model:{live:{reportingCurrency:'USD',channels:['a','b'],positions:[pos('a1','a',60,5),pos('a2','a',52,5),pos('a3','a',50,5),pos('b1','b',40,5)],byChannel:[{channel:'a',cashAmount:46200,cashCurrency:'USD'},{channel:'b',cashAmount:125743,cashCurrency:'USD'}]}}};
-  const data=buildAccountRisk(state,payload,now);let activityEnabled=false,dailyEnabled=false,enabled=false,fail=false,revision=1,saveFail=false,readFail=false;
+  const data=buildAccountRisk(state,payload,now);let dailyEnabled=false,enabled=false,fail=false,revision=1,saveFail=false,readFail=false;
   const app=express();app.use(express.json());
   app.get('/api/domain/invage/account-risk',(_req,res)=>{if(fail)return res.status(503).json({message:'Please sync and retry.'});if(!enabled)return res.status(403).json({error:'page_disabled'});res.json(data);});
-  app.get('/api/domain/invage/experience-settings',(_req,res)=>readFail?res.status(503).json({message:'Settings are temporarily unavailable.'}):res.json({account_risk:enabled,show_daily_changes:dailyEnabled,show_broker_activity:activityEnabled,revision}));
-  app.put('/api/domain/invage/experience-settings',(req,res)=>{if(saveFail)return res.status(409).json({message:'Your account changed. Reload settings and try again.'});enabled=req.body.account_risk;dailyEnabled=req.body.show_daily_changes;activityEnabled=req.body.show_broker_activity;revision++;res.json({account_risk:enabled,show_daily_changes:dailyEnabled,show_broker_activity:activityEnabled,revision});});
+  app.get('/api/domain/invage/experience-settings',(_req,res)=>readFail?res.status(503).json({message:'Settings are temporarily unavailable.'}):res.json({account_risk:enabled,show_daily_changes:dailyEnabled,revision}));
+  app.put('/api/domain/invage/experience-settings',(req,res)=>{if(saveFail)return res.status(409).json({message:'Your account changed. Reload settings and try again.'});enabled=req.body.account_risk;dailyEnabled=req.body.show_daily_changes;revision++;res.json({account_risk:enabled,show_daily_changes:dailyEnabled,revision});});
   app.use(express.static(resolve('webui')));
   const server=await new Promise(resolve=>{const s=app.listen(0,'127.0.0.1',()=>resolve(s));});
   const origin=`http://127.0.0.1:${server.address().port}`;let browser;
@@ -26,16 +26,6 @@ it('reviews account evidence, funding arithmetic, mobile layout, and personal op
     await page.goto(origin+'/settings/experience/index.html');await page.waitForFunction(()=>!document.getElementById('enabled').disabled);
     assert.equal(await page.$eval('#enabled',e=>e.checked),false);assert.equal(await page.$eval('#save',e=>e.disabled),true);
     assert.equal(await page.$eval('#daily-enabled',e=>e.checked),false);
-    assert.equal(await page.$eval('#activity-enabled',e=>e.checked),false);
-    await page.click('#activity-enabled');await page.click('#save');
-    await page.waitForFunction(()=>document.getElementById('message').textContent.startsWith('Saved.'));
-    assert.equal(activityEnabled,true);assert.equal(enabled,false);assert.equal(dailyEnabled,false);
-    await page.reload();await page.waitForFunction(()=>!document.getElementById('activity-enabled').disabled);
-    assert.equal(await page.$eval('#activity-enabled',e=>e.checked),true);
-    await page.click('#activity-enabled');await page.click('#save');
-    await page.waitForFunction(()=>document.getElementById('message').textContent.startsWith('Saved.'));
-    assert.equal(activityEnabled,false);
-
     await page.click('#daily-enabled');await page.click('#save');
     await page.waitForFunction(()=>document.getElementById('message').textContent.startsWith('Saved.'));
     assert.equal(dailyEnabled,true);assert.equal(enabled,false);

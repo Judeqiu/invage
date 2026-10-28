@@ -75,7 +75,7 @@ it.skipIf(!existsSync(executablePath))('renders V2 with shared data, clarifies m
     const frame = page.frames().find(f => f.url().includes('/dashboard/v2.html'))!;
     await frame.waitForSelector('#v2Summary .section-explain');
     const labels = await frame.$$eval('#v2Summary > section > h2', nodes => nodes.map(n => n.childNodes[0].textContent));
-    expect(labels).toEqual(['Recorded option results', 'Account value', 'Cash & exposure']);
+    expect(labels).toEqual(['Premium & earnings', 'Account value', 'Cash & exposure']);
     expect(await frame.$eval('#v2Summary', n => n.textContent)).toContain('$3,400.00');
     const earned = '#v2Summary .v2-earnings .metric-card:nth-child(2)';
     expect(await frame.$$eval(earned + ' .metric-value', nodes => nodes.map(n => n.textContent))).toEqual(['$90', '$270', '$270.00']);
@@ -85,7 +85,7 @@ it.skipIf(!existsSync(executablePath))('renders V2 with shared data, clarifies m
     await frame.select('#explainMetric', '1');
     await frame.click('#explainChoice button[value="explain"]');
     await expect.poll(() => prompts.length).toBe(1);
-    expect(prompts[0]).toContain('Selected figure to explain: Recorded option cash flow · MTD');
+    expect(prompts[0]).toContain('Selected figure to explain: Net premium · MTD');
     await frame.click('.v2-earnings .section-explain');
     await frame.waitForSelector('#explainChoice[open]');
     await page.keyboard.press('Escape');
@@ -117,17 +117,17 @@ it.skipIf(!existsSync(executablePath))('renders V2 with shared data, clarifies m
     expect(await frame.$('#openPremiumExpiryCard .bar-fill')).not.toBeNull();
     expect(await frame.$('#premiumConcentrationCard .bar-fill')).not.toBeNull();
     expect(await frame.$('#openPnlExpiryCard .bar-fill.down')).not.toBeNull();
-    expect(await frame.$('.premium-history')).not.toBeNull();
+    expect(await frame.$('.premium-history')).toBeNull();
     expect(await frame.$('#premiumEngine .bar-more')).toBeNull();
     expect(await frame.$eval('#v2Summary', n => n.textContent)).toContain('Net risk capital');
     expect(await frame.$eval('#v2Summary', n => n.textContent)).not.toContain('Daily aggregate changes');
     expect(await frame.$eval('#v2Summary', n => n.textContent)).toContain('Brokerage fees · Total');
     expect(await frame.$eval('#openPremiumExpiryCard', n => n.textContent)).toContain('Nov 2026');
-    expect(await frame.$eval('#openPremiumExpiryCard', n => n.textContent)).toContain('-$1,300.00');
+    expect(await frame.$eval('#openPremiumExpiryCard', n => n.textContent)).toContain('$1,300.00');
     expect(await frame.$eval('#openPnlExpiryCard', n => n.textContent)).toContain('-$200.00');
-    expect(await frame.$eval('#openPremiumUnderlyingCard', n => n.textContent)).toContain('-$940.00');
+    expect(await frame.$eval('#openPremiumUnderlyingCard', n => n.textContent)).toContain('$940.00');
     await frame.click('#channelPills [data-channel="ibkr"]');
-    expect(await frame.$eval('#openPremiumExpiryCard', n => n.textContent)).toContain('-$700.00');
+    expect(await frame.$eval('#openPremiumExpiryCard', n => n.textContent)).toContain('$700.00');
     await frame.click('#channelPills [data-channel="merged"]');
 
     await frame.click('#expiryTitle .section-explain');
