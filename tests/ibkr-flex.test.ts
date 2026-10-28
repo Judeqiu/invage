@@ -220,7 +220,7 @@ describe('holdingsFromOpenPositions', () => {
     expect(lots[1].holding.units).toBe(2);
     expect(lots[1].holding.option?.side).toBe('short');
     expect(lots[1].holding.option?.right).toBe('call');
-    expect(lots[1].holding.avg_price).toBe(265);
+    expect(lots[1].holding.avg_price).toBe(-265);
     expect(lots[1].holding.option?.mark).toBe(310);
     expect(skipped).toEqual([]);
   });
@@ -250,7 +250,7 @@ describe('holdingsFromOpenPositions', () => {
     ]);
   });
 
-  it('reports short stock instead of aborting the pull', () => {
+  it('preserves signed broker stock quantities', () => {
     const { lots, skipped } = holdingsFromOpenPositions(
       [
         {
@@ -265,8 +265,8 @@ describe('holdingsFromOpenPositions', () => {
       ],
       'ibkr',
     );
-    expect(lots).toEqual([]);
-    expect(skipped[0]?.reason).toMatch(/short stock/);
+    expect(lots[0].holding).toMatchObject({units:-5,avg_price:200});
+    expect(skipped).toEqual([]);
   });
 
   it('maps SEHK numeric symbols to Yahoo .HK', () => {

@@ -116,11 +116,12 @@ export async function importInvestorStateToBooks(
   const portfolio = getPortfolio(state);
   let positions = 0;
   for (const [mapKey, holding] of Object.entries(portfolio)) {
+    if (holding.units === 0) continue;
     const kind = holdingInstrument(holding);
     const ccy = holding.currency ?? 'USD'; // legacy manual holdings were USD-notional
     // Cost basis in cash units (avg_price * units for long; short option negative handled below)
     const notional = holding.avg_price * holding.units;
-    if (!(notional >= 0) || !Number.isFinite(notional)) {
+    if (!Number.isFinite(notional)) {
       throw new Error(`import position ${mapKey}: invalid notional.`);
     }
     const currency = assertCurrency(ccy);
@@ -157,6 +158,7 @@ export async function importInvestorStateToBooks(
         toolName: 'import_yaml',
         externalRef,
         memo: `open short option ${mapKey}`,
+        allowSignedPositionQuantity: true,
         lines: [
           {
             accountId: pos.id,
@@ -178,6 +180,7 @@ export async function importInvestorStateToBooks(
         toolName: 'import_yaml',
         externalRef,
         memo: `open position ${mapKey}`,
+        allowSignedPositionQuantity: true,
         lines: [
           {
             accountId: pos.id,

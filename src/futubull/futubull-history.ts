@@ -1,3 +1,4 @@
+import {negateDecimal} from '../brokers/option-executions.js';
 import { assertBrokerHistory, type BrokerHistory, type BrokerHistoryGap, type BrokerHistorySyncPlan } from '../brokers/history.js';
 import { historyText as text, historyAmount as amount, optionalHistoryAmount as optional, historyProduct, marketClock } from '../brokers/history-values.js';
 import { looksLikeOptionCode,parseBrokerOptionCode,optionUnderlyingFromBroker } from '../brokers/option-symbol.js';
@@ -23,7 +24,7 @@ export function mapFutubullHistory(bundle:Row,channel:string):BrokerHistory|unde
   const direction=side(row.trd_side),qty=amount(row.qty),price=amount(row.price);const gross=multiplier&&currency?historyProduct(qty,price,multiplier):null;
   if(!multiplier)gaps.push({kind:'metadata',reference:code,reason:'Historical OpenD option contract multiplier unavailable; cash remains unknown.'});
   return {...scope,id:text(row.deal_id),order_id:row.order_id==null?null:text(row.order_id),native_symbol:code,symbol:typeof symbol==='string'?symbol:null,instrument:isOption?'option' as const:'security' as const,
-   side:direction,effect:row.trd_side==='BUY_BACK'?'close' as const:row.trd_side==='SELL_SHORT'?'open' as const:'unknown' as const,executed_at:stamp(row.create_time),clock:marketClock(market),currency,quantity:qty,price,multiplier,gross_cash:gross===null?null:direction==='buy'?`-${gross}`:gross,fee_cash:null as string|null,
+   side:direction,effect:row.trd_side==='BUY_BACK'?'close' as const:row.trd_side==='SELL_SHORT'?'open' as const:'unknown' as const,executed_at:stamp(row.create_time),clock:marketClock(market),currency,quantity:qty,price,multiplier,gross_cash:gross===null?null:direction==='buy'?negateDecimal(gross):gross,fee_cash:null as string|null,
    option:parsed&&!('skip'in parsed)?{right:parsed.right,expiry:parsed.expiry,strike:String(parsed.strike)}:null};
  });
  const orders:import('../brokers/history.js').BrokerHistoryOrder[]=h.orders.map(row=>{account(row);const code=text(row.code),market=code.split('.')[0];return {...scope,id:text(row.order_id),native_symbol:code,side:side(row.trd_side),status:text(row.order_status),created_at:stamp(row.create_time),updated_at:stamp(row.updated_time??row.create_time),clock:marketClock(market),currency:row.currency??({US:'USD',HK:'HKD',CN:'CNY',SG:'SGD',JP:'JPY',AU:'AUD'}as Record<string,string>)[market]??null,quantity:optional(row.qty),limit_price:optional(row.price),filled_quantity:optional(row.dealt_qty),filled_price:optional(row.dealt_avg_price),order_type:text(row.order_type),time_in_force:row.time_in_force??null,session:null,legs:[]};});

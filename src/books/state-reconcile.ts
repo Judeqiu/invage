@@ -56,6 +56,7 @@ async function reconcilePositions(
   const active = all.filter(row => BigInt(row.balance_minor) !== 0n || Number(row.quantity) !== 0);
   const desired = new Map<string, { holding: Holding; currency: string }>();
   for (const [key, holding] of Object.entries(getPortfolio(state))) {
+    if (holding.units === 0) continue;
     const currency = uniqueCurrency(key, holding, all);
     // Persist the verified currency so later changes cannot silently default it.
     holding.currency = currency;
@@ -68,12 +69,12 @@ async function reconcilePositions(
         BigInt(row.balance_minor) === signedCost(target.holding)) continue;
     const quantity = Number(row.quantity);
     const balance = BigInt(row.balance_minor);
-    if (!(quantity > 0) || balance === 0n) {
+    if (!Number.isFinite(quantity) || quantity === 0) {
       throw new Error(`Position ${row.external_key}/${row.currency} has inconsistent books quantity or cost.`);
     }
     await postHoldingClose(client, ctx, {
       mapKey: row.external_key,
-      holding: { units: quantity, avg_price: Math.abs(fromMinor(balance)) / quantity,
+      holding: { units: quantity, avg_price: fromMinor(balance) / quantity,
         channel: row.channel || undefined, currency: row.currency },
       currency: row.currency, valueDate, requestId: newRequestId('state-position-close'),
       adjustCash: false, toolName: 'portfolio_save', entryType: 'position_reconcile_close',

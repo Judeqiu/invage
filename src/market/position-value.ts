@@ -456,7 +456,7 @@ export function buildOptionKey(input: {
   if (!/^\d{8}$/.test(expiry)) {
     throw new Error(`option expiry must be YYYY-MM-DD (got "${input.expiry}").`);
   }
-  if (!(input.strike > 0)) throw new Error('option strike must be positive.');
+  if (!Number.isFinite(input.strike)) throw new Error('option strike must be finite.');
   const strikeKey = Number.isInteger(input.strike)
     ? String(input.strike)
     : String(input.strike).replace(/\.?0+$/, '');
@@ -476,12 +476,12 @@ export function assertOptionSpec(o: OptionSpec, key: string): void {
   if (o.side !== 'long' && o.side !== 'short') {
     throw new Error(`Option ${key}: side must be "long" or "short".`);
   }
-  if (!(o.strike > 0)) throw new Error(`Option ${key}: strike must be positive.`);
+  if (!Number.isFinite(o.strike)) throw new Error(`Option ${key}: strike must be finite.`);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(o.expiry)) {
     throw new Error(`Option ${key}: expiry must be YYYY-MM-DD.`);
   }
-  if (!(o.multiplier > 0) || !Number.isFinite(o.multiplier)) {
-    throw new Error(`Option ${key}: multiplier must be a positive number (typically 100).`);
+  if (!Number.isFinite(o.multiplier)) {
+    throw new Error(`Option ${key}: multiplier must be finite.`);
   }
   if (!o.underlying || !o.underlying.trim()) {
     throw new Error(`Option ${key}: underlying is required.`);
@@ -489,13 +489,13 @@ export function assertOptionSpec(o: OptionSpec, key: string): void {
   if (o.settlement !== 'physical' && o.settlement !== 'cash') {
     throw new Error(`Option ${key}: settlement must be "physical" or "cash".`);
   }
-  if (o.mark == null || !(o.mark >= 0) || !Number.isFinite(o.mark)) {
+  if (o.mark == null || !Number.isFinite(o.mark)) {
     throw new Error(
-      `Option ${key}: mark (premium $ per contract) is required and must be ≥ 0. Use update_holding to set mark.`,
+      `Option ${key}: mark (premium $ per contract) is required and must be finite. Use update_holding to set mark.`,
     );
   }
-  if (o.underlying_mark != null && (!(o.underlying_mark >= 0) || !Number.isFinite(o.underlying_mark))) {
-    throw new Error(`Option ${key}: underlying_mark must be ≥ 0 when set.`);
+  if (o.underlying_mark != null && !Number.isFinite(o.underlying_mark)) {
+    throw new Error(`Option ${key}: underlying_mark must be finite when set.`);
   }
 }
 
@@ -510,13 +510,13 @@ export function assertFundSpec(f: FundSpec, key: string): void {
     );
   }
   if (f.quote_source === 'manual') {
-    if (f.mark == null || !(f.mark >= 0) || !Number.isFinite(f.mark)) {
+    if (f.mark == null || !Number.isFinite(f.mark)) {
       throw new Error(
-        `Fund ${key}: fund.mark (NAV/price per unit) is required when quote_source=manual and must be ≥ 0.`,
+        `Fund ${key}: fund.mark (NAV/price per unit) is required when quote_source=manual and must be finite.`,
       );
     }
-  } else if (f.mark != null && (!(f.mark >= 0) || !Number.isFinite(f.mark))) {
-    throw new Error(`Fund ${key}: fund.mark must be ≥ 0 when set.`);
+  } else if (f.mark != null && !Number.isFinite(f.mark)) {
+    throw new Error(`Fund ${key}: fund.mark must be finite when set.`);
   }
   if (f.name != null) {
     if (typeof f.name !== 'string' || f.name.trim().length === 0) {
@@ -533,14 +533,8 @@ export function assertFundSpec(f: FundSpec, key: string): void {
           `(omit all three when yield is unknown — never invent).`,
       );
     }
-    if (!(f.expected_yield_pct! >= 0) || !Number.isFinite(f.expected_yield_pct!)) {
-      throw new Error(`Fund ${key}: expected_yield_pct must be a finite number ≥ 0.`);
-    }
-    if (f.expected_yield_pct! > 100) {
-      throw new Error(
-        `Fund ${key}: expected_yield_pct looks like basis points or a typo (${f.expected_yield_pct}). ` +
-          `Use percent points (e.g. 3.2 for 3.2% p.a.).`,
-      );
+    if (!Number.isFinite(f.expected_yield_pct!)) {
+      throw new Error(`Fund ${key}: expected_yield_pct must be a finite number.`);
     }
     if (!FUND_YIELD_BASES.has(f.yield_basis!)) {
       throw new Error(
@@ -559,11 +553,11 @@ export function assertFundSpec(f: FundSpec, key: string): void {
 }
 
 export function assertHolding(key: string, h: Holding): void {
-  if (!(h.avg_price > 0) || !Number.isFinite(h.avg_price)) {
-    throw new Error(`Holding ${key}: avg_price must be positive.`);
+  if (!Number.isFinite(h.avg_price)) {
+    throw new Error(`Holding ${key}: avg_price must be finite.`);
   }
-  if (!(h.units > 0) || !Number.isFinite(h.units)) {
-    throw new Error(`Holding ${key}: units must be positive.`);
+  if (!Number.isFinite(h.units)) {
+    throw new Error(`Holding ${key}: units must be finite.`);
   }
   if (h.currency != null &&
       (typeof h.currency !== 'string' || !/^[A-Z]{3,4}$/.test(h.currency))) {

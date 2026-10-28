@@ -30,6 +30,7 @@ export async function booksApplyBrokerSnapshot(
 ): Promise<{ journals: number }> {
   const desired = new Map<string, StampedLot>();
   for (const lot of lots) {
+    if (lot.holding.units === 0) continue;
     const currency = assertCurrency(lot.currency);
     if (desired.has(lot.mapKey)) throw new Error(`Duplicate broker lot key ${lot.mapKey}.`);
     desired.set(lot.mapKey, { ...lot, currency });
@@ -70,12 +71,12 @@ export async function booksApplyBrokerSnapshot(
           BigInt(row.balance_minor) === targetSignedCost) continue;
       const quantity = Number(row.quantity);
       const balance = BigInt(row.balance_minor);
-      if (!(quantity > 0) || balance === 0n) {
+      if (!Number.isFinite(quantity) || quantity === 0) {
         throw new Error(`Broker books position ${row.external_key}/${row.currency} has inconsistent quantity or cost.`);
       }
       await postHoldingClose(client, ctx, {
         mapKey: row.external_key,
-        holding: { units: quantity, avg_price: Math.abs(fromMinor(balance)) / quantity, channel, currency: row.currency },
+        holding: { units: quantity, avg_price: fromMinor(balance) / quantity, channel, currency: row.currency },
         currency: row.currency,
         valueDate: statement.as_of,
         requestId: newRequestId('broker-close'),

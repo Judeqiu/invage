@@ -12,8 +12,7 @@ export function parseMooMooOrderFees(raw: Record<string, unknown>, orderId: stri
   if (typeof currency !== 'string' || !/^[A-Z]{3,4}$/.test(currency)) {
     throw new BrokerParseError('Moomoo order fee currency unavailable');
   }
-  const total = decimal(raw.total_fee);
-  if (total.startsWith('-')) throw new BrokerParseError('Moomoo total fee cannot be negative');
+  const total = decimal(String(raw.total_fee));
   // Futubull reports a null breakdown when the explicitly reported total is zero.
   const detail = raw.fees === null && !/[1-9]/.test(total) ? [] : raw.fees;
   if (!Array.isArray(detail)) throw new BrokerParseError('Moomoo order fee breakdown unavailable');
@@ -21,7 +20,7 @@ export function parseMooMooOrderFees(raw: Record<string, unknown>, orderId: stri
     if (!item || typeof item !== 'object' || Array.isArray(item) || typeof item.type !== 'string' || !item.type.trim()) {
       throw new BrokerParseError('Invalid Moomoo fee item');
     }
-    return { type:item.type, amount:decimal(item.amount) };
+    return { type:item.type, amount:decimal(String(item.amount)) };
   });
   // The reported total is authoritative; a breakdown need not include every charge.
   return { currency, total, items };
@@ -45,12 +44,14 @@ export function allocateMooMooFees(order: BrokerHistoryOrder, fills: BrokerHisto
     return BigInt(whole + fraction.padEnd(precision, '0'));
   };
   const denominator = units(quantity, qtyScale), total = units(order.fees.total, scale);
+  if (denominator === 0n) return; // A zero total quantity has no defined proportional allocation.
   let remaining = total;
   // Stable order makes remainder assignment reproducible across repeated syncs.
   for (const [i, fill] of [...fills].sort((a,b) => a.id.localeCompare(b.id)).entries()) {
     const fee = i === fills.length - 1 ? remaining : total * units(fill.quantity, qtyScale) / denominator;
     remaining -= fee;
-    const digits = fee.toString().padStart(scale + 1, '0');
-    fill.fee_cash = `${fee === 0n ? '' : '-'}${digits.slice(0,-scale)}.${digits.slice(-scale)}`;
+    const cash = -fee;
+    const digits = (cash < 0n ? -cash : cash).toString().padStart(scale + 1, '0');
+    fill.fee_cash = `${cash < 0n ? '-' : ''}${digits.slice(0,-scale)}.${digits.slice(-scale)}`;
   }
 }

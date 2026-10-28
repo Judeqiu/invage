@@ -89,7 +89,7 @@ function mapOptionPosition(
           : null;
   if (!right) return { skip: skipPos(code, 'option missing right') };
   const strike = parseNum(item.strike_price ?? item.strike) ?? (parsedOk ? parsed.strike : undefined);
-  if (strike == null || !(strike > 0)) return { skip: skipPos(code, 'option missing strike') };
+  if (strike == null) return { skip: skipPos(code, 'option missing strike') };
   const expiryRaw = String(item.strike_time ?? item.expiry ?? item.expire_date ?? item.expiry_date ?? '').trim();
   let expiry = expiryRaw;
   if (/^\d{8}$/.test(expiryRaw)) {
@@ -100,7 +100,7 @@ function mapOptionPosition(
   const multiplier = parseNum(
     item.contract_size ?? item.lot_size ?? item.option_contract_multiplier ?? item.multiplier,
   );
-  if (multiplier == null || !(multiplier > 0)) {
+  if (multiplier == null) {
     return { skip: skipPos(code, 'option missing multiplier') };
   }
   const underlying = optionUnderlyingFromBroker({
@@ -109,9 +109,8 @@ function mapOptionPosition(
     optionRoot: parsedOk ? parsed.root : undefined,
   });
   if (typeof underlying !== 'string') return { skip: skipPos(code, underlying.skip) };
-  const costValid = item.cost_price_valid === true;
   const costPerShare = parseNum(item.cost_price);
-  if (!costValid || costPerShare == null || !(costPerShare > 0)) {
+  if (costPerShare == null) {
     return { skip: skipPos(code, 'cost_price is not valid') };
   }
   const markPerShare = parseNum(item.nominal_price ?? item.last_price ?? item.mark_price);
@@ -120,10 +119,9 @@ function mapOptionPosition(
   }
   const mark = markPerShare * multiplier;
   const avg = costPerShare * multiplier;
-  if (!(mark > 0) || !Number.isFinite(mark)) return { skip: skipPos(code, 'option missing mark') };
-  if (!(avg > 0) || !Number.isFinite(avg)) return { skip: skipPos(code, 'cost_price is not valid') };
+  if (!Number.isFinite(mark)) return { skip: skipPos(code, 'option missing mark') };
+  if (!Number.isFinite(avg)) return { skip: skipPos(code, 'cost_price is not valid') };
   const units = Math.abs(qty);
-  if (!(units > 0)) return { skip: skipPos(code, 'option quantity is zero') };
   const sideRaw = String(item.position_side ?? 'LONG').trim().toUpperCase();
   const side = sideRaw === 'SHORT' || qty < 0 ? 'short' : 'long';
   const base = buildOptionKey({ underlying, right, strike, expiry, side });
@@ -162,8 +160,8 @@ export function mapMooMooMarginMetrics(d: unknown, asOf: string): BrokerConnecti
   const reportedCurrency = String(rec.currency ?? '').trim().toUpperCase();
   const hasCurrency = /^[A-Z]{3,4}$/.test(reportedCurrency);
   const metrics: BrokerConnectionMetrics = {as_of:asOf,currency:hasCurrency ? reportedCurrency : 'USD'};
-  if (power != null && power >= 0) metrics.buying_power = power;
-  if (maintenance != null && maintenance >= 0) metrics.maintenance_margin = maintenance;
+  if (power != null) metrics.buying_power = power;
+  if (maintenance != null) metrics.maintenance_margin = maintenance;
   const netAssets = parseNum(rec.total_assets);
   if (hasCurrency && netAssets != null) {
     metrics.broker_net_assets = netAssets;
@@ -195,12 +193,12 @@ function mapFunds(d: unknown, asOf: string, skipped: BrokerSkip[]): {
   // Keep it separate from both free cash and itemized position accounting.
   if (rec.funds_assets != null && rec.funds_assets !== '') {
     const amount = parseNum(rec.funds_assets);
-    if (amount == null || amount < 0 || !hasCurrency) {
+    if (amount == null || !hasCurrency) {
       skipped.push({ kind: 'position', reason: 'Fund assets could not be recorded: invalid amount or missing display currency.' });
     } else {
       metrics ??= { as_of: asOf, currency };
       metrics.fund_assets = amount;
-      if (amount > 0) skipped.push({ kind: 'position', currency,
+      if (amount !== 0) skipped.push({ kind: 'position', currency,
         blocking: false, reason: `Fund assets ${amount.toFixed(2)} ${currency} recorded as an account total only. Moomoo does not return individual fund holdings; fund lot count, units and cost basis are unavailable. This total is separate from cash and excluded from itemized NAV and P/L.` });
     }
   }
@@ -227,17 +225,12 @@ function mapPosition(
   const currency = String(item.currency ?? '').trim().toUpperCase();
   if (!/^[A-Z]{3,4}$/.test(currency)) return { skip: skipPos(code, 'missing currency') };
   if (isOptionRow(item, symbol)) {
-    if (qty === 0) return { skip: skipPos(code, 'option quantity is zero') };
     return mapOptionPosition(item, channel, code, market, symbol, qty, currency, seen);
-  }
-  if (side === 'SHORT' || !(qty > 0)) {
-    return { skip: skipPos(code, `short or non-positive qty (${qty}) is not imported`) };
   }
   const yahoo = yahooSymbolFromBroker({ market, symbol });
   if (typeof yahoo !== 'string') return { skip: skipPos(code, yahoo.skip) };
-  const costValid = item.cost_price_valid === true;
   const avg = parseNum(item.cost_price);
-  if (!costValid || avg == null || !(avg > 0)) {
+  if (avg == null) {
     return { skip: skipPos(code, 'cost_price is not valid') };
   }
   const mapKey = buildHoldingKey(yahoo, channel);
@@ -245,7 +238,8 @@ function mapPosition(
   seen.add(mapKey);
   const holding: Holding = {
     instrument: 'equity',
-    units: qty,
+    // Internal stock quantities are signed; use the broker's explicit SHORT side.
+    units: side === 'SHORT' && qty > 0 ? -qty : qty,
     avg_price: avg,
     channel,
     broker_ref: { listing_exchange: market },

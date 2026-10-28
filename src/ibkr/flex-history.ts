@@ -35,7 +35,7 @@ export function mapFlexHistory(reports:FlexHistoryReport[],account:string,channe
    if(fee===null)localGaps.push({kind:'metadata',reference:`execution:${text(r.tradeID)}`,reason:'Execution fee unavailable or currency differs in Flex fields.'});
    return {...scope,id:text(r.tradeID),order_id:r.ibOrderID||r.brokerageOrderID||null,native_symbol:text(r.conid||r.symbol),symbol,instrument:isOption?'option' as const:'security' as const,
     side:r.buySell==='BUY'?'buy' as const:'sell' as const,effect:flexTradeEffect(r.openCloseIndicator),executed_at:at,clock:'IBKR_FLEX_UNSPECIFIED',currency,
-    quantity:amount(r.quantity).replace(/^-/,''),price:optional(r.tradePrice),multiplier,gross_cash:multiplier&&currency?gross:null,fee_cash:fee,option};
+    quantity:amount(r.quantity).replace(/^-/,''),price:optional(r.tradePrice),multiplier,gross_cash:gross,fee_cash:fee,option};
   });
   allLocalGaps.push(...localGaps);
   const next=assertBrokerHistory({...scope,executions,orders:[],sync:{...plan,historical_imported:imported,version:1,status:localGaps.length?'partial':'complete',full_history_synced:false,fees:executions.every(e=>e.fee_cash!==null)?'available':'partial',gaps:localGaps}});

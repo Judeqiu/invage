@@ -92,11 +92,10 @@ function mapOnePosition(
     return { skip: skipPos(symbol || undefined, `secType ${secType} is not imported`) };
   }
   if (secType === 'STK' || secType === '') {
-    if (!(qty > 0)) return { skip: skipPos(symbol || undefined, `short stock (${qty}) is not supported on the books`) };
     const yahoo = tigerYahooSymbol({ market: market || 'US', symbol, exchange: pick(item, 'exchange', 'listingExchange') });
     if (typeof yahoo !== 'string') return { skip: skipPos(symbol || undefined, yahoo.skip) };
     const avg = parseNum(item.averageCost ?? item.average_cost);
-    if (avg == null || !(avg > 0)) return { skip: skipPos(yahoo, 'missing averageCost') };
+    if (avg == null) return { skip: skipPos(yahoo, 'missing averageCost') };
     const mapKey = buildHoldingKey(yahoo, channel);
     if (seen.has(mapKey)) return { skip: skipPos(yahoo, 'duplicate map key') };
     seen.add(mapKey);
@@ -111,12 +110,11 @@ function mapOnePosition(
     return { lot: { ticker: holdingBaseKey(mapKey), currency, holding } };
   }
   if (secType === 'FUND') {
-    if (!(qty > 0)) return { skip: skipPos(symbol || undefined, `short fund (${qty}) is not supported`) };
     const yahoo = tigerYahooSymbol({ market: market || 'US', symbol, exchange: pick(item, 'exchange', 'listingExchange') });
     if (typeof yahoo !== 'string') return { skip: skipPos(symbol || undefined, yahoo.skip) };
     const avg = parseNum(item.averageCost ?? item.average_cost);
     const mark = parseNum(item.latestPrice ?? item.latest_price);
-    if (avg == null || !(avg > 0)) return { skip: skipPos(yahoo, 'missing averageCost') };
+    if (avg == null) return { skip: skipPos(yahoo, 'missing averageCost') };
     if (mark == null || !Number.isFinite(mark)) return { skip: skipPos(yahoo, 'fund missing mark') };
     const mapKey = buildHoldingKey(yahoo, channel);
     if (seen.has(mapKey)) return { skip: skipPos(yahoo, 'duplicate map key') };
@@ -136,12 +134,12 @@ function mapOnePosition(
   const right = rightRaw === 'P' || rightRaw === 'PUT' ? 'put' : rightRaw === 'C' || rightRaw === 'CALL' ? 'call' : null;
   if (!right) return { skip: skipPos(symbol || undefined, 'option missing right') };
   const strike = parseNum(pick(item, 'strike'));
-  if (strike == null || !(strike > 0)) return { skip: skipPos(symbol || undefined, 'option missing strike') };
+  if (strike == null) return { skip: skipPos(symbol || undefined, 'option missing strike') };
   const expiryRaw = String(pick(item, 'expiry') ?? '').trim();
   const expiry = ymdExpiry(expiryRaw);
   if (!expiry) return { skip: skipPos(symbol || undefined, 'option missing expiry') };
   const multiplier = parseNum(pick(item, 'multiplier'));
-  if (multiplier == null || !(multiplier > 0)) {
+  if (multiplier == null) {
     return { skip: skipPos(symbol || undefined, 'option missing multiplier') };
   }
   const rawUnderlying = String(
@@ -162,14 +160,13 @@ function mapOnePosition(
   const mark = latest * multiplier;
   if (!Number.isFinite(mark)) return { skip: skipPos(symbol || undefined, 'option missing mark') };
   const avgPerShare = parseNum(item.averageCost ?? item.average_cost);
-  if (avgPerShare == null || !(avgPerShare > 0)) {
+  if (avgPerShare == null) {
     return { skip: skipPos(symbol || undefined, 'missing averageCost') };
   }
   const avg = avgPerShare * multiplier;
   if (!Number.isFinite(avg)) return { skip: skipPos(symbol || undefined, 'missing averageCost') };
   const side = qty < 0 ? 'short' : 'long';
   const units = Math.abs(qty);
-  if (!(units > 0)) return { skip: skipPos(symbol || undefined, 'option quantity is zero') };
   const base = buildOptionKey({ underlying, right, strike, expiry, side });
   const mapKey = buildHoldingKey(base, channel);
   if (seen.has(mapKey)) return { skip: skipPos(base, 'duplicate map key') };
@@ -277,9 +274,9 @@ function mapPrimeAssets(data: unknown, account: string, asOf: string, skipped: B
     const maintenance_margin = parseNum(sec.maintainMargin ?? sec.maintain_margin);
     if (/^[A-Z]{3,4}$/.test(currency) && (buying_power != null || excess_liquidity != null || maintenance_margin != null)) {
       metrics = { as_of: asOf, currency };
-      if (buying_power != null && buying_power >= 0) metrics.buying_power = buying_power;
+      if (buying_power != null) metrics.buying_power = buying_power;
       if (excess_liquidity != null) metrics.excess_liquidity = excess_liquidity;
-      if (maintenance_margin != null && maintenance_margin >= 0) metrics.maintenance_margin = maintenance_margin;
+      if (maintenance_margin != null) metrics.maintenance_margin = maintenance_margin;
     }
   }
   return { cash, metrics };
@@ -314,9 +311,9 @@ function mapGlobalAssets(data: unknown, account: string, asOf: string, skipped: 
   let metrics: BrokerConnectionMetrics | undefined;
   if (/^[A-Z]{3,4}$/.test(currency) && (buying_power != null || excess_liquidity != null || maintenance_margin != null)) {
     metrics = { as_of: asOf, currency };
-    if (buying_power != null && buying_power >= 0) metrics.buying_power = buying_power;
+    if (buying_power != null) metrics.buying_power = buying_power;
     if (excess_liquidity != null) metrics.excess_liquidity = excess_liquidity;
-    if (maintenance_margin != null && maintenance_margin >= 0) metrics.maintenance_margin = maintenance_margin;
+    if (maintenance_margin != null) metrics.maintenance_margin = maintenance_margin;
   }
   return { cash, metrics };
 }

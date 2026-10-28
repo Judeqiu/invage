@@ -89,6 +89,16 @@ describe('Moomoo order fees', () => {
     raw.orders_fees![0].total_fee = '0'; raw.orders_fees![0].fees = [];
     expect(history(raw).executions.every(e => e.instrument === 'security' && Number(e.fee_cash) === 0)).toBe(true);
   });
+  it.each([3.88,'-3.88'])('preserves broker numeric fees and rebates: %s', total => {
+    const raw=bundle();raw.orders_fees![0].total_fee=total;
+    const h=history(raw);
+    expect(h.orders[0].fees!.total).toBe(String(total));
+    expect(Number(addDecimals(...h.executions.map(e=>e.fee_cash!)))).toBe(-Number(total));
+    expect(mergeBrokerHistory(h,h).executions).toEqual(h.executions);
+    const shifted=structuredClone(h);
+    const fees=shifted.executions.map(e=>e.fee_cash!);shifted.executions.forEach((e,i)=>{e.fee_cash=fees[(i+1)%fees.length];});
+    expect(mergeBrokerHistory(h,shifted).executions.map(e=>e.fee_cash)).toEqual(h.executions.map(e=>e.fee_cash));
+  });
   it('accepts a null breakdown only when the broker explicitly reports a zero total', () => {
     const raw = bundle(); raw.orders_fees![0].total_fee = '0.00'; raw.orders_fees![0].fees = null;
     expect(history(raw).orders[0].fees).toEqual({currency:'USD',total:'0.00',items:[]});
@@ -108,7 +118,7 @@ describe('Moomoo order fees', () => {
     const empty = history(); empty.executions = []; empty.orders = []; empty.sync.mode = 'incremental';
     expect(mergeBrokerHistory(merged,empty).sync.fees).toBe('available');
   });
-  it.each([{total_fee:'NaN'},{total_fee:3.88},{total_fee:'-1'},{currency:''},{account_id:'other'},{fees:[{type:'Commission',amount:'NaN'}]}])('rejects invalid archived fee evidence: %j', patch => {
+  it.each([{total_fee:'NaN'},{currency:''},{account_id:'other'},{fees:[{type:'Commission',amount:'NaN'}]}])('rejects invalid archived fee evidence: %j', patch => {
     const raw = bundle(); Object.assign(raw.orders_fees![0], patch);
     expect(() => history(raw)).toThrow();
   });

@@ -17,6 +17,14 @@ const parent=()=>({order_id:'parent',code:'US.AVGO',exchange:'US',side:'SELL',or
 function bundle():MooMooRawBundle{return {schema:'invage.moomoo.raw.v1',acc_id:'A',fetched_at:'2026-10-14T00:00:00Z',authorized:{s:'ok'},funds:{s:'ok',d:{us_cash:'1000'}},positions:{s:'ok',d:[]},fills_history:{start,end,rows:[fill('close',closing,'BUY_BACK','11.35'),fill('open',opening,'SELL_SHORT','19.50')]},orders_history:{start,end,rows:[parent()]},orders_details:[parent()],history_mode:'full'};}
 const credentials={app_key:'test',private_key:readFileSync('tests/fixtures/moomoo/ed25519-private.pem','utf8'),sign_alg:'Ed25519' as const};
 describe('Moomoo historical data',()=>{
+  it('preserves signed broker execution prices without imposing a cash-sign assumption',()=>{
+    const raw=bundle();raw.orders_details=[];raw.orders_history!.rows=[];
+    raw.fills_history!.rows=[fill('signed','US.MBLY260821P8000','BUY_BACK','-0.52')];
+    raw.option_basicinfo=[{code:'US.MBLY260821P8000',stock_type:'DRVT',contract_size:100}];
+    const statement=mapMooMooBundleToStatement(raw,'moomoo-A');
+    expect(statement.history!.executions[0]).toMatchObject({price:'-0.52',side:'buy',gross_cash:'52.00'});
+    expect(statement.option_executions![0].gross_premium).toBe('52.00');
+  });
   it('retains low-strike options as options, using verified size or unknown cash',()=>{
     const raw=bundle();
     raw.fills_history!.rows=[{...fill('low','US.MBLY260821P8000','SELL_SHORT','0.52'),qty:'20'}];

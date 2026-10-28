@@ -419,10 +419,9 @@ export function assertCashBalance(raw: unknown): CashBalance {
   if (c.accrued_interest != null) {
     if (
       typeof c.accrued_interest !== 'number' ||
-      !Number.isFinite(c.accrued_interest) ||
-      c.accrued_interest < 0
+      !Number.isFinite(c.accrued_interest)
     ) {
-      throw new Error('cash.accrued_interest must be a finite number ≥ 0 when set.');
+      throw new Error('cash.accrued_interest must be a finite number when set.');
     }
     result.accrued_interest = c.accrued_interest;
   }
@@ -460,9 +459,8 @@ export function assertBrokerConnectionMetrics(
   for (const key of METRICS_NUMBER_KEYS) {
     const v = o[key];
     if (v == null) continue;
-    const signed = key === 'excess_liquidity' || key === 'broker_net_assets';
-    if (typeof v !== 'number' || !Number.isFinite(v) || (!signed && v < 0)) {
-      throw new Error(`${ctx}.${key} must be a finite number${signed ? '' : ' ≥ 0'} when set.`);
+    if (typeof v !== 'number' || !Number.isFinite(v)) {
+      throw new Error(`${ctx}.${key} must be a finite number when set.`);
     }
     result[key] = v;
   }
@@ -976,11 +974,11 @@ export function clearCash(
  * (open equity: 0 − cost = −cost; close equity: cost − 0 = +cost)
  */
 export function cashDeployedForHolding(h: Holding): number {
-  if (!(h.avg_price > 0) || !Number.isFinite(h.avg_price)) {
-    throw new Error('cashDeployedForHolding: avg_price must be positive.');
+  if (!Number.isFinite(h.avg_price)) {
+    throw new Error('cashDeployedForHolding: avg_price must be finite.');
   }
-  if (!(h.units > 0) || !Number.isFinite(h.units)) {
-    throw new Error('cashDeployedForHolding: units must be positive.');
+  if (!Number.isFinite(h.units)) {
+    throw new Error('cashDeployedForHolding: units must be finite.');
   }
   const notional = h.avg_price * h.units;
   if (isOptionHolding(h)) {

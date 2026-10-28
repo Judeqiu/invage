@@ -62,11 +62,11 @@ export async function postHoldingOpen(
   const h = args.holding;
   const kind = holdingInstrument(h);
   const ccy = assertCurrency(args.currency ?? h.currency ?? 'USD');
-  if (!(args.purchaseUnits > 0) || !Number.isFinite(args.purchaseUnits)) {
+  if (!Number.isFinite(args.purchaseUnits) || (args.adjustCash && !(args.purchaseUnits > 0))) {
     throw new Error('postHoldingOpen: purchaseUnits must be > 0.');
   }
-  if (!(args.purchaseAvg > 0) || !Number.isFinite(args.purchaseAvg)) {
-    throw new Error('postHoldingOpen: purchaseAvg must be > 0.');
+  if (!Number.isFinite(args.purchaseAvg)) {
+    throw new Error('postHoldingOpen: purchaseAvg must be finite.');
   }
 
   const pos = await ensureAccount(client, {
@@ -116,6 +116,7 @@ export async function postHoldingOpen(
       toolName: args.toolName ?? 'add_holding',
       memo: args.memo ?? `open/buy ${args.mapKey}`,
       externalRef: args.externalRef,
+      allowSignedPositionQuantity: !args.adjustCash,
       lines: [
         {
           accountId: pos.id,
@@ -139,6 +140,7 @@ export async function postHoldingOpen(
     toolName: args.toolName ?? 'add_holding',
     memo: args.memo ?? `import position ${args.mapKey}`,
     externalRef: args.externalRef,
+    allowSignedPositionQuantity: !args.adjustCash,
     lines: [
       {
         accountId: pos.id,
@@ -187,7 +189,7 @@ export async function postHoldingClose(
   const qty = await getQuantity(client, pos.id);
   const bal = await getBalanceMinor(client, pos.id);
   // Prefer live projection if present; else YAML holding
-  const closeQty = qty > 0 ? qty : args.holding.units;
+  const closeQty = qty !== 0 ? qty : args.holding.units;
   const closeBal = bal !== 0n ? bal : isShort ? -costMinor : costMinor;
 
   if (args.adjustCash) {
@@ -205,6 +207,7 @@ export async function postHoldingClose(
       toolName: args.toolName ?? 'remove_holding',
       memo: args.memo,
       externalRef: args.externalRef,
+      allowSignedPositionQuantity: !args.adjustCash,
       lines: [
         {
           accountId: pos.id,
@@ -231,6 +234,7 @@ export async function postHoldingClose(
     toolName: args.toolName ?? 'remove_holding',
     memo: args.memo,
     externalRef: args.externalRef,
+    allowSignedPositionQuantity: !args.adjustCash,
     lines: [
       {
         accountId: pos.id,

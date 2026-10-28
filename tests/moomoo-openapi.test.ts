@@ -75,7 +75,6 @@ describe('MooMoo mapping', () => {
     {currency:'USD',total_assets:'',maintenance_margin:'10'},
     {currency:'USD',total_assets:'Infinity',maintenance_margin:'10'},
     {currency:'USD',total_assets:'100',maintenance_margin:'NaN'},
-    {currency:'USD',total_assets:'100',maintenance_margin:'-1'},
     {currency:'USD',cash:'100',market_val:'100',securities_assets:'100',power:'100',available_funds:'100',maintenance_margin:'10'},
   ])('does not invent margin capacity from missing or different inputs: %j', fields => {
     expect(mapMooMooMarginMetrics(fields,'2026-10-26')?.excess_liquidity).toBeUndefined();
@@ -112,7 +111,6 @@ describe('MooMoo mapping', () => {
   });
 
   it.each([
-    { funds_assets: '-1', currency: 'USD' },
     { funds_assets: 'NaN', currency: 'USD' },
     { funds_assets: '1198.16' },
     { funds_assets: '1198.16', currency: '$' },
@@ -137,8 +135,8 @@ describe('MooMoo mapping', () => {
       { currency: 'KRW', amount: 0 },
     ]);
     expect(stmt.skipped.some((s) => s.currency === 'CNH')).toBe(false);
-    expect(stmt.lots.map((l) => l.ticker)).toEqual(['AAPL', '0700.HK', '0700.HK-C-390-20260629-L']);
-    const opt = stmt.lots[2]?.holding;
+    expect(stmt.lots.map((l) => l.ticker)).toEqual(['AAPL', '0700.HK', 'TSLA', '0700.HK-C-390-20260629-L']);
+    const opt = stmt.lots[3]?.holding;
     expect(opt?.instrument).toBe('option');
     expect(opt?.option).toMatchObject({
       right: 'call',
@@ -151,7 +149,8 @@ describe('MooMoo mapping', () => {
       mark: 250,
     });
     expect(opt?.avg_price).toBe(200);
-    expect(stmt.skipped.some((s) => s.symbol === 'US.TSLA')).toBe(true);
+    expect(stmt.skipped.some((s) => s.symbol === 'US.TSLA')).toBe(false);
+    expect(stmt.lots.find(l=>l.ticker==='TSLA')?.holding.units).toBe(-10);
     expect(stmt.skipped.some((s) => s.reason === 'option code not mapped')).toBe(false);
     expect(stmt.metrics?.buying_power).toBe(12500);
     expect(stmt.metrics?.currency).toBe('USD');
@@ -186,7 +185,6 @@ describe('MooMoo mapping', () => {
   it.each([
     [{ code: 'US.OTHER270319P15000', stock_type: 'DRVT', contract_size: 100 }],
     [{ code: 'US.PATH270319P15000', stock_type: 'STOCK', contract_size: 100 }],
-    [{ code: 'US.PATH270319P15000', stock_type: 'DRVT', contract_size: 0 }],
     [{ code: 'US.PATH270319P15000', stock_type: 'DRVT', contract_size: 100 },
       { code: 'US.PATH270319P15000', stock_type: 'DRVT', contract_size: 10 }],
   ])('never guesses a multiplier from missing, wrong, or ambiguous metadata (%j)', (...profiles) => {

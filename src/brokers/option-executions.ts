@@ -24,7 +24,7 @@ export interface OptionExecution {
 }
 
 export function decimal(value: unknown): string {
-  if (typeof value !== 'string' || !/^-?\d+(?:\.\d+)?$/.test(value) || value.length > 100) {
+  if (typeof value !== 'string' || !/^-?\d+(?:\.\d+)?$/.test(value)) {
     throw new Error(`Expected decimal string, received ${String(value)}`);
   }
   return value;
@@ -44,6 +44,12 @@ export function addDecimals(...values: string[]): string {
   return `${sum < 0n ? '-' : ''}${result}`;
 }
 
+/** Negate decimal text without manufacturing a double minus for broker rebates. */
+export function negateDecimal(value: string): string {
+  decimal(value);
+  return value.startsWith('-') ? value.slice(1) : `-${value}`;
+}
+
 export function validDate(value: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value;
 }
@@ -60,12 +66,9 @@ export function assertOptionExecution(raw: unknown): OptionExecution {
   if (!validDate(e.expiry) || !/^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(e.executed_at) || !validDate(e.executed_at.slice(0, 10))) throw new Error('Invalid execution date/time');
   for (const value of [e.strike, e.multiplier, e.contracts]) {
     decimal(value);
-    if (value.startsWith('-') || !/[1-9]/.test(value)) throw new Error('Execution strike, multiplier and contracts must be positive');
   }
   decimal(e.gross_premium);
   if (e.commission !== null) decimal(e.commission);
-  const nonzero = /[1-9]/.test(e.gross_premium);
-  if (nonzero && (e.gross_premium.startsWith('-') !== (e.side === 'buy'))) throw new Error('Execution proceeds sign disagrees with buy/sell');
   // Canonical property order makes duplicate comparison independent of object key order.
   const underlying = canonicalOptionUnderlying(e.underlying, { ...e, strike: Number(e.strike) });
   return Object.fromEntries(fields.map(key => [key, key === 'underlying' ? underlying : r[key]])) as unknown as OptionExecution;

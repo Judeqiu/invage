@@ -1,10 +1,11 @@
-import { decimal,addDecimals } from '../brokers/option-executions.js';
+import { decimal,addDecimals,negateDecimal } from '../brokers/option-executions.js';
 import { looksLikeOptionCode, parseBrokerOptionCode, optionUnderlyingFromBroker } from '../brokers/option-symbol.js';
 import { yahooSymbolFromBroker } from '../brokers/yahoo-symbol.js';
 import { assertBrokerHistory, type BrokerHistory, type BrokerHistoryGap, type BrokerHistoryOrder } from '../brokers/history.js';
 import type { BrokerLot } from '../brokers/statement.js';
 import type { MooMooRawBundle } from './moomoo-types.js';
 import { BrokerParseError } from '../brokers/errors.js';
+import {historyProduct} from '../brokers/history-values.js';
 import { allocateMooMooFees, parseMooMooOrderFees } from './moomoo-fees.js';
 import type { BrokerOrderFees, BrokerHistoryExecution } from '../brokers/history.js';
 
@@ -13,22 +14,10 @@ function string(v: unknown): string {
   return v;
 }
 function number(v: unknown): string {
-  if (typeof v === 'number' && !Number.isSafeInteger(v)) throw new BrokerParseError('Moomoo history numeric metadata is not exact');
   return decimal(String(v));
 }
 function optionalNumber(v: unknown): string | null {
   return v == null || typeof v === 'string' && !v.trim() ? null : number(v);
-}
-function positive(v: unknown): string {
-  const value = number(v);
-  if (value.startsWith('-') || !/[1-9]/.test(value)) throw new BrokerParseError('Moomoo history size must be positive');
-  return value;
-}
-function multiply(...values: string[]): string {
-  let product = 1n, scale = 0;
-  for (const value of values) { decimal(value); scale += value.split('.')[1]?.length ?? 0; product *= BigInt(value.replace('.', '')); }
-  const digits = product.toString().padStart(scale + 1, '0');
-  return scale ? `${digits.slice(0,-scale)}.${digits.slice(-scale)}` : digits;
 }
 export function moomooMarketTime(raw: unknown, market: string): string {
   if (!/^\d+$/.test(String(raw))) throw new BrokerParseError('Moomoo history time must be epoch microseconds');
@@ -50,8 +39,8 @@ function action(value: unknown): { side: 'buy' | 'sell'; effect: 'open' | 'close
 export function moomooContractMetadata(bundle: MooMooRawBundle, lots: BrokerLot[] = [], verifiedMultipliers?: ReadonlyMap<string,string>) {
   const metadata = new Map<string, { multiplier: string; owner?: string }>();
   const put = (code: string, size: unknown, owner?: unknown) => {
-    const multiplier = positive(size), prior = metadata.get(code);
-    if (prior && !/^0(?:\.0+)?$/.test(addDecimals(prior.multiplier,`-${multiplier}`))) throw new BrokerParseError(`Conflicting exact-contract metadata for ${code}`);
+    const multiplier = number(size), prior = metadata.get(code);
+    if (prior && !/^0(?:\.0+)?$/.test(addDecimals(prior.multiplier,negateDecimal(multiplier)))) throw new BrokerParseError(`Conflicting exact-contract metadata for ${code}`);
     metadata.set(code, { multiplier, owner: owner == null ? prior?.owner : String(owner) });
   };
   for (const [code,multiplier] of verifiedMultipliers ?? []) put(code,multiplier);
@@ -95,8 +84,7 @@ export function mapMooMooHistory(bundle: MooMooRawBundle, lots: BrokerLot[], cha
     if (!['US','HK'].includes(market) || !native) throw new BrokerParseError('Unsupported Moomoo history market');
     if (row.status !== 'OK') throw new BrokerParseError(`Moomoo fill ${row.deal_id}: Changed or cancelled fills require reconciliation`);
     const direction = action(row.trd_side), isOption = looksLikeOptionCode(native);
-    const quantity = positive(row.qty), price = number(row.price);
-    if (price.startsWith('-')) throw new BrokerParseError('Moomoo fill price must not be negative');
+    const quantity = number(row.qty), price = number(row.price);
     const parsed = isOption ? parseBrokerOptionCode(native) : null;
     if (parsed && 'skip' in parsed) throw new BrokerParseError(parsed.skip);
     const info = metadata.get(code), multiplier = isOption ? info?.multiplier ?? null : '1';
@@ -104,11 +92,11 @@ export function mapMooMooHistory(bundle: MooMooRawBundle, lots: BrokerLot[], cha
     const symbol = typeof underlying === 'string' ? underlying : null;
     if (!multiplier) gap('metadata', code, 'Exact historical contract multiplier unavailable; execution retained with unknown cash.');
     else if (!symbol) gap('metadata',code,'Historical underlying unavailable; execution retained outside the verified option projection.');
-    const gross = multiplier ? multiply(price, quantity, multiplier) : null;
+    const gross = multiplier ? historyProduct(price, quantity, multiplier) : null;
     return { ...bound, id:string(row.deal_id), order_id:row.order_id == null ? null : string(row.order_id), native_symbol:code,
       symbol, instrument:isOption ? 'option' as const : 'security' as const, side:direction.side, effect:isOption ? direction.effect : 'unknown' as const,
       executed_at:moomooMarketTime(row.create_time,market), clock:market === 'US' ? 'America/New_York' : 'Asia/Hong_Kong',
-      currency:market === 'US' ? 'USD' : 'HKD', quantity, price, multiplier, gross_cash:gross === null ? null : direction.side === 'buy' ? `-${gross}` : gross,
+      currency:market === 'US' ? 'USD' : 'HKD', quantity, price, multiplier, gross_cash:gross === null ? null : direction.side === 'buy' ? negateDecimal(gross) : gross,
       fee_cash:null, option:parsed && !('skip' in parsed) ? { right:parsed.right, expiry:parsed.expiry, strike:String(parsed.strike) } : null };
   });
   const orders = new Map<string, BrokerHistoryOrder>();
@@ -117,7 +105,7 @@ export function mapMooMooHistory(bundle: MooMooRawBundle, lots: BrokerLot[], cha
     assertAccount(row);
     const code = string(row.code), market = String(row.exchange ?? code.split('.')[0]);
     const info = row.multi_leg_info as { leg_infos?: Record<string, unknown>[] } | undefined;
-    const legs = (info?.leg_infos ?? []).map(l => ({ native_symbol:string(l.leg_code), ...action(l.leg_side), ratio:positive(l.leg_ratio_qty), multiplier:l.leg_hp_multiplier == null ? null : positive(l.leg_hp_multiplier) }));
+    const legs = (info?.leg_infos ?? []).map(l => ({ native_symbol:string(l.leg_code), ...action(l.leg_side), ratio:number(l.leg_ratio_qty), multiplier:l.leg_hp_multiplier == null ? null : number(l.leg_hp_multiplier) }));
     const mapped: BrokerHistoryOrder = { ...bound, id:string(row.order_id), native_symbol:code, side:row.side === 'BUY' ? 'buy' : row.side === 'SELL' ? 'sell' : 'unknown',
       status:string(row.order_status), created_at:moomooMarketTime(row.create_time,market), updated_at:moomooMarketTime(row.updated_time ?? row.create_time,market),
       clock:market === 'US' ? 'America/New_York' : 'Asia/Hong_Kong', currency:row.currency == null ? null : string(row.currency), quantity:optionalNumber(row.qty),

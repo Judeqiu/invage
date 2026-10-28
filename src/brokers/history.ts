@@ -51,15 +51,8 @@ function text(raw: unknown): string {
   return raw;
 }
 function nullableText(raw: unknown): string | null { return raw === null ? null : text(raw); }
-function amount(raw: unknown, positive = false): string {
-  const value = decimal(raw);
-  if (positive && (value.startsWith('-') || !/[1-9]/.test(value))) throw new Error('Broker history quantity/multiplier must be positive');
-  return value;
-}
-function nullableAmount(raw: unknown, positive = false): string | null { return raw === null ? null : amount(raw, positive); }
-function nonnegative(raw: unknown): string {
-  const value = amount(raw); if (value.startsWith('-')) throw new Error('Broker history price/quantity cannot be negative'); return value;
-}
+function amount(raw: unknown): string { return decimal(raw); }
+function nullableAmount(raw: unknown): string | null { return raw === null ? null : amount(raw); }
 function choice<T extends string>(raw: unknown, allowed: T[]): T {
   if (!allowed.includes(raw as T)) throw new Error('Invalid broker history classification');
   return raw as T;
@@ -88,15 +81,13 @@ export function assertHistoryExecution(raw: unknown): BrokerHistoryExecution {
   if (o.option !== null) {
     const c = obj(o.option); keys(c, ['right','expiry','strike']);
     if (!validDate(c.expiry)) throw new Error('Invalid broker history option expiry');
-    option = { right: choice(c.right, ['call','put']), expiry: c.expiry, strike: amount(c.strike, true) };
+    option = { right: choice(c.right, ['call','put']), expiry: c.expiry, strike: amount(c.strike) };
   }
   if ((instrument === 'option') !== (option !== null)) throw new Error('Broker history option terms required only for options');
   const row: BrokerHistoryExecution = { ...scope(o), id: text(o.id), order_id: nullableText(o.order_id), native_symbol: text(o.native_symbol), symbol: nullableText(o.symbol),
     instrument, side: choice(o.side, ['buy','sell']), effect: choice(o.effect, ['open','close','mixed','unknown']), executed_at: stamp(o.executed_at), clock: text(o.clock),
-    currency: currency(o.currency), quantity: amount(o.quantity, true), price: o.price === null ? null : nonnegative(o.price), multiplier: nullableAmount(o.multiplier, true),
+    currency: currency(o.currency), quantity: amount(o.quantity), price: nullableAmount(o.price), multiplier: nullableAmount(o.multiplier),
     gross_cash: nullableAmount(o.gross_cash), fee_cash: nullableAmount(o.fee_cash), option };
-  if (row.gross_cash !== null && (!row.currency || !row.multiplier)) throw new Error('Broker history cash requires verified currency and multiplier');
-  if (row.gross_cash !== null && /[1-9]/.test(row.gross_cash) && row.gross_cash.startsWith('-') !== (row.side === 'buy')) throw new Error('Broker history cash sign disagrees with side');
   return row;
 }
 export function assertHistoryOrder(raw: unknown): BrokerHistoryOrder {
@@ -107,7 +98,7 @@ export function assertHistoryOrder(raw: unknown): BrokerHistoryOrder {
     const f = obj(o.fees); keys(f, ['currency','total','items']);
     const denomination = currency(f.currency);
     if (!Array.isArray(f.items)) throw new Error('Invalid broker order fees');
-    fees = { currency:denomination, total:nonnegative(f.total), items:f.items.map((raw: unknown) => {
+    fees = { currency:denomination, total:amount(f.total), items:f.items.map((raw: unknown) => {
       const item = obj(raw); keys(item, ['type','amount']);
       return { type:text(item.type), amount:amount(item.amount) };
     }) };
@@ -115,11 +106,11 @@ export function assertHistoryOrder(raw: unknown): BrokerHistoryOrder {
   if (!Array.isArray(o.legs)) throw new Error('Broker history order legs must be an array');
   const legs = o.legs.map((raw: unknown) => {
     const l = obj(raw); keys(l, ['native_symbol','side','effect','ratio','multiplier']);
-    return { native_symbol: text(l.native_symbol), side: choice(l.side, ['buy','sell']), effect: choice(l.effect, ['open','close','mixed','unknown']), ratio: amount(l.ratio, true), multiplier: nullableAmount(l.multiplier, true) };
+    return { native_symbol: text(l.native_symbol), side: choice(l.side, ['buy','sell']), effect: choice(l.effect, ['open','close','mixed','unknown']), ratio: amount(l.ratio), multiplier: nullableAmount(l.multiplier) };
   });
   return { ...scope(o), id: text(o.id), native_symbol: text(o.native_symbol), side: choice(o.side, ['buy','sell','unknown']), status: text(o.status),
     created_at: stamp(o.created_at), updated_at: stamp(o.updated_at), clock: text(o.clock), currency: currency(o.currency),
-    quantity: o.quantity === null ? null : nonnegative(o.quantity), limit_price: nullableAmount(o.limit_price), filled_quantity: o.filled_quantity === null ? null : nonnegative(o.filled_quantity),
+    quantity: nullableAmount(o.quantity), limit_price: nullableAmount(o.limit_price), filled_quantity: nullableAmount(o.filled_quantity),
     filled_price: nullableAmount(o.filled_price), order_type: text(o.order_type), time_in_force: nullableText(o.time_in_force), session: nullableText(o.session), legs, ...(fees ? { fees } : {}) };
 }
 export function assertBrokerHistory(raw: unknown): BrokerHistory {

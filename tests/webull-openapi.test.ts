@@ -78,9 +78,9 @@ describe('Webull mapping', () => {
       { currency: 'CNH', amount: -12.5 },
     ]);
     expect(stmt.skipped.some((s) => s.currency === 'CNH')).toBe(false);
-    expect(stmt.lots.map((l) => l.ticker)).toEqual(['AAPL', '0700.HK', 'AAPL-C-200-20260918-L']);
+    expect(stmt.lots.map((l) => l.ticker)).toEqual(['AAPL', '0700.HK', 'TSLA', 'AAPL-C-200-20260918-L']);
     expect(stmt.lots[0]?.holding.broker_ref?.native_id).toBe('POS-AAPL');
-    const opt = stmt.lots[2]?.holding;
+    const opt = stmt.lots[3]?.holding;
     expect(opt?.instrument).toBe('option');
     expect(opt?.option).toMatchObject({
       right: 'call',
@@ -94,7 +94,7 @@ describe('Webull mapping', () => {
     });
     expect(opt?.avg_price).toBe(200);
     expect(opt?.units).toBe(2);
-    expect(stmt.skipped.some((s) => s.symbol === 'TSLA')).toBe(true);
+    expect(stmt.skipped.some((s) => s.symbol === 'TSLA')).toBe(false);
     expect(stmt.skipped.some((s) => s.reason === 'option lots are not imported')).toBe(false);
     expect(stmt.metrics?.buying_power).toBe(12500);
     expect(stmt.metrics?.currency).toBe('USD');

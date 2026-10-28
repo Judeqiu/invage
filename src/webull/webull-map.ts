@@ -81,7 +81,7 @@ function mapCash(balances: unknown, asOf: string, skipped: BrokerSkip[]): {
     if (amount == null) continue;
     cash.push({ currency, amount });
     const bp = parseNum(item.buying_power);
-    if (bp != null && bp >= 0 && (currency === 'USD' || buyingPower == null)) {
+    if (bp != null && (currency === 'USD' || buyingPower == null)) {
       buyingPower = bp;
       if (currency === 'USD') metricsCurrency = 'USD';
     }
@@ -126,11 +126,11 @@ function mapOptionPosition(
   const right = typeRaw === 'P' || typeRaw === 'PUT' ? 'put' : typeRaw === 'C' || typeRaw === 'CALL' ? 'call' : null;
   if (!right) return { skip: skipPos(symbol || undefined, 'option missing right') };
   const strike = parseNum(leg.strike_price ?? leg.option_exercise_price);
-  if (strike == null || !(strike > 0)) return { skip: skipPos(symbol || undefined, 'option missing strike') };
+  if (strike == null) return { skip: skipPos(symbol || undefined, 'option missing strike') };
   const expiry = String(leg.option_expire_date ?? '').trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(expiry)) return { skip: skipPos(symbol || undefined, 'option missing expiry') };
   const multiplier = parseNum(leg.option_contract_multiplier ?? item.option_contract_multiplier);
-  if (multiplier == null || !(multiplier > 0)) {
+  if (multiplier == null) {
     return { skip: skipPos(symbol || undefined, 'option missing multiplier') };
   }
   const underRaw = String(leg.symbol ?? item.symbol ?? '').trim();
@@ -140,7 +140,7 @@ function mapOptionPosition(
   const underlying = yahooSymbolFromBroker({ market, symbol: underRaw });
   if (typeof underlying !== 'string') return { skip: skipPos(underRaw, underlying.skip) };
   const costPerShare = parseNum(item.cost_price);
-  if (costPerShare == null || !(costPerShare > 0)) {
+  if (costPerShare == null) {
     return { skip: skipPos(symbol || underlying, 'cost_price is not valid') };
   }
   const markPerShare = parseNum(item.last_price);
@@ -149,10 +149,9 @@ function mapOptionPosition(
   }
   const mark = markPerShare * multiplier;
   const avg = costPerShare * multiplier;
-  if (!(mark > 0) || !Number.isFinite(mark)) return { skip: skipPos(symbol || underlying, 'option missing mark') };
-  if (!(avg > 0) || !Number.isFinite(avg)) return { skip: skipPos(symbol || underlying, 'cost_price is not valid') };
+  if (!Number.isFinite(mark)) return { skip: skipPos(symbol || underlying, 'option missing mark') };
+  if (!Number.isFinite(avg)) return { skip: skipPos(symbol || underlying, 'cost_price is not valid') };
   const units = Math.abs(qty);
-  if (!(units > 0)) return { skip: skipPos(symbol || underlying, 'option quantity is zero') };
   const sideRaw = String(item.side ?? leg.side ?? '').trim().toUpperCase();
   const side = sideRaw === 'SELL' || qty < 0 ? 'short' : 'long';
   const base = buildOptionKey({ underlying, right, strike, expiry, side });
@@ -196,19 +195,17 @@ function mapPosition(
   if (!/^[A-Z]{3,4}$/.test(currency)) return { skip: skipPos(symbol, 'missing currency') };
   if (qty == null) return { skip: skipPos(symbol, 'non-finite quantity') };
   if (type === 'OPTION' || optionLegsOf(item).length > 0) {
-    if (qty === 0) return { skip: skipPos(symbol, 'option quantity is zero') };
     return mapOptionPosition(item, channel, region, currency, qty, seen);
   }
   if (type && type !== 'EQUITY' && type !== 'STOCK') {
     return { skip: skipPos(symbol, `instrument_type ${type} is not imported`) };
   }
-  if (!(qty > 0)) return { skip: skipPos(symbol, `short or non-positive qty (${qty}) is not imported`) };
   const market = marketForWebullSymbol({ symbol, region, currency });
   if (typeof market !== 'string') return { skip: skipPos(symbol, market.skip) };
   const yahoo = yahooSymbolFromBroker({ market, symbol });
   if (typeof yahoo !== 'string') return { skip: skipPos(symbol, yahoo.skip) };
   const avg = parseNum(item.cost_price);
-  if (avg == null || !(avg > 0)) return { skip: skipPos(yahoo, 'cost_price is not valid') };
+  if (avg == null) return { skip: skipPos(yahoo, 'cost_price is not valid') };
   const mapKey = buildHoldingKey(yahoo, channel);
   if (seen.has(mapKey)) return { skip: skipPos(yahoo, 'duplicate map key') };
   seen.add(mapKey);

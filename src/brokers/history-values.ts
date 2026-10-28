@@ -1,4 +1,4 @@
-import { decimal, addDecimals } from './option-executions.js';
+import { decimal, addDecimals, negateDecimal } from './option-executions.js';
 import { BrokerParseError } from './errors.js';
 export function historyText(value: unknown): string {
   if (typeof value === 'number' && Number.isSafeInteger(value)) return String(value);
@@ -34,7 +34,7 @@ export function marketClock(market: unknown): string {
 export function putHistoryMultiplier(map: Map<string,string>, key:string, value:unknown): void {
   if(value==null||value==='')return;
   const next=historyAmount(value),old=map.get(key);
-  if(Number(next)<=0||old&&!/^0(?:\.0+)?$/.test(addDecimals(old,`-${next}`)))throw new BrokerParseError('Conflicting exact historical multiplier');
+  if(old&&!/^0(?:\.0+)?$/.test(addDecimals(old,negateDecimal(next))))throw new BrokerParseError('Conflicting exact historical multiplier');
   map.set(key,next);
 }
 export function historyRatio(numerator:string,denominator:string):string {

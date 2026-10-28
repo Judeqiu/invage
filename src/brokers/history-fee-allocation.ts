@@ -1,5 +1,5 @@
 import type { BrokerHistory, BrokerHistoryExecution } from './history.js';
-import { addDecimals } from './option-executions.js';
+import { addDecimals, negateDecimal } from './option-executions.js';
 
 function units(value: string, scale: number): bigint | undefined {
   const negative = value.startsWith('-');
@@ -30,8 +30,8 @@ export function preserveHistoryFeeAllocation(previous: BrokerHistory | undefined
     const priorOrder = oldOrders.get(order.id);
     if (!order.fees || !priorOrder?.fees || !order.filled_quantity || !priorOrder.filled_quantity ||
         !order.fees.currency || order.fees.currency !== priorOrder.fees.currency ||
-        !/^0(?:\.0+)?$/.test(addDecimals(order.filled_quantity, `-${priorOrder.filled_quantity}`)) ||
-        !/^0(?:\.0+)?$/.test(addDecimals(order.fees.total, `-${priorOrder.fees.total}`))) continue;
+        !/^0(?:\.0+)?$/.test(addDecimals(order.filled_quantity, negateDecimal(priorOrder.filled_quantity))) ||
+        !/^0(?:\.0+)?$/.test(addDecimals(order.fees.total, negateDecimal(priorOrder.fees.total)))) continue;
     const next = nextGroups.get(order.id) ?? [], old = oldGroups.get(order.id) ?? [];
     const oldById = new Map(old.map(row => [row.id, row]));
     if (next.length < 2 || next.length !== old.length || new Set(next.map(row => row.id)).size !== next.length ||
@@ -48,7 +48,7 @@ export function preserveHistoryFeeAllocation(previous: BrokerHistory | undefined
     const quantityScale = Math.max(...[...old, ...next].map(row => row.quantity.split('.')[1]?.length ?? 0),
       order.filled_quantity.split('.')[1]?.length ?? 0);
     const total = units(order.filled_quantity, quantityScale)!;
-    if (total <= 0n || fee < 0n) continue;
+    if (total === 0n) continue;
     const valid = (rows: BrokerHistoryExecution[]) => {
       const quantities = rows.map(row => units(row.quantity, quantityScale)!);
       if (quantities.reduce((sum, value) => sum + value, 0n) !== total) return false;
@@ -57,7 +57,7 @@ export function preserveHistoryFeeAllocation(previous: BrokerHistory | undefined
       let recipients = 0, sum = 0n;
       for (const [i, row] of rows.entries()) {
         const signed = units(row.fee_cash!, scale);
-        if (signed === undefined || signed > 0n) return false;
+        if (signed === undefined) return false;
         const amount = -signed;
         if (amount !== floors[i]) {
           if (!remainder || amount !== floors[i] + remainder) return false;

@@ -48,9 +48,9 @@ describe('Tiger stock and parent order fees', () => {
       .toMatchObject({total:'1.52',currency:'SGD',items:expect.arrayContaining([{type:'GST',amount:'0.12'}])});
     expect(tigerOrderFees({...tigerOrder(),gst:undefined})).toBeUndefined();
   });
-  it('does not allocate provisional same-day zero placeholders', () => {
+  it('preserves reported zero fees on the same day', () => {
     const order={...tigerOrder(),commission:'0',gst:'0'};
-    expect(tigerCommissions(order,tigerFills(),at).size).toBe(0);
+    expect(tigerCommissions(order,tigerFills(),at).size).toBe(2);
     expect(tigerCommissions(order,tigerFills(),at+86400000).size).toBe(2);
   });
   it.each([[false,true],[true,true],[false,false]])('recovers missing totals with optional lookup failure=%s, missing=%s', async (fail,missing) => {

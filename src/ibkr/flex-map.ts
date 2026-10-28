@@ -32,15 +32,17 @@ function ymdOptionExpiry(raw: string): string {
   return `${m[1]}-${m[2]}-${m[3]}`;
 }
 
-function avgPrice(pos: FlexOpenPosition, units: number, multiplier: number, isOption: boolean): number {
-  if (pos.costBasisMoney != null && units > 0) {
-    const avg = Math.abs(pos.costBasisMoney) / units;
-    if (!(avg > 0) || !Number.isFinite(avg)) {
-      throw new Error(`IBKR Flex ${pos.symbol}: costBasisMoney/quantity is not a positive price.`);
+function avgPrice(pos: FlexOpenPosition, multiplier: number, isOption: boolean): number {
+  if (pos.costBasisMoney != null && pos.quantity !== 0) {
+    // IBKR defines cost basis money as quantity × cost price. Preserve its sign.
+    // https://www.ibkrguides.com/reportingreference/reportguide/open%20positionsfq.htm
+    const avg = pos.costBasisMoney / pos.quantity;
+    if (!Number.isFinite(avg)) {
+      throw new Error(`IBKR Flex ${pos.symbol}: costBasisMoney/quantity is not finite.`);
     }
     return avg;
   }
-  if (pos.costBasisPrice != null && pos.costBasisPrice > 0) {
+  if (pos.costBasisPrice != null) {
     return isOption ? pos.costBasisPrice * multiplier : pos.costBasisPrice;
   }
   throw new Error(`IBKR Flex ${pos.symbol}: need costBasisMoney or costBasisPrice.`);
@@ -131,19 +133,13 @@ export function holdingsFromOpenPositions(
       if (pos.quantity === 0) continue;
       let lot: MappedLot | undefined;
       if (cat === 'STK' || cat === 'ETF') {
-        if (!(pos.quantity > 0)) {
-          skipped.push(
-            skipPosition(pos, `short stock (${pos.quantity}) is not supported on the books`),
-          );
-          continue;
-        }
         const ticker = yahooSymbolFromFlex(pos);
         const mapKey = buildHoldingKey(ticker, channel);
         const holding: Holding = withFlexIdentity(
           {
             instrument: 'equity',
             units: pos.quantity,
-            avg_price: avgPrice(pos, pos.quantity, 1, false),
+            avg_price: avgPrice(pos, 1, false),
             channel,
           },
           pos,
@@ -153,13 +149,13 @@ export function holdingsFromOpenPositions(
       } else if (cat === 'OPT') {
         if (pos.multiplier == null) throw new Error('option missing multiplier');
         const multiplier = pos.multiplier;
-        if (!(multiplier > 0)) throw new Error(`multiplier must be > 0`);
+        if (!Number.isFinite(multiplier)) throw new Error('option multiplier must be finite');
         const units = Math.abs(pos.quantity);
         const side = pos.quantity < 0 ? 'short' : 'long';
         const pc = (pos.putCall ?? '').trim().toUpperCase();
         const right = pc === 'P' || pc === 'PUT' ? 'put' : pc === 'C' || pc === 'CALL' ? 'call' : null;
         if (!right) throw new Error('option missing putCall');
-        if (pos.strike == null || !(pos.strike > 0)) {
+        if (pos.strike == null) {
           throw new Error('option missing strike');
         }
         if (!pos.expiry) throw new Error('option missing expiry');
@@ -182,7 +178,7 @@ export function holdingsFromOpenPositions(
           {
             instrument: 'option',
             units,
-            avg_price: avgPrice(pos, units, multiplier, true),
+            avg_price: avgPrice(pos, multiplier, true),
             channel,
             option: {
               right,
@@ -200,9 +196,6 @@ export function holdingsFromOpenPositions(
         assertHolding(mapKey, holding);
         lot = { mapKey, holding, currency: pos.currency };
       } else if (cat === 'FUND' || cat === 'FND' || cat === 'BILL' || cat === 'BOND') {
-        if (!(pos.quantity > 0)) {
-          throw new Error('non-positive fund/bond quantity');
-        }
         const ticker = yahooSymbolFromFlex(pos);
         const mapKey = buildHoldingKey(ticker, channel);
         if (pos.markPrice == null) throw new Error('fund/bond missing markPrice');
@@ -210,7 +203,7 @@ export function holdingsFromOpenPositions(
           {
             instrument: 'fund',
             units: pos.quantity,
-            avg_price: avgPrice(pos, pos.quantity, 1, false),
+            avg_price: avgPrice(pos, 1, false),
             channel,
             fund: {
               quote_source: 'manual',

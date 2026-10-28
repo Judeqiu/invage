@@ -1,7 +1,8 @@
+import {negateDecimal} from '../brokers/option-executions.js';
 import { assertBrokerHistory, type BrokerHistory, type BrokerHistoryGap, type BrokerHistoryOrder } from '../brokers/history.js';
 import { canonicalOptionUnderlying } from '../brokers/option-symbol.js';
 import { tigerMarket, tigerMarketClock, tigerNativeSymbol, tigerYahooSymbol, tigerHistoryTime } from './tiger-markets.js';
-import { historyText as text, historyAmount as amount, optionalHistoryAmount as optional, scaledHistoryQuantity as quantity, historyProduct, putHistoryMultiplier, reconcileHistoryCash } from '../brokers/history-values.js';
+import { historyText as text, historyAmount as amount, optionalHistoryAmount as optional, scaledHistoryQuantity as quantity, historyProduct, putHistoryMultiplier } from '../brokers/history-values.js';
 import type { BrokerLot } from '../brokers/statement.js';
 import type { TigerRawBundle } from './tiger-types.js';
 import { tigerCommissions } from './tiger-executions.js';
@@ -62,13 +63,13 @@ export function mapTigerHistory(bundle:TigerRawBundle,lots:BrokerLot[],channel:s
   const multiplier=isOption?metadata.get(native)??null:row.secType==='STK'?'1':optional(row.multiplier);
   const qty=quantity(row.filledQuantity,row.filledQuantityScale??0),price=amount(row.filledPrice),direction=side(row);
   const computed=multiplier?historyProduct(qty,price,multiplier):null;
-  const gross=computed!==null&&row.filledAmount!=null?reconcileHistoryCash(amount(row.filledAmount),computed,text(row.currency)):computed;
+  const gross=row.filledAmount!=null?amount(row.filledAmount):computed;
   if(!multiplier)gaps.push({kind:'metadata',reference:native,reason:'Exact expired-contract multiplier unavailable; retained execution cash is unknown.'});
   if(isOption&&parent&&parent.secType!=='OPT')gaps.push({kind:'orders',reference:text(row.orderId),reason:'Multi-leg execution open/close intent not explicitly reported.'});
   if(!parent)gaps.push({kind:'orders',reference:text(row.orderId),reason:'Execution parent order unavailable.'});
   return [{...scope,id:text(row.id),order_id:text(row.orderId),native_symbol:native,symbol:typeof mapped==='string'?mapped:null,instrument:isOption?'option' as const:'security' as const,
    side:direction,effect:isOption&&parent?.secType==='OPT'?effect(parent):'unknown' as const,executed_at:tigerHistoryTime(row.transactionTime,clock),clock,currency:text(row.currency),
-   quantity:qty,price,multiplier,gross_cash:gross===null?null:direction==='buy'?`-${gross}`:gross,fee_cash:fees.get(text(row.id))??null,option:t?.option??null}];
+   quantity:qty,price,multiplier,gross_cash:gross===null?null:direction==='buy'?negateDecimal(gross):gross,fee_cash:fees.get(text(row.id))??null,option:t?.option??null}];
  });
  const orders:BrokerHistoryOrder[]=h.orders.map(row=>{const clock=clockFor(row),fees=tigerOrderFees(row,h.end);return {...scope,id:text(row.id),native_symbol:row.secType==='MLEG'?`tiger:order:${text(row.id)}`:identity(row),side:row.action==='BUY'?'buy':row.action==='SELL'?'sell':'unknown',status:text(row.status),
   created_at:tigerHistoryTime(row.openTime,clock),updated_at:tigerHistoryTime(row.updateTime??row.latestTime??row.openTime,clock),clock,currency:row.currency==null?null:text(row.currency),

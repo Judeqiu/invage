@@ -75,9 +75,9 @@ describe('Tiger option fills and fees', () => {
     b.option_history!.orders = [{ ...order(), commissionCurrency: 'SGD' }];
     expect(mapTigerBundleToStatement(b, 'tiger').option_executions?.[0].commission).toBeNull();
   });
-  it('does not treat same-day zero fee placeholders as settled commissions', () => {
+  it('preserves reported zero commissions on the same day', () => {
     const b = bundle(); b.option_history!.orders = [{ ...order(), commission: '0', gst: '0' }];
-    expect(mapTigerBundleToStatement(b, 'tiger').option_executions?.[0].commission).toBeNull();
+    expect(mapTigerBundleToStatement(b, 'tiger').option_executions?.[0].commission).toBe('0.000000000000');
     b.option_history!.end += 86400000;
     expect(mapTigerBundleToStatement(b, 'tiger').option_executions?.[0].commission).toBe('0.000000000000');
   });

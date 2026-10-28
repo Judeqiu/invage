@@ -35,7 +35,6 @@ export function mapFutubullSnapshot(raw: unknown, channel: string, includeHistor
   for (const [field, currency] of Object.entries(cashFields)) {
     const amount = number(funds[field]);
     if (amount === undefined) continue;
-    if (amount < 0) throw new BrokerParseError(`Futubull ${currency} cash is negative and cannot be represented in Invage.`);
     cash.push({ currency, amount });
   }
   if (cash.length === 0) throw new BrokerParseError('Futubull funds contain no importable per-currency cash.');
@@ -54,16 +53,14 @@ export function mapFutubullSnapshot(raw: unknown, channel: string, includeHistor
     const currency = String(row.currency ?? '').toUpperCase();
     const qty = number(row.qty);
     const averageCost = number(row.average_cost);
-    const average = averageCost != null && averageCost > 0 ? averageCost : number(row.cost_price);
-    if (!/^[A-Z]{3,4}$/.test(currency) || qty === undefined || qty <= 0 ||
-        String(row.position_side ?? 'LONG').toUpperCase() !== 'LONG' ||
-        row.cost_price_valid !== true || average === undefined || average <= 0) {
+    const average = averageCost ?? number(row.cost_price);
+    if (!/^[A-Z]{3,4}$/.test(currency) || qty === undefined || average === undefined) {
       skip('unsupported side, currency, quantity, or cost'); continue;
     }
     const key = buildHoldingKey(ticker, channel);
     if (seen.has(key)) { skip('duplicate position key'); continue; }
     seen.add(key);
-    const holding = { instrument: 'equity' as const, units: qty, avg_price: average, channel,
+    const holding = { instrument: 'equity' as const, units: row.position_side === 'SHORT' && qty > 0 ? -qty : qty, avg_price: average, channel,
       broker_ref: { listing_exchange: market, native_id: code } };
     assertHolding(key, holding);
     lots.push({ ticker, currency, holding });

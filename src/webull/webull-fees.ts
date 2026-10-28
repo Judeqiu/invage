@@ -11,7 +11,6 @@ export function webullOrderFees(row: Row): BrokerOrderFees | undefined {
   if (row.fees.some((item: Row) => item?.actual_value == null || typeof item.type !== 'string')) return;
   const items = [{type:'Commission',amount:decimal(String(commission))},
     ...row.fees.map((item: Row) => ({type:item.type,amount:decimal(String(item.actual_value))}))];
-  if (items.some(item => item.amount.startsWith('-'))) throw new Error('Negative Webull order charge');
   const currency = row.currency == null ? null : String(row.currency);
   if (currency !== null && !/^[A-Z]{3,4}$/.test(currency)) throw new Error('Invalid Webull fee currency');
   return {currency,total:addDecimals(...items.map(item => item.amount)),items};

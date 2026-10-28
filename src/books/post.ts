@@ -26,6 +26,8 @@ export interface PostEntryArgs {
   lines: PostLine[];
   /** When true, allow cash (asset) accounts to go negative. Default false. */
   allowNegativeCash?: boolean;
+  /** Authoritative position snapshots may carry signed broker quantities. */
+  allowSignedPositionQuantity?: boolean;
 }
 
 export interface PostedEntry {
@@ -53,9 +55,13 @@ export async function postEntry(
   if (!args.requestId?.trim()) throw new Error('postEntry: requestId required.');
   if (!args.entryType?.trim()) throw new Error('postEntry: entryType required.');
   assertValueDate(args.valueDate);
-  if (!Array.isArray(args.lines) || args.lines.length < 2) {
-    throw new Error('postEntry: at least two journal lines required.');
+  if (!Array.isArray(args.lines) || args.lines.length === 0) {
+    throw new Error('postEntry: journal lines required.');
   }
+  // A zero-cost position changes quantity without moving money. Its zero-money
+  // contra leg has no posting; keep the actual quantity movement.
+  const lines = args.lines.filter(line => line.amountMinor !== 0n || (line.quantity != null && line.quantity !== 0));
+  if (!lines.length) throw new Error('postEntry: line must have non-zero amount_minor or quantity.');
 
   const existing = await client.query<{ id: string }>(
     `SELECT id FROM journal_entries
@@ -72,7 +78,7 @@ export async function postEntry(
 
   // Balance check per currency
   const sums = new Map<string, bigint>();
-  for (const line of args.lines) {
+  for (const line of lines) {
     const ccy = assertCurrency(line.currency);
     if (line.amountMinor === 0n && (line.quantity == null || line.quantity === 0)) {
       throw new Error('postEntry: line must have non-zero amount_minor or quantity.');
@@ -89,7 +95,7 @@ export async function postEntry(
   }
 
   // Load account currencies and kinds
-  const accountIds = [...new Set(args.lines.map((l) => l.accountId))];
+  const accountIds = [...new Set(lines.map((l) => l.accountId))];
   const accRes = await client.query<{
     id: string;
     currency: string;
@@ -104,7 +110,7 @@ export async function postEntry(
     throw new Error('postEntry: one or more account_id not found.');
   }
   const accById = new Map(accRes.rows.map((r) => [r.id, r]));
-  for (const line of args.lines) {
+  for (const line of lines) {
     const acc = accById.get(line.accountId);
     if (acc == null) throw new Error(`postEntry: account ${line.accountId} missing.`);
     if (acc.household_id !== args.householdId) {
@@ -139,7 +145,7 @@ export async function postEntry(
   const entryId = entryRes.rows[0]?.id;
   if (entryId == null) throw new Error('postEntry: failed to insert journal_entries.');
 
-  for (const line of args.lines) {
+  for (const line of lines) {
     await client.query(
       `INSERT INTO journal_lines (
          entry_id, household_id, account_id, amount_minor, currency, quantity, unit_cost_minor
@@ -183,7 +189,7 @@ export async function postEntry(
         throw new Error('postEntry: quantity must be finite.');
       }
       nextQty = prevQty + q;
-      if (nextQty < 0) {
+      if (nextQty < 0 && !(args.allowSignedPositionQuantity && accById.get(line.accountId)?.kind === 'position')) {
         throw new Error(
           `postEntry: quantity would go negative for account ${line.accountId} ` +
             `(have ${prevQty}, delta ${q}).`,
@@ -191,6 +197,8 @@ export async function postEntry(
       }
       if (nextQty === 0) {
         nextAvg = 0n;
+      } else if (line.unitCostMinor != null && args.allowSignedPositionQuantity && accById.get(line.accountId)?.kind === 'position') {
+        nextAvg = line.unitCostMinor;
       } else if (q > 0 && line.unitCostMinor != null) {
         // Weighted average cost on buys
         const totalCost = prevAvg * BigInt(Math.round(prevQty * 1e6)) + line.unitCostMinor * BigInt(Math.round(q * 1e6));

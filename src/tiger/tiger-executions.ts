@@ -57,7 +57,7 @@ function lifecycleKind(order: Record<string, unknown>): OptionLifecycleEvent['ki
 
 /** Fees are allocated among same-instrument fills only when every fill in a final
  * order reconciles. Combo-order per-leg fees remain unknown. */
-export function tigerCommissions(order: Record<string, unknown>, rows: Record<string, unknown>[], cutoff: number): Map<string, string> {
+export function tigerCommissions(order: Record<string, unknown>, rows: Record<string, unknown>[], _cutoff: number): Map<string, string> {
   const result = new Map<string, string>();
   if (!['STK','OPT'].includes(String(order.secType)) || order.commission == null || order.gst == null ||
       !['filled', 'cancelled', 'expired', 'rejected'].includes(String(order.status).toLowerCase())) return result;
@@ -68,11 +68,6 @@ export function tigerCommissions(order: Record<string, unknown>, rows: Record<st
     row.secType !== order.secType || row.currency !== order.currency || instrument(row) !== instrument(order)) ||
     order.commissionCurrency != null && order.commissionCurrency !== order.currency) return result;
   const fee = addDecimals(decimal(String(order.commission)), decimal(String(order.gst)));
-  if (fee.startsWith('-')) throw new Error('Negative Tiger order fee');
-  // Tiger can return zero placeholders before overnight fee settlement.
-  if (Number(fee) === 0 && rows.some(row => !tigerMarketClock(row.market))) return result;
-  if (Number(fee) === 0 && rows.some(row => timestamp(row.transactionTime, String(row.market)).slice(0, 10) ===
-      timestamp(cutoff, String(row.market)).slice(0, 10))) return result;
   const scale = Math.max(12, fee.split('.')[1]?.length ?? 0);
   const asUnits = (text: string, s: number) => {
     const [whole, fraction = ''] = text.split('.');
@@ -80,7 +75,7 @@ export function tigerCommissions(order: Record<string, unknown>, rows: Record<st
   };
   const qtyScale = Math.max(0, ...rows.map(row => quantity(row).split('.')[1]?.length ?? 0));
   const denominator = asUnits(totalQty, qtyScale);
-  if (denominator <= 0n) throw new Error('Non-positive Tiger filled quantity');
+  if (denominator === 0n) return result;
   let remaining = asUnits(fee, scale);
   const totalFee = remaining;
   // Match the legacy importer's chronological order. The gateway can reverse

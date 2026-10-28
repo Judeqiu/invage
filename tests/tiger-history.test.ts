@@ -57,6 +57,17 @@ describe('Tiger regional history', () => {
     const empty=structuredClone(h);empty.executions=[];empty.orders=[];empty.sync.mode='incremental';empty.sync.fees='unavailable';
     expect(mergeBrokerHistory(h,empty).sync.fees).toBe('available');
   });
+  it.each(['351','-351'])('preserves reported trade amounts even when a calculated amount differs: %s',reported=>{
+    const raw=bundle();raw.history!.transactions[0].filledAmount=reported;
+    const h=mapTigerHistory(raw,[],'tiger')!;
+    expect(h.executions[0].gross_cash).toBe(reported.startsWith('-')?reported.slice(1):`-${reported}`);
+  });
+  it('retains broker-reported option cash even when historical multiplier metadata is absent',()=>{
+    const raw=bundle('US','SKHY');
+    Object.assign(raw.history!.transactions[0],{secType:'OPT',right:'PUT',strike:'135',expiry:'20261120',filledAmount:'744',currency:'USD'});
+    const h=mapTigerHistory(raw,[],'tiger')!;
+    expect(h.executions[0]).toMatchObject({instrument:'option',multiplier:null,gross_cash:'-744'});
+  });
 
   it('retains unfamiliar markets in UTC with native identity and an explicit partial-coverage gap', () => {
     const raw = bundle('FUTURE_MARKET', 'ABC');

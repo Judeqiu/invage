@@ -27,9 +27,9 @@ describe('Futubull OpenD snapshot', () => {
     expect(mapped.skipped).toHaveLength(1);
   });
 
-  it('rejects a snapshot that cannot safely replace cash', () => {
-    expect(() => mapFutubullSnapshot({ ...snapshot, funds: [{ us_cash: -10 }] }, 'futubull-c1'))
-      .toThrow(/negative/);
+  it('preserves negative cash and rejects absent cash data', () => {
+    expect(mapFutubullSnapshot({ ...snapshot, funds: [{ us_cash: -10 }] }, 'futubull-c1').cash)
+      .toEqual([{currency:'USD',amount:-10}]);
     expect(() => mapFutubullSnapshot({ ...snapshot, funds: [{}] }, 'futubull-c1'))
       .toThrow(/no importable/);
   });

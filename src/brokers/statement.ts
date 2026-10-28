@@ -138,10 +138,9 @@ function assertCashSleeve(raw: unknown, i: number): BrokerCashSleeve {
   if (r.accrued_interest != null) {
     if (
       typeof r.accrued_interest !== 'number' ||
-      !Number.isFinite(r.accrued_interest) ||
-      r.accrued_interest < 0
+      !Number.isFinite(r.accrued_interest)
     ) {
-      throw new Error(`Broker statement cash[${i}].accrued_interest must be a finite number ≥ 0 when set.`);
+      throw new Error(`Broker statement cash[${i}].accrued_interest must be a finite number when set.`);
     }
     sleeve.accrued_interest = r.accrued_interest;
   }
