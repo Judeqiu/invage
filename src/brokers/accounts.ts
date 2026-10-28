@@ -17,6 +17,7 @@ import { assertBrokerConnectionMetrics } from '../state/portfolio-state.js';
 import { getCashes, getPortfolio } from '../state/portfolio-state.js';
 import { buildHoldingKey } from '../market/position-value.js';
 import { getBrokerAdapter,parseBrokerSnapshot,deferBrokerHistory,attachFetchedHistory,archiveHistoryAttachments, type BrokerRawPayload, type AdapterTransport } from './adapter.js';
+import { captureFetchedBrokerActivity } from './activity-store.js';
 import { applyBrokerStatement } from './apply-statement.js';
 import { planBrokerHistorySync, assertBrokerHistory, type BrokerHistorySyncPlan } from './history.js';
 import { BROKER_CATALOG, getBrokerConnector, type BrokerConnectorDef } from './catalog.js';
@@ -403,10 +404,12 @@ export function ibkrStatements(raw: Buffer, channel: string, includeHistory = tr
   return out;
 }
 async function fetchStatements(model: BrokerAccountModel, conn: BrokerAccountConnection, connectionId: string, slug: string, transport?: AdapterTransport,
-  onRaw?: (body: Buffer) => void, history?: BrokerHistorySyncPlan): Promise<{ raw: Buffer; statements: BrokerStatement[]; payload:BrokerRawPayload }> {
+  onRaw?: (body: Buffer) => void, history?: BrokerHistorySyncPlan, sourceRef?: string): Promise<{ raw: Buffer; statements: BrokerStatement[]; payload:BrokerRawPayload }> {
   const adapter = getBrokerAdapter(conn.broker_id);
   const raw = await adapter.fetchRaw(combinedCredentials(model, conn), { ...(transport ? { transport } : {}), ...(history ? { history } : {}), accountId:conn.account_id,channel:conn.channel });
   onRaw?.(raw.body);
+  if (conn.account_id && sourceRef) await captureFetchedBrokerActivity(slug,
+    {brokerId:conn.broker_id,channel:conn.channel,accountId:conn.account_id},raw,sourceRef);
   const parser = adapter.usesCsvTables ? loadBrokerParserSpec(slug, conn.broker_id,
     conn.channel === conn.broker_id ? undefined : connectionId) : null;
   let statements: BrokerStatement[];
@@ -527,7 +530,7 @@ async function syncBrokerAccountUnlocked(snapshot: InvestorSnapshot, id: string,
       if (!conn.account_id) throw new Error('Broker account binding is required.');
       if (!requiredComplete(def, credentials)) throw new Error('Required broker fields are incomplete.');
       const history = planBrokerHistorySync(state.broker_history?.[conn.channel], conn.account_id, new Date(), full);
-      const fetched = await fetchStatements(model, conn, id, state.user.id, transport, body => { raw = body; }, history);
+      const fetched = await fetchStatements(model, conn, id, state.user.id, transport, body => { raw = body; }, history, `sync:${syncId}`);
       raw = fetched.raw;
       let statement = fetched.statements.find(s => s.account_id === conn.account_id);
       if (!statement) throw new Error(`Broker statement account mismatch: expected ${conn.account_id}.`);

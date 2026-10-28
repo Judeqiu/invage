@@ -22,7 +22,7 @@ describe('parseBrokerOptionCode', () => {
     });
   });
 
-  it.each([['PATH270319P15000', 15], ['INTC261030P80000', 80],
+  it.each([['PATH270319P15000', 15], ['MBLY260821P8000', 8], ['PATH260417P6000', 6], ['INTC261030P80000', 80],
     ['BRKA270319C1234567', 1234.567]])('parses variable-width scaled strikes (%s)', (code, strike) => {
     expect(parseBrokerOptionCode(code)).toMatchObject({ strike });
   });

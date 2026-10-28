@@ -17,6 +17,17 @@ const parent=()=>({order_id:'parent',code:'US.AVGO',exchange:'US',side:'SELL',or
 function bundle():MooMooRawBundle{return {schema:'invage.moomoo.raw.v1',acc_id:'A',fetched_at:'2026-10-14T00:00:00Z',authorized:{s:'ok'},funds:{s:'ok',d:{us_cash:'1000'}},positions:{s:'ok',d:[]},fills_history:{start,end,rows:[fill('close',closing,'BUY_BACK','11.35'),fill('open',opening,'SELL_SHORT','19.50')]},orders_history:{start,end,rows:[parent()]},orders_details:[parent()],history_mode:'full'};}
 const credentials={app_key:'test',private_key:readFileSync('tests/fixtures/moomoo/ed25519-private.pem','utf8'),sign_alg:'Ed25519' as const};
 describe('Moomoo historical data',()=>{
+  it('retains low-strike options as options, using verified size or unknown cash',()=>{
+    const raw=bundle();
+    raw.fills_history!.rows=[{...fill('low','US.MBLY260821P8000','SELL_SHORT','0.52'),qty:'20'}];
+    raw.orders_history!.rows=[];raw.orders_details=[];
+    let statement=mapMooMooBundleToStatement(raw,'moomoo-A');
+    expect(statement.history!.executions[0]).toMatchObject({instrument:'option',option:{right:'put',strike:'8'},multiplier:null,gross_cash:null});
+    raw.option_basicinfo=[{code:'US.MBLY260821P8000',stock_type:'DRVT',contract_size:100}];
+    statement=mapMooMooBundleToStatement(raw,'moomoo-A');
+    expect(statement.history!.executions[0]).toMatchObject({instrument:'option',multiplier:'100',gross_cash:'1040.00'});
+    expect(statement.option_executions![0].gross_premium).toBe('1040.00');
+  });
   it('recovers David’s roll from exact parent leg metadata when expired quotes are absent',()=>{
     const raw=bundle(),statement=mapMooMooBundleToStatement(raw,'moomoo-A');
     expect(statement.history?.sync).toMatchObject({status:'complete',full_history_synced:true,fees:'unavailable'});

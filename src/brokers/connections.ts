@@ -1,4 +1,6 @@
 import { isDeepStrictEqual } from 'node:util';
+import { randomUUID } from 'node:crypto';
+import { captureFetchedBrokerActivity } from './activity-store.js';
 import { withBrokerSyncLease } from './sync-lease.js';
 import { isInvestorRevisionConflict } from './state-conflicts.js';
 import { beginBrokerSync, finishBrokerSync, brokerSyncBinding, queueFullBrokerSync } from './sync-retries.js';
@@ -538,11 +540,16 @@ async function syncBrokerConnectionUnlocked(
     const adapter = getBrokerAdapter(id);
     let raw: BrokerRawPayload;
     let statement: BrokerStatement;
+    let capturedAccountId: string | undefined;
     try {
       const previousHistory = state.broker_history?.[def.channel];
       const accountId = conn.last_sync?.account_id ?? conn.credentials.acc_id ?? conn.credentials.account ?? conn.credentials.account_id ?? previousHistory?.account_id ?? '';
       raw = await adapter.fetchRaw(conn.credentials, { ...opts, accountId:accountId||undefined,channel:def.channel, history: planBrokerHistorySync(previousHistory, accountId, new Date(), intent.full) });
       try {
+        if (accountId) {
+          await captureFetchedBrokerActivity(slug,{brokerId:id,channel:def.channel,accountId},raw,`sync:${randomUUID()}`);
+          capturedAccountId = accountId;
+        }
         const spec = adapter.usesCsvTables ? loadBrokerParserSpec(slug, id) : null;
         // A saved parser is an explicit user configuration, not a recovery path
         // for failed database writes. Recon never loads specs.
@@ -562,6 +569,9 @@ async function syncBrokerConnectionUnlocked(
       throw error;
     }
     statement=attachFetchedHistory(raw,statement);
+    // First-time legacy connections may only learn the account from the response.
+    if (capturedAccountId && capturedAccountId !== statement.account_id) throw new Error('Broker statement account differs from the selected connection.');
+    if (!capturedAccountId) await captureFetchedBrokerActivity(slug,{brokerId:id,channel:def.channel,accountId:statement.account_id},raw,`legacy-sync:${at}`);
     const archivePath = archiveBrokerSuccess(slug, id, raw, statement.as_of);
     try { archiveHistoryAttachments(slug,broker.channel,raw); } catch { raw.historyDeferred={reason:'Historical evidence archive unavailable; retry history before advancing its checkpoint.'};statement=deferBrokerHistory(statement); }
     // Portfolio, cash, metrics and success status use the same revision-checked

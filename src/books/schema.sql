@@ -206,3 +206,60 @@ CREATE POLICY audit_events_tenant ON audit_events
 -- Run migrations as the dedicated owner of this books database. Provision its
 -- login and SCRAM credential outside this schema; never create a shared role
 -- with a built-in password from application migration SQL.
+
+-- Lossless broker evidence. Observations are separate from financial postings:
+-- repeated reports and different versions of a broker row must never be summed.
+CREATE TABLE IF NOT EXISTS broker_source_documents (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  household_id uuid NOT NULL REFERENCES households(id),
+  broker_id text NOT NULL CHECK (broker_id <> ''),
+  channel text NOT NULL CHECK (channel <> ''),
+  account_id text NOT NULL CHECK (account_id <> ''),
+  sha256 text NOT NULL CHECK (sha256 = encode(digest(body, 'sha256'), 'hex')),
+  extractor_version integer NOT NULL CHECK (extractor_version > 0),
+  kind text NOT NULL CHECK (kind IN ('xml','json','text')),
+  body bytea NOT NULL,
+  status text NOT NULL CHECK (status IN ('indexed','unverified','account_mismatch','unparsed')),
+  gaps jsonb NOT NULL CHECK (jsonb_typeof(gaps) = 'array'),
+  captured_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (household_id,id),
+  UNIQUE (household_id,broker_id,channel,account_id,sha256,extractor_version)
+);
+CREATE TABLE IF NOT EXISTS broker_source_records (
+  household_id uuid NOT NULL,
+  document_id uuid NOT NULL,
+  path text NOT NULL,
+  parent_path text,
+  source_id text,
+  category text NOT NULL CHECK (category IN ('execution','order','lifecycle','cash_activity','position','cash_snapshot','fee','other')),
+  instrument text,
+  data jsonb NOT NULL CHECK (jsonb_typeof(data) = 'object'),
+  PRIMARY KEY (household_id,document_id,path),
+  FOREIGN KEY (household_id,document_id) REFERENCES broker_source_documents(household_id,id)
+);
+CREATE INDEX IF NOT EXISTS broker_source_records_lookup ON broker_source_records(household_id,category,source_id);
+CREATE TABLE IF NOT EXISTS broker_source_receipts (
+  household_id uuid NOT NULL,
+  document_id uuid NOT NULL,
+  source_ref text NOT NULL CHECK (source_ref <> ''),
+  captured_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (household_id,document_id,source_ref),
+  FOREIGN KEY (household_id,document_id) REFERENCES broker_source_documents(household_id,id)
+);
+DO $$
+DECLARE t text;
+BEGIN
+  FOREACH t IN ARRAY ARRAY['broker_source_documents','broker_source_records','broker_source_receipts'] LOOP
+    EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY',t);
+    EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY',t);
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname=current_schema() AND tablename=t AND policyname=t||'_tenant') THEN
+      EXECUTE format('CREATE POLICY %I ON %I FOR ALL USING (household_id::text = current_setting(''app.household_id'',true)) WITH CHECK (household_id::text = current_setting(''app.household_id'',true))',t||'_tenant',t);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid=t::regclass AND tgname=t||'_immutable') THEN
+      EXECUTE format('CREATE TRIGGER %I BEFORE UPDATE OR DELETE ON %I FOR EACH ROW EXECUTE FUNCTION books_reject_journal_mutation()',t||'_immutable',t);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid=t::regclass AND tgname=t||'_no_truncate') THEN
+      EXECUTE format('CREATE TRIGGER %I BEFORE TRUNCATE ON %I FOR EACH STATEMENT EXECUTE FUNCTION books_reject_journal_mutation()',t||'_no_truncate',t);
+    END IF;
+  END LOOP;
+END $$;

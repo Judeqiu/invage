@@ -21,7 +21,7 @@ export const futubullAdapter: BrokerConnectorAdapter = {
     try { parsed = JSON.parse(raw.body.toString('utf8')); }
     catch { throw new BrokerParseError('Futubull raw body is not JSON.'); }
     if ((parsed as { schema?: string })?.schema === 'invage.futubull.cloud.raw.v1') {
-      return cloudAdapter.parseToStatement(raw, channel, includeHistory = true);
+      return cloudAdapter.parseToStatement(raw, channel, includeHistory);
     }
     return mapFutubullSnapshot(parsed, channel, includeHistory);
   },

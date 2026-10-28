@@ -9,6 +9,8 @@ const {loadInvestor,saveInvestor}=await import('../src/state/investor-store.js')
 const {addBrokerSource,addBrokerAccount,readBrokerAccountModel,syncBrokerAccount}=await import('../src/brokers/accounts.js');
 const {getCashes}=await import('../src/state/portfolio-state.js');
 const {adapters}=await import('../src/brokers/adapter.js');
+const {withHouseholdTx}=await import('../src/books/db.js');
+const activityStore=await import('../src/brokers/activity-store.js');
 const user=randomUUID();
 it('full sync persists historical data, latest sync retains gaps without backfilling, and explicit full sync can enrich it',async()=>{
   await migrateBooks();
@@ -30,6 +32,12 @@ it('full sync persists historical data, latest sync retains gaps without backfil
   });
   try{
     await syncBrokerAccount(await loadInvestor(user),id,undefined,'manual',true);
+    await withHouseholdTx(user,async client=>{
+      const sources=await client.query('SELECT status,body FROM broker_source_documents WHERE household_id=$1',[user]);
+      expect(sources.rows).toHaveLength(1);expect(sources.rows[0].status).toBe('indexed');
+      expect(JSON.parse(sources.rows[0].body.toString()).fills_history.rows[0].deal_id).toBe('e');
+      expect((await client.query('SELECT source_id FROM broker_source_records WHERE household_id=$1 AND category=$2',[user,'execution'])).rows).toEqual([{source_id:'e'}]);
+    });
     expect(fetch.mock.calls[0][1]!.history!.mode).toBe('full');
     snap=await loadInvestor(user);expect(snap.state.broker_history![channel].executions[0].gross_cash).toBeNull();expect(snap.state.option_executions).toEqual([]);
     expect(snap.state.broker_history![channel].sync).toMatchObject({status:'partial',full_history_synced:false});
@@ -47,5 +55,13 @@ it('full sync persists historical data, latest sync retains gaps without backfil
     await syncBrokerAccount(snap,id);expect(fetch.mock.calls[3][1]!.history!.mode).toBe('incremental');
     snap=await loadInvestor(user);expect(snap.state.broker_history![channel].executions).toHaveLength(1);expect(snap.state.option_executions).toHaveLength(1);
     expect(getCashes(snap.state)).toEqual(expect.arrayContaining([expect.objectContaining({amount:1000,channel})]));
+    const beforeFailure=structuredClone({cash:snap.state.cash,portfolio:snap.state.portfolio,history:snap.state.broker_history,executions:snap.state.option_executions});
+    const capture=vi.spyOn(activityStore,'captureFetchedBrokerActivity').mockRejectedValueOnce(new Error('Injected evidence database outage'));
+    try {
+      await expect(syncBrokerAccount(snap,id)).rejects.toThrow(/evidence database outage/);
+      snap=await loadInvestor(user);
+      expect({cash:snap.state.cash,portfolio:snap.state.portfolio,history:snap.state.broker_history,executions:snap.state.option_executions}).toEqual(beforeFailure);
+      expect(readBrokerAccountModel(snap.state).connections[id].last_sync!.ok).toBe(false);
+    } finally { capture.mockRestore(); }
   }finally{fetch.mockRestore();}
 });
