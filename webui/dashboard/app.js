@@ -1343,8 +1343,8 @@ function renderOverview(view) {
 
 function netRiskCapitalCard(view) {
   const risk = window.NetRiskCapital.calculate(view);
-  return metricCardHtml('Net risk capital', risk.unbounded ? 'Unbounded' : risk.value == null ? '—' : fmtPrettyMoney(risk.value, reportingCcyCode(view), 0),
-    'Estimated maximum loss across open options strategies', risk.reason);
+  return metricCardHtml('Net risk capital', risk.value == null ? '—' : fmtPrettyMoney(risk.value, reportingCcyCode(view), 0),
+    risk.value == null ? risk.reason : 'Estimated maximum loss across open options strategies', risk.reason);
 }
 
 function explanationScope(button) {
