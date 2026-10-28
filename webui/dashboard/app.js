@@ -175,7 +175,10 @@ function applySelection(value) {
   selectionPreference(selectedChannel);
   // Clear prior results immediately; late responses are rejected by request IDs.
   optionHistoryRequest++; rollRequest++;
-  optionHistory.episodes = []; rollData.groups = []; el.optionHistoryDetail.innerHTML = '';
+  optionHistory.episodes = [];
+  if (optionHistory.trades) optionHistory.trades = [];
+  optionHistory.next_offset = null;
+  rollData.groups = []; el.optionHistoryDetail.innerHTML = '';
   renderDate(selectedDate, selectedChannel);
   if (optionTab === 'history') followHistoryBroker(selectedChannel);
 }
@@ -398,7 +401,7 @@ function setOptionTab(tab) {
   if (isWheelDesk) {
     document.body.dataset.optionView = tab;
     const title = document.getElementById('optionWorkspaceTitle');
-    if (title) title.textContent = tab === 'open' ? 'Open options positions · broker view' : tab === 'timeline' ? 'Options timeline' : tab === 'history' ? 'Option position history' : 'Option rolls';
+    if (title) title.textContent = tab === 'open' ? 'Open options positions · broker view' : tab === 'timeline' ? 'Options timeline' : tab === 'history' ? 'Option trade history' : 'Option rolls';
   }
   document.getElementById('optionTimelineTab').classList.toggle('on', tab === 'timeline');
   document.getElementById('optionTimelineTab').setAttribute('aria-pressed', String(tab === 'timeline'));
@@ -483,6 +486,18 @@ function renderOptionHistory() {
   const search = el.historySearch.value.trim().toUpperCase();
   const from = el.historyFrom.value;
   const to = el.historyTo.value;
+  if (optionHistory.trades) {
+    const rows = optionHistory.trades;
+    el.optionHistoryTable.innerHTML = rows.length ? `<div class="metric-card table-card"><div class="table-scroll"><table class="report history-table">
+      <thead><tr><th>Contract</th><th>Broker / account</th><th>Opened</th><th>Last activity</th><th>Status</th><th>Realised P&amp;L</th><th></th></tr></thead>
+      <tbody>${rows.map(row => `<tr><td>${escapeHtml(tradeHistoryLabel(row))}</td><td>${escapeHtml(row.channel)} · ${escapeHtml(row.accountId)}</td>
+        <td>${row.entryDate ? optionDateLabel(row.entryDate) : '—'}</td><td>${row.lastTrade || row.brokerDate ? optionDateLabel(row.lastTrade || row.brokerDate) : '—'}</td>
+        <td>${escapeHtml(row.status)}</td><td>${row.realizedPnl == null ? 'Unavailable' : `${fmtPrettyMoney(Number(row.realizedPnl), row.currency)} · ${escapeHtml(row.feeBasis === 'gross' ? 'Before fees' : row.feeBasis === 'broker' ? 'Broker reported' : 'After reported fees')}`}</td>
+        <td><button type="button" class="chip-btn" data-history-id="${escapeHtml(row.id)}">Details</button></td></tr>`).join('')}</tbody></table></div></div>`
+      : '<div class="metric-card empty">No recorded trades or position observations match these filters.</div>';
+    el.historyMore.classList.toggle('hidden', optionHistory.next_offset == null);
+    return;
+  }
   const rows = optionHistory.episodes.filter(row =>
     selectionMatches(row.channel, broker) && (!right || row.contract.right === right) &&
     (status === 'all' || status === 'historical' && row.first_seen_absent || row.status === status) &&
@@ -506,7 +521,28 @@ function renderOptionHistory() {
   el.historyMore.classList.toggle('hidden', optionHistory.next_offset == null);
 }
 
+function tradeHistoryLabel(row) {
+  return `${row.underlying} ${row.side.toUpperCase()} ${row.right.toUpperCase()} ${row.strike} ${optionDateLabel(row.expiry)}`;
+}
+
+function showTradeHistoryDetail(row) {
+  const fills = [...row.executions.map(e => ({ date:e.executed_at, side:e.side, effect:e.effect, quantity:e.contracts,
+    price:null, multiplier:e.multiplier, cash:e.gross_premium, fees:e.commission, id:e.execution_id, symbol:e.contract_id, currency:e.currency })),
+    ...(row.sourceExecutions || []).map(e => ({ date:e.executed_at, side:e.side, effect:e.effect, quantity:e.quantity,
+      price:e.price, multiplier:e.multiplier, cash:e.gross_cash, fees:e.fee_cash, id:e.id, symbol:e.native_symbol, currency:e.currency }))];
+  const amount = value => value == null ? 'Unknown' : escapeHtml(value);
+  el.optionHistoryDetail.innerHTML = `<div class="history-detail"><h3>${escapeHtml(tradeHistoryLabel(row))}</h3>
+    <p>${escapeHtml(row.status)} · ${escapeHtml(row.channel)} · account ${escapeHtml(row.accountId)}</p>
+    ${row.notes?.length ? `<ul>${row.notes.map(note => `<li>${escapeHtml(note)}</li>`).join('')}</ul>` : ''}
+    <h4>Broker fills · ${fills.length}</h4>${fills.length ? `<div class="table-scroll"><table class="report"><thead><tr><th>Executed · broker clock</th><th>Action</th><th>Contracts</th><th>Unit price</th><th>Multiplier</th><th>Gross cash</th><th>Fees / rebate</th><th>Broker execution ID</th><th>Broker contract ID</th></tr></thead><tbody>${fills.map(e => `<tr><td>${escapeHtml(e.date)}</td><td>${escapeHtml(e.side + ' to ' + e.effect)}</td><td>${amount(e.quantity)}</td><td>${amount(e.price)}</td><td>${amount(e.multiplier)}</td><td>${amount(e.cash)} ${escapeHtml(e.currency || '')}</td><td>${amount(e.fees)}</td><td>${escapeHtml(e.id)}</td><td>${escapeHtml(e.symbol)}</td></tr>`).join('')}</tbody></table></div>` : '<p>No imported fills are available for this record.</p>'}
+    ${row.events?.length ? `<h4>Broker lifecycle events</h4><ul>${row.events.map(e => `<li>${escapeHtml(e.date)} · ${escapeHtml(e.kind)} · ${escapeHtml(e.contracts)} contracts</li>`).join('')}</ul>` : ''}
+    <h4>Supporting position observations</h4>${row.positionEvidence?.length ? `<p>These observations concern the same broker account and contract; they do not establish its entry date or explain every fill.</p><ul>${row.positionEvidence.flatMap(e => e.observations.map(o => `<li>${escapeHtml(o.as_of)} · ${escapeHtml(String(o.units))} contracts · ${escapeHtml(o.source)}</li>`)).join('')}</ul>` : '<p>No saved position observations for this contract. Imported fills remain available independently.</p>'}
+    </div>`;
+}
+
 function showOptionHistoryDetail(id) {
+  const trade = optionHistory.trades?.find(row => row.id === id);
+  if (trade) { showTradeHistoryDetail(trade); return; }
   const row = optionHistory.episodes.find(item => item.id === id);
   if (!row) return;
   const checkpoints = (payload?.model?.history || []).filter(snapshot =>
@@ -533,7 +569,7 @@ async function loadOptionHistory(more = false, signal, channelOverride) {
   const offset = more ? optionHistory.next_offset : 0;
   if (more && offset == null) return;
   const request = ++optionHistoryRequest;
-  const params = new URLSearchParams({ offset: String(offset), limit: '100' });
+  const params = new URLSearchParams({ view: 'trades', offset: String(offset), limit: '100' });
   const channel = scopedHistorySelection(channelOverride ?? el.historyBroker.value);
   if (channel) params.set('channel', channel);
   if (el.historyRight.value) params.set('right', el.historyRight.value);
@@ -546,7 +582,9 @@ async function loadOptionHistory(more = false, signal, channelOverride) {
     const body = await res.json();
     if (!res.ok) throw new Error(body.message || `HTTP ${res.status}`);
     if (request !== optionHistoryRequest) return;
-    optionHistory = { ...body, episodes: more ? [...optionHistory.episodes, ...body.episodes] : body.episodes };
+    optionHistory = { ...body, episodes: more ? [...(optionHistory.episodes || []), ...(body.episodes || [])] : body.episodes || [],
+      ...(body.trades ? { trades: more ? [...(optionHistory.trades || []), ...body.trades] : body.trades } : {}) };
+    el.optionHistoryDetail.innerHTML = '';
     optionHistoryError = '';
     const selected = scopedHistorySelection(channelOverride ?? el.historyBroker.value);
     el.historyBroker.innerHTML = historySelectionOptions(body.connections);

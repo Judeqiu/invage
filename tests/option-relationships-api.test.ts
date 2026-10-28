@@ -199,3 +199,30 @@ it('materializes full retained history beyond the interactive archive budget whi
   expect(result).toEqual(optionRelationshipsForState(state, {}, { background: true }));
   expect(() => optionRelationshipsForState(state)).toThrow('relationship scan limit');
 });
+
+it('serves Trades history in Section 03 independently of observations, including incomplete broker fills', async () => {
+  const channel = Object.values(readBrokerAccountModel(state).connections)[0].channel;
+  const { optionFill } = await import('./helpers/trades-fixture.js');
+  state.option_executions = [optionFill({channel,account_id:'A',contracts:'1'}),
+    optionFill({channel,account_id:'A',execution_id:'close',executed_at:'2026-10-01T10:00:00',contracts:'1',side:'buy',effect:'close',gross_premium:'-50'})];
+  state.broker_history = { [channel]: { broker_id:'ibkr',channel,account_id:'A',orders:[],executions:[{
+    broker_id:'ibkr',channel,account_id:'A',id:'old-fill',order_id:null,native_symbol:'OLD-PUT',symbol:'AMD',instrument:'option',side:'buy',effect:'close',
+    executed_at:'2026-07-18T10:00:00',clock:'America/New_York',currency:'USD',quantity:'2',price:'0',multiplier:null,gross_cash:null,fee_cash:null,
+    option:{right:'put',expiry:'2026-07-17',strike:'100'} }],
+    sync:{version:1,mode:'full',from:'2000-01-01T00:00:00Z',through:'2026-10-28T00:00:00Z',status:'partial',full_history_synced:false,fees:'unavailable',gaps:[]} } };
+  await persistPortfolioFixture(state);
+  expect((await request(app()).get('/option-history')).body.episodes).toEqual([]);
+  const trades = (await request(app()).get('/trades-v2/history')).body.rows;
+  const first = await request(app()).get('/option-history?view=trades&status=historical&limit=1');
+  expect(first.status).toBe(200); expect(first.body.total).toBe(2);expect(first.body.next_offset).toBe(1);
+  const second = await request(app()).get('/option-history?view=trades&status=historical&limit=1&offset=1');
+  expect(second.body.next_offset).toBeNull();
+  expect([first.body.trades[0].id,second.body.trades[0].id]).toEqual(trades.map((r:any)=>r.id));
+  const filtered = await request(app()).get(`/option-history?view=trades&status=incomplete&channel=${channel}&right=put&q=AMD&from=2026-07-01&to=2026-07-31`);
+  expect(filtered.body.total).toBe(1);
+  expect(filtered.body.trades[0]).toMatchObject({status:'Incomplete history',realizedPnl:null,positionEvidence:[],sourceExecutions:[{id:'old-fill',price:'0',multiplier:null}]});
+  expect((await request(app()).get('/option-history?view=trades&channel=other')).body.total).toBe(0);
+  expect((await request(app()).get('/option-history?view=trades&status=closed_by_fills')).body.total).toBe(1);
+  expect((await request(app()).get('/option-history?view=invalid')).status).toBe(400);
+  expect((await request(app(false)).get('/option-history?view=trades')).status).toBe(401);
+});

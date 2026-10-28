@@ -19,6 +19,7 @@ import { loadInvestor } from '../state/investor-store.js';
 import { validDate } from '../brokers/option-executions.js';
 import { readBrokerAccountModel } from '../brokers/accounts.js';
 import { latestSuccessfulBrokerSyncRun } from '../brokers/sync-history.js';
+import { selectDashboardTradeHistory } from './dashboard-trade-history.js';
 import { optionHistoryForState } from './option-history-data.js';
 import { isBooksEnabled } from '../books/db.js';
 import { loadBookPage } from './book-data.js';
@@ -306,9 +307,11 @@ export function createDashboardApiRouter(): Router {
       const asOf = typeof req.query.as_of === 'string' ? req.query.as_of : '';
       const q = typeof req.query.q === 'string' ? req.query.q.trim().toUpperCase().slice(0, 100) : '';
       const includeExecutions = req.query.include_executions === 'true';
+      const tradeView = req.query.view === 'trades';
       const matchesScope = (row: { channel: string }) => matchesDashboardSelection(projection, channel, row.channel);
       if (Object.keys(req.query).some(key => key.startsWith('channel[')) || req.query.channel !== undefined && typeof req.query.channel !== 'string' || right && right !== 'put' && right !== 'call' ||
-          status && !['historical', 'open', 'unverified', 'no_longer_observed', 'closed_by_fills',
+          req.query.view !== undefined && req.query.view !== 'trades' ||
+          status && !['incomplete', 'historical', 'open', 'unverified', 'no_longer_observed', 'closed_by_fills',
             'expired', 'assigned', 'exercised', 'cash_settled', 'mixed_outcomes',
             'partially_explained', 'conflicting_evidence'].includes(status) ||
           from && !validDate(from) || to && !validDate(to) ||
@@ -345,6 +348,21 @@ export function createDashboardApiRouter(): Router {
           last_attempt: conn.last_sync ?? null,
         };
       });
+      if (tradeView) {
+        const trades = selectDashboardTradeHistory(projection.tradeHistory.rows,
+          { right, status, from, to, q, asOf }, matchesScope);
+        const page = trades.slice(offset, offset + limit).map(row => ({ ...row,
+          positionEvidence: episodes.filter(e => e.channel === row.channel && e.account_id === row.accountId &&
+            e.contract.underlying === row.underlying && e.contract.right === row.right &&
+            e.contract.expiry === row.expiry && Number(e.contract.strike) === Number(row.strike) &&
+            (row.side === 'unknown' || e.contract.side === row.side)),
+        }));
+        res.json({ trades: page, total: trades.length, calculatedAt: projection.calculatedAt,
+          next_offset: offset + limit < trades.length ? offset + limit : null, connections,
+          history_started: projection.tradeHistory.available || observations.some(matchesScope),
+          gaps: projection.tradeHistory.gaps.filter(g => matchesScope(g as {channel:string})) });
+        return;
+      }
       res.json({ episodes: matches.slice(offset, offset + limit), total: matches.length,
         ...(includeExecutions ? { executions: executions.slice(offset, offset + limit), execution_total: executions.length } : {}),
         next_offset: offset + limit < Math.max(matches.length, executions.length) ? offset + limit : null,
