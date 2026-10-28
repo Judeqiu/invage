@@ -3,7 +3,7 @@
  * Mounted by DomainExtension.webUi at /api/domain/invage (auth: user).
  */
 
-import { createExperienceSettingsRouter, riskPageEnabled, dailyChangesEnabled } from './experience-settings.js';
+import { createExperienceSettingsRouter, riskPageEnabled, dailyChangesEnabled, brokerActivityEnabled } from './experience-settings.js';
 import { buildAccountRisk } from './account-risk-data.js';
 import { readProductProfile } from '../agents/roster.js';
 import { productDisplayName } from '../product-name.js';
@@ -62,7 +62,7 @@ export function createDashboardApiRouter(): Router {
     }
     try {
       const snapshot = await loadInvestor(await targetUserId(req,user));
-      res.json(key ? await loadBrokerActivityDetails(snapshot.state.user.id,key) : await loadBrokerActivityReport(snapshot.state));
+      res.json(key ? await loadBrokerActivityDetails(snapshot.state.user.id,key) : await loadBrokerActivityReport(snapshot.state, {includeActivity:req.query.activity !== '0'}));
     } catch (error) {
       console.error('Broker activity failed:',error);
       res.status(503).json({message:'Broker source activity is unavailable. Retry to reload it.'});
@@ -130,7 +130,7 @@ export function createDashboardApiRouter(): Router {
   router.use('/option-risk', createOptionRiskRouter());
   function dashboardBody(snapshot: Awaited<ReturnType<typeof loadInvestor>>, saved: PortfolioProjection = requirePortfolioProjection(snapshot.state)) {
     return { ...saved.dashboard, brokerAggregates: saved.brokers, productProfile: readProductProfile(), productName: productDisplayName(), displayName: snapshot.state.profile.display_name,
-      dashboardConfig: { ...readDashboardConfig(), showOptionRiskModelView: riskEnabled(), showDailyChanges: dailyChangesEnabled(snapshot.state) },
+      dashboardConfig: { ...readDashboardConfig(), showOptionRiskModelView: riskEnabled(), showDailyChanges: dailyChangesEnabled(snapshot.state), showBrokerActivity: brokerActivityEnabled(snapshot.state) },
       analysisContextId: riskEnabled() ? analysisContext(snapshot) : null };
   }
   router.get('/dashboard-cache', async (req: Request, res: Response) => {

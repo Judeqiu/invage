@@ -129,3 +129,11 @@ calls do not contribute share delivery. The report does not add an all-asset pro
 calculation or fetch additional broker endpoints. This read model changes no saved
 broker evidence, holdings, books or existing snapshot schema. Projection version 6
 rebuilds the saved chart model to include signed position basis buckets.
+
+Broker Activity is an optional per-user display setting in Settings → Your
+experience. `experience_settings.show_broker_activity` defaults to false when
+absent; the dashboard receives it as `dashboardConfig.showBrokerActivity` on each
+response, including cached reports. Disabling hides the activity section and
+loads only source-status metadata (`?activity=0`), without retrieving activity
+rows. Sync, evidence capture, freshness status and position source details remain
+available. The preference is presentation only, not a new source-data access rule.

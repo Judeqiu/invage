@@ -70,6 +70,8 @@ it('serves source activity only to the authenticated user and rejects malformed 
  const response=await request(app(own.user.id)).get('/broker-activity');
  expect(response.status).toBe(200);expect(response.headers['cache-control']).toBe('private, no-store');
  const row=response.body.activities[0];expect(row.sourceId).toBe('private');
+ const summary=await request(app(own.user.id)).get('/broker-activity?activity=0').expect(200);
+ expect(summary.body.activities).toEqual([]);expect(summary.body.capture).toHaveLength(1);
  expect((await request(app(other.user.id)).get('/broker-activity')).body.activities).toEqual([]);
  expect((await request(app(other.user.id)).get('/broker-activity').query({key:row.key})).body.observations).toEqual([]);
 });

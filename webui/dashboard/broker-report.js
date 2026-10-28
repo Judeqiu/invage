@@ -6,7 +6,8 @@
   if (!host || !status) return;
   const api = '/api/domain/invage';
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  let report, selection = 'merged', reportDate = 'live';
+  let report, selection = 'merged', reportDate = 'live', enabled = false, loadedActivity = false;
+  host.hidden = true;
   const filters = {search:'',category:'',instrument:'',account:''};
   let request;
   const matches = row => !selection || selection === 'merged' || selection === 'all' ||
@@ -33,6 +34,8 @@
       <details><summary>History: ${a.history ? `${esc(a.history.status)} · ${esc(a.history.from)} through ${esc(a.history.through)}` : 'Coverage not established'}</summary>
       ${(a.history?.gaps || []).map(g => `<p class="broker-gap">${esc(g.reason)}</p>`).join('')}
       ${(a.lastSync?.not_imported || []).map(g => `<p class="broker-gap">${esc(g)}</p>`).join('')}</details></article>`).join('');
+    if (!enabled) return;
+    if (!loadedActivity) {host.innerHTML='<p>Loading captured broker activity…</p>';return;}
     const rows = report.activities.filter(matches);
     for (const name of ['category','instrument','account']) {
       if (filters[name] && !rows.some(r => name === 'instrument' ? r.instruments.includes(filters[name]) : (name === 'account' ? r.accountId : r.category) === filters[name])) filters[name] = '';
@@ -53,7 +56,8 @@
   async function reload() {
     if (request) return request;
     status.setAttribute('aria-busy','true');
-    request = get('/broker-activity').then(value => {report=value;render();}).catch(error => {
+    const includeActivity = enabled;
+    request = get('/broker-activity' + (includeActivity ? '' : '?activity=0')).then(value => {report=value;loadedActivity=includeActivity;render();}).catch(error => {
       status.innerHTML = `<p role="alert">${esc(error.message)}${report ? ' Previously loaded source data remains below.' : ''}</p><button type="button" class="chip-btn" data-activity-reload>Retry</button>`;
     }).finally(()=>{request=null;status.removeAttribute('aria-busy');});
     return request;
@@ -91,7 +95,16 @@
     filters.search=event.target.value; render();
     const input=host.querySelector('[data-activity-search]');input.focus();input.setSelectionRange(position,position);
   });
-  window.BrokerReport = {setScope(value,date){selection=value;reportDate=date;render();},reload};
+  function configure(value) {
+    const changed = enabled !== value;
+    enabled = value === true; host.hidden = !enabled;
+    render();
+    if (changed && enabled && !loadedActivity) {
+      if (request) void request.then(()=>{if (enabled && !loadedActivity) void reload();});
+      else void reload();
+    }
+  }
+  window.BrokerReport = {setScope(value,date){selection=value;reportDate=date;render();},configure,reload};
   window.addEventListener('message',event=>{if(event.origin===location.origin && event.data?.type==='utarus:header-sync:activity') reload();});
   reload();
 })();

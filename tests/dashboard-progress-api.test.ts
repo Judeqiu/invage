@@ -114,3 +114,12 @@ it('reads personal daily-change preferences without rebuilding saved calculation
   expect((await request(app()).get('/dashboard?progress=1')).text).toContain('"showDailyChanges":true');
   expect(mocks.calculate).not.toHaveBeenCalled();
 });
+
+it('reads personal Broker Activity visibility on cached and refreshed dashboards without rebuilding calculations',async()=>{
+ await persistPortfolioFixture(state);
+ for(const path of ['/dashboard','/dashboard-cache'])expect((await request(app()).get(path)).body.dashboardConfig.showBrokerActivity).toBe(false);
+ state.experience_settings={show_broker_activity:true};
+ for(const path of ['/dashboard','/dashboard-cache'])expect((await request(app()).get(path)).body.dashboardConfig.showBrokerActivity).toBe(true);
+ expect((await request(app()).get('/dashboard?progress=1')).text).toContain('"showBrokerActivity":true');
+ expect(mocks.calculate).not.toHaveBeenCalled();
+});

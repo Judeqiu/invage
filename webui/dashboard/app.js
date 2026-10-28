@@ -133,6 +133,7 @@ function activateSelection() {
     dashboardConfig: portfolioPayload.dashboardConfig, analysisContextId: portfolioPayload.analysisContextId,
     productProfile: portfolioPayload.productProfile, productName: portfolioPayload.productName,
     displayName: portfolioPayload.displayName } : portfolioPayload;
+  window.BrokerReport?.configure(payload?.dashboardConfig?.showBrokerActivity === true);
   if (broker) selectedDate = 'live';
 }
 function selectionMatches(channel, key) {
@@ -2760,6 +2761,7 @@ function initDashboard(preserveSelection = false) {
 }
 
 function renderEmpty(body) {
+  window.BrokerReport?.configure(body?.dashboardConfig?.showBrokerActivity === true);
   el.navValue?.closest('.metric-card')?.querySelector('.daily-aggregate-changes')?.remove();
   window.OptionRiskView?.update({ payload: body, hasOptions: false, channel: selectedChannel, date: selectedDate, isLive: true });
   el.subtitle.textContent = `${body.displayName || body.slug} · empty portfolio`;

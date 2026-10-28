@@ -70,13 +70,14 @@ export function reportAccounts(state: InvestorState) {
   }));
 }
 
-export async function loadBrokerActivityReport(state: InvestorState) {
+export async function loadBrokerActivityReport(state: InvestorState, options: {includeActivity?: boolean} = {}) {
   const accounts = reportAccounts(state);
   if (!isBooksEnabled()) return {available:false,accounts,activities:[],capture:[],message:'Broker source capture is not configured.'};
   return withActivityRead(state.user.id, async client => {
     const capture = (await client.query(`SELECT broker_id,channel,account_id,status,count(*)::int AS documents,
       jsonb_agg(DISTINCT gaps) AS gaps FROM broker_source_documents WHERE household_id=$1::uuid
       GROUP BY broker_id,channel,account_id,status ORDER BY broker_id,channel,account_id,status`,[state.user.id])).rows;
+    if (options.includeActivity === false) return {available:true,accounts,capture,activities:[]};
     // Keep all raw versions available in details; transfer only source display
     // fields for the list. There is no record-count cutoff or lifetime-total sum.
     const rows = (await client.query(`SELECT d.broker_id,d.channel,d.account_id,r.category,r.source_id,
