@@ -39,3 +39,11 @@ it('summarizes each month by currency, with weighted returns and the last chrono
   expect(model.monthTotals([row({id:'missing',premium:null})],new Map())[0]).toMatchObject({missing:1,returnsPct:null,netCash:null});
   expect(model.monthTotals([row({entryDate:null})],balances)[0].netCash).toBeNull();
 });
+
+it('filters unmatched closing fills by their reported trade date and leaves cash unknown', () => {
+  const r = row({entryDate:null,lastTrade:'2026-07-18',status:'Incomplete history',multiplier:null,premium:null,netCash:null});
+  const filters = {channel:'all',ticker:'all',right:'all',currency:'all',strategy:'all',status:'Needs review',year:'2026',month:'07'};
+  expect(model.filter([r],filters)).toHaveLength(1);
+  expect(model.filter([r],{...filters,month:'09'})).toHaveLength(0);
+  expect(model.totals([r])[0]).toMatchObject({missing:1,missingPnl:1,returnsPct:null});
+});

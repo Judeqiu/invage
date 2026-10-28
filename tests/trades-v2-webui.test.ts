@@ -35,6 +35,9 @@ it.skipIf(!existsSync(executablePath))('renders both exact column sets, lazy his
   open.rows.push({...open.rows[0],id:'previous-year',underlying:'NVDA',entryDate:'2025-12-31',entryThrough:'2025-12-31',premium:'100'});
   state.option_executions!.push(optionFill({execution_id:'close-2',executed_at:'2026-10-02T10:00:00',contracts:'1',side:'buy',effect:'close',gross_premium:'-49.99'}));
   const history = {...tradesHistory(state),revision:1,gaps:[{channel:'tiger',reason:'Incomplete archive <img src=x onerror=alert(1)>'}]};
+  history.rows.push({...history.rows[0],id:'retained-fill',optionId:'retained-option',underlying:'OLD',status:'Incomplete history',
+    entryDate:null,entryThrough:null,lastTrade:'2026-07-18',expiry:'2026-07-17',strike:'100',channel:'moomoo',accountId:'A1',multiplier:null,premium:null,netCash:null,paidToClose:null,realizedPnl:null,executions:[],
+    sourceExecutions:[{broker_id:'moomoo',channel:'moomoo',account_id:'A1',id:'fill-<unsafe>',order_id:null,native_symbol:'US.OLD260717P100000',symbol:'OLD',instrument:'option',side:'buy',effect:'close',executed_at:'2026-07-18T10:00:00',clock:'America/New_York',currency:'USD',quantity:'2',price:'-0.25',multiplier:null,gross_cash:null,fee_cash:null,option:{right:'put',expiry:'2026-07-17',strike:'100'}}]});
   let openRequests = 0, historyRequests = 0, fail = false, noteFail = true;
   const server = createServer(async (req,res) => {
     const url = new URL(req.url!,'http://localhost');
@@ -147,6 +150,16 @@ it.skipIf(!existsSync(executablePath))('renders both exact column sets, lazy his
     expect(await page.$eval('#journalTable table',n => n.textContent)).toContain('Closed');
     expect(await page.$('[data-month-toggle]')).toBeNull();
     expect(await page.$('#availability img')).toBeNull();
+    await page.select('#year','2026'); await page.select('#month','07');
+    expect(await page.$eval('#entryCount',n => n.textContent)).toBe('1 entry');
+    await page.click('[data-detail="retained-fill"]');
+    expect(await page.$eval('#detailBody',n => n.textContent)).toContain('Retained broker fills · 1');
+    expect(await page.$eval('#detailBody',n => n.textContent)).toContain('buy to close');
+    expect(await page.$eval('#detailBody',n => n.textContent)).toContain('-0.25');
+    expect(await page.$eval('#detailBody',n => n.textContent)).toContain('fill-<unsafe>');
+    expect(await page.$('#detailBody unsafe')).toBeNull();
+    expect(await page.$('#saveNote')).toBeNull();
+    await page.click('#closeDetail'); await page.click('#clear');
     await page.click('#openTab'); await page.click('#historyTab'); expect(historyRequests).toBe(1);
     await page.screenshot({path:'/tmp/invage-trades-v2-history.png',fullPage:true});
     await page.click('#openTab');

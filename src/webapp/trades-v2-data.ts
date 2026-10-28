@@ -7,23 +7,24 @@ import { openOptionTradeDetails } from './option-dashboard-data.js';
 import { buildOptionEpisodes } from '../brokers/option-history.js';
 import { canonicalOptionUnderlying } from '../brokers/option-symbol.js';
 import type { OptionRelationship } from '../brokers/option-relationships.js';
-import type { BrokerOrderFees } from '../brokers/history.js';
+import type { BrokerHistoryExecution, BrokerOrderFees } from '../brokers/history.js';
 
 export interface TradeJournalRow {
   id: string; optionId: string; underlying: string; right: 'call' | 'put'; side: 'short' | 'long' | 'unknown';
-  strike: string; expiry: string; multiplier: string; currency: string; channel: string; accountId: string;
+  strike: string; expiry: string; multiplier: string | null; currency: string; channel: string; accountId: string;
   entryDate: string | null; entryThrough: string | null; contracts: string;
   premium: string | null; netCash: string | null; returnsPct: number | null;
   status: string; lastTrade: string | null; paidToClose: string | null; realizedPnl: string | null;
   feeBasis: 'net' | 'gross' | 'broker' | 'unknown'; brokerDate: string | null; observedSince: string | null;
   executions: Array<OptionExecution & { id: string; option_id: string }>;
+  sourceExecutions?: BrokerHistoryExecution[];
   orderFees: Array<BrokerOrderFees & { orderId: string }>;
   events: OptionLifecycleEvent[]; notes: string[]; rolled: boolean; thesis: string; noteUpdatedAt: string | null;
 }
 const neg = (v: string) => v.startsWith('-') ? v.slice(1) : `-${v}`;
 const zero = (v: string) => !/[1-9]/.test(v);
-function base(state: InvestorState, t: OptionIdentityTerms, side: TradeJournalRow['side']): TradeJournalRow {
-  const pk = optionId(state, t);
+function base(state: InvestorState, t: OptionIdentityTerms, side: TradeJournalRow['side'], sourceOptionId?: string): TradeJournalRow {
+  const pk = sourceOptionId ?? optionId(state, t);
   return { id:`${pk}:${side}`, optionId:pk, underlying:canonicalOptionUnderlying(t.underlying, { ...t, strike:Number(t.strike) }), right:t.right, side,
     strike:t.strike, expiry:t.expiry, multiplier:t.multiplier, currency:t.currency, channel:t.channel, accountId:t.account_id,
     entryDate:null, entryThrough:null, contracts:'0', premium:null, netCash:null, returnsPct:null,
@@ -234,7 +235,30 @@ export function tradesHistory(rawState: InvestorState, relationships: OptionRela
     row.notes.push('Snapshot evidence only. First seen is not the entry date; disappearance does not prove a close or assignment.');
     rows.push(row);
   }
-  for (const row of rows) attachOrderFees(state, row);
+  // Preserve every retained option fill even when it cannot enter the cash-valued
+  // compatibility projection. Source rows never invent metadata or a trade cycle.
+  const represented = new Set(rows.flatMap(row => row.executions.map(e =>
+    JSON.stringify([e.channel, e.account_id, e.execution_id]))));
+  for (const history of Object.values(state.broker_history ?? {})) for (const e of history.executions) {
+    if (e.instrument !== 'option' || !e.option || represented.has(JSON.stringify([e.channel, e.account_id, e.id]))) continue;
+    const sourceKey = JSON.stringify(['retained-contract', e.broker_id, e.channel, e.account_id, e.native_symbol]);
+    const sourceOptionId = optionSystemId(state.user.id, 'option', sourceKey);
+    const side = e.effect === 'open' ? (e.side === 'sell' ? 'short' : 'long')
+      : e.effect === 'close' ? (e.side === 'buy' ? 'short' : 'long') : 'unknown';
+    const row = base(state, { channel:e.channel, account_id:e.account_id, underlying:e.symbol ?? e.native_symbol,
+      ...e.option, multiplier:e.multiplier ?? '', currency:e.currency ?? '' }, side, sourceOptionId);
+    row.id = optionSystemId(state.user.id, 'cycle', JSON.stringify(['retained-fill', e.broker_id, e.channel, e.account_id, e.id]));
+    row.multiplier = e.multiplier;
+    row.contracts = e.quantity;
+    row.lastTrade = e.executed_at.slice(0, 10);
+    if (e.effect === 'open') row.entryDate = row.entryThrough = row.lastTrade;
+    row.status = 'Incomplete history';
+    row.sourceExecutions = [e];
+    row.orderFees = history.orders.filter(o => o.id === e.order_id && o.fees).map(o => ({ ...o.fees!, orderId:o.id }));
+    row.notes.push('Retained broker fill. Contract metadata or execution reconciliation is incomplete. Cash totals and realized profit remain unavailable; this row does not prove a completed trade or liquidation.');
+    rows.push(row);
+  }
+  for (const row of rows) if (!row.sourceExecutions) attachOrderFees(state, row);
   return { rows:rows.sort((a,b) => (b.lastTrade ?? b.brokerDate ?? '').localeCompare(a.lastTrade ?? a.brokerDate ?? '') || a.id.localeCompare(b.id)),
-    available:state.option_executions !== undefined || events.length > 0 };
+    available:state.option_executions !== undefined || events.length > 0 || rows.length > 0 };
 }

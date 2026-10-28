@@ -72,3 +72,47 @@ it.each(['mixed', 'unknown'] as const)('retains %s executions without treating t
   expect(mixed).toMatchObject({ status: 'Unresolved', side: 'unknown', realizedPnl: null });
   expect(rows.every(row => row.realizedPnl === null)).toBe(true);
 });
+
+it.each(['moomoo', 'tiger', 'webull', 'ibkr'])('shows retained %s option fills with missing metadata without inventing cash', broker => {
+  const s = tradesFixture(); s.portfolio = {}; s.option_executions = [];
+  const source: import('../src/brokers/history.js').BrokerHistoryExecution = {
+    broker_id:broker, channel:broker, account_id:'A1', id:'source-fill', order_id:'parent',
+    native_symbol:'EXPIRED-PUT', symbol:'AAPL', instrument:'option', side:'buy', effect:'close',
+    executed_at:'2026-07-18T10:00:00', clock:'America/New_York', currency:'USD',
+    quantity:'2', price:'-0.25', multiplier:null, gross_cash:null, fee_cash:'0',
+    option:{right:'put',expiry:'2026-07-17',strike:'150'},
+  };
+  s.broker_history = { [broker]:{ broker_id:broker, channel:broker, account_id:'A1', executions:[source], orders:[],
+    sync:{version:1,mode:'full',from:'2000-01-01T00:00:00Z',through:'2026-10-28T00:00:00Z',status:'partial',full_history_synced:false,fees:'partial',gaps:[]} } };
+  const before = JSON.stringify(s), history = tradesHistory(s), row = history.rows[0];
+  expect(history.available).toBe(true);
+  expect(history.rows).toHaveLength(1);
+  expect(row).toMatchObject({status:'Incomplete history',side:'short',entryDate:null,lastTrade:'2026-07-18',contracts:'2',multiplier:null,premium:null,paidToClose:null,realizedPnl:null,returnsPct:null});
+  expect(row.sourceExecutions).toEqual([source]);
+  expect(JSON.stringify(s)).toBe(before);
+  expect(tradesHistory(s).rows[0].id).toBe(row.id);
+  // IDs are scoped to accounts even when brokers reuse execution IDs.
+  s.broker_history[broker].account_id = source.account_id = 'A2';
+  expect(tradesHistory(s).rows[0].id).not.toBe(row.id);
+});
+
+it('does not duplicate projected fills and replaces source-only rows after metadata recovery', () => {
+  const s = tradesFixture(); s.portfolio = {};
+  const fill = s.option_executions![0];
+  const source: import('../src/brokers/history.js').BrokerHistoryExecution = {
+    broker_id:'ibkr', channel:fill.channel, account_id:fill.account_id, id:fill.execution_id, order_id:null,
+    native_symbol:fill.contract_id, symbol:fill.underlying, instrument:'option', side:fill.side, effect:fill.effect,
+    executed_at:fill.executed_at, clock:'America/New_York', currency:fill.currency, quantity:fill.contracts,
+    price:null, multiplier:null, gross_cash:null, fee_cash:fill.commission,
+    option:{right:fill.right,expiry:fill.expiry,strike:fill.strike},
+  };
+  s.broker_history = { ibkr:{broker_id:'ibkr',channel:fill.channel,account_id:fill.account_id,executions:[source],orders:[],
+    sync:{version:1,mode:'full',from:'2000-01-01T00:00:00Z',through:'2026-10-28T00:00:00Z',status:'partial',full_history_synced:false,fees:'partial',gaps:[]}} };
+  expect(tradesHistory(s).rows.some(r => r.sourceExecutions)).toBe(false);
+  s.option_executions = [];
+  expect(tradesHistory(s).rows[0].sourceExecutions).toEqual([source]);
+  source.multiplier = fill.multiplier; source.gross_cash = fill.gross_premium;
+  s.option_executions = [fill];
+  expect(tradesHistory(s).rows).toHaveLength(1);
+  expect(tradesHistory(s).rows[0].sourceExecutions).toBeUndefined();
+});

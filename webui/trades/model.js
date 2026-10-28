@@ -9,7 +9,7 @@
       (f.strategy === 'all' || strategies(r) === f.strategy) &&
       (f.status === 'all' || (f.status === 'Rolled' ? r.rolled : f.status === 'Expired / assigned' ? ['Expired','Assigned','Exercised','Cash settled','Mixed outcomes'].includes(r.status) :
         f.status === 'Needs review' ? !['Closed','Expired','Assigned','Exercised','Cash settled','Mixed outcomes'].includes(r.status) : r.status === f.status)) &&
-      (f.year === 'all' || r.entryDate?.slice(0,4) === f.year) && (f.month === 'all' || r.entryDate?.slice(5,7) === f.month));
+      (f.year === 'all' || (r.entryDate || r.lastTrade)?.slice(0,4) === f.year) && (f.month === 'all' || (r.entryDate || r.lastTrade)?.slice(5,7) === f.month));
   }
   function cashBalances(rows, seed) {
     const result = new Map();
