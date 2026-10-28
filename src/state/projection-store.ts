@@ -10,7 +10,7 @@ import type { tradesOpenBook, tradesHistory } from '../webapp/trades-v2-data.js'
 import type { optionHistoryForState } from '../webapp/option-history-data.js';
 import type { optionRelationshipsForState } from '../webapp/option-relationships-data.js';
 
-export const PROJECTION_VERSION = 7;
+export const PROJECTION_VERSION = 8;
 export interface PortfolioProjection {
   version: typeof PROJECTION_VERSION;
   userId: string;
@@ -45,7 +45,7 @@ export function portfolioFingerprint(state: InvestorState): string {
   return createHash('sha256').update(JSON.stringify([PROJECTION_VERSION, state.user.id, state.profile.display_name,
     state.portfolio, state.cash, state.deposits, (state as unknown as { treasury: unknown }).treasury,
     connections, state.broker_history, state.option_executions, state.option_events,
-    state.option_observations, state.option_identities, snapshots])).digest('hex');
+    state.option_observations, state.option_identities, state.broker_statement_evidence, snapshots])).digest('hex');
 }
 function location(userId: string) {
   const directory = join(resolveDataRoot(), 'derived', 'portfolio');

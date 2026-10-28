@@ -4,7 +4,7 @@ import type { Holding, OptionSpec } from '../market/types.js';
 import { getPortfolio, type InvestorState } from '../state/portfolio-state.js';
 import type { BrokerSkip, BrokerStatement } from './statement.js';
 import { addDecimals, type OptionExecution } from './option-executions.js';
-import type { OptionLifecycleEvent } from './option-events.js';
+import { withoutLifecycleReplacements, type OptionLifecycleEvent } from './option-events.js';
 import { canonicalOptionUnderlying } from './option-symbol.js';
 
 export interface ObservedOption {
@@ -185,7 +185,7 @@ function previousAbsenceFor(episode: OptionEpisode, episodes: OptionEpisode[]): 
 function matchingExecutions(state: InvestorState, episode: OptionEpisode, episodes: OptionEpisode[]): OptionExecution[] {
   const c = episode.contract;
   const previousAbsence = previousAbsenceFor(episode, episodes);
-  return (state.option_executions ?? []).filter(row =>
+  return withoutLifecycleReplacements(state.option_executions ?? [], state.option_events ?? []).filter(row =>
     row.channel === episode.channel && row.account_id === episode.account_id &&
     canonicalOptionUnderlying(row.underlying, { ...row, strike: Number(row.strike) }) === c.underlying && row.right === c.right &&
     row.expiry === c.expiry && Number(row.strike) === c.strike &&

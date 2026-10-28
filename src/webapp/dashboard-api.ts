@@ -311,7 +311,7 @@ export function createDashboardApiRouter(): Router {
       const matchesScope = (row: { channel: string }) => matchesDashboardSelection(projection, channel, row.channel);
       if (Object.keys(req.query).some(key => key.startsWith('channel[')) || req.query.channel !== undefined && typeof req.query.channel !== 'string' || right && right !== 'put' && right !== 'call' ||
           req.query.view !== undefined && req.query.view !== 'trades' ||
-          status && !['incomplete', 'historical', 'open', 'unverified', 'no_longer_observed', 'closed_by_fills',
+          status && !['partially_closed', 'incomplete', 'historical', 'open', 'unverified', 'no_longer_observed', 'closed_by_fills',
             'expired', 'assigned', 'exercised', 'cash_settled', 'mixed_outcomes',
             'partially_explained', 'conflicting_evidence'].includes(status) ||
           from && !validDate(from) || to && !validDate(to) ||

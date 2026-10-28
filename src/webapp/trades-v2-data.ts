@@ -2,11 +2,12 @@ import type { InvestorState } from '../state/portfolio-state.js';
 import { getPortfolio } from '../state/portfolio-state.js';
 import { addDecimals, mergeOptionExecutions, type OptionExecution } from '../brokers/option-executions.js';
 import { buildOptionIdentityIndex, executionId, holdingIdentityTerms, optionAccounts, optionId, optionSystemId, type OptionIdentityTerms } from '../brokers/option-identities.js';
-import { mergeOptionLifecycleEvents, type OptionLifecycleEvent } from '../brokers/option-events.js';
+import { mergeOptionLifecycleEvents, withoutLifecycleReplacements, type OptionLifecycleEvent } from '../brokers/option-events.js';
 import { openOptionTradeDetails } from './option-dashboard-data.js';
 import { buildOptionEpisodes } from '../brokers/option-history.js';
 import { canonicalOptionUnderlying } from '../brokers/option-symbol.js';
 import type { OptionRelationship } from '../brokers/option-relationships.js';
+import { partialCloseSummary, type CloseRealization } from '../brokers/partial-close.js';
 import type { BrokerHistoryExecution, BrokerOrderFees } from '../brokers/history.js';
 
 export interface TradeJournalRow {
@@ -18,6 +19,8 @@ export interface TradeJournalRow {
   feeBasis: 'net' | 'gross' | 'broker' | 'unknown'; brokerDate: string | null; observedSince: string | null;
   executions: Array<OptionExecution & { id: string; option_id: string }>;
   sourceExecutions?: BrokerHistoryExecution[];
+  remainingContracts?: string;
+  realizations?: CloseRealization[];
   orderFees: Array<BrokerOrderFees & { orderId: string }>;
   events: OptionLifecycleEvent[]; notes: string[]; rolled: boolean; thesis: string; noteUpdatedAt: string | null;
 }
@@ -94,8 +97,8 @@ export function tradesOpenBook(rawState: InvestorState) {
 /** Flat-to-flat execution cycles, independent of current snapshots. No expiry/assignment inference. */
 export function tradesHistory(rawState: InvestorState, relationships: OptionRelationship[] = []) {
   const state = { ...rawState, option_identities:buildOptionIdentityIndex(rawState) };
-  const fills = mergeOptionExecutions([], state.option_executions ?? []);
   const events = mergeOptionLifecycleEvents([], state.option_events ?? []);
+  const fills = withoutLifecycleReplacements(mergeOptionExecutions([], state.option_executions ?? []), events);
   type Cycle = { row:TradeJournalRow; balance:string; complete:boolean; gross:string; fees:string | null; opened:string; closedCash:string; kinds:Set<string> };
   const active = new Map<string, Cycle>(), cycles:Cycle[] = [];
   const actionTimes = new Map<string, Set<string>>(), fillDays = new Set<string>();
@@ -210,6 +213,21 @@ export function tradesHistory(rawState: InvestorState, relationships: OptionRela
     row.notes.push('Recorded fills are not flat. Current holdings can differ when history is incomplete.');
     if (!liveOptions.has(`${row.optionId}:${row.side}`)) row.status = 'Unverified';
   }
+  for (const cycle of cycles) {
+    const row=cycle.row;
+    if (!cycle.complete || row.events.length || cycle.balance.startsWith('-')) continue;
+    const summary=partialCloseSummary(row.executions);
+    if (!summary) continue;
+    row.realizations=summary.realizations;
+    if (!zero(cycle.balance)) {
+      row.status='Partially closed';row.contracts=summary.closed;row.remainingContracts=summary.remaining;
+      row.premium=summary.premium;row.netCash=summary.netOpening;
+      row.paidToClose=row.side==='short'?neg(summary.closingCash):null;
+      row.realizedPnl=summary.net??summary.gross;row.feeBasis=summary.net===null?'gross':'net';row.returnsPct=returns(row);
+      row.notes.push(`FIFO partial close: ${summary.closed} contracts closed; ${summary.remaining} contracts remain in recorded fills. Opening cash and fees are allocated proportionally to closed contracts. Source fills retain their full quantities.`);
+    }
+    if(summary.rounded)row.notes.push('Proportions are calculated as exact fractions. Recurring decimal allocations are rounded to the native currency precision for presentation.');
+  }
   const rows = cycles.map(c => c.row);
   for (const row of rows) {
     const closes = row.executions.filter(e => e.effect === 'close');
@@ -237,8 +255,8 @@ export function tradesHistory(rawState: InvestorState, relationships: OptionRela
   }
   // Preserve every retained option fill even when it cannot enter the cash-valued
   // compatibility projection. Source rows never invent metadata or a trade cycle.
-  const represented = new Set(rows.flatMap(row => row.executions.map(e =>
-    JSON.stringify([e.channel, e.account_id, e.execution_id]))));
+  const represented = new Set([...rows.flatMap(row => row.executions.map(e => JSON.stringify([e.channel, e.account_id, e.execution_id]))),
+    ...events.flatMap(e => (e.replaces_execution_ids ?? []).map(id => JSON.stringify([e.channel,e.account_id,id]))) ]);
   for (const history of Object.values(state.broker_history ?? {})) for (const e of history.executions) {
     if (e.instrument !== 'option' || !e.option || represented.has(JSON.stringify([e.channel, e.account_id, e.id]))) continue;
     const sourceKey = JSON.stringify(['retained-contract', e.broker_id, e.channel, e.account_id, e.native_symbol]);
@@ -258,7 +276,14 @@ export function tradesHistory(rawState: InvestorState, relationships: OptionRela
     row.notes.push('Retained broker fill. Contract metadata or execution reconciliation is incomplete. Cash totals and realized profit remain unavailable; this row does not prove a completed trade or liquidation.');
     rows.push(row);
   }
-  for (const row of rows) if (!row.sourceExecutions) attachOrderFees(state, row);
+  for (const row of rows) {
+    if (!row.sourceExecutions) attachOrderFees(state, row);
+    for (const doc of state.broker_statement_evidence ?? []) {
+      if (doc.channel !== row.channel || doc.account_id !== row.accountId) continue;
+      for (const a of doc.annotations) if (row.executions.some(e => e.execution_id === a.execution_id)) row.notes.push(`Forced liquidation reported in ${doc.source.name}, ${a.reference}. Source SHA256: ${doc.source.sha256}.`);
+      if (doc.contracts.some(c => row.executions.some(e => e.contract_id === c.native_symbol))) row.notes.push(`Contract metadata supplied by ${doc.source.name}, ${doc.source.reference}. Source SHA256: ${doc.source.sha256}.`);
+    }
+  }
   return { rows:rows.sort((a,b) => (b.lastTrade ?? b.brokerDate ?? '').localeCompare(a.lastTrade ?? a.brokerDate ?? '') || a.id.localeCompare(b.id)),
     available:state.option_executions !== undefined || events.length > 0 || rows.length > 0 };
 }

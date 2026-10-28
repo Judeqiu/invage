@@ -4,7 +4,7 @@ export function dashboardHistoryStatus(row: TradeJournalRow): string {
   return ({ Closed:'closed_by_fills', Expired:'expired', Assigned:'assigned', Exercised:'exercised',
     'Cash settled':'cash_settled', 'Mixed outcomes':'mixed_outcomes', 'No longer observed':'no_longer_observed',
     Unverified:'unverified', 'Conflicting evidence':'conflicting_evidence', 'Incomplete history':'incomplete',
-    Unresolved:'incomplete', 'Open in recorded fills':'open', 'Observed open':'open' } as Record<string,string>)[row.status] ?? 'unverified';
+    'Partially closed':'partially_closed', Unresolved:'incomplete', 'Open in recorded fills':'open', 'Observed open':'open' } as Record<string,string>)[row.status] ?? 'unverified';
 }
 
 /** Section 03 reads the same cycles and retained fills as Trades, including snapshot-only rows. */

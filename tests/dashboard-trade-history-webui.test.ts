@@ -15,6 +15,7 @@ it.skipIf(!existsSync(executablePath))('shows and pages pre-observation trades a
   const rows = tradesHistory(state).rows;
   rows.push({...rows[0],id:'retained',underlying:'OLD<unsafe>',expiry:'2026-07-17',entryDate:null,entryThrough:null,lastTrade:'2026-07-18',status:'Incomplete history',multiplier:null,premium:null,netCash:null,paidToClose:null,realizedPnl:null,executions:[],
     sourceExecutions:[{broker_id:'ibkr',channel:'ibkr',account_id:'U1',id:'old-<unsafe>',order_id:null,native_symbol:'OLD-PUT',symbol:'OLD<unsafe>',instrument:'option',side:'buy',effect:'close',executed_at:'2026-07-18T10:00:00',clock:'America/New_York',currency:'USD',quantity:'2',price:'0',multiplier:null,gross_cash:null,fee_cash:null,option:{right:'put',expiry:'2026-07-17',strike:'150'}}]});
+  rows.push({...tradesHistory(tradesFixture()).rows[0],id:'partial-close'});
   const dashboard = withPageProjections({empty:false,displayName:'Test',productProfile:'consultant',generatedAt:'2026-10-28T07:00:00Z',dashboardConfig:{dashboardVersion:'v2'},
     model:buildDashboardModel(buildLivePositions({AAPL:{avg_price:100,units:1,channel:'ibkr',currency:'USD'}},{AAPL:110}),[]),optionAnalytics:{executions:[],gaps:[],profits:[]}});
   const root=resolve('webui'), requests:string[]=[];
@@ -43,6 +44,10 @@ it.skipIf(!existsSync(executablePath))('shows and pages pre-observation trades a
     await page.click('#historyMore');await page.waitForFunction(()=>document.getElementById('optionHistoryTable')?.textContent?.includes('OLD<unsafe>'));
     expect(await page.$eval('#optionHistoryTable',n=>n.textContent)).toContain('Incomplete history');
     expect(await page.$$eval('#optionHistoryTable tbody tr',n=>n.length)).toBe(2);
+    await page.click('#historyMore'); await page.waitForFunction(()=>document.getElementById('optionHistoryTable')?.textContent?.includes('Partially closed'));
+    expect(await page.$$eval('#optionHistoryTable tbody tr',n=>n.length)).toBe(3);
+    await page.click('[data-history-id="partial-close"]');
+    expect(await page.$eval('#optionHistoryDetail',n=>n.textContent)).toContain('1 contracts remain in recorded fills');
     await page.click('[data-history-id="retained"]');
     expect(await page.$eval('#optionHistoryDetail',n=>n.textContent)).toContain('buy to close');
     expect(await page.$eval('#optionHistoryDetail',n=>n.textContent)).toContain('old-<unsafe>');

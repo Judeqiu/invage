@@ -1,5 +1,5 @@
 import { mergeOptionExecutions, type OptionExecution } from '../brokers/option-executions.js';
-import { mergeOptionLifecycleEvents, type OptionLifecycleEvent } from '../brokers/option-events.js';
+import { mergeOptionLifecycleEvents, withoutLifecycleReplacements, type OptionLifecycleEvent } from '../brokers/option-events.js';
 
 export interface RecordedOptionProfit {
   channel: string; account_id: string; underlying: string; date: string; currency: string;
@@ -8,8 +8,8 @@ export interface RecordedOptionProfit {
 
 /** Realization follows FIFO closes and explicit lifecycle events, never position disappearance. */
 export function buildRecordedOptionAnalytics(executions: OptionExecution[] = [], events: OptionLifecycleEvent[] = []) {
-  const fills = mergeOptionExecutions([], executions);
   const lifecycle = mergeOptionLifecycleEvents([], events);
+  const fills = withoutLifecycleReplacements(mergeOptionExecutions([], executions), lifecycle);
   const profits: RecordedOptionProfit[] = [];
   const gaps: Array<{ channel: string; date: string; reason: string }> = [];
   const lots = new Map<string, Array<{ quantity: number; gross: number; fee: number | null }>>();

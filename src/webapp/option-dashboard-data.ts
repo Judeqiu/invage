@@ -1,7 +1,7 @@
 import type { OptionExecution } from '../brokers/option-executions.js';
 import type { Holding } from '../market/types.js';
 import { canonicalOptionUnderlying } from '../brokers/option-symbol.js';
-import type { OptionLifecycleEvent } from '../brokers/option-events.js';
+import { withoutLifecycleReplacements, type OptionLifecycleEvent } from '../brokers/option-events.js';
 import type { OptionRelationship, OptionVerticalSpread } from '../brokers/option-relationships.js';
 
 export interface OpenOptionTradeDetail {
@@ -46,7 +46,7 @@ export function openOptionTradeDetails(
     if (holding.instrument !== 'option' || !holding.option || !holding.channel) continue;
     const channel = holding.channel;
     const short = holding.option.side === 'short';
-    const rows = executions.filter(row => sameContract(row, holding, accountsByChannel[channel]))
+    const rows = withoutLifecycleReplacements(executions, events).filter(row => sameContract(row, holding, accountsByChannel[channel]))
       .sort((a, b) => a.executed_at.localeCompare(b.executed_at) || a.execution_id.localeCompare(b.execution_id));
     if (new Set(rows.map(row => row.account_id)).size > 1) continue;
     const terminal = events.filter(event => sameContract(event, holding, accountsByChannel[channel]) &&

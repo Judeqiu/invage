@@ -32,7 +32,7 @@
     const channels = [...new Set([...(state.open?.rows || []), ...(state.history?.rows || [])].map(r => r.channel))].sort();
     if (state.channel !== 'all' && !channels.includes(state.channel)) state.channel = 'all';
     $('brokerFilters').innerHTML = ['all',...channels].map(ch => `<button type="button" class="chip-btn${ch === state.channel ? ' on' : ''}" aria-pressed="${ch === state.channel}" data-channel="${esc(ch)}">${esc(name(ch))}</button>`).join('');
-    const options = state.view === 'open' ? ['all',...new Set(rows.map(M.strategies))] : ['all','Rolled','Closed','Expired / assigned','Needs review'];
+    const options = state.view === 'open' ? ['all',...new Set(rows.map(M.strategies))] : ['all','Rolled','Closed','Partially closed','Expired / assigned','Needs review'];
     if (state.view === 'open' && !options.includes(state.strategy)) state.strategy = 'all';
     const selected = state.view === 'open' ? state.strategy : state.status;
     $('strategyFilters').setAttribute('aria-label', state.view === 'open' ? 'Strategy filter' : 'History status filter');

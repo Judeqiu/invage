@@ -47,3 +47,10 @@ it('filters unmatched closing fills by their reported trade date and leaves cash
   expect(model.filter([r],{...filters,month:'09'})).toHaveLength(0);
   expect(model.totals([r])[0]).toMatchObject({missing:1,missingPnl:1,returnsPct:null});
 });
+
+it('keeps verified partial closes visible as historical profit without labelling them unresolved', () => {
+  const r=row({status:'Partially closed'}),f={channel:'all',ticker:'all',right:'all',currency:'all',strategy:'all',status:'Partially closed',year:'all',month:'all'};
+  expect(model.isOpen(r)).toBe(false);
+  expect(model.filter([r],f)).toHaveLength(1);
+  expect(model.filter([r],{...f,status:'Needs review'})).toHaveLength(0);
+});
