@@ -1,0 +1,92 @@
+[
+  {
+    "topic": "deploy",
+    "title": "Release directory permissions",
+    "lesson": "Set a committed export root to 0755 before rsync and verify service-user traversal. mkdtemp creates 0700 directories, and rsync -a can copy that mode into production and cause systemd 200/CHDIR.",
+    "evidence": "2026-10-28 broker-recovery round: Observed during the broker-history release workflow; the prepared committed exports subsequently used 0755.",
+    "match": "200/CHDIR|Failed at step CHDIR"
+  },
+  {
+    "topic": "test",
+    "title": "Resolve the project test runner",
+    "lesson": "If npx resolves a broken or cross-project Vitest launcher, verify its target and invoke node node_modules/vitest/vitest.mjs run with the focused test files. Do not alter product code to repair a foreign launcher.",
+    "evidence": "2026-10-28 broker-recovery round: The local npx launcher resolved into another checkout and failed to import @vitest/utils/helpers; direct local invocation passed.",
+    "match": "Cannot find module '[^'\\n]*/(?:@vitest|vitest)/"
+  },
+  {
+    "topic": "test",
+    "title": "Use disposable database test configuration",
+    "lesson": "Database integration tests require UTARUS_TEST_DATABASE_URL explicitly naming utarus_test_admin. Use the disposable-database helper; never substitute an application or production database, and report an unavailable integration check accurately.",
+    "evidence": "2026-10-28 broker-recovery round: The wider verification could not run database persistence tests without the dedicated admin URL.",
+    "match": "UTARUS_TEST_DATABASE_URL is required"
+  },
+  {
+    "topic": "test",
+    "title": "Separate existing failures from regressions",
+    "lesson": "Reproduce unexpected failures from an unchanged committed export before attributing them to a patch. Report passing focused checks, reproduced pre-existing failures, and unavailable checks separately.",
+    "evidence": "2026-10-28 broker-recovery round: Two wider-suite failures reproduced from the unchanged baseline during the broker fee work."
+  },
+  {
+    "topic": "validation",
+    "title": "Verify structured success after fatal diagnostics",
+    "lesson": "A process can log [FATAL] Uncaught Exception and still return exit code zero. Require a completed validation receipt and explicit state/source checks; operator scripts should catch failures and set a nonzero exit status.",
+    "evidence": "2026-10-28 broker-recovery round: Several operator validation exceptions were logged as fatal while the shell reported exit zero; success was established only by the completed reconciliation receipt.",
+    "match": "^\\[FATAL\\] Uncaught Exception:"
+  },
+  {
+    "topic": "validation",
+    "title": "Preserve known facts while validating enrichment",
+    "lesson": "Compare previously known financial values exactly, allowing only representation-equivalent decimal formatting. Audit previously null cash and unknown intent becoming known separately, and prove those additions from broker records or reconciled quantity evidence.",
+    "evidence": "2026-10-28 broker-recovery round: The initial invariance check incorrectly rejected null-to-reported-cash and unknown-to-verified-intent enrichment; the final source checks in bcce3e0 verified both additions and preservation of known facts."
+  },
+  {
+    "topic": "validation",
+    "title": "Wait for complete asynchronous exports",
+    "lesson": "Wait for the producer to finish successfully before parsing its output file. A yielded session and a growing file are unfinished work. Validate completion and parseability before dependent steps; investigate malformed input rather than assuming every parse error is a partial write.",
+    "evidence": "2026-10-28 broker-recovery round: A validation reader attempted to parse an export while its SSH producer was still running and received an unterminated-string JSON error.",
+    "match": "JSONDecodeError: Unterminated string|Unexpected end of JSON input"
+  },
+  {
+    "topic": "deploy",
+    "title": "Return concise remote validation results",
+    "lesson": "Prefer source comparisons on the server and return counts, hashes and receipts. If transferring a baseline is necessary, compress it. Avoid downloading a complete portfolio merely to establish a few invariants.",
+    "evidence": "2026-10-28 broker-recovery round: A redundant full-state export was much slower than the compressed-baseline remote validation that verified the same invariants."
+  },
+  {
+    "topic": "deploy",
+    "title": "Benchmark and verify backup transfers",
+    "lesson": "Measure transfer progress early. For a slow immutable archive, verified byte-range transfers can reuse the existing prefix and run concurrently. Verify the assembled length, SHA256 and decryptability before pruning the previous complete backup.",
+    "evidence": "2026-10-28 broker-recovery round: The sequential encrypted-backup transfer was slow; parallel ranges completed the verified copy while the prior complete backup stayed available."
+  },
+  {
+    "topic": "broker",
+    "title": "Check authentication before a historical backfill",
+    "lesson": "Perform the smallest authorized account check before promising a historical recovery. HTTP 401 establishes a retrieval failure, not missing transactions or an expired-key diagnosis. Preserve retained data, continue independent authorized work and honor a user decision to leave the connection pending.",
+    "evidence": "2026-10-28 broker-recovery round: An additional account rejected discovery and cash-log requests with HTTP 401; that account was left pending at the user request.",
+    "match": "HTTP 401"
+  },
+  {
+    "topic": "broker",
+    "title": "Use exact fee evidence and conservation",
+    "lesson": "Recover leg fees from account-bound broker cash records, verify contract, side, currency and trade cash, and require exact parent-fee conservation. Preserve reported zeroes and rebates; leave ambiguous fees unknown. Obtain approval for undocumented source associations rather than inventing a leg split.",
+    "evidence": "2026-10-28 broker-recovery round: Cash-log recovery and the explicitly approved Tiger Trade-block association were validated in af3fba0 and bcce3e0."
+  },
+  {
+    "topic": "broker",
+    "title": "Verify provider and transport parity",
+    "lesson": "Verify each broker endpoint and adapter path. Moomoo and Futubull Cloud share the Cloud adapter; Futubull OpenD is a separate SDK transport. Test both Cloud hosts and state which native gateway paths lack live validation.",
+    "evidence": "2026-10-28 broker-recovery round: Shared Cloud behavior was verified against the live Futubull endpoint; OpenD had no configured live gateway during bcce3e0 validation."
+  },
+  {
+    "topic": "broker",
+    "title": "Plan complete historical fee retrieval",
+    "lesson": "Verify pagination, time units, parent-order coverage and the documented endpoint quota before a full backfill. Incremental sync must revisit retained unknown fees outside its normal window. Keep incomplete source evidence and coverage gaps visible instead of treating omissions as zero or adding a cutoff.",
+    "evidence": "2026-10-28 broker-recovery round: Historical fee recovery required complete paginated cash evidence and revisiting older parent orders in both broker fixes."
+  },
+  {
+    "topic": "general",
+    "title": "Report the scope of closure precisely",
+    "lesson": "Separate fee completeness, broker-reported cash availability, contract metadata and open/close intent. Name user-deferred authentication failures and unavailable live validation explicitly; closing a fee gap does not establish complete historical coverage.",
+    "evidence": "2026-10-28 broker-recovery round: The final broker checks closed the verified fee gaps while retaining separate metadata/intent gaps and a user-deferred connection."
+  }
+]

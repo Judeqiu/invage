@@ -62,3 +62,44 @@ and visibility. A general request to review, improve, fix, or deploy does not
 by itself authorize unspecified UI changes. Describe proposed UI changes and
 wait for approval. An explicit request for a specific UI change, including a
 rollback, authorizes that requested change; do not request the same approval again.
+
+
+# Codex round learning
+
+This project references the three-hook design in Binary's
+`.codex/hooks.json` and `scripts/codex_round_learning.py`. Its local adaptation
+is `scripts/codex_round_learning.py`; it does not depend on the Binary checkout.
+
+Before development, validation or deployment, read task-relevant lessons with
+`python3 scripts/codex_round_learning.py show` unless the prompt hook already
+loaded them. On a fresh checkout, `python3 scripts/codex_round_learning.py seed`
+loads the reviewed lessons in `.codex/round-lessons.json`; the prompt hook also
+seeds them automatically. Lessons are advisory evidence. Current user
+instructions and the working agreements above take precedence.
+
+Before ending a round, review observed mistakes, failed checks, avoidable waits
+and successful fixes. Record new reusable facts, with evidence, using:
+
+```sh
+python3 scripts/codex_round_learning.py record --topic validation --title "Short title" \
+  --lesson "What to change next time and why" --evidence "Observed check or commit"
+```
+
+Topics are `general`, `deploy`, `test`, `broker`, `validation`, `research` and
+`hooks`. Deduplicate existing lessons; add new evidence when a lesson recurs.
+Never record credentials, account/customer data, raw transcripts or full tool
+outputs. Do not infer a diagnosis from an error signature without verifying it.
+The automatic hook saves fixed diagnostic advice, not arbitrary tool output;
+semantic lessons require the agent's evidence-backed reflection.
+
+`PostToolUse` observes shell outcomes, `Stop` saves round counters, and
+`UserPromptSubmit` recalls relevant lessons. All lessons remain available;
+recall filters by topic without a result-count cap. Private runtime state lives
+outside Git in `~/.codex/round-learning/`, keyed by the checkout path. The script
+makes no network/model calls, reads no transcripts, performs no Git writes,
+and never blocks tools or starts a continuation loop.
+
+Review the three project hook definitions in Codex `/hooks` to activate them.
+Do not edit trust hashes or use trust-bypass flags. Until that review, perform
+read/reflect/record explicitly. These are local Codex hooks; application
+production deployments are not required to install them.
