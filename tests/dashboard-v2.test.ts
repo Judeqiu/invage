@@ -104,6 +104,11 @@ it.skipIf(!existsSync(executablePath))('renders V2 with shared data, clarifies m
         option: { right: 'call', side: 'short', strike: 130, expiry: '2026-12-18', multiplier: 100, underlying: 'AAPL', settlement: 'physical', mark: 100 } },
     }, { AAPL: 120, MSFT: 220 }), []);
     dashboard.equityPrices = { AAPL: 120, MSFT: 220 };
+    dashboard.optionTradeDetails = {
+      'AAPL-P-110': { currency: 'USD', stoGrossPremium: 700 },
+      'MSFT-P-230': { currency: 'USD', stoGrossPremium: 600 },
+      'AAPL-C-130': { currency: 'USD', stoGrossPremium: 240 },
+    };
     for (const position of dashboard.model.live.positions) {
       if (position.option) position.probabilityQuote = { mark: position.option.mark, spot: dashboard.equityPrices[position.option.underlying], spotAsOf: dashboard.generatedAt };
     }

@@ -3,6 +3,7 @@ import { runInNewContext } from 'node:vm';
 import { expect, it } from 'vitest';
 
 const source = readFileSync('webui/dashboard/aggregate-model.js', 'utf8');
+const OptionPosition = runInNewContext(readFileSync('webui/option-position.js', 'utf8') + '; OptionPosition');
 const calculator = source.slice(source.indexOf('function openBookPremiumData('), source.indexOf('    const result = {}'));
 const option = (overrides = {}) => ({
   ticker: 'AAPL PUT', instrument: 'option', currency: 'USD', cost: -600, value: -200, pl: 400,
@@ -10,7 +11,7 @@ const option = (overrides = {}) => ({
 });
 function calculate(overrides = {}, payload = {}) {
   return runInNewContext(`${calculator}\nopenBookPremiumData(view)`, {
-    payload,
+    payload, OptionPosition,
     tradeAmount: (view: any, row: any, amount: number) => {
       const rate = row.currency === view.reportingCurrency ? 1 : view.fxRates?.[row.currency];
       return typeof amount === 'number' && Number.isFinite(amount) && Number.isFinite(rate) && rate > 0 ? amount * rate : null;
@@ -59,7 +60,7 @@ it('preserves zero and negative results, unknown expiries and NAV weights above 
 
 
 it('counts a verified replacement roll net once instead of the full opening credit', () => {
-  const position = option({ ticker: 'AVGO CALL', cost: -1950, value: -630, pl: 1320,
+  const position = option({ ticker: 'AVGO CALL', units: 1, avgCost: 1950, price: 630, cost: -1950, value: -630, pl: 1320,
     option: { underlying: 'AVGO', expiry: '2026-12-18', side: 'short' } });
   const result = calculate({ isLive: true, positions: [position] }, {
     optionTradeDetails: { 'AVGO CALL': { currency: 'USD', stoGrossPremium: 1950, rollPremium: 815, rollDate: '2026-10-07' } },

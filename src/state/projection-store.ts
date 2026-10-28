@@ -11,6 +11,8 @@ import type { optionHistoryForState } from '../webapp/option-history-data.js';
 import type { optionRelationshipsForState } from '../webapp/option-relationships-data.js';
 
 export const PROJECTION_VERSION = 8;
+// Rebuild saved calculations when their rules change, retaining daily history.
+const CALCULATION_VERSION = 2;
 export interface PortfolioProjection {
   version: typeof PROJECTION_VERSION;
   userId: string;
@@ -42,7 +44,7 @@ export function portfolioFingerprint(state: InvestorState): string {
       return [file, stat.size.toString(), stat.mtimeNs.toString(), stat.ctimeNs.toString()];
     }) : null];
   } catch { /* Missing or corrupt snapshot history is reported by the calculation pipeline. */ }
-  return createHash('sha256').update(JSON.stringify([PROJECTION_VERSION, state.user.id, state.profile.display_name,
+  return createHash('sha256').update(JSON.stringify([PROJECTION_VERSION, CALCULATION_VERSION, state.user.id, state.profile.display_name,
     state.portfolio, state.cash, state.deposits, (state as unknown as { treasury: unknown }).treasury,
     connections, state.broker_history, state.option_executions, state.option_events,
     state.option_observations, state.option_identities, state.broker_statement_evidence, snapshots])).digest('hex');

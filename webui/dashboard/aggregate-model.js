@@ -499,14 +499,14 @@ function openBookPremiumData(view) {
     const month = /^\d{4}-\d{2}-\d{2}$/.test(p.option.expiry || '') ? p.option.expiry.slice(0, 7) : 'Unknown expiry';
     const cost = converted ? number(p.cost) : null;
     const trade = view.isLive ? payload?.optionTradeDetails?.[p.ticker] : null;
-    const rolled = trade && (Boolean(trade.rollDate) || trade.rollPremium !== undefined);
-    // A replacement opening credit is already part of the roll net. Use that
-    // net once, including its buyback debit, rather than counting the STO again.
-    const premium = rolled
-      ? converted && typeof trade.rollPremium === 'number' && Number.isFinite(trade.rollPremium)
-        ? tradeAmount(view, trade, trade.rollPremium) : null
+    // Live cash flow is execution evidence, not the broker's position basis.
+    // Archived views have only their contemporaneous signed book cost.
+    const premium = view.isLive
+      ? converted && trade ? tradeAmount(view, trade, globalThis.OptionPosition.cashFlow(trade)) : null
       : cost == null ? null : -cost;
-    const pnl = converted && p.pricingMode !== 'cost' && p.markSource !== 'cost' ? number(p.pl) : null;
+    const brokerPnl = view.isLive ? globalThis.OptionPosition.valuation(p)?.pnl : null;
+    const pnl = converted && p.pricingMode !== 'cost' && p.markSource !== 'cost'
+      ? view.isLive ? tradeAmount(view, p, brokerPnl) : number(p.pl) : null;
     sum(premiumByExpiry, month, premium);
     sum(premiumByUnderlying, underlying || 'Unspecified', premium);
     sum(pnlByExpiry, month, pnl);

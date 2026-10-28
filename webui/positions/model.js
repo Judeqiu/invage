@@ -70,7 +70,8 @@
       });
       const assessments = lines.map(p => !fresh(p) ? { probability:null, reason:'Broker position date is stale or unavailable' }
         : globalThis.OptionProbability.daysToExpiry(p.option.expiry, asOf) < 0 ? { probability:null, reason:'Past-expiry position requires broker confirmation' }
-        : globalThis.OptionProbability.finishItmProbability(p));
+        : globalThis.OptionProbability.brokerMarkItmProbability(p, payload?.equityPrices?.[ticker],
+          globalThis.OptionProbability.daysToExpiry(p.option.expiry, asOf)));
       const probabilities = assessments.map(a => a.probability);
       const riskGaps = assessments.flatMap((a, i) => a.probability == null ? [`${lines[i].channel}: ${lines[i].ticker} — ${a.reason || 'Incomplete contract or quote'}`] : []);
       const premiumGaps = lines.flatMap((p, i) => premiums[i] == null ? [`${p.channel}: ${p.ticker} — ${!fresh(p) ? 'Broker position date is stale or unavailable' : !finite(payload?.optionTradeDetails?.[p.ticker]?.stoGrossPremium) ? 'Opening fills do not reconcile to the remaining quantity' : 'Reporting currency conversion unavailable'}`] : []);
@@ -83,7 +84,8 @@
         sharesIfCalled: sum(calls.map(p => !fresh(p) ? null : p.option.settlement === 'cash' ? 0 : p.option.settlement === 'physical' ? p.contingentShareObligation : null)),
         premium: sum(premiums), premiumSubtotal: premiums.filter(finite).reduce((a, b) => a + b, 0),
         missingPremium: premiums.filter(p => p == null).length, knownPremium: premiums.filter(finite).length,
-        pnl: sum(lines.map(p => valued(p) && fresh(p) ? p.pl : null)),
+        pnl: sum(lines.map(p => valued(p) && fresh(p)
+          ? convert(globalThis.OptionPosition.valuation(p)?.pnl, p.currency) : null)),
         nearestDte: days.every(finite) ? Math.min(...days) : null,
         highRisk: probabilities.filter(p => p != null && p > 0.6).length,
         unscored: probabilities.filter(p => p == null).length, riskGaps, premiumGaps,

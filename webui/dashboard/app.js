@@ -219,6 +219,15 @@ function fmtPrettyMoney(n, ccy, digits = 2) {
   return `${sign}${abs} ${code}`;
 }
 
+function fmtStrikeMoney(n, ccy) {
+  const value = Number(n);
+  if (!Number.isFinite(value)) return '—';
+  const label = Math.abs(value).toLocaleString('en-US', { maximumSignificantDigits: 21 });
+  const sign = value < 0 ? '-' : '';
+  const code = (ccy || '').toUpperCase();
+  return code === 'SGD' ? `${sign}S$${label}` : !code || code === 'USD' ? `${sign}$${label}` : `${sign}${label} ${code}`;
+}
+
 function longDateLabel(ymd) {
   return optionDateLabel(ymd);
 }
@@ -256,12 +265,7 @@ function entrySpotHtml(trade, ccy) {
 
 // Shared by both dashboard layouts and monthly totals. Never replace an
 // unavailable roll cash flow with the replacement leg's STO or book cost.
-function optionTradeCashFlow(trade) {
-  if (!trade || !/^[A-Z]{3,4}$/.test(trade.currency || '')) return null;
-  const rolled = Boolean(trade.rollDate) || trade.rollPremium !== undefined;
-  const value = rolled ? trade.rollPremium : trade.stoGrossPremium ?? trade.openingGrossPremium;
-  return typeof value === 'number' && Number.isFinite(value) ? value : null;
-}
+function optionTradeCashFlow(trade) { return globalThis.OptionPosition.cashFlow(trade); }
 
 function optionTradeCashFlowTotal(trades) {
   if (!trades.length) return null;
@@ -1666,10 +1670,11 @@ function wheelRiskTable(rows, radar, view, asOf) {
   const columns = ['FIN INSTRUMENT','Pos','Days','Spot','Strike','Moneyness %','IV','If Assigned','Prob. ITM','Last ($)','Avg Px','Market Value','Unrealized P&L (%)','Broker'];
   const body = filtered.map(({p,spot,days,estimate,exposure}) => {
     const o = p.option, multiplier = Number(o.multiplier);
-    const mark = Number.isFinite(p.brokerMark) ? p.brokerMark : Number(o.mark);
-    const value = -mark * Number(p.units);
+    const economics = globalThis.OptionPosition.valuation(p);
+    const mark = economics?.mark ?? NaN;
+    const value = economics?.value ?? NaN;
     const cost = Number(p.avgCost) * Number(p.units);
-    const pl = value + cost;
+    const pl = economics?.pnl ?? NaN;
     const pct = cost > 0 ? pl / cost * 100 : null;
     const probability = estimate.probability;
     const tone = riskLevel(probability);
@@ -1679,7 +1684,7 @@ function wheelRiskTable(rows, radar, view, asOf) {
     const money = (n,digits=0) => Number.isFinite(n) ? fmtPrettyMoney(n,p.currency || reportingCcyCode(view),digits) : '—';
     return `<tr class="risk-row risk-row-${tone}" data-risk-underlying="${escapeHtml(o.underlying)}" tabindex="0" aria-label="Highlight ${escapeHtml(o.underlying)} in open options">
       <td>${optionInstrumentButton(p,view,asOf)}</td><td class="num">${-Number(p.units)}</td><td class="num">${days == null ? '—' : `${days}d`}</td>
-      <td class="num">${spot > 0 ? Number(spot).toFixed(2) : '—'}</td><td class="num">${money(Number(o.strike))}</td>
+      <td class="num">${spot > 0 ? Number(spot).toFixed(2) : '—'}</td><td class="num">${fmtStrikeMoney(o.strike, p.currency || reportingCcyCode(view))}</td>
       <td class="num ${itm ? 'down' : 'muted'}">${moneyness == null ? '—' : fmtSigned(moneyness,1)+'%'}</td>
       <td class="num muted">${estimate.iv == null ? '—' : (estimate.iv*100).toFixed(0)+'%'}</td>
       <td class="num">${Number.isFinite(exposure) ? fmtPrettyMoney(exposure,reportingCcyCode(view),0) : '—'}</td>
@@ -1976,7 +1981,7 @@ function renderPremiumEngine(view) {
   const plHelp = 'Profit or loss from completed option trades, grouped by the month they ended. It is calculated from matched opening and closing trades, or reported directly by the broker. Partial subtotals exclude records that cannot be calculated. Fee treatment is shown for each month. Open positions and stock profit or loss are not included. Expand a month to see which stocks and brokers contribute.';
   const book = openBookPremiumData(view);
   const common = { ccy };
-  const openHelp = 'For live rolled positions, uses the latest verified replacement opening credit plus the old-contract closing debit, once and before fees. Does not add the replacement opening credit again. An unverified roll is unavailable. Other positions use signed opening cost. Archived views use snapshot cost basis because live roll records cannot establish a historical roll. Grouped by current expiry or underlying, not trade date; this is not lifetime cash flow or realized profit.';
+  const openHelp = 'For live rolled positions, uses the latest verified replacement opening credit plus the old-contract closing debit, once and before fees. Does not add the replacement opening credit again. An unverified roll is unavailable. Other live positions use reconciled opening execution cash, not broker book cost. Missing opening evidence is unavailable. Trading and Portfolio show opening premium only; a latest roll also includes its closing leg. Archived views use snapshot cost basis because live roll records cannot establish a historical roll. Grouped by current expiry or underlying, not trade date; this is not lifetime cash flow or realized profit.';
   const chart = (title, values, caption, options) => {
     if (!isWheelDesk) return premiumChartCard(title, values, caption, options);
     const entries = [...values].map(([label, row]) => ({ label: options.monthly ? monthLabel(label) : label, value: row,
@@ -1986,7 +1991,7 @@ function renderPremiumEngine(view) {
   const openCards = chart('Net option premium by expiry month', book.premiumByExpiry, view.isLive ? 'Open book · net of verified roll buybacks' : 'Archived opening cost basis', { ...common, id: 'openPremiumExpiryCard', type: 'area', monthly: true, help: openHelp }) +
     chart('NAV concentration', book.concentration, 'Signed market value as % of NAV', { id: 'premiumConcentrationCard', percent: true, help: 'Signed market value divided by NAV, including option liabilities. Unavailable when NAV is incomplete or non-positive.' }) +
     chart('Net option premium by underlying', book.premiumByUnderlying, view.isLive ? 'Open book · net of verified roll buybacks' : 'Archived opening cost basis', { ...common, id: 'openPremiumUnderlyingCard', help: openHelp }) +
-    chart('Open P&L by expiry month', book.pnlByExpiry, 'Unrealized · before fees', { ...common, id: 'openPnlExpiryCard', type: 'pnl', monthly: true, help: 'Signed option market value minus signed opening cost, grouped by expiry month.' });
+    chart('Open P&L by expiry month', book.pnlByExpiry, 'Unrealized · before fees', { ...common, id: 'openPnlExpiryCard', type: 'pnl', monthly: true, help: 'Broker-snapshot option market value minus recorded signed position cost, matching Sections 01 and 03, grouped by expiry month. Archived views retain snapshot valuation. NAV and concentration retain their separate portfolio valuation basis.' });
   if (isWheelDesk) { el.premiumEngine.innerHTML = openCards; return; }
   const historyCards = cssBarCard('Net Option Premium by Month', rows(data.byMonth), 'Before fees · recorded trades', { id: 'monthlyPremiumCard', limit: 5 }) +
     cssBarCard('Net Option Premium by Underlying', rows(data.byUnderlying, true), 'Before fees · includes recorded option purchases and sales', { id: 'underlyingPremiumCard', limit: 5, help: premiumHelp }) +
@@ -2045,10 +2050,11 @@ function renderOpenOptions(view) {
     const o = p.option;
     const units = Number(p.units);
     const direction = o.side === 'short' ? -1 : 1;
-    const mark = view.isLive && Number.isFinite(p.brokerMark) ? p.brokerMark : Number(p.price);
+    const economics = globalThis.OptionPosition.valuation(p, view.isLive);
+    const mark = economics?.mark ?? NaN;
     const premium = Number(p.avgCost) * units;
-    const marketValue = direction * mark * units;
-    const pl = marketValue - direction * premium;
+    const marketValue = economics?.value ?? NaN;
+    const pl = economics?.pnl ?? NaN;
     const exposure = o.side === 'short'
       ? (o.right === 'put' ? 1 : -1) * o.strike * o.multiplier * units
       : 0;

@@ -2,7 +2,7 @@ import { expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { insightsFixture } from './helpers/insights-fixture.js';
-const m = runInNewContext(['webui/option-probability.js','webui/positions/model.js','webui/insights/model.js'].map(p => readFileSync(p,'utf8')).join('\n')+'; InsightsV2');
+const m = runInNewContext(['webui/option-probability.js','webui/option-position.js','webui/positions/model.js','webui/insights/model.js'].map(p => readFileSync(p,'utf8')).join('\n')+'; InsightsV2');
 it('matches the five underlying columns and eight mockup statistics',() => {
   expect([...m.columns]).toEqual(['Underlying','Contract lines','Premium received','Open P&L','Signal']);
   expect([...m.statLabels]).toEqual(['Best contributor','Biggest drag','Contracts in profit','Average DTE','Average premium','Put / call split','LEAP exposure','Cash weight']);

@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { positionsFixture } from './helpers/positions-fixture.js';
 
-const context = runInNewContext(readFileSync('webui/option-probability.js', 'utf8') + readFileSync('webui/positions/model.js', 'utf8') + '; PositionsV2');
+const context = runInNewContext(['webui/option-probability.js', 'webui/option-position.js', 'webui/positions/model.js'].map(p => readFileSync(p, 'utf8')).join('\n') + '; PositionsV2');
 
 const build = (data: any = positionsFixture(), channel = 'all') => context.build(data, channel);
 
@@ -29,12 +29,14 @@ it('uses open quantities and matched premium; high risk counts rows rather than 
   data.optionTradeDetails = {};
   expect(build(data).obligations[0]).toMatchObject({ premium:null, missingPremium:2, knownPremium:0 });
 });
-it('marks stale, unmatched, and expired quotes unknown rather than Clear', () => {
+it('scores broker marks without paired trade quotes, but leaves stale or missing broker inputs unscored', () => {
   const data = positionsFixture(); data.brokerAsOf.ibkr = '2026-10-01';
   expect(build(data).obligations[0]).toMatchObject({ cashIfAssigned:null, sharesIfCalled:null, premium:null, pnl:null, highRisk:0, unscored:2, stale:true });
   expect(build(data).stocks[0].covered).toBeNull();
   data.brokerAsOf.ibkr = '2026-10-20';
   for (const p of data.model.live.positions) if (p.option) delete p.probabilityQuote;
+  expect(build(data).obligations[0]).toMatchObject({ highRisk:2, unscored:0 });
+  for (const p of data.model.live.positions) if (p.option) delete p.option.mark;
   expect(build(data).obligations[0]).toMatchObject({ highRisk:0, unscored:2 });
   for (const p of data.model.live.positions) if (p.option) p.option.expiry = '2026-10-01';
   expect(build(data).obligations[0].nearestDte).toBe(-19);

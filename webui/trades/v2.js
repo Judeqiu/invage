@@ -61,7 +61,7 @@
     const balances = M.cashBalances(balanceRows,0);
     const columns = state.view === 'open' ? M.openColumns : M.historyColumns;
     const tips = { ID:'Application-owned option-book ID, scoped to broker channel, account and contract terms. It stays the same across partial fills and repeated trades. Each execution has its own immutable system ID in details.',
-      'Returns %':'Opening premium before fees divided by strike × remaining contracts × contract multiplier, for short options. Not annualized, collateral return, or realized P&L.',
+      'Returns %':'Opening premium before fees divided by strike × remaining contracts × contract multiplier, for short options. Not annualized, collateral return, or realized P&L. Opening premium matches Portfolio. Dashboard Premium / Roll may also include the closing leg of the latest verified roll. Opening premium and position cost basis can differ; neither is substituted for the other.',
       'Net cash':'Cumulative dated opening premiums starting at zero in the selected broker, strategy, ticker, right and currency scope, before fees. Year/month filters and collapsed months retain earlier cash carry. A single native currency is required. Same-day rows use stable ID order, not execution time. Missing cash or multiple opening dates make subsequent balances unavailable.',
       'Premium in':'Signed opening option cash before fees. Long option purchases are negative. Snapshot cost is never substituted for missing fills.' };
     let body = '';

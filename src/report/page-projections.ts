@@ -5,7 +5,7 @@ import type { DashboardPayload } from '../webapp/dashboard-data.js';
 // Run trusted, pure application models in a private realm rather than duplicating
 // their accounting rules or exposing Node's global object to browser scripts.
 const context = createContext({});
-for (const file of ['option-probability.js', 'positions/model.js', 'insights/model.js', 'dashboard/aggregate-model.js', 'trades/model.js']) {
+for (const file of ['option-probability.js', 'option-position.js', 'positions/model.js', 'insights/model.js', 'dashboard/aggregate-model.js', 'trades/model.js']) {
   new Script(readFileSync(new URL('../../webui/' + file, import.meta.url), 'utf8'), { filename: file }).runInContext(context);
 }
 export function buildPageProjections(payload: DashboardPayload) {

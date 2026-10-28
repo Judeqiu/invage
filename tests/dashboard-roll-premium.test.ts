@@ -13,7 +13,7 @@ import { buildDashboardModel, buildLivePositions } from '../src/report/dashboard
 
 const source = readFileSync('webui/dashboard/app.js', 'utf8');
 const helpers = source.slice(source.indexOf('function optionTradeCashFlow('), source.indexOf('function openingPremiumHtml('));
-const { cashFlow, total } = runInNewContext(`${helpers}\n({cashFlow:optionTradeCashFlow,total:optionTradeCashFlowTotal})`);
+const { cashFlow, total } = runInNewContext(readFileSync('webui/option-position.js', 'utf8') + `\n${helpers}\n({cashFlow:optionTradeCashFlow,total:optionTradeCashFlowTotal})`);
 const trade = (extra = {}) => ({ currency: 'USD', stoGrossPremium: 1950, rollDate: '2026-10-07', rollPremium: 815, ...extra });
 it('uses verified roll credits, debits and zero, never STO or fee-inclusive cash in place of an unknown roll', () => {
   expect(cashFlow(trade({ stoNetPremium: 1949 }))).toBe(815);

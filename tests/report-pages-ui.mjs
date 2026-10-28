@@ -227,6 +227,7 @@ const files = new Map([
   ['/insights/', 'webui/insights/index.html'],
   ['/insights/app.js', 'webui/insights/app.js'],
   ['/option-probability.js', 'webui/option-probability.js'],
+  ['/option-position.js', 'webui/option-position.js'],
   ['/report.js', 'webui/report.js'],
   ['/report.css', 'webui/report.css'],
 ]);
