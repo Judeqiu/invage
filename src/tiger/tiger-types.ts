@@ -1,4 +1,4 @@
-export type TigerHttpMethod = 'accounts' | 'positions' | 'assets' | 'prime_assets' | 'orders' | 'order_transactions';
+export type TigerHttpMethod = 'accounts' | 'positions' | 'assets' | 'prime_assets' | 'orders' | 'order_transactions' | 'fund_details';
 
 export interface TigerGatewayEnvelope {
   code: number | string;
@@ -24,7 +24,7 @@ export interface TigerRawBundle {
     FUND: TigerGatewayEnvelope;
   };
   /** Complete history pages, retained independently of the positions snapshot. */
-  history?: { start:number; end:number; mode:'full'|'incremental'; orders:Record<string,unknown>[]; transactions:Record<string,unknown>[]; gaps:Array<{kind:'orders'|'coverage';reference:string|null;reason:string}> };
+  history?: { start:number; end:number; mode:'full'|'incremental'; orders:Record<string,unknown>[]; transactions:Record<string,unknown>[]; fund_details?:{from:string;through:string;complete:boolean;rows:Record<string,unknown>[]}; gaps:Array<{kind:'orders'|'coverage';reference:string|null;reason:string}> };
   option_history?: {
     start: number;
     end: number;

@@ -31,3 +31,14 @@ it('uses a complete earlier snapshot when a timeout truncates the final history 
  mocks.execFile.mockImplementation((_bin,_args,_opts,callback)=>{queueMicrotask(()=>callback(new Error('timeout'),'INVAGE_FUTU_JSON:'+JSON.stringify(core)+'\nINVAGE_FUTU_JSON:{"history":'));return {stdin:{end:vi.fn()}}});
  expect(await fetchFutubullSnapshot(credentials,plan)).toEqual(core);
 });
+
+it('revisits older unknown OpenD fees during incremental sync with the original account scope',async()=>{
+ const {mapFutubullHistory}=await import('../src/futubull/futubull-history.js');
+ const previous=mapFutubullHistory({acc_id:'1',history:{plan:{...plan,from:'2024-01-01T00:00:00Z'},deals:[{deal_id:'fill',order_id:'order',code:'US.AAPL',qty:'1',price:'10',trd_side:'BUY',create_time:'2024-05-01 10:00:00'}],orders:[]}},'futubull')!;
+ let input:any;
+ const core={schema:'invage.futubull.raw.v1',acc_id:'1',funds:[{cash:'100'}],positions:[]};
+ mocks.execFile.mockImplementation((_bin,_args,_opts,callback)=>{queueMicrotask(()=>callback(null,'INVAGE_FUTU_JSON:'+JSON.stringify(core)));return {stdin:{end:(value:string)=>{input=JSON.parse(value);}}};});
+ await fetchFutubullSnapshot(credentials,plan,previous);
+ expect(input.history).toEqual({...plan,from:'2024-01-01T00:00:00Z'});
+ await expect(fetchFutubullSnapshot({...credentials,acc_id:'2'},plan,previous)).rejects.toThrow(/scope mismatch/);
+});

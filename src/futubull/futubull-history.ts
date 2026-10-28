@@ -28,17 +28,34 @@ export function mapFutubullHistory(bundle:Row,channel:string):BrokerHistory|unde
    option:parsed&&!('skip'in parsed)?{right:parsed.right,expiry:parsed.expiry,strike:String(parsed.strike)}:null};
  });
  const orders:import('../brokers/history.js').BrokerHistoryOrder[]=h.orders.map(row=>{account(row);const code=text(row.code),market=code.split('.')[0];return {...scope,id:text(row.order_id),native_symbol:code,side:side(row.trd_side),status:text(row.order_status),created_at:stamp(row.create_time),updated_at:stamp(row.updated_time??row.create_time),clock:marketClock(market),currency:row.currency??({US:'USD',HK:'HKD',CN:'CNY',SG:'SGD',JP:'JPY',AU:'AUD'}as Record<string,string>)[market]??null,quantity:optional(row.qty),limit_price:optional(row.price),filled_quantity:optional(row.dealt_qty),filled_price:optional(row.dealt_avg_price),order_type:text(row.order_type),time_in_force:row.time_in_force??null,session:null,legs:[]};});
+ const grouped=new Map<string,typeof orders>();
+ for(const order of orders){const group=grouped.get(order.id)??[];group.push(order);grouped.set(order.id,group);}
+ orders.splice(0,orders.length);
+ for(const [id,group]of grouped){
+  const first=group[0];
+  if(group.some(order=>order.native_symbol!==first.native_symbol||order.side!==first.side)){
+   orders.push({...first,native_symbol:'futubull:order:'+id,currency:group.every(o=>o.currency===first.currency)?first.currency:null,side:'unknown',quantity:null,filled_quantity:null,limit_price:null,filled_price:null});
+   gaps.push({kind:'orders',reference:id,reason:'OpenD shared parent has multiple reported contracts; parent fee retained once without an inferred leg split.'});
+  }else{
+   if(group.some(order=>JSON.stringify(order)!==JSON.stringify(first)))throw new BrokerParseError('Conflicting repeated OpenD parent order');
+   orders.push(first);
+  }
+ }
+ const invalidFees=new Set<string>();
  for(const fee of h.order_fees??[]){
   const id=text(fee.order_id),parent=orders.find(order=>order.id===id);
   try {
    account(fee);
-   if(!parent)throw new Error('Fee parent unavailable');
+   if(!parent||invalidFees.has(id))throw new Error('Fee parent unavailable or contradictory');
    const items=Array.isArray(fee.fee_details)?fee.fee_details.map((item:unknown)=>{
     if(!Array.isArray(item)||item.length!==2)throw new Error('Invalid fee detail');
     return {type:item[0],amount:item[1]};
-   }):fee.fee_details;
-   parent.fees=parseMooMooOrderFees({order_id:id,acc_id:bundle.acc_id,total_fee:fee.fee_amount,fees:items},id,bundle.acc_id,parent.currency??undefined);
+   }):fee.fee_details==null?[]:fee.fee_details;
+   const reported=parseMooMooOrderFees({order_id:id,acc_id:bundle.acc_id,total_fee:fee.fee_amount,fees:items},id,bundle.acc_id,parent.currency??undefined);
+   if(parent.fees&&JSON.stringify(parent.fees)!==JSON.stringify(reported))throw new BrokerParseError('Conflicting repeated OpenD fee');
+   parent.fees=reported;
   } catch {
+   invalidFees.add(id);if(parent)delete parent.fees;
    gaps.push({kind:'coverage',reference:id,reason:'Order fees unavailable or invalid; OpenD charge evidence retained in raw archive.'});
   }
  }

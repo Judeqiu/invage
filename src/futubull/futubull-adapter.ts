@@ -13,7 +13,7 @@ export const futubullAdapter: BrokerConnectorAdapter = {
   async fetchRaw(credentials,opts) {
     if (credentials.app_key || !credentials.opend_port) return cloudAdapter.fetchRaw(credentials, opts);
     const bundle = await fetchFutubullSnapshot({ opend_port: credentials.opend_port,
-      security_firm: credentials.security_firm, acc_id: credentials.acc_id },opts?.history);
+      security_firm: credentials.security_firm, acc_id: credentials.acc_id },opts?.history,opts?.retainedHistory);
     return jsonBrokerPayload(bundle, { account_id: String(bundle.acc_id ?? '') });
   },
   parseToStatement(raw, channel, includeHistory = true) {

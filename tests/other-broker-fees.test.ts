@@ -147,3 +147,24 @@ describe('Futu OpenD reported fees',()=>{
     expect(mapFutubullHistory(foreign,'futubull')!.orders[0].fees).toBeUndefined();
   });
 });
+
+it.each([null,undefined])('uses OpenD reported totals when the optional fee breakdown is %s',fee_details=>{
+ const raw=openD();Object.assign(raw.history.order_fees[0],{fee_amount:'-0.20',fee_details});
+ const h=mapFutubullHistory(raw,'futubull')!;
+ expect(h.orders[0].fees).toEqual({currency:'USD',total:'-0.20',items:[]});
+ expect(Number(h.executions[0].fee_cash)).toBe(0.20);
+});
+it('retains one shared OpenD parent fee without duplicating it across different contracts',()=>{
+ const raw=openD();raw.history.orders.push({...raw.history.orders[0],code:'US.MSFT'});
+ raw.history.deals.push({...raw.history.deals[0],deal_id:'other',code:'US.MSFT'});
+ raw.history.order_fees.push({...raw.history.order_fees[0]});
+ const h=mapFutubullHistory(raw,'futubull')!;
+ expect(h.orders).toHaveLength(1);expect(h.orders[0].fees!.total).toBe('1.123456789012');
+ expect(h.executions).toHaveLength(2);expect(h.executions.every(e=>e.fee_cash===null)).toBe(true);
+ expect(h.sync.gaps.some(g=>g.kind==='orders')).toBe(true);
+});
+it('keeps contradictory OpenD fee totals unallocated',()=>{
+ const raw=openD();raw.history.order_fees.push({...raw.history.order_fees[0],fee_amount:'2'});
+ const h=mapFutubullHistory(raw,'futubull')!;
+ expect(h.orders[0].fees).toBeUndefined();expect(h.executions[0].fee_cash).toBeNull();
+});

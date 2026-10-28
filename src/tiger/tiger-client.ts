@@ -1,6 +1,7 @@
+import {tigerHistoryTime,tigerMarketClock} from './tiger-markets.js';
 import { deferredHistoryReason } from '../brokers/history-fetch.js';
 import { brokerRequestSignal } from '../brokers/network.js';
-import type { BrokerHistorySyncPlan } from '../brokers/history.js';
+import type { BrokerHistory, BrokerHistorySyncPlan } from '../brokers/history.js';
 import { BrokerHttpError, BrokerParseError } from '../brokers/errors.js';
 import { shanghaiTimestamp, signTigerRequest, verifyTigerResponse } from './tiger-sign.js';
 import {
@@ -159,9 +160,9 @@ export async function tigerExecute(args: {
   if (!res.ok) {
     throw new BrokerHttpError(`Tiger ${args.method} HTTP ${res.status}`, String(res.status));
   }
-  const history = args.method === 'orders' || args.method === 'order_transactions';
+  const history = args.method === 'orders' || args.method === 'order_transactions' || args.method === 'fund_details';
   const exactFields = new Set(['id', 'orderId', 'accountId', 'filledQuantity', 'filledPrice',
-    'filledAmount', 'commission', 'gst', 'avgFillPrice', 'avgFilledPrice', 'limitPrice', 'totalQuantity', 'ratio', 'strike', 'multiplier', 'total', 'originalAmount', 'afterDiscountAmount']);
+    'amount', 'filledAmount', 'commission', 'gst', 'avgFillPrice', 'avgFilledPrice', 'limitPrice', 'totalQuantity', 'ratio', 'strike', 'multiplier', 'total', 'originalAmount', 'afterDiscountAmount']);
   const parse = (text: string) => JSON.parse(text, (key, value, context?: { source?: string }) => {
     if (!history || !exactFields.has(key) || typeof value !== 'number') return value;
     if (context?.source && /^-?\d+(?:\.\d+)?$/.test(context.source)) return context.source;
@@ -189,6 +190,36 @@ export async function tigerExecute(args: {
     }
   }
   return json;
+}
+
+/** Complete, exact account cash evidence. Optional failure never erases primary history. */
+export async function fetchTigerFundDetails(args: {
+  gateway:string; credentials:TigerCredentials; fetchImpl:typeof fetch; timestamp?:string;
+}, from:string, through:string) {
+  const evidence={from,through,complete:false,rows:[] as Record<string,unknown>[]};
+  const ids=new Set<string>();
+  try {
+    let start=0, expectedPage=1;
+    let pageCount:number|undefined;
+    for (;;) {
+      if(start) await new Promise(resolve=>setTimeout(resolve,6100)); // Broker quota: ten calls/minute.
+      const env=await tigerExecute({...args,method:'fund_details',biz:{account:args.credentials.account,
+        seg_types:['SEC'],fund_type:'ALL',lang:'en_US',start_date:from.slice(0,10),end_date:through.slice(0,10),start,limit:100}});
+      if(!envelopeOk(env))throw new Error('Fund detail query failed');
+      const data=env.data as {items?:Record<string,unknown>[];page?:number;pageCount?:number};
+      if(!Array.isArray(data?.items)||!Number.isSafeInteger(data.page)||!Number.isSafeInteger(data.pageCount)||
+        data.page!==expectedPage||data.pageCount!<data.page!||pageCount!==undefined&&data.pageCount!==pageCount)throw new Error('Incomplete fund detail pagination');
+      pageCount=data.pageCount;
+      for(const row of data.items){
+        if(!row||typeof row!=='object'||Array.isArray(row)||typeof row.id!=='string'||!row.id||ids.has(row.id))throw new Error('Repeated or invalid fund detail record');
+        ids.add(row.id);evidence.rows.push(row);
+      }
+      if(data.page===data.pageCount){evidence.complete=true;break;}
+      if(!data.items.length)throw new Error('Fund detail pagination did not advance');
+      start+=data.items.length;expectedPage++;
+    }
+  } catch { /* Keep all returned rows, explicitly incomplete. */ }
+  return evidence;
 }
 
 async function fetchOptionHistory(args: {
@@ -262,7 +293,7 @@ function accountKindFromManaged(
 
 export async function fetchTigerRawBundle(
   credentials: TigerCredentials,
-  opts?: { fetchImpl?: typeof fetch; timestamp?: string; gateway?: string; history?: BrokerHistorySyncPlan },
+  opts?: { fetchImpl?: typeof fetch; timestamp?: string; gateway?: string; history?: BrokerHistorySyncPlan; retainedHistory?:BrokerHistory },
 ): Promise<TigerRawBundle> {
   if (credentials.license.toUpperCase() === 'TBHK' && !credentials.token?.trim()) {
     throw new BrokerParseError(
@@ -343,9 +374,13 @@ export async function fetchTigerRawBundle(
     assets: { method: assetMethod, envelope: assetsEnv }, positions: { STK, OPT, FUND },
   };
   try {
-  const history:TigerRawBundle['history'] = opts?.history ? account_kind === 'global'
-    ? { ...await fetchOptionHistory({gateway,credentials,fetchImpl,timestamp:opts.timestamp},opts.history,true),mode:opts.history.mode,gaps:[{kind:'coverage' as const,reference:null,reason:'Tiger Global execution history is not supported by order_transactions.'}] }
-    : { ...await fetchOptionHistory({gateway,credentials,fetchImpl,timestamp:opts.timestamp},opts.history),mode:opts.history.mode,gaps:[] } : undefined;
+  const retained=opts?.retainedHistory;
+  if(retained&&(retained.account_id!==account||retained.broker_id!=='tiger'))throw new BrokerParseError('Tiger retained fee history scope mismatch');
+  const pending=retained?.executions.some(e=>e.fee_cash===null)??false;
+  const plan=opts?.history&&retained&&pending&&retained.sync.from<opts.history.from?{...opts.history,from:retained.sync.from}:opts?.history;
+  const history:TigerRawBundle['history'] = plan ? account_kind === 'global'
+    ? { ...await fetchOptionHistory({gateway,credentials,fetchImpl,timestamp:opts?.timestamp},plan,true),mode:plan.mode,gaps:[{kind:'coverage' as const,reference:null,reason:'Tiger Global execution history is not supported by order_transactions.'}] }
+    : { ...await fetchOptionHistory({gateway,credentials,fetchImpl,timestamp:opts?.timestamp},plan),mode:plan.mode,gaps:[] } : undefined;
   snapshot.history = history;
   if(history && account_kind !== 'global'){
     const existing=new Set(history.orders.map(row=>String(row.id)));
@@ -379,6 +414,15 @@ export async function fetchTigerRawBundle(
       } catch {
         if (history && h === history) history.gaps.push({kind:'coverage',reference:String(order.id),reason:'Tiger order fee itemization unavailable; reported order totals retained when present.'});
       }
+    }
+  }
+  if(history&&account_kind!=='global'){
+    const parents=new Set(history.orders.filter(o=>o.secType==='MLEG').map(o=>String(o.id)));
+    const dates=history.transactions.filter(t=>parents.has(String(t.orderId))).flatMap(t=>{
+      const clock=tigerMarketClock(t.market);return clock?[tigerHistoryTime(t.transactionTime,clock).slice(0,10)]:[];
+    }).sort();
+    if(dates.length){
+      history.fund_details=await fetchTigerFundDetails({gateway,credentials,fetchImpl,timestamp:opts?.timestamp},dates[0],new Date(history.end).toISOString());
     }
   }
     return { ...snapshot, ...(history ? { history } : {}), ...(option_history ? { option_history } : {}) };

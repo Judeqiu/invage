@@ -32,7 +32,7 @@ export const tigerAdapter: BrokerConnectorAdapter = {
   usesCsvTables: false,
   async fetchRaw(credentials, opts) {
     const bundle = await fetchTigerRawBundle(credentialsFrom(credentials), {
-      fetchImpl: fetchImpl(opts), history:opts?.history,
+      fetchImpl: fetchImpl(opts), history:opts?.history, retainedHistory:opts?.retainedHistory,
     });
     return jsonBrokerPayload(bundle, { gateway: bundle.gateway });
   },

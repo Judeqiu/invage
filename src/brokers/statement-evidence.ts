@@ -11,6 +11,7 @@ export interface StatementEvidence {
   source: { name: string; sha256: string; reference: string };
   contracts: Array<{ native_symbol: string; multiplier: string; reference: string }>;
   lifecycle: Array<OptionLifecycleEvent>;
+  execution_fees?: Array<{ execution_id:string; currency:string; fee_cash:string; reference:string }>;
   annotations: Array<{ execution_id: string; kind: 'forced_liquidation'; reference: string }>;
 }
 const eq = (a:string,b:string) => !/[1-9]/.test(addDecimals(a,negateDecimal(b)));
@@ -21,7 +22,7 @@ const text = (v:unknown):string => { if(typeof v!=='string'||!v.trim())throw Err
 export function reconcileStatementEvidence(state: InvestorState, input: unknown): InvestorState {
   const doc = structuredClone(input) as StatementEvidence;
   if (!doc || doc.version!==1 || !Array.isArray(doc.contracts)||!Array.isArray(doc.lifecycle)||!Array.isArray(doc.annotations)) throw Error('Invalid statement evidence document');
-  keys(doc,['version','broker_id','channel','account_id','source','contracts','lifecycle','annotations']);
+  keys(doc,['version','broker_id','channel','account_id','source','contracts','lifecycle','annotations','execution_fees']);
   for(const field of ['broker_id','channel','account_id'] as const)text(doc[field]);
   if(!doc.source||!/^([a-f0-9]{64})$/.test(doc.source.sha256))throw Error('Statement source SHA256 is required');
   keys(doc.source,['name','sha256','reference']);
@@ -43,6 +44,25 @@ export function reconcileStatementEvidence(state: InvestorState, input: unknown)
         if(e.gross_cash!==null&&!eq(e.gross_cash,signed))throw Error('Statement metadata conflicts with retained execution cash');e.gross_cash??=signed;}
     }
     notes.push(contract.native_symbol);
+  }
+  if(doc.execution_fees!==undefined){
+    if(!Array.isArray(doc.execution_fees))throw Error('Statement execution fees must be an array');
+    const ids=new Set<string>();
+    for(const fee of doc.execution_fees){
+      keys(fee,['execution_id','currency','fee_cash','reference']);text(fee.execution_id);text(fee.reference);
+      if(ids.has(fee.execution_id))throw Error('Duplicate statement execution fee');ids.add(fee.execution_id);
+      const fill=history.executions.find(e=>e.id===fee.execution_id);
+      if(!fill||fill.currency!==fee.currency)throw Error('Statement fee execution or currency mismatch');
+      decimal(fee.fee_cash);
+      if(fill.fee_cash!==null&&!eq(fill.fee_cash,fee.fee_cash))throw Error('Statement fee conflicts with retained execution fee');
+      if(fill.fee_cash===null){fill.fee_cash=fee.fee_cash;fill.fee_source={kind:'broker_statement',references:[doc.source.sha256]};}
+    }
+    history.sync.fees=history.executions.length&&history.executions.every(e=>e.fee_cash!==null)?'available':history.executions.some(e=>e.fee_cash!==null)?'partial':'unavailable';
+    history.sync.gaps=history.sync.gaps.filter(g=>{
+      if(g.kind!=='coverage'||!g.reference||!/^(Order fees |OpenD order fees |Tiger .*fee|Cash-log fee |Retained fee fill history)/.test(g.reason))return true;
+      const fills=history.executions.filter(e=>e.order_id===g.reference||e.native_symbol===g.reference);
+      return !fills.length||fills.some(e=>e.fee_cash===null);
+    });
   }
   doc.lifecycle=doc.lifecycle.map(raw=>{
     const e=assertOptionLifecycleEvent(raw);

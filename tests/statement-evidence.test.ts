@@ -46,3 +46,19 @@ it('keeps imports idempotent after PostgreSQL jsonb reorders every object key',(
  const persisted=reorder(first);const next=reconcileStatementEvidence(persisted,doc);
  expect(next.broker_statement_evidence).toHaveLength(1);expect(next).toEqual(persisted);
 });
+
+it.each(['ibkr','moomoo','tiger','futubull','webull'])('imports exact statement fees for %s without estimating a split',broker=>{
+ const {s,doc}=fixture();s.broker_sources!.source.broker_id=broker;
+ const connection=s.broker_connections!.ibkr as import('../src/state/portfolio-state.js').BrokerAccountConnection;
+ connection.broker_id=broker;connection.config=broker==='ibkr'?{}:{[{moomoo:'acc_id',futubull:'acc_id',tiger:'account',webull:'account_id'}[broker]!]:'U1'};
+ const h=s.broker_history!.ibkr;h.broker_id=broker;h.executions.forEach(e=>{e.broker_id=broker;e.fee_cash=null;});doc.broker_id=broker;doc.lifecycle=[];
+ doc.execution_fees=[{execution_id:'open',currency:'USD',fee_cash:'-1.123456789012345',reference:'Statement row 10'},{execution_id:'zero',currency:'USD',fee_cash:'0.20',reference:'Statement row 11 rebate'}];
+ const before=structuredClone(s),next=reconcileStatementEvidence(s,doc);
+ expect(s).toEqual(before);expect(next.broker_history!.ibkr.sync.fees).toBe('available');
+ expect(next.broker_history!.ibkr.executions[0]).toMatchObject({fee_cash:'-1.123456789012345',fee_source:{kind:'broker_statement',references:[doc.source.sha256]}});
+ expect(next.broker_history!.ibkr.executions[1].fee_cash).toBe('0.20');
+ expect(reconcileStatementEvidence(next,doc)).toEqual(next);
+ const fees=doc.execution_fees;
+ for(const patch of [[{...fees[0],currency:'HKD'}],[{...fees[0],execution_id:'missing'}],[fees[0],fees[0]],[{...fees[0],fee_cash:'NaN'}]])expect(()=>reconcileStatementEvidence(s,{...doc,execution_fees:patch})).toThrow();
+ expect(()=>reconcileStatementEvidence(next,{...doc,execution_fees:[{...fees[0],fee_cash:'-2'}]})).toThrow(/conflicts/);
+});

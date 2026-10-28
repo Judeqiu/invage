@@ -8,7 +8,7 @@ export interface BrokerHistoryExecution extends BrokerHistoryScope {
   instrument: 'security' | 'option'; side: 'buy' | 'sell'; effect: 'open' | 'close' | 'mixed' | 'unknown';
   executed_at: string; clock: string; currency: string | null;
   quantity: string; price: string | null; multiplier: string | null; gross_cash: string | null; fee_cash: string | null;
-  fee_source?: { kind: 'cash_log'; references: string[] };
+  fee_source?: { kind: 'cash_log' | 'broker_statement'; references: string[] };
   option: { right: 'call' | 'put'; expiry: string; strike: string } | null;
 }
 export interface BrokerHistoryOrderLeg {
@@ -89,7 +89,7 @@ export function assertHistoryExecution(raw: unknown): BrokerHistoryExecution {
     instrument, side: choice(o.side, ['buy','sell']), effect: choice(o.effect, ['open','close','mixed','unknown']), executed_at: stamp(o.executed_at), clock: text(o.clock),
     currency: currency(o.currency), quantity: amount(o.quantity), price: nullableAmount(o.price), multiplier: nullableAmount(o.multiplier),
     gross_cash: nullableAmount(o.gross_cash), fee_cash: nullableAmount(o.fee_cash), option };
-  if(o.fee_source!==undefined){const source=obj(o.fee_source);keys(source,['kind','references']);if(source.kind!=='cash_log'||row.fee_cash===null||!Array.isArray(source.references)||!source.references.length||source.references.some((r:unknown)=>typeof r!=='string'||!/^[a-f0-9]{64}$/.test(r)))throw Error('Invalid cash-log fee provenance');row.fee_source={kind:'cash_log',references:source.references};}
+  if(o.fee_source!==undefined){const source=obj(o.fee_source);keys(source,['kind','references']);if(!['cash_log','broker_statement'].includes(source.kind as string)||row.fee_cash===null||!Array.isArray(source.references)||!source.references.length||source.references.some((r:unknown)=>typeof r!=='string'||!/^[a-f0-9]{64}$/.test(r)))throw Error('Invalid cash-log fee provenance');row.fee_source={kind:source.kind as 'cash_log'|'broker_statement',references:source.references};}
   return row;
 }
 export function assertHistoryOrder(raw: unknown): BrokerHistoryOrder {
@@ -171,7 +171,7 @@ export function mergeBrokerHistory(previous: BrokerHistory | undefined, incoming
       [...executions.values()].filter(r => r.native_symbol === g.reference).every(r => r.multiplier !== null && r.symbol !== null)))
     .filter(g => !(g.kind === 'coverage' && g.reason.startsWith('Order fees unavailable or invalid;') && g.reference && orders.get(g.reference)?.fees))
     .filter(g => {
-      if (g.kind !== 'coverage' || !g.reference || !/^(Cash-log fee |Retained fee fill history)/.test(g.reason)) return true;
+      if (g.kind !== 'coverage' || !g.reference || !/^(Cash-log fee |Retained fee fill history|Tiger cash-log fee enrichment:)/.test(g.reason)) return true;
       const relevant = [...executions.values()].filter(e => e.order_id === g.reference || e.native_symbol === g.reference);
       return !relevant.length || relevant.some(e => e.fee_cash === null);
     });

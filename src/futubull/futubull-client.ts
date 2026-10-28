@@ -1,4 +1,4 @@
-import type { BrokerHistorySyncPlan } from '../brokers/history.js';
+import type { BrokerHistory, BrokerHistorySyncPlan } from '../brokers/history.js';
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -23,14 +23,14 @@ function validated(credentials: FutubullCredentials) {
   return { opend_port: port, security_firm };
 }
 
-async function bridgeCall(credentials: FutubullCredentials, mode: 'discover' | 'snapshot', history?:BrokerHistorySyncPlan): Promise<Record<string, unknown>> {
+async function bridgeCall(credentials: FutubullCredentials, mode: 'discover' | 'snapshot', history?:BrokerHistorySyncPlan, historicalBackfill=false): Promise<Record<string, unknown>> {
   const config = validated(credentials);
   if (mode === 'snapshot' && !/^\d+$/.test(credentials.acc_id ?? '')) {
     throw new Error('Futubull trading account ID must be numeric.');
   }
   const payload = JSON.stringify({ ...config, mode, acc_id: credentials.acc_id, history });
   const child = await new Promise<{ stdout: string; error?: Error }>((resolve) => {
-    const proc = execFile('python3', [bridge], { timeout: history?.mode === 'full' ? 120_000 : 30_000, maxBuffer: 64 * 1024 * 1024 },
+    const proc = execFile('python3', [bridge], { timeout: history?.mode === 'full' || historicalBackfill ? 120_000 : 30_000, maxBuffer: 64 * 1024 * 1024 },
       (error, stdout) => resolve({ stdout, ...(error ? { error } : {}) }));
     proc.stdin?.end(payload);
   });
@@ -65,6 +65,9 @@ export async function discoverFutubullAccounts(credentials: FutubullCredentials)
   });
 }
 
-export async function fetchFutubullSnapshot(credentials: FutubullCredentials, history?:BrokerHistorySyncPlan) {
-  return bridgeCall(credentials, 'snapshot',history);
+export async function fetchFutubullSnapshot(credentials: FutubullCredentials, history?:BrokerHistorySyncPlan, retainedHistory?:BrokerHistory) {
+  if(retainedHistory&&(retainedHistory.account_id!==credentials.acc_id||retainedHistory.broker_id!=='futubull'))throw new Error('OpenD retained fee history scope mismatch');
+  const backfill=!!(history&&retainedHistory&&retainedHistory.executions.some(e=>e.fee_cash===null)&&retainedHistory.sync.from<history.from);
+  if(backfill)history={...history!,from:retainedHistory!.sync.from};
+  return bridgeCall(credentials, 'snapshot',history,backfill);
 }

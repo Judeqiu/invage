@@ -1,3 +1,4 @@
+import {enrichTigerCashFees} from './tiger-cash-fees.js';
 import {negateDecimal} from '../brokers/option-executions.js';
 import { assertBrokerHistory, type BrokerHistory, type BrokerHistoryGap, type BrokerHistoryOrder } from '../brokers/history.js';
 import { canonicalOptionUnderlying } from '../brokers/option-symbol.js';
@@ -77,5 +78,9 @@ export function mapTigerHistory(bundle:TigerRawBundle,lots:BrokerLot[],channel:s
   order_type:text(row.orderType),time_in_force:row.timeInForce==null?null:text(row.timeInForce),session:row.tradingSessionType==null?null:text(row.tradingSessionType),
   ...(fees ? {fees} : {}),
   legs:(Array.isArray(row.legs)?row.legs as Row[]:[]).map(l=>({native_symbol:identity(l),side:side(l),effect:effect(l),ratio:amount(l.ratio),multiplier:optional(l.multiplier)}))};});
+ if(h.fund_details){
+  for(const row of h.fund_details.rows){const reported=row.accountId??row.account;if(reported!=null&&String(reported)!==bundle.account)throw new BrokerParseError('Tiger cash-flow account mismatch');}
+  gaps.push(...enrichTigerCashFees(orders,executions,h.fund_details));
+ }
  return assertBrokerHistory({...scope,executions,orders,sync:{historical_imported:h.mode==='full',version:1,mode:h.mode,from:new Date(h.start).toISOString(),through:new Date(h.end).toISOString(),status:gaps.length?'partial':'complete',full_history_synced:h.mode==='full'&&!gaps.length,fees:executions.length&&executions.every(e=>e.fee_cash!==null)?'available':orders.some(o=>o.fees)?'partial':'unavailable',gaps}});
 }
