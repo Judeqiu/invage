@@ -12,7 +12,7 @@ import type {
 } from '../brokers/statement.js';
 import type { FlexOpenPosition, FlexSkip, FlexStatementDoc } from './flex-parse.js';
 import { yahooSymbolFromFlex } from '../brokers/yahoo-symbol.js';
-import { canonicalOptionUnderlying } from '../brokers/option-symbol.js';
+import { canonicalOptionUnderlying, parseBrokerOptionCode } from '../brokers/option-symbol.js';
 
 export { yahooSymbolFromFlex };
 
@@ -162,6 +162,13 @@ export function holdingsFromOpenPositions(
         if (!pos.underlyingSymbol?.trim()) throw new Error('option missing underlyingSymbol');
         const expiry = ymdOptionExpiry(pos.expiry);
         const underlying = canonicalOptionUnderlying(pos.underlyingSymbol, { right, expiry, strike: pos.strike });
+        const contract = parseBrokerOptionCode(pos.symbol.replace(/\s+/g, ''));
+        // Cboe SPX and SPXW are cash-settled, with different settlement series.
+        // Use a verified contract root rather than guessing AM/PM from a date.
+        // https://www.cboe.com/tradable_products/sp_500/spx_weekly_options/specifications
+        const spxClass = !('skip' in contract) && ['SPX', 'SPXW'].includes(contract.root) &&
+          ['SPX', 'SPXW'].includes(underlying) && contract.expiry === expiry &&
+          contract.right === right && contract.strike === pos.strike ? contract.root : undefined;
         const base = buildOptionKey({
           underlying,
           right,
@@ -187,7 +194,8 @@ export function holdingsFromOpenPositions(
               expiry,
               multiplier,
               underlying,
-              settlement: 'physical',
+              settlement: spxClass ? 'cash' : 'physical',
+              ...(spxClass ? { settlement_class: spxClass } : {}),
               mark,
             },
           },

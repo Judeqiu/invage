@@ -25,6 +25,18 @@ const SAMPLE = `<?xml version="1.0" encoding="UTF-8"?>
 </FlexQueryResponse>`;
 
 describe('parseFlexQueryXml', () => {
+  it('preserves verified SPX and SPXW settlement classes without changing broker amounts', () => {
+    const base = parseFlexQueryXml(SAMPLE).openPositions[1]!;
+    const rows = ['SPX', 'SPXW'].map(root => ({ ...base, underlyingSymbol: 'SPX',
+      symbol: `${root} 280616P07675000`, expiry: '20280616', putCall: 'P', strike: 7675 }));
+    for (const row of rows) {
+      const mapped = holdingsFromOpenPositions([row], 'ibkr-account').lots[0]!.holding;
+      expect(mapped.option?.settlement).toBe('cash');
+      expect(mapped.option?.settlement_class).toBe(row.symbol.split(' ')[0]);
+      expect(mapped.units).toBe(2);
+      expect(mapped.avg_price).toBe(-265);
+    }
+  });
   it('maps option history onto the account-specific broker channel', () => {
     const history = `<Trades><Trade accountId="U1234567" levelOfDetail="EXECUTION" assetCategory="OPT" tradeID="1" conid="123" dateTime="20260812;103015" buySell="SELL" openCloseIndicator="O" quantity="-2" multiplier="100" underlyingSymbol="AAPL" putCall="C" strike="200" expiry="20270115" currency="USD" proceeds="5140.00" ibCommission="-1.25" ibCommissionCurrency="USD"/></Trades>
       <OptionEAEList><OptionEAE accountId="U1234567" assetCategory="OPT" tradeID="e1" conid="123" underlyingSymbol="AAPL" putCall="C" strike="200" expiry="20270115" multiplier="100" date="20260813" transactionType="Expiration" quantity="-1" currency="USD"/></OptionEAEList>`;

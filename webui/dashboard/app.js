@@ -1326,8 +1326,8 @@ function renderOverview(view) {
         debitNote || (view.cashAmount != null ? (view.cashAmount < 0 ? 'Broker debit · deducted from NAV' : 'Net recorded cash · not deposits') : 'Cash not recorded'),
         'Signed cash balances from your latest broker snapshot, excluding fixed deposits. Negative currency balances are broker debits and reduce net cash and NAV; positive cash in another currency does not erase the debit. It does not include extra borrowing capacity. Whether you can use or withdraw it immediately depends on the broker and whether trades have settled.'),
       metricCardHtml('Max assignment obligation', assignmentObligation == null ? '—' : fmtPrettyMoney(assignmentObligation, cashCcy, 0),
-        assignmentObligation == null ? (stalePuts ? 'Put positions need a fresh broker sync' : 'Put currency or FX unavailable') : 'Gross short-put obligation',
-        'Cash needed to buy the shares if all recorded short puts are assigned. For example, one put with a $100 strike covering 100 shares needs $10,000. The total does not subtract cash, premium received, or protection from other options. Compare it with your cash available.'),
+        assignmentObligation == null ? (stalePuts ? 'Put positions need a fresh broker sync' : 'Put terms, currency or FX unavailable') : 'Net put settlement at expiry · Before premiums and fees',
+        'Maximum net cash outflow at expiry from recorded put positions. Matching long puts offset short puts only within the same account, underlying, expiry, settlement terms and currency. Cash-settled spreads contribute their bounded settlement debit, not the full short strike notional. An uncovered $100 put covering 100 shares contributes $10,000. Strategy maxima are added conservatively and converted to the reporting currency. Excludes premiums, fees, cash collateral and shares. Physical assignment can require funding before protective exercise proceeds arrive; this is not a broker margin or early-assignment funding estimate.'),
     ].join('') + (view.isLive ? brokerFundAssetsCards(payload, view.channelView) : '');
   }
 

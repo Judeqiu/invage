@@ -47,6 +47,38 @@ function tradeAmount(view, row, amount) {
   return Number.isFinite(rate) && rate > 0 ? Number(amount) * rate : null;
 }
 
+// Expiry settlement cash, before premiums/fees/collateral. Each compatible
+// strategy is piecewise linear: its maximum debit occurs at zero or a strike.
+function netPutSettlement(view) {
+  const groups = new Map();
+  for (const p of view.positions || []) {
+    if (p.instrument !== 'option') continue;
+    const o = p.option;
+    if (!o || !['put', 'call'].includes(o.right)) return null;
+    if (o.right !== 'put') continue;
+    if (!['short', 'long'].includes(o.side) || !Number.isFinite(p.units) || !(p.units > 0) ||
+        !Number.isFinite(o.strike) || !(o.strike > 0) || !Number.isFinite(o.multiplier) || !(o.multiplier > 0) ||
+        !p.channel || !p.currency || !o.underlying || !o.expiry || !['physical', 'cash'].includes(o.settlement)) return null;
+    const key = JSON.stringify([p.channel, optionUnderlyingLabel(o), o.expiry, p.currency,
+      o.settlement, o.settlement_class || null]);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(p);
+  }
+  let total = 0;
+  for (const legs of groups.values()) {
+    if (!legs.some(p => p.option.side === 'short')) continue;
+    const strikes = new Set([0, ...legs.map(p => p.option.strike)]);
+    const debit = spot => legs.reduce((sum, p) => sum +
+      (p.option.side === 'short' ? 1 : -1) * p.units * p.option.multiplier * Math.max(0, p.option.strike - spot), 0);
+    let maximumDebit = 0;
+    for (const strike of strikes) maximumDebit = Math.max(maximumDebit, debit(strike));
+    const amount = tradeAmount(view, legs[0], maximumDebit);
+    if (amount == null) return null;
+    total += amount;
+  }
+  return Number.isFinite(total) ? total : null;
+}
+
 function recordedPremiumForView(view, date) {
   const journal = payload?.premiumJournal;
   const channels = selectedTradeChannels(view);
@@ -758,13 +790,12 @@ function legacySlice(live, channel) {
         const view = buildView(dateKey, channel);
         view.positionCount = view.positions.length;
         const date = view.isLive ? payload.generatedAt.slice(0, 10) : view.label;
-        const puts = (view.positions || []).filter(p => p.instrument === 'option' && p.option?.side === 'short' && p.option.right === 'put');
-        const putAmounts = puts.map(p => tradeAmount(view, p, Number(p.option.strike) * Number(p.option.multiplier) * Number(p.units)));
-        const stalePuts = view.isLive && puts.some(p => {
+        const putPositions = (view.positions || []).filter(p => p.instrument === 'option' && p.option?.right === 'put');
+        const stalePuts = view.isLive && putPositions.some(p => {
           const asOf = payload.brokerAsOf?.[p.channel];
           return !asOf || (globalThis.OptionProbability.daysToExpiry(date, asOf) ?? 999) > 4;
         });
-        const assignmentObligation = stalePuts || putAmounts.some(amount => amount == null) ? null : putAmounts.reduce((total, amount) => total + amount, 0);
+        const assignmentObligation = stalePuts ? null : netPutSettlement(view);
         const riskRows = {};
         for (const mode of ['wheel', 'matching']) riskRows[mode] = (view.positions || []).filter(p => p.instrument === 'option' && p.option?.side === 'short').map(p => {
           const o = p.option, spot = view.isLive ? payload.equityPrices?.[o.underlying] : undefined;

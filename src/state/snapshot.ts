@@ -40,6 +40,7 @@ export interface SnapshotPosition {
     multiplier: number;
     underlying: string;
     settlement: 'physical' | 'cash';
+    settlement_class?: string;
     mark: number;
     underlying_mark?: number;
   };

@@ -12,7 +12,7 @@ import type { optionRelationshipsForState } from '../webapp/option-relationships
 
 export const PROJECTION_VERSION = 8;
 // Rebuild saved calculations when their rules change, retaining daily history.
-const CALCULATION_VERSION = 3;
+const CALCULATION_VERSION = 4;
 export interface PortfolioProjection {
   version: typeof PROJECTION_VERSION;
   userId: string;

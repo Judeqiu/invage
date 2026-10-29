@@ -127,6 +127,8 @@ export interface OptionSpec {
   underlying: string;
   /** Settlement style — required, no silent default. */
   settlement: OptionSettlement;
+  /** Broker contract class when known; separates AM/PM series sharing an underlying and date. */
+  settlement_class?: string;
   /**
    * Current option premium mark in **dollars per contract** (to close).
    * Required. Used for MTM when quote_source is manual or Yahoo has no match (auto).

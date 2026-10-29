@@ -13,7 +13,7 @@ const risk = (positions: any[], extra = {}) => context.NetRiskCapital.calculate(
 const stock = (units = 100, cost = 8000, extra = {}) => ({
   instrument: 'equity', ticker: 'AAPL@ibkr', channel: 'ibkr', currency: 'USD', units, cost, ...extra,
 });
-it('keeps the $95/$90 put spread obligation at $9,500 and maximum loss at $300', () => {
+it('nets the $95/$90 put spread settlement to $500 and keeps maximum loss at $300', () => {
   const holdings: any = {};
   for (const [side, strike, avg_price] of [['short', 95, 300], ['long', 90, 100]] as const) {
     holdings[side] = { instrument: 'option', channel: 'ibkr', currency: 'USD', units: 1, avg_price,
@@ -25,9 +25,24 @@ it('keeps the $95/$90 put spread obligation at $9,500 and maximum loss at $300',
   const views = buildPageProjections(payload).dashboard.live;
   for (const channel of ['merged', 'ibkr']) {
     const scope = views[channel] as any;
-    expect(scope.assignmentObligation).toBe(9500);
+    expect(scope.assignmentObligation).toBe(500);
     expect(context.NetRiskCapital.calculate(scope.view).value).toBe(300);
   }
+});
+it('keeps the recorded SPX cost basis distinct from its $12,500 settlement debit', () => {
+  // Anonymized replay of the affected saved view; costs are already totals in USD.
+  const position = (side: string, strike: number, cost: number, units: number, expiry: string) => ({
+    ...leg(side, 'put', strike, cost), units,
+    option: { side, right: 'put', strike, multiplier: 100, underlying: 'SPX', expiry, settlement: 'cash' },
+  });
+  const positions = [
+    position('short', 7675, -97111.29339, 2, '2028-06-16'),
+    position('long', 7650, 48171.853305, 1, '2028-06-16'),
+    position('long', 7625, 49485.853305, 1, '2028-06-16'),
+    position('short', 7650, -55147.146695, 1, '2028-12-15'),
+    position('long', 7600, 53775.853305, 1, '2028-12-15'),
+  ];
+  expect(risk(positions).value).toBeCloseTo(11675.11983, 5);
 });
 it.each([
   ['short', 'put', 95, -300, 'long', 90, 100, 300],
