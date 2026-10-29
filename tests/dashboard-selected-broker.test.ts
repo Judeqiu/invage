@@ -89,6 +89,21 @@ it.skipIf(!existsSync(executablePath)).each(['index.html', 'v2.html'])('%s keeps
     if (fileName === 'v2.html') {
       expect(await page.$eval('#v2Summary .daily-change', node => node.textContent)).toContain('Daily vs');
     }
+    const dailyScopes = [payload.aggregatedViews!.live, ...Object.values(payload.brokerAggregates).map(b => b.scopes.live)]
+      .flatMap(scopes => Object.values(scopes).map((scope: any) => scope.dailyChanges));
+    const savedMetrics = dailyScopes.map(daily => daily.metrics);
+    for (const daily of dailyScopes) daily.metrics = {};
+    await page.reload();
+    await page.waitForFunction(() => document.getElementById('navDelta')?.textContent?.includes('Unavailable'));
+    expect(await page.$eval('#navDelta', node => node.textContent)).toContain('Daily vs 22-Oct-2026');
+    const visibleScope = fileName === 'v2.html' ? '#v2Summary ' : '';
+    expect(await page.$eval(visibleScope + '.daily-aggregate-changes', node => node.textContent)).toContain('no comparable saved value');
+    payload.dashboardConfig.showDailyChanges = false;
+    await page.reload();
+    await page.waitForSelector('[data-channel="retirement"]');
+    expect(await page.$('.daily-change')).toBeNull();
+    expect(await page.$('.daily-aggregate-changes')).toBeNull();
+    for (const [index, daily] of dailyScopes.entries()) daily.metrics = savedMetrics[index];
     delete (payload.dashboardConfig as any).showDailyChanges;
     await page.reload();
     await page.waitForSelector('[data-channel="retirement"]');

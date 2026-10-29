@@ -401,7 +401,7 @@ function buildView(dateKey, channelKey = selectedChannel) {
     fundCount: rawPositions.filter((p) => p.instrument === 'fund').length,
     cashAmount: row.cashAmount ?? null,
     cashCurrency: row.cashCurrency ?? null,
-    cashChannel: row.cashAmount != null ? resolveDashboardChannel(row.cashChannel) : null,
+    cashChannel: row.cashAmount != null && row.cashChannel != null ? resolveDashboardChannel(row.cashChannel) : null,
     positionsValue: row.positionsValue ?? row.totalValue,
     cashWeightPct:
       row.cashAmount != null && row.totalValue

@@ -1,6 +1,8 @@
 import { expect, it } from 'vitest';
 import { attachDailyChanges, singaporeDate } from '../src/report/daily-changes.js';
 import type { PortfolioProjection } from '../src/state/projection-store.js';
+import { buildDashboardModel, buildLivePositions } from '../src/report/dashboard-model.js';
+import { buildPageProjections } from '../src/report/page-projections.js';
 function fixture(at = '2026-10-22T06:00:00Z', amount = 100) {
   const scope = (value: number, channels = ['one']) => ({ view: { totalValue: value, totalCost: 50, totalPL: value - 50,
     totalPLPct: value - 50, cashAmount: 0, cashCurrency: 'USD', reportingCurrency: 'USD', navComplete: true, channels },
@@ -57,6 +59,35 @@ it('uses explicit comparable portfolio snapshot values, without inventing broker
   expect(changes(entry).metrics.cashAmount).toBeUndefined();
   expect(changes(entry, 'one').metrics).toEqual({});
   expect((entry.brokers.ibkr.scopes.live.merged as any).dailyChanges.metrics).toEqual({});
+});
+
+it('recovers the previous daily-sync baseline without treating combined cash as an extra account', () => {
+  const live = buildLivePositions({
+    AAPL: { channel: 'one', currency: 'USD', units: 1, avg_price: 50 },
+    MSFT: { channel: 'two', currency: 'USD', units: 1, avg_price: 100 },
+  }, { AAPL: 100, MSFT: 200 }, {}, [
+    { channel: 'one', currency: 'USD', amount: 50 }, { channel: 'two', currency: 'USD', amount: 50 },
+  ], [], '2026-10-23', { reportingCurrency: 'USD', fxRates: {} });
+  const prior = { date: '2026-10-22', reportingCurrency: 'USD', totalValue: 380, totalCost: 150,
+    totalPL: 130, totalPLPct: 130 / 150 * 100, cashAmount: 100, cashCurrency: 'USD',
+    positions: live.positions.map(p => ({ ...p, value: p.value - 10, pl: p.pl - 10 })) };
+  for (const cashChannel of [undefined, 'default']) {
+    const dashboard: any = { generatedAt: '2026-10-23T06:00:00Z',
+      model: buildDashboardModel(live, [{ ...prior, cashChannel }]) };
+    dashboard.aggregatedViews = buildPageProjections(dashboard).dashboard;
+    const entry = { calculatedAt: dashboard.generatedAt, dashboard, brokers: {} } as PortfolioProjection;
+    attachDailyChanges(entry);
+    if (cashChannel === undefined) {
+      expect(changes(entry).metrics.totalValue.delta).toBe(20);
+      expect(changes(entry).metrics.cashAmount.delta).toBe(0);
+      expect((dashboard.aggregatedViews['2026-10-22'].merged as any).view.channels).not.toContain('default');
+    } else {
+      // A genuinely attributed unassigned cash account is still a different scope.
+      expect(changes(entry).metrics).toEqual({});
+    }
+    expect(changes(entry, 'one').metrics).toEqual({});
+    expect(changes(entry, 'two').metrics).toEqual({});
+  }
 });
 
 it('handles newly empty scopes with no reporting currency', () => {

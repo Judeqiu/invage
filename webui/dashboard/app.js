@@ -328,10 +328,12 @@ function optionInstrumentButton(p, view, asOf) {
 }
 
 function dailyChangeText(key, view) {
-  if (payload?.dashboardConfig?.showDailyChanges !== true || !view?.isLive) return '';
+  if (!key || payload?.dashboardConfig?.showDailyChanges !== true || !view?.isLive) return '';
   const daily = savedDashboardScope(view).dailyChanges;
   const metric = daily?.metrics?.[key];
-  if (!metric) return '';
+  if (!metric) return daily?.previousDate
+    ? `Daily vs ${optionDateLabel(daily.previousDate)} · Unavailable: no comparable saved value`
+    : 'Daily change unavailable: no comparable previous-day saved value';
   const amount = metric.unit === 'pp' ? `${fmtSigned(metric.delta)} pp`
     : metric.unit === 'points' ? `${fmtSigned(metric.delta)} pts` : metric.unit === 'count' ? fmtSigned(metric.delta, 0) : `${metric.delta >= 0 ? '+' : ''}${fmtPrettyMoney(metric.delta, metric.unit, 2)}`;
   return `${amount}${metric.percent == null ? '' : ` (${fmtSigned(metric.percent)}%)`} · Daily vs ${optionDateLabel(daily.previousDate)}`;
@@ -1331,12 +1333,14 @@ function renderOverview(view) {
 
   const navCard = el.navValue?.closest('.metric-card');
   navCard?.querySelector('.daily-aggregate-changes')?.remove();
-  const metrics = payload.dashboardConfig?.showDailyChanges === true && view.isLive ? savedDashboardScope(view).dailyChanges?.metrics : null;
-  if (navCard && metrics && Object.keys(metrics).length) {
+  const metrics = payload.dashboardConfig?.showDailyChanges === true && view.isLive ? savedDashboardScope(view).dailyChanges?.metrics ?? {} : null;
+  if (navCard && metrics) {
     const details = document.createElement('details');
     details.className = 'daily-aggregate-changes';
     details.innerHTML = '<summary>Daily aggregate changes</summary><p class="metric-sub">Changes in saved values; deposits, withdrawals and trades can affect these amounts.</p>' +
-      Object.entries(metrics).map(([key, metric]) => `<p class="metric-sub"><strong>${escapeHtml(metric.label)}</strong><br>${escapeHtml(dailyChangeText(key, view))}</p>`).join('');
+      (Object.keys(metrics).length
+        ? Object.entries(metrics).map(([key, metric]) => `<p class="metric-sub"><strong>${escapeHtml(metric.label)}</strong><br>${escapeHtml(dailyChangeText(key, view))}</p>`).join('')
+        : `<p class="metric-sub">${escapeHtml(dailyChangeText('totalValue', view))}</p>`);
     navCard.append(details);
   }
   if (debitNote) el.kpiRow?.children[3]?.querySelector('.metric-sub')?.classList.add('cash-debit-note');

@@ -628,7 +628,7 @@ describe('buildDashboardReport', () => {
     expect(html).toContain('All platforms');
   });
 
-  it('normalizes snapshot positions without channel to default', () => {
+  it('normalizes snapshot position channels but does not invent a cash-account attribution', () => {
     const live = buildLivePositions(
       { AAPL: { avg_price: 100, units: 10 } },
       { AAPL: 150 },
@@ -657,7 +657,7 @@ describe('buildDashboardReport', () => {
       },
     ]);
     expect(model.history[0].positions[0].channel).toBe(DEFAULT_CHANNEL);
-    expect(model.history[0].cashChannel).toBe(DEFAULT_CHANNEL);
+    expect(model.history[0].cashChannel).toBeUndefined();
   });
 
   it('includes history rows and sparkline when ≥2 snapshots', () => {

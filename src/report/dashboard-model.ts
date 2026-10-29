@@ -1032,7 +1032,7 @@ export function buildDashboardModel(
       cashAmount: snap.cashAmount,
       cashCurrency: snap.cashCurrency,
       cashChannel:
-        snap.cashAmount != null
+        snap.cashAmount != null && snap.cashChannel != null
           ? resolveDashboardChannel(snap.cashChannel)
           : undefined,
       positionsValue: snap.positionsValue,
