@@ -38,21 +38,31 @@ it.each([
   expect(risk([leg(side as string, right as string, strike as number, cost as number),
     leg(otherSide as string, right as string, otherStrike as number, otherCost as number)]).value).toBe(expected);
 });
-it('includes the cost of shares backing covered calls without counting excess shares', () => {
+it('uses backing shares for delivery without adding their principal to options risk capital', () => {
   const call = leg('short', 'call', 100, -300);
-  expect(risk([call, stock()]).value).toBe(7700);
-  expect(risk([call, stock(125, 10000)]).value).toBe(7700);
+  expect(risk([call, stock()]).value).toBe(0);
+  expect(risk([call, stock(125, 10000)]).value).toBe(0);
   expect(risk([call, stock(50, 4000)]).value).toBeNull();
   expect(risk([call, stock(100, 8000, { channel: 'other-account' })]).value).toBeNull();
-  expect(risk([call, stock(100, null as any)]).value).toBeNull();
+  expect(risk([call, stock(100, null as any)]).value).toBe(0);
   expect(risk([call, stock(100, 16000, { currency: 'SGD' })], { fxRates: { SGD: 0.5 } }).value).toBeNull();
-  expect(risk([call, stock(100, 16000)], { reportingCurrency: 'SGD', fxRates: { USD: 2 } }).value).toBe(15700);
+  expect(risk([call, stock(100, 16000)], { reportingCurrency: 'SGD', fxRates: { USD: 2 } }).value).toBe(0);
+});
+
+it('excludes the reported 35k of covered-call backing principal', () => {
+  expect(risk([leg('short', 'call', 400, -1950), stock(100, 35000)]).value).toBe(0);
+  // Replay the retained view's fractional backing lot and proportional 35k basis.
+  expect(risk([leg('short', 'call', 400, -1950), stock(108.3256, 38002.8953176)]).value).toBe(0);
+  // Other option risk remains: a $95/$90 put spread with $200 net credit.
+  expect(risk([leg('short', 'call', 400, -1950), stock(100, 35000),
+    leg('short', 'put', 95, -300, { channel: 'other-account' }),
+    leg('long', 'put', 90, 100, { channel: 'other-account' })]).value).toBe(300);
 });
 it('never reuses shares across call expiries or charges stock cost to a protected call vertical', () => {
   const call = leg('short', 'call', 100, -300);
   const later = { ...call, option: { ...call.option, expiry: '2026-12-18' } };
   expect(risk([call, later, stock()]).value).toBeNull();
-  expect(risk([call, later, stock(200, 16000)]).value).toBe(15400);
+  expect(risk([call, later, stock(200, 16000)]).value).toBe(0);
   expect(risk([call, leg('long', 'call', 105, 100), stock()]).value).toBe(300);
 });
 it('renders a finite spread loss and never renders Unbounded on the dashboard card', () => {
@@ -64,7 +74,7 @@ it('renders a finite spread loss and never renders Unbounded on the dashboard ca
   });
   const view = (positions: any[]) => ({ positions, reportingCurrency: 'USD' });
   expect(render(view([leg('short', 'put', 95, -300), leg('long', 'put', 90, 100)])).value).toBe('$300');
-  expect(render(view([leg('short', 'call', 100, -300), stock()])).value).toBe('$7700');
+  expect(render(view([leg('short', 'call', 100, -300), stock()])).value).toBe('$0');
   const uncovered = render(view([leg('short', 'call', 100, -300)]));
   expect(uncovered.value).toBe('—');
   expect(JSON.stringify(uncovered)).not.toMatch(/unbounded/i);

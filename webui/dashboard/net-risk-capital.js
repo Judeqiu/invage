@@ -20,9 +20,8 @@
       const at = ticker.lastIndexOf('@');
       const underlying = (at > 0 ? ticker.slice(0, at) : ticker).trim().toUpperCase();
       const key = coverKey(p.channel, underlying, p.currency);
-      const lot = shares.get(key) || { units: 0, cost: 0 };
+      const lot = shares.get(key) || { units: 0 };
       lot.units += Number(p.units);
-      lot.cost = p.cost == null ? NaN : lot.cost + Number(p.cost);
       shares.set(key, lot);
     }
     for (const p of view.positions || []) {
@@ -40,7 +39,8 @@
       groups.get(key).legs.push({ right: o.right, strike: o.strike, size: units * o.multiplier * (o.side === 'long' ? 1 : -1), cost, rate });
     }
     // Reserve distinct shares for each expiry; the same shares cannot cover
-    // multiple assignments. Only the cost of shares backing calls is included.
+    // multiple assignments. Shares provide delivery coverage only; their principal
+    // and downside risk are outside this options-only capital metric.
     const requiredShares = new Map();
     for (const group of groups.values()) {
       group.shares = Math.max(0, -group.legs.filter(l => l.right === 'call').reduce((n, l) => n + l.size, 0));
@@ -51,17 +51,15 @@
       const lot = shares.get(key);
       if (!lot || !Number.isFinite(lot.units) || lot.units < required)
         return { value: null, unbounded: true, reason: 'Short calls exceed matching long calls and recorded shares in the same account. There is no finite maximum expiry loss for the uncovered quantity.' };
-      if (!Number.isFinite(lot.cost)) return { value: null, reason: 'Cost basis for shares backing short calls is unavailable.' };
     }
     let value = 0;
     for (const group of groups.values()) {
-      const legs = group.legs, lot = shares.get(group.cover);
-      const stockCost = group.shares ? lot.cost * group.shares / lot.units : 0;
-      const cost = legs.reduce((n, l) => n + l.cost, stockCost);
+      const legs = group.legs;
+      const cost = legs.reduce((n, l) => n + l.cost, 0);
       const payoff = spot => group.shares * spot * legs[0].rate + legs.reduce((n, l) => n + l.size * Math.max(0, l.right === 'put' ? l.strike - spot : spot - l.strike) * l.rate, 0) - cost;
       value += Math.max(0, -Math.min(...[0, ...legs.map(l => l.strike)].map(payoff)));
     }
-    return { value, reason: 'Estimated maximum expiry loss from recorded signed opening costs, before fees. Matching long options offset short options within the same account, underlying, expiry and currency. Covered calls include the proportional recorded cost of backing shares in the same account and currency; shares are never reused across expiries. Sums strategy maxima conservatively; excludes other shares, cash collateral and early assignment effects.' };
+    return { value, reason: 'Estimated maximum expiry loss from recorded signed opening costs, before fees. Matching long options offset short options within the same account, underlying, expiry and currency. Backing shares in the same account and currency cover call delivery without adding stock principal or stock downside risk; shares are never reused across expiries. Sums strategy maxima conservatively; excludes other shares, cash collateral and early assignment effects.' };
   }
   root.NetRiskCapital = { calculate };
 })(globalThis);
