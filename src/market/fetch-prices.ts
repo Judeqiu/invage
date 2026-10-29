@@ -63,9 +63,10 @@ function toIso(v: unknown): string | null {
  *
  * Never treat previousClose as live while a regular/session price exists.
  * - REGULAR → regularMarketPrice
- * - PRE → preMarketPrice if set, else regular (last session)
- * - POST → regularMarketPrice (official session last), else postMarketPrice
- * - CLOSED / other → regularMarketPrice (last session print)
+ * - PRE / POST → the session's extended-hours price, unless its timestamp
+ *   establishes that it predates the regular-session quote
+ * - CLOSED / other → latest timestamped session price
+ * - when timestamps are unavailable → session price, then regular/post/pre
  * - only if all missing → previousClose (last resort, labeled)
  */
 export function pickCurrentPrice(q: LooseQuote): {
@@ -82,35 +83,24 @@ export function pickCurrentPrice(q: LooseQuote): {
   if (state === 'REGULAR' && regular != null) {
     return { price: regular, priceField: 'regularMarketPrice', asOf: toIso(q.regularMarketTime) };
   }
-  if (state === 'PRE' || state === 'PREPRE') {
-    if (pre != null) {
-      return { price: pre, priceField: 'preMarketPrice', asOf: toIso(q.preMarketTime) };
-    }
-    if (regular != null) {
-      return { price: regular, priceField: 'regularMarketPrice', asOf: toIso(q.regularMarketTime) };
-    }
+  const sessions = [
+    { price: regular, priceField: 'regularMarketPrice' as const, asOf: toIso(q.regularMarketTime) },
+    { price: post, priceField: 'postMarketPrice' as const, asOf: toIso(q.postMarketTime) },
+    { price: pre, priceField: 'preMarketPrice' as const, asOf: toIso(q.preMarketTime) },
+  ].filter((s): s is typeof s & { price: number } => s.price != null);
+  const activeField = state === 'PRE' || state === 'PREPRE' ? 'preMarketPrice'
+    : state === 'POST' || state === 'POSTPOST' ? 'postMarketPrice' : null;
+  const active = sessions.find(s => s.priceField === activeField);
+  const regularSession = sessions.find(s => s.priceField === 'regularMarketPrice');
+  if (active && (!active.asOf || !regularSession?.asOf || active.asOf >= regularSession.asOf)) {
+    return active;
   }
-  if (state === 'POST' || state === 'POSTPOST') {
-    // Prefer last regular session close for "closed at" unless caller wants AH print.
-    // Portfolio MTM uses last official session price; post is secondary.
-    // User expectation of "closed at 213" often matches post or regular — use regular
-    // session last first (official close), not previous day.
-    if (regular != null) {
-      return { price: regular, priceField: 'regularMarketPrice', asOf: toIso(q.regularMarketTime) };
-    }
-    if (post != null) {
-      return { price: post, priceField: 'postMarketPrice', asOf: toIso(q.postMarketTime) };
-    }
-  }
-  if (regular != null) {
-    return { price: regular, priceField: 'regularMarketPrice', asOf: toIso(q.regularMarketTime) };
-  }
-  if (post != null) {
-    return { price: post, priceField: 'postMarketPrice', asOf: toIso(q.postMarketTime) };
-  }
-  if (pre != null) {
-    return { price: pre, priceField: 'preMarketPrice', asOf: toIso(q.preMarketTime) };
-  }
+  // Yahoo can retain old pre/post fields. Compare source times rather than
+  // letting a prior day's extended-hours print override a newer session.
+  const latest = sessions.filter(s => s.asOf != null)
+    .sort((a, b) => b.asOf!.localeCompare(a.asOf!))[0];
+  if (latest) return latest;
+  if (sessions[0]) return sessions[0];
   if (prev != null) {
     return {
       price: prev,
