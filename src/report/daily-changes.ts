@@ -1,6 +1,7 @@
 import type { PortfolioProjection } from '../state/projection-store.js';
 
-type Point = { currency: string; members: string; values: Record<string, number>; units: Record<string, string> };
+type Point = { currency: string; members: string; values: Record<string, number>; units: Record<string, string>; bases?: Record<string, string> };
+const settlementBasis = 'net-put-expiry-settlement-v1';
 export type DailyAggregateHistory = Record<string, Record<string, Point>>;
 export type DailyChanges = { date: string; previousDate: string; metrics: Record<string, { label: string; delta: number; percent: number | null; unit: string }> };
 const fields: Record<string, string> = {
@@ -30,7 +31,7 @@ export function attachDailyChanges(entry: PortfolioProjection, history: DailyAgg
     const scope = raw as any, view = scope.view;
     if (!view) continue;
     const currency = view.reportingCurrency || view.cashCurrency;
-    const point: Point = { currency, members: JSON.stringify(channel === 'merged' ? [...(view.channels ?? [])].sort() : [channel]), values: {}, units: {} };
+    const point: Point = { currency, members: JSON.stringify(channel === 'merged' ? [...(view.channels ?? [])].sort() : [channel]), values: {}, units: {}, bases: { assignmentObligation: settlementBasis } };
     // Partial valuations must never produce apparent gains/losses from missing data.
     if (currency && view.navComplete !== false) for (const key of Object.keys(fields)) {
       const value = key === 'positionCount' ? view.positions?.length ?? view.positionCount
@@ -66,6 +67,8 @@ export function attachDailyChanges(entry: PortfolioProjection, history: DailyAgg
     }
     const changes: DailyChanges = { date, previousDate, metrics: {} };
     if (prior && prior.currency === currency && prior.members === point.members) for (const [key, value] of Object.entries(point.values)) {
+      // Preserve gross-notional history, but never compare it to net settlement.
+      if (key === 'assignmentObligation' && prior.bases?.[key] !== settlementBasis) continue;
       const before = prior.values[key];
       if (!Number.isFinite(before) || prior.units[key] !== point.units[key]) continue;
       const delta = value - before;

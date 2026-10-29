@@ -11,6 +11,23 @@ function fixture(at = '2026-10-22T06:00:00Z', amount = 100) {
     brokers: { ibkr: { scopes: { live: { merged: scope(amount / 2) } } }, tiger: { scopes: { live: { merged: scope(amount / 4, ['two']) } } } } } as unknown as PortfolioProjection;
 }
 const changes = (e: PortfolioProjection, channel = 'merged') => (e.dashboard.aggregatedViews!.live[channel] as any).dailyChanges;
+it('preserves legacy gross assignment checkpoints without comparing them with net settlement', () => {
+  const yesterday = fixture();
+  (yesterday.dashboard.aggregatedViews!.live.merged as any).assignmentObligation = 2350000;
+  attachDailyChanges(yesterday);
+  for (const point of Object.values(yesterday.dailyAggregateHistory!['2026-10-22'])) delete point.bases;
+  const original = JSON.stringify(yesterday.dailyAggregateHistory);
+  const today = fixture('2026-10-23T06:00:00Z', 120);
+  (today.dashboard.aggregatedViews!.live.merged as any).assignmentObligation = 62500;
+  attachDailyChanges(today, yesterday.dailyAggregateHistory);
+  expect(changes(today).metrics.assignmentObligation).toBeUndefined();
+  expect(changes(today).metrics.totalValue.delta).toBe(20);
+  expect(JSON.stringify(yesterday.dailyAggregateHistory)).toBe(original);
+  const tomorrow = fixture('2026-10-24T06:00:00Z');
+  (tomorrow.dashboard.aggregatedViews!.live.merged as any).assignmentObligation = 60000;
+  attachDailyChanges(tomorrow, today.dailyAggregateHistory);
+  expect(changes(tomorrow).metrics.assignmentObligation.delta).toBe(-2500);
+});
 it('uses Singapore dates and the previous day close, never an earlier same-day sync', () => {
   expect(singaporeDate('2026-10-22T16:00:00Z')).toBe('2026-10-23');
   const yesterday = fixture(); attachDailyChanges(yesterday);
