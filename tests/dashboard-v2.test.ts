@@ -112,7 +112,13 @@ it.skipIf(!existsSync(executablePath))('renders V2 with shared data, clarifies m
     for (const position of dashboard.model.live.positions) {
       if (position.option) position.probabilityQuote = { mark: position.option.mark, spot: dashboard.equityPrices[position.option.underlying], spotAsOf: dashboard.generatedAt };
     }
-    dashboard.optionAnalytics.executions = [{ channel: 'ibkr', account_id: 'A', underlying: 'AAPL', executed_at: '2026-10-20', currency: 'USD', gross_premium: 250, commission: -1 }];
+    dashboard.optionAnalytics.executions = [
+      { channel: 'ibkr', account_id: 'A', underlying: 'AAPL', executed_at: '2026-10-20', currency: 'USD', gross_premium: 250, commission: -1 },
+      { channel: 'tiger', underlying: 'MSFT', executed_at: '2026-10-10', currency: 'USD', gross_premium: -50, commission: -2 },
+      { channel: 'ibkr', underlying: 'AAPL', executed_at: '2026-08-10', currency: 'USD', gross_premium: 80 },
+      { channel: 'ibkr', underlying: 'AAPL', executed_at: '2026-09-10', currency: 'USD', gross_premium: 90 },
+      { channel: 'ibkr', underlying: 'AAPL', executed_at: '2026-11-10', currency: 'USD', gross_premium: 999 },
+    ];
     await frame.goto(origin + '/dashboard/v2.html');
     await frame.waitForSelector('#expiryTable .risk-table');
     await frame.waitForSelector('#openOptions .option-ledger');
@@ -127,12 +133,14 @@ it.skipIf(!existsSync(executablePath))('renders V2 with shared data, clarifies m
     expect(await frame.$eval('#v2Summary', n => n.textContent)).toContain('Net risk capital');
     expect(await frame.$eval('#v2Summary', n => n.textContent)).not.toContain('Daily aggregate changes');
     expect(await frame.$eval('#v2Summary', n => n.textContent)).toContain('Brokerage fees · Total');
-    expect(await frame.$eval('#openPremiumExpiryCard', n => n.textContent)).toContain('Nov 2026');
-    expect(await frame.$eval('#openPremiumExpiryCard', n => n.textContent)).toContain('$1,300.00');
+    expect(await frame.$eval('#openPremiumExpiryCard .label-eyebrow', n => n.textContent)).toBe('Premium Collected by Month');
+    expect(await frame.$$eval('#openPremiumExpiryCard .bar-meta > span:first-child', nodes => nodes.map(n => n.textContent))).toEqual(['Oct 2026', 'Sep 2026', 'Aug 2026']);
+    expect(await frame.$$eval('#openPremiumExpiryCard .bar-meta .num', nodes => nodes.map(n => n.textContent))).toEqual(['$200.00', '$90.00', '$80.00']);
+    expect(await frame.$eval('#openPremiumExpiryCard', n => n.textContent)).not.toContain('Nov 2026');
     expect(await frame.$eval('#openPnlExpiryCard', n => n.textContent)).toContain('-$200.00');
     expect(await frame.$eval('#openPremiumUnderlyingCard', n => n.textContent)).toContain('$940.00');
     await frame.click('#channelPills [data-channel="ibkr"]');
-    expect(await frame.$eval('#openPremiumExpiryCard', n => n.textContent)).toContain('$700.00');
+    expect(await frame.$eval('#openPremiumExpiryCard', n => n.textContent)).toContain('$250.00');
     await frame.click('#channelPills [data-channel="merged"]');
 
     await frame.click('#expiryTitle .section-explain');
@@ -172,6 +180,9 @@ it.skipIf(!existsSync(executablePath))('renders V2 with shared data, clarifies m
       dashboard.equityPrices[underlying] = 12;
     }
     dashboard.model = buildDashboardModel(buildLivePositions(manyOptions, dashboard.equityPrices), []);
+    dashboard.optionAnalytics.executions = Array.from({ length: 7 }, (_, i) => ({
+      channel: 'ibkr', underlying: 'STOCK1', executed_at: `2026-${String(i + 4).padStart(2, '0')}-10`, currency: 'USD', gross_premium: 100,
+    }));
     await frame.goto(origin + '/dashboard/v2.html');
     await frame.waitForSelector('#premiumEngine .bar-more');
     const chartIds = ['openPremiumExpiryCard', 'premiumConcentrationCard', 'openPremiumUnderlyingCard', 'openPnlExpiryCard'];
