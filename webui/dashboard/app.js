@@ -1666,11 +1666,11 @@ function wheelRiskTable(rows, radar, view, asOf) {
   const filtered = eligible.filter(r =>
     (riskRightFilter === 'all' || r.p.option.right === riskRightFilter) &&
     (riskBrokerFilter === 'all' || r.p.channel === riskBrokerFilter) &&
-    (riskLevelFilter === 'all' || riskLevel(r.estimate.probability) === riskLevelFilter) &&
+    (riskLevelFilter === 'all' ? r.estimate.probability > 0.3 : riskLevel(r.estimate.probability) === riskLevelFilter) &&
     (!riskSearch || optionInstrumentLabel(r.p).toLowerCase().includes(riskSearch.toLowerCase()))
   ).sort((a,b) => (a.days ?? Infinity) - (b.days ?? Infinity) || (b.estimate.probability ?? -1) - (a.estimate.probability ?? -1));
   const right = ['all','put','call'].map(value => `<button type="button" class="chip-btn${riskRightFilter === value ? ' on' : ''}" data-risk-right="${value}" aria-pressed="${riskRightFilter === value}">${value === 'all' ? 'All' : value.toUpperCase()}</button>`).join('');
-  const levels = [['all','All'],['danger','Act now >60%'],['warning','Caution 45–60%'],['ok','Comfortable']].map(([value,label]) => `<button type="button" class="risk-filter risk-filter-${value}${riskLevelFilter === value ? ' on' : ''}" data-risk-level="${value}" aria-pressed="${riskLevelFilter === value}">${escapeHtml(label)}</button>`).join('');
+  const levels = [['all','All >30%'],['danger','Act now >60%'],['warning','Caution 45–60%'],['ok','Comfortable']].map(([value,label]) => `<button type="button" class="risk-filter risk-filter-${value}${riskLevelFilter === value ? ' on' : ''}" data-risk-level="${value}" aria-pressed="${riskLevelFilter === value}">${escapeHtml(label)}</button>`).join('');
   const columns = ['FIN INSTRUMENT','Pos','Days','Spot','Strike','Moneyness %','IV','If Assigned','Prob. ITM','Last ($)','Avg Px','Market Value','Unrealized P&L (%)','Broker'];
   const body = filtered.map(({p,spot,days,estimate,exposure}) => {
     const o = p.option, multiplier = Number(o.multiplier);
@@ -1702,11 +1702,11 @@ function wheelRiskTable(rows, radar, view, asOf) {
       <div class="option-filter-group"><span class="label-eyebrow">Right</span>${right}</div>
       <label class="risk-search"><span class="visually-hidden">Search contracts</span><input id="riskSearch" type="search" placeholder="Ticker, strike, expiry" value="${escapeHtml(riskSearch)}" /></label>
       <div class="risk-legend" role="group" aria-label="Filter by risk">${levels}</div>
-      <p class="risk-filter-count" role="status">${filtered.length} of ${eligible.length} contracts · ${radar.length} flagged${riskLevelFilter === 'all' ? ' · All risks' : ''}</p>
+      <p class="risk-filter-count" role="status">${filtered.length} of ${eligible.length} contracts · ${radar.length} flagged${riskLevelFilter === 'all' ? ' · Prob. ITM >30%' : ''}</p>
     </div>
     <div class="table-scroll"><table class="report risk-table"><thead><tr>${columns.map((label,i)=>`<th scope="col">${escapeHtml(label)}${i===0 ? ' <span class="instrument-hint">(Discuss)</span>' : ''}${label==='Last ($)' || label==='Avg Px' ? '<button type="button" class="help-dot" data-help="Price per underlying share. Position totals include the contract multiplier and quantity." aria-label="Explain option price units">?</button>' : ''}</th>`).join('')}</tr></thead>
     <tbody>${body || `<tr><td colspan="14" class="empty">No contracts match these filters.</td></tr>`}</tbody></table></div>
-    <details class="risk-method"><summary>How Prob. ITM is calculated</summary><p>Implied volatility is solved from each contract’s own broker mark by bisection on Black–Scholes (r = 4%, q = 0, T = DTE/365). The risk-neutral probability of finishing in the money is N(−d₂) for puts and N(d₂) for calls. Contracts without an available underlying spot or a usable broker mark show “—” and still appear here when they expire within 7 days. This estimates finishing in the money, not early assignment. The exposure cards include contracts above 30% and contracts expiring within 7 days; probability-weighted exposure stays unavailable if any included contract cannot be scored.</p></details>
+    <details class="risk-method"><summary>How Prob. ITM is calculated</summary><p>Implied volatility is solved from each contract’s own broker mark by bisection on Black–Scholes (r = 4%, q = 0, T = DTE/365). The risk-neutral probability of finishing in the money is N(−d₂) for puts and N(d₂) for calls. The default All filter shows only contracts with Prob. ITM above 30%. Choose Caution or Act now to narrow the risk level. Contracts below that threshold or without a probability estimate remain available in Section 03. This estimates finishing in the money, not early assignment. The exposure cards include contracts above 30% and contracts expiring within 7 days; probability-weighted exposure stays unavailable if any included contract cannot be scored.</p></details>
   </div>`;
 }
 
