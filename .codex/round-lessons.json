@@ -88,5 +88,47 @@
     "title": "Report the scope of closure precisely",
     "lesson": "Separate fee completeness, broker-reported cash availability, contract metadata and open/close intent. Name user-deferred authentication failures and unavailable live validation explicitly; closing a fee gap does not establish complete historical coverage.",
     "evidence": "2026-10-28 broker-recovery round: The final broker checks closed the verified fee gaps while retaining separate metadata/intent gaps and a user-deferred connection."
+  },
+  {
+    "topic": "validation",
+    "title": "Inspect backing shares before diagnosing option loss",
+    "lesson": "When an expiry-loss card treats a short call as uncovered, inspect the same-account underlying shares as well as long options. Verify the diagnosis against the affected retained view before claiming that a generic spread or symbol fix resolves it. Include backing-share cost only if the approved metric definition includes stock loss; explain and obtain approval before broadening an options metric. Never count the same shares twice across expiry groups.",
+    "evidence": "Session review of 5c2581a and 4eeb953: a generic symbol correction did not diagnose the affected covered call, and adding backing-share cost broadened the metric before its definition was settled."
+  },
+  {
+    "topic": "deploy",
+    "title": "Keep a verified backup when off-server transfers stall",
+    "lesson": "Track deployment health independently of backup transfer success. If range transfers time out or stall, preserve the previous verified off-server backup, keep and verify the new server backup, record the transfer as incomplete, and do not report the new set as verified off server. Stop stalled read-only transfer processes before cleaning their partial files.",
+    "evidence": "Velovest 4eeb953: deployed source and public assets verified; new server backup passed checksums and decryption; timed-out and stalled range transfers were stopped and the previous verified off-server set retained."
+  },
+  {
+    "topic": "test",
+    "title": "Build broker fixtures from the current account schema",
+    "lesson": "Cross-page financial tests must include the complete account-source model, source IDs and connector-specific account config, plus execution contract IDs. Reuse existing typed fixture builders where possible; validate fixture construction before running the browser portion to avoid repeated setup-only failures.",
+    "evidence": "Table-consistency regression fixture required broker_sources, contract_id and Tiger config.account before the financial and browser assertions could run."
+  },
+  {
+    "topic": "validation",
+    "title": "Reconcile table figures by financial basis",
+    "lesson": "Compare matching account, contract, quantity and currency before comparing financial amounts. Separate broker position cost, execution opening cash, latest roll cash and current valuation; do not substitute book cost for execution cash. Cross-page checks should use the same mark and probability inputs and preserve fractional strikes. When shared model rules change, invalidate saved calculations without discarding daily history.",
+    "evidence": "Table consistency round: five retained portfolio projections audited; approved shared option valuation/cash-flow helper, broker-mark risk alignment and fractional-strike rendering passed focused data and desktop/mobile checks."
+  },
+  {
+    "topic": "deploy",
+    "title": "Prepare derived views before a calculation release",
+    "lesson": "When a release changes projection fingerprints or financial calculation rules, prepare new derived views from verified retained inputs while the old service runs. After all replacements start, recheck the source fingerprint before atomically installing each prepared view; keep a newer valid generation rather than overwriting it. Preserve quote timestamps and daily history, and verify both account and broker scopes.",
+    "evidence": "Velovest 3d16346: five views prepared against the prior fingerprint; four installed after restart and one already rebuilt by the worker; 274 P&L, 274 risk and 18 premium checks passed."
+  },
+  {
+    "topic": "general",
+    "title": "Confirm financial metric scope before changing its formula",
+    "lesson": "Before changing a financial metric, state which instruments, capital, account, fees, currency and valuation basis it includes. Test the user's exact example and verify the affected portfolio. A request to fix a number does not authorize adding backing-share cost or replacing maximum loss with margin, stress loss or another metric; obtain explicit approval for a definition change.",
+    "evidence": "Session review of 4eeb953: the covered-call correction included stock cost in an options figure before its intended scope had been confirmed."
+  },
+  {
+    "topic": "general",
+    "title": "Make claims match the evidence and approved scope",
+    "lesson": "A passing generic example establishes that example, not the cause of a live screenshot. Verify the actual affected view before reporting it fixed. Batch necessary clarification into concrete numerical or UI choices, reuse existing approvals, and keep calculation fixes within the approved layout and controls.",
+    "evidence": "Session review: the affected-view inspection identified the covered-call cause; the later approved table audit reproduced differences and verified the deployed account and broker views in 3d16346."
   }
 ]

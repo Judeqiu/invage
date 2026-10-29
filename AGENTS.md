@@ -64,6 +64,42 @@ wait for approval. An explicit request for a specific UI change, including a
 rollback, authorizes that requested change; do not request the same approval again.
 
 
+# Financial calculation changes
+
+Before changing a financial metric, establish its definition: included instruments,
+account scope, quantity and multiplier units, cost basis, quote source/time,
+currency conversion and fee treatment. Turn the user's numerical example into
+a regression case. A request to fix a number does not authorize broadening the
+metric to include stock principal, backing-share cost or a different risk measure.
+Explain any proposed definition change and obtain explicit approval first.
+
+Reproduce the affected saved view before claiming a diagnosis or resolution.
+Inspect the actual account's short legs, protective long legs and backing shares;
+a generic spread example or a plausible symbol bug is insufficient evidence.
+Distinguish missing evidence from a verified bounded loss and from a position
+without a finite maximum loss. Correct the data/calculation before changing its
+presentation; never invent a finite amount to replace an unwanted label.
+
+For figures repeated across pages, use shared calculations and compare the same
+account, contract, quantity, currency and valuation time. Keep position book cost,
+opening execution cash, latest-roll cash and realized/unrealized P&L distinct.
+Preserve broker signs, zeroes, rebates, contract multipliers and fractional
+strikes. Check both row values and their totals, including partial closures,
+protective legs and FX, before treating table consistency as verified.
+
+Read the repository's current instructions and relevant lessons before validation.
+Reuse current typed broker fixtures and verify fixture construction before browser
+checks. Use the known local Vitest entry point when the shell launcher resolves
+elsewhere. Check database test prerequisites before selecting integration suites;
+do not repeatedly launch a suite whose required test database is unavailable.
+
+When deploying changed saved calculations, prepare replacement views while the
+old services run. Recheck source fingerprints before installing them, retain a
+newer valid generation, preserve quote timestamps and daily history, and verify
+both account and broker scopes after startup. Report application health and backup
+verification separately; preserve the previous verified backup when a new copy
+cannot be verified.
+
 # Codex round learning
 
 This project references the three-hook design in Binary's
