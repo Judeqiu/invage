@@ -53,6 +53,8 @@ function netPutSettlement(view) {
   const groups = new Map();
   for (const p of view.positions || []) {
     if (p.instrument !== 'option') continue;
+    // Broker-retained closed rows have no remaining settlement obligation.
+    if (p.units === 0) continue;
     const o = p.option;
     if (!o || !['put', 'call'].includes(o.right)) return null;
     if (o.right !== 'put') continue;
@@ -790,7 +792,7 @@ function legacySlice(live, channel) {
         const view = buildView(dateKey, channel);
         view.positionCount = view.positions.length;
         const date = view.isLive ? payload.generatedAt.slice(0, 10) : view.label;
-        const putPositions = (view.positions || []).filter(p => p.instrument === 'option' && p.option?.right === 'put');
+        const putPositions = (view.positions || []).filter(p => p.instrument === 'option' && p.units !== 0 && p.option?.right === 'put');
         const stalePuts = view.isLive && putPositions.some(p => {
           const asOf = payload.brokerAsOf?.[p.channel];
           return !asOf || (globalThis.OptionProbability.daysToExpiry(date, asOf) ?? 999) > 4;

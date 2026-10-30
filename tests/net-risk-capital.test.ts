@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { buildDashboardModel, buildLivePositions } from '../src/report/dashboard-model.js';
 import { buildPageProjections } from '../src/report/page-projections.js';
+import type { Holding } from '../src/market/types.js';
 const context: any = {};
 runInNewContext(readFileSync('webui/dashboard/net-risk-capital.js', 'utf8'), context);
 const leg = (side: string, right: string, strike: number, cost: number, extra = {}) => ({
@@ -125,4 +126,43 @@ it('converts strike payoffs once, preserves converted cost, and rejects missing 
   expect(risk([leg('short', 'put', 100, -600, { currency: 'SGD' })]).value).toBeNull();
   expect(risk([], { navComplete: false }).value).toBeNull();
   expect(risk([]).value).toBe(0);
+});
+
+it('gives closed rows zero risk without treating missing or invalid quantities as closed', () => {
+  expect(risk([{ instrument: 'option', units: 0 }]).value).toBe(0);
+  expect(risk([leg('short', 'put', 100, -300), { instrument: 'option', units: 0 }]).value).toBe(9700);
+  for (const units of [null, undefined, NaN, Infinity, -1, '']) {
+    expect(risk([leg('short', 'put', 100, -300, { units })]).value).toBeNull();
+  }
+});
+
+it('replays the affected Moomoo holdings with two closed INTC puts in account and combined views', () => {
+  const holdings: Record<string, Holding> = {};
+  const channel = 'moomoo-account';
+  // Contract quantities and signed costs reproduced from the affected saved view.
+  const puts = [
+    ['SOXL', 85, '2026-11-20', 3, 199], ['INTC', 72.5, '2026-12-18', 2, 114],
+    ['BE', 210, '2026-11-13', 1, 575], ['SOXL', 65, '2026-12-18', 1, 225],
+    ['SKHY', 135, '2026-11-20', 1, -744], ['ORCL', 100, '2026-12-18', 1, 213],
+    ['INTC', 85, '2026-11-20', 0, 0], ['INTC', 82.5, '2026-11-20', 0, 0],
+  ] as const;
+  for (const [index, [underlying, strike, expiry, units, avg_price]] of puts.entries()) {
+    holdings[`put-${index}`] = { instrument: 'option', channel, currency: 'USD', units, avg_price,
+      option: { underlying, strike, expiry, side: 'short', right: 'put', multiplier: 100, settlement: 'physical', mark: 0 } };
+  }
+  holdings.call = { instrument: 'option', channel, currency: 'USD', units: 1, avg_price: 1950,
+    option: { underlying: 'AVGO', strike: 400, expiry: '2026-12-18', side: 'short', right: 'call', multiplier: 100, settlement: 'physical', mark: 400 } };
+  holdings[`AVGO@${channel}`] = { instrument: 'equity', channel, currency: 'USD', units: 108.3256, avg_price: 350.821 };
+  const model = buildDashboardModel(buildLivePositions(holdings, { AVGO: 323.34 }, {},
+    [{ channel, currency: 'USD', amount: -4876.03 }], [], '2026-10-30', { reportingCurrency: 'USD', fxRates: {} }), []);
+  const payload: any = { model, generatedAt: '2026-10-30T17:09:13.722Z', brokerAsOf: { [channel]: '2026-10-30' } };
+  const scopes = buildPageProjections(payload).dashboard.live as any;
+  for (const key of ['merged', channel]) {
+    expect(scopes[key].assignmentObligation).toBe(91000);
+    expect(context.NetRiskCapital.calculate(scopes[key].view).value).toBe(89906);
+    expect(scopes[key].view.positions.filter((p: any) => p.units === 0)).toHaveLength(2);
+  }
+  // A stale, closed-only account must not invalidate an active account's settlement.
+  for (const p of model.live.positions) if (p.units === 0) p.channel = 'closed-account';
+  expect((buildPageProjections(payload).dashboard.live.merged as any).assignmentObligation).toBe(91000);
 });

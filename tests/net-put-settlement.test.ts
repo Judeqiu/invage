@@ -60,6 +60,18 @@ it('converts native settlement once and leaves missing evidence unavailable', ()
   expect(calculate(view([]))).toBe(0);
 });
 
+it('treats retained zero-quantity contracts as zero without masking invalid open quantities', () => {
+  const closed = [leg('short', 85, 0, { underlying: 'INTC', expiry: '2026-11-20' }),
+    leg('short', 82.5, 0, { underlying: 'INTC', expiry: '2026-11-20' })];
+  expect(calculate(view(closed))).toBe(0);
+  expect(calculate(view([...june, ...closed]))).toBe(7500);
+  // A closed row needs no remaining payoff terms or FX; preserve it in the view.
+  expect(calculate(view([...june, { instrument: 'option', units: 0 } as any]))).toBe(7500);
+  for (const units of [null, undefined, NaN, Infinity, -1, '0']) {
+    expect(calculate(view([{ ...leg('short', 100), units } as any]))).toBeNull();
+  }
+});
+
 it('saves the corrected result for both combined and account views and checks protective-leg freshness', () => {
   const holdings: Record<string, Holding> = {};
   for (const [index, p] of [...spx, spy].entries()) holdings['leg-' + index] = {

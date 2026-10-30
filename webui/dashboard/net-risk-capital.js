@@ -26,6 +26,8 @@
     }
     for (const p of view.positions || []) {
       if (p.instrument !== 'option') continue;
+      // Retain the broker row, but closed contracts carry no open option risk.
+      if (p.units === 0) continue;
       const o = p.option, units = Number(p.units), cost = Number(p.cost);
       const currency = view.reportingCurrency || view.cashCurrency;
       const rate = p.currency && p.currency === currency ? 1 : view.fxRates?.[p.currency];
