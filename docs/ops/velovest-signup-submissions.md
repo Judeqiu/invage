@@ -33,7 +33,8 @@ or deletion endpoint is provided.
 The stored status is `submitted`. Saving does not reserve a slot, verify a
 payment, send email, or create a user account. The existing sample PayNow QR,
 simulated availability and confirmation-page wording remain unchanged at the
-owner's explicit request. The existing browser proof selection rule is
+owner's explicit request. The checkout notice now discloses that submitted
+payment proofs are stored privately, as separately approved. The existing browser proof selection rule is
 unchanged. Application-database backups include the new table and proof bytes.
 
 Verification uses `tests/signup-submissions.test.ts` and the disposable database

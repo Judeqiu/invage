@@ -276,7 +276,7 @@ export function CompactCheckout({ initialPackage }: { initialPackage?: PackageId
 
           <label className="mt-4 flex items-start gap-2.5 text-xs leading-5 text-muted-foreground"><input type="checkbox" checked={details.agree} onChange={e => set("agree", e.target.checked)} className="mt-0.5 size-4 shrink-0 accent-primary" aria-invalid={!!errors.agree}/><span>I have read the <Link to="/risk-disclosure" className="font-semibold text-primary">Risk Disclosure</Link> and understand that my appointment is confirmed only after payment is verified, and that access to the Velovest system is given during my onboarding session.</span></label>
           {errors.agree && <p className="mt-1 text-xs text-destructive">{errors.agree}</p>}
-          <p className="mt-3 border border-warning/40 bg-warning/10 px-3 py-2 text-xs">Demo — the QR is a sample and uploaded files aren’t stored.</p>
+          <p className="mt-3 border border-warning/40 bg-warning/10 px-3 py-2 text-xs">The PayNow QR is a sample. Submitted payment proofs are stored privately for administrator review.</p>
           {submissionError && <p role="alert" className="mt-4 text-sm text-destructive">{submissionError}</p>}
           <div className="mt-4 flex flex-col-reverse gap-2 border-t border-border pt-4 sm:flex-row sm:justify-between"><Button type="button" variant="outline" onClick={() => setStep(1)} disabled={processing}><ArrowLeft/>Change booking</Button><Button type="submit" disabled={processing}>{processing ? <><Loader2 className="animate-spin"/>Submitting…</> : <><Upload/>Submit proof of payment</>}</Button></div>
         </form>}
