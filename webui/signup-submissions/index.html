@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Signup submissions</title>
+  <link rel="stylesheet" href="../report.css">
+  <link rel="stylesheet" href="page.css">
+</head>
+<body>
+  <main>
+    <h1>Signup submissions</h1>
+    <p>Website submissions and requested sessions. Submission does not confirm a payment, reserve a slot or create an account.</p>
+    <form id="search-form">
+      <label for="search">Search submissions</label>
+      <div class="search-controls"><input id="search" type="search" placeholder="Reference, name, email, package, session or transaction ID"><button type="submit">Search</button><button id="refresh" type="button">Refresh</button></div>
+    </form>
+    <p id="message" role="status" aria-live="polite">Loading submissions…</p>
+    <div class="table-scroll" role="region" aria-label="Signup submissions table" tabindex="0">
+      <table>
+        <thead><tr><th>Submitted (SGT)</th><th>Reference</th><th>Name</th><th>Email</th><th>Phone</th><th>Package</th><th>Amount (SGD)</th><th>Requested session (SGT)</th><th>Bank transaction ID</th><th>Status</th><th>Payment proof</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+  </main>
+  <script src="app.js" defer></script>
+</body>
+</html>

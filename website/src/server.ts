@@ -47,6 +47,23 @@ function isH3SwallowedErrorBody(body: string): boolean {
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     try {
+      if (new URL(request.url).pathname === "/api/signup/submissions") {
+        if (request.method !== "POST") return Response.json({ error: "Method not allowed." }, { status: 405, headers: { Allow: "POST" } });
+        try {
+          // A fixed upstream keeps submissions in the workspace database. No browser
+          // cookies or Authorization headers are forwarded to the public endpoint.
+          const upstream = await fetch("https://chat.velovest.lextok.com/api/domain/invage/academy-signup/submissions", {
+            method: "POST",
+            headers: { "Content-Type": request.headers.get("content-type") ?? "application/json" },
+            body: await request.arrayBuffer(),
+          });
+          return new Response(upstream.body, { status: upstream.status, headers: {
+            "Content-Type": "application/json", "Cache-Control": "no-store",
+          } });
+        } catch {
+          return Response.json({ error: "Your submission could not be saved. Please retry; your form is still shown." }, { status: 503 });
+        }
+      }
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
       return await normalizeCatastrophicSsrResponse(response);

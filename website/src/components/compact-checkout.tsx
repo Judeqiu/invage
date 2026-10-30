@@ -165,6 +165,7 @@ export function CompactCheckout({ initialPackage }: { initialPackage?: PackageId
   const [proofUrl, setProofUrl] = useState<string>();
   const [errors, setErrors] = useState<Errors>({});
   const [processing, setProcessing] = useState(false);
+  const [submissionError, setSubmissionError] = useState<string>();
 
   useEffect(() => { setDates(bookableDates(new Date())); }, []);
   useEffect(() => { window.scrollTo({ top: 0 }); if (step === 2) setReference(prev => prev ?? createReference()); }, [step]);
@@ -178,15 +179,38 @@ export function CompactCheckout({ initialPackage }: { initialPackage?: PackageId
   const set = <K extends keyof Details>(key: K, value: Details[K]) => { setDetails(prev => ({ ...prev, [key]: value })); clearError(key); };
   const choose = (id: PackageId) => { setPkg(id); setStep(1); };
 
-  const submit = (event: FormEvent) => {
+  const submit = async (event: FormEvent) => {
     event.preventDefault();
     const found = validate(details, proof);
     setErrors(found);
     if (Object.keys(found).length > 0 || !pkg || !date || !time || !reference) return;
+    if (!proof) return;
+    setSubmissionError(undefined);
     setProcessing(true);
-    window.setTimeout(() => {
-      void navigate({ to: "/confirmation", search: { ref: reference, pkg, date, time, name: details.name.trim(), email: details.email.trim() } });
-    }, 1200);
+    try {
+      const proofBase64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error("The payment-proof file could not be read. Please select it again."));
+        reader.onload = () => resolve(String(reader.result).split(",")[1] ?? "");
+        reader.readAsDataURL(proof);
+      });
+      const response = await fetch("/api/signup/submissions", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reference, packageId: pkg, sessionDate: date, sessionTime: time,
+          name: details.name, email: details.email, phone: details.phone,
+          bankTransactionId: details.txn, consentAccepted: details.agree,
+          proofFilename: proof.name, proofContentType: proof.type, proofBase64,
+        }),
+      });
+      const saved = await response.json() as { reference?: string; error?: string };
+      if (!response.ok || !saved.reference) throw new Error(saved.error ?? "Your submission could not be saved. Please retry.");
+      await navigate({ to: "/confirmation", search: { ref: saved.reference, pkg, date, time, name: details.name.trim(), email: details.email.trim() } });
+    } catch (error) {
+      setSubmissionError(error instanceof Error ? error.message : "Your submission could not be saved. Please retry.");
+    } finally {
+      setProcessing(false);
+    }
   };
 
   const titles = ["Choose your package.", "Book your onboarding session.", "Pay via PayNow."];
@@ -253,6 +277,7 @@ export function CompactCheckout({ initialPackage }: { initialPackage?: PackageId
           <label className="mt-4 flex items-start gap-2.5 text-xs leading-5 text-muted-foreground"><input type="checkbox" checked={details.agree} onChange={e => set("agree", e.target.checked)} className="mt-0.5 size-4 shrink-0 accent-primary" aria-invalid={!!errors.agree}/><span>I have read the <Link to="/risk-disclosure" className="font-semibold text-primary">Risk Disclosure</Link> and understand that my appointment is confirmed only after payment is verified, and that access to the Velovest system is given during my onboarding session.</span></label>
           {errors.agree && <p className="mt-1 text-xs text-destructive">{errors.agree}</p>}
           <p className="mt-3 border border-warning/40 bg-warning/10 px-3 py-2 text-xs">Demo — the QR is a sample and uploaded files aren’t stored.</p>
+          {submissionError && <p role="alert" className="mt-4 text-sm text-destructive">{submissionError}</p>}
           <div className="mt-4 flex flex-col-reverse gap-2 border-t border-border pt-4 sm:flex-row sm:justify-between"><Button type="button" variant="outline" onClick={() => setStep(1)} disabled={processing}><ArrowLeft/>Change booking</Button><Button type="submit" disabled={processing}>{processing ? <><Loader2 className="animate-spin"/>Submitting…</> : <><Upload/>Submit proof of payment</>}</Button></div>
         </form>}
 
