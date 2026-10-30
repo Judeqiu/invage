@@ -1,5 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { CompactAuthPage } from "@/components/compact-pages";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/login")({
   staticData: { sitemap: false },
@@ -12,5 +11,8 @@ export const Route = createFileRoute("/login")({
     { property: "og:type", content: "website" },
     { name: "twitter:card", content: "summary_large_image" },
   ] }),
-  component: () => <CompactAuthPage mode="login"/>,
+  beforeLoad: ({ location }) => {
+    // Authenticate on the workspace origin so its existing session cookie and return path work.
+    throw redirect({ href: `https://chat.velovest.lextok.com/login${location.searchStr}` });
+  },
 });

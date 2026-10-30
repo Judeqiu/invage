@@ -133,7 +133,7 @@ export function createInvageWebUi(): DomainWebUiExtension {
     version: appVersion,
     defaultPath: '/dashboard',
     navLabels: { chat: consultant ? 'AI Chat' : 'Chat' },
-    ...(consultant ? {shell: {
+    ...(consultant ? {loginPage: {shell: 'login/shell.html', formChrome: false}, shell: {
       variant: 'trading' as const,
       primaryNavIds: ['dashboard','positions','trades','insights','account-risk','chat','brokers'],
       syncAction: {label:'Sync brokers',statusPath:'/api/domain/invage/broker-sync/status',actionPath:'/api/domain/invage/broker-sync'},
