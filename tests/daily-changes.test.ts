@@ -113,3 +113,15 @@ it('handles newly empty scopes with no reporting currency', () => {
   expect(() => attachDailyChanges(entry)).not.toThrow();
   expect(changes(entry).metrics).toEqual({});
 });
+
+it('preserves old risk checkpoints while withholding deltas across the probability calculation change', () => {
+  const yesterday=fixture();attachDailyChanges(yesterday);
+  for(const point of Object.values(yesterday.dailyAggregateHistory!['2026-10-22'])) delete point.bases?.['risk.wheel.cover'];
+  const original=JSON.stringify(yesterday.dailyAggregateHistory),today=fixture('2026-10-23T06:00:00Z',120);
+  attachDailyChanges(today,yesterday.dailyAggregateHistory);
+  expect(changes(today).metrics['risk.wheel.cover']).toBeUndefined();
+  expect(changes(today).metrics.totalValue.delta).toBe(20);
+  expect(JSON.stringify(yesterday.dailyAggregateHistory)).toBe(original);
+  const tomorrow=fixture('2026-10-24T06:00:00Z',130);attachDailyChanges(tomorrow,today.dailyAggregateHistory);
+  expect(changes(tomorrow).metrics['risk.wheel.cover'].delta).toBe(0);
+});

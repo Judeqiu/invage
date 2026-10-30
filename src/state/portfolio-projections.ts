@@ -3,7 +3,8 @@ import { buildBrokerProjections } from '../report/broker-projections.js';
 import { listUserIds } from 'utarus';
 import { loadInvestor } from './investor-store.js';
 import { portfolioRefreshDeferred, registerPortfolioRefresher } from './projection-events.js';
-import { portfolioFingerprint, readDailyAggregateHistory, PROJECTION_VERSION, readPortfolioProjection, writePortfolioProjection, type PortfolioProjection } from './projection-store.js';
+import { portfolioFingerprint, readDailyAggregateHistory, readPriorQuoteDashboard, PROJECTION_VERSION, readPortfolioProjection, writePortfolioProjection, type PortfolioProjection } from './projection-store.js';
+import { retainProbabilityQuotes } from '../market/retain-probability-quotes.js';
 import { loadDashboardForSlug } from '../webapp/dashboard-data.js';
 import { buildExecutionJournal } from '../brokers/option-executions.js';
 import { tradesOpenBook, tradesHistory } from '../webapp/trades-v2-data.js';
@@ -28,6 +29,7 @@ export function createPortfolioProjectionRefresher(overrides: Partial<typeof run
         const state = snapshot.state;
         const relationships = await deps.prepareOptionRelationships(state);
         const dashboard = await deps.loadDashboardForSlug(userId, undefined, undefined, undefined, { snapshot, relationships });
+        retainProbabilityQuotes(dashboard, readPriorQuoteDashboard(userId));
         const optionHistory = deps.optionHistoryForState(state);
         const tradeHistory = deps.tradesHistory({ ...state, option_observations: optionHistory.observations,
           option_events: optionHistory.events }, relationships.groups.flatMap(g => g.relationships));

@@ -70,7 +70,7 @@
       });
       const assessments = lines.map(p => !fresh(p) ? { probability:null, reason:'Broker position date is stale or unavailable' }
         : globalThis.OptionProbability.daysToExpiry(p.option.expiry, asOf) < 0 ? { probability:null, reason:'Past-expiry position requires broker confirmation' }
-        : globalThis.OptionProbability.brokerMarkItmProbability(p, payload?.equityPrices?.[ticker],
+        : globalThis.OptionProbability.currentSpotItmProbability(p, payload?.equityPrices?.[ticker],
           globalThis.OptionProbability.daysToExpiry(p.option.expiry, asOf)));
       const probabilities = assessments.map(a => a.probability);
       const riskGaps = assessments.flatMap((a, i) => a.probability == null ? [`${lines[i].channel}: ${lines[i].ticker} — ${a.reason || 'Incomplete contract or quote'}`] : []);

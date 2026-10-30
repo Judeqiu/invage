@@ -12,7 +12,7 @@ import type { optionRelationshipsForState } from '../webapp/option-relationships
 
 export const PROJECTION_VERSION = 8;
 // Rebuild saved calculations when their rules change, retaining daily history.
-const CALCULATION_VERSION = 4;
+const CALCULATION_VERSION = 5;
 export interface PortfolioProjection {
   version: typeof PROJECTION_VERSION;
   userId: string;
@@ -60,6 +60,13 @@ export function readDailyAggregateHistory(userId: string) {
     const entry = JSON.parse(readFileSync(location(userId).file, 'utf8')) as PortfolioProjection;
     return entry.userId === userId && entry.version === PROJECTION_VERSION ? entry.dailyAggregateHistory ?? {} : {};
   } catch { return {}; }
+}
+/** Prior quote evidence only; this unchecked generation must never serve page data. */
+export function readPriorQuoteDashboard(userId: string): DashboardPayload | undefined {
+  try {
+    const entry = JSON.parse(readFileSync(location(userId).file, 'utf8')) as PortfolioProjection;
+    return entry.userId === userId && entry.version === PROJECTION_VERSION ? entry.dashboard : undefined;
+  } catch { return undefined; }
 }
 /** Durable private read model: no TTL, eviction, market calls or calculation on reads. */
 export function readPortfolioProjection(state: InvestorState): PortfolioProjection | null {

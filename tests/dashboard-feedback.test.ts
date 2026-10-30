@@ -33,6 +33,9 @@ it.skipIf(!existsSync(chrome))('fits the desk overview and tables, filters risk,
     premiumJournal:{channels,available:true,daily:[{date:'2026-10-22',channel:channels[0],currency:'USD',gross_premium:3487}]},
     optionAnalytics:{executions:[],gaps:[],profits:[{date:'2026-10-22',channel:channels[0],currency:'USD',net:5875,gross:5900}]},
   };
+  for (const p of dashboard.model.live.positions) if (p.option?.underlying === 'AAPL') {
+    p.probabilityQuote = { mark: p.option.mark, spot: 100, optionAsOf: '2026-10-22T19:59:00Z', spotAsOf: '2026-10-22T20:00:00Z' };
+  }
   const server=createServer(async(req,res)=>{
     const url=new URL(req.url!,'http://localhost');
     const json=(body:unknown)=>{res.setHeader('Content-Type','application/json');res.end(JSON.stringify(withPageProjections(body)));};
@@ -67,7 +70,7 @@ it.skipIf(!existsSync(chrome))('fits the desk overview and tables, filters risk,
     expect(await frame.$$eval('.option-ledger th',nodes=>nodes.map(n=>n.textContent!.replace(/[?i]$/g,'').replace(/\?/g,'').trim()))).toEqual(['FIN INSTRUMENT','Pos','Last ($)','PREMIUM / ROLL','Avg Px','MKT Value','Unrealized P&L (%)','Days','Opened','Spot','Entry Spot','Assignment','Broker']);
     expect(await frame.$eval('.risk-method',node=>node.textContent)).toContain('r = 4%, q = 0, T = DTE/365');
     await page.setViewport({width:1440,height:900});
-    expect(await frame.$$('.risk-row')).toHaveLength(3);
+    expect(await frame.$$('.risk-row')).toHaveLength(5);
     expect(await frame.$eval('[data-risk-level="all"]', node => node.getAttribute('aria-pressed'))).toBe('true');
     expect(await frame.$eval('.risk-filter-count', node => node.textContent)).toContain('Prob. ITM >30%');
     expect(await frame.$$eval('.risk-row td:nth-child(9)', nodes => nodes.map(node => node.textContent).join(' '))).toContain('31.3%');
@@ -80,17 +83,19 @@ it.skipIf(!existsSync(chrome))('fits the desk overview and tables, filters risk,
       expect(capacity).toBeGreaterThanOrEqual(count);
     }
     await frame.click('[data-risk-level="all"]');
-    expect(await frame.$$('.risk-row')).toHaveLength(3); // Default excludes low probabilities and both unscored contracts.
+    expect(await frame.$$('.risk-row')).toHaveLength(5); // Low probabilities stay filtered; both missing-input contracts remain visible.
     await frame.click('[data-risk-level="danger"]');expect(await frame.$$('.risk-row')).toHaveLength(1);
     expect(await frame.$eval('.risk-row',node=>node.textContent)).toContain('88.8%');
-    await frame.click('[data-risk-level="warning"]');expect(await frame.$$('.risk-row')).toHaveLength(1);
-    expect(await frame.$eval('.risk-row',node=>node.textContent)).toContain('54.0%');
+    await frame.click('[data-risk-level="warning"]');expect(await frame.$$('.risk-row')).toHaveLength(3);
+    expect(await frame.$eval('.risk-table tbody',node=>node.textContent)).toContain('54.0%');
     await frame.click('[data-risk-level="ok"]');expect(await frame.$$('.risk-row')).toHaveLength(37);
     await frame.click('[data-risk-level="all"]');
     await frame.click('[data-risk-broker="custom-ibkr-account"]');expect(await frame.$$('.risk-row')).toHaveLength(1);
     await frame.click('[data-risk-broker="all"]');
-    await frame.type('#riskSearch','MISS');await frame.waitForFunction(()=>document.querySelectorAll('.risk-row').length===0);
-    // Unknown probabilities remain reviewable and discussable in Section 03.
+    await frame.type('#riskSearch','MISS');await frame.waitForFunction(()=>document.querySelectorAll('.risk-row').length===2);
+    const missingCells = await frame.$$eval('.risk-row td:nth-child(9)', nodes => nodes.map(node => node.textContent));
+    expect(missingCells.every(text => text?.includes('Caution') && !text.includes('%') && !text.includes('unknown'))).toBe(true);
+    // Missing-input contracts remain visible in Section 01 and discussable in Section 03.
     await frame.type('#optionSearch','MISS PUT $100');
     await frame.waitForFunction(()=>document.querySelectorAll('.option-ledger-row').length===1);
     await frame.click('.option-ledger-row .option-instrument-link');await expect.poll(()=>prompts.length).toBe(1);
@@ -113,7 +118,7 @@ it.skipIf(!existsSync(chrome))('fits the desk overview and tables, filters risk,
     await frame.waitForFunction(()=>document.querySelectorAll('.option-ledger-row').length===41);
     // Restore risk rows before capturing desktop and mobile states.
     await frame.$eval('#riskSearch',node=>{(node as HTMLInputElement).value='';node.dispatchEvent(new Event('input',{bubbles:true}));});
-    await frame.waitForFunction(()=>document.querySelectorAll('.risk-row').length===3);
+    await frame.waitForFunction(()=>document.querySelectorAll('.risk-row').length===5);
     await page.setViewport({width:1366,height:768});await frame.evaluate(()=>window.scrollTo(0,0));
     await page.screenshot({path:'/tmp/velovest-feedback-desktop.png'});
     await frame.evaluate(()=>window.scrollTo(0,document.documentElement.scrollHeight));

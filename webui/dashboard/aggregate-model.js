@@ -801,12 +801,12 @@ function legacySlice(live, channel) {
           const o = p.option, spot = view.isLive ? payload.equityPrices?.[o.underlying] : undefined;
           const days = globalThis.OptionProbability.daysToExpiry(o.expiry, date);
           const estimate = view.isLive && days < 0 ? { probability: null, iv: null, reason: 'Past expiry; broker status unverified' }
-            : mode === 'wheel' ? globalThis.OptionProbability.brokerMarkItmProbability(p, spot, days) : globalThis.OptionProbability.finishItmProbability(p, spot, days);
+            : mode === 'wheel' ? globalThis.OptionProbability.currentSpotItmProbability(p, spot, days) : globalThis.OptionProbability.finishItmProbability(p, spot, days);
           const rate = view.isLive && view.fxApplied && p.currency ? p.currency === view.reportingCurrency ? 1 : view.fxRates?.[p.currency] : 1;
           const exposure = view.navComplete === false ? null : o.right === 'put' ? Number(p.contingentCashObligation || 0)
             : Number.isFinite(rate) ? Number(o.strike) * Number(p.contingentShareObligation || 0) * rate : null;
           const itm = typeof spot === 'number' && Number.isFinite(spot) && typeof o.strike === 'number' && (o.right === 'put' ? spot < o.strike : spot > o.strike);
-          const flagged = estimate.probability > .3 || typeof days === 'number' && days >= 0 && (mode === 'wheel' ? days <= 7 : days <= 21 && itm);
+          const flagged = (mode === 'wheel' && estimate.probability == null) || estimate.probability > .3 || typeof days === 'number' && days >= 0 && (mode === 'wheel' ? days <= 7 : days <= 21 && itm);
           return { p, spot: spot ?? null, days, estimate, exposure, flagged };
         });
         const risk = {};

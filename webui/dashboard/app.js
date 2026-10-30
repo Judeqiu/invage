@@ -315,7 +315,7 @@ function brokerFilters(kind, selected, positions) {
   return `<div class="option-filter-group broker-filters" role="group" aria-label="Filter by broker account"><span class="label-eyebrow">Broker account</span>${[{ id: 'all', label: 'All' }, ...accounts].map(({id, label}) => `<button type="button" class="chip-btn broker-filter${selected === id ? ' on' : ''}" data-${kind}-broker="${escapeHtml(id)}" aria-pressed="${selected === id}">${isWheelDesk && id !== 'all' ? brokerLabel(id) : escapeHtml(label)}</button>`).join('')}</div>`;
 }
 function riskLevel(probability) {
-  return probability == null ? 'muted' : probability > 0.6 ? 'danger' : probability >= 0.45 ? 'warning' : 'ok';
+  return globalThis.OptionProbability.riskLevel(probability);
 }
 function optionInstrumentLabel(p) {
   const o = p.option;
@@ -1662,15 +1662,15 @@ async function startOptionDiscussion(button, retryRequestId) {
 }
 
 function wheelRiskTable(rows, radar, view, asOf) {
-  const eligible = rows.filter(r => r.estimate.probability != null || (r.days >= 0 && r.days <= 7));
+  const eligible = rows;
   const filtered = eligible.filter(r =>
     (riskRightFilter === 'all' || r.p.option.right === riskRightFilter) &&
     (riskBrokerFilter === 'all' || r.p.channel === riskBrokerFilter) &&
-    (riskLevelFilter === 'all' ? r.estimate.probability > 0.3 : riskLevel(r.estimate.probability) === riskLevelFilter) &&
+    (riskLevelFilter === 'all' ? r.estimate.probability == null || r.estimate.probability > 0.3 : riskLevel(r.estimate.probability) === riskLevelFilter) &&
     (!riskSearch || optionInstrumentLabel(r.p).toLowerCase().includes(riskSearch.toLowerCase()))
   ).sort((a,b) => (a.days ?? Infinity) - (b.days ?? Infinity) || (b.estimate.probability ?? -1) - (a.estimate.probability ?? -1));
   const right = ['all','put','call'].map(value => `<button type="button" class="chip-btn${riskRightFilter === value ? ' on' : ''}" data-risk-right="${value}" aria-pressed="${riskRightFilter === value}">${value === 'all' ? 'All' : value.toUpperCase()}</button>`).join('');
-  const levels = [['all','All >30%'],['danger','Act now >60%'],['warning','Caution 45–60%'],['ok','Comfortable']].map(([value,label]) => `<button type="button" class="risk-filter risk-filter-${value}${riskLevelFilter === value ? ' on' : ''}" data-risk-level="${value}" aria-pressed="${riskLevelFilter === value}">${escapeHtml(label)}</button>`).join('');
+  const levels = [['all','All'],['danger','Act now >60%'],['warning','Caution'],['ok','Comfortable']].map(([value,label]) => `<button type="button" class="risk-filter risk-filter-${value}${riskLevelFilter === value ? ' on' : ''}" data-risk-level="${value}" aria-pressed="${riskLevelFilter === value}">${escapeHtml(label)}</button>`).join('');
   const columns = ['FIN INSTRUMENT','Pos','Days','Spot','Strike','Moneyness %','IV','If Assigned','Prob. ITM','Last ($)','Avg Px','Market Value','Unrealized P&L (%)','Broker'];
   const body = filtered.map(({p,spot,days,estimate,exposure}) => {
     const o = p.option, multiplier = Number(o.multiplier);
@@ -1692,7 +1692,7 @@ function wheelRiskTable(rows, radar, view, asOf) {
       <td class="num ${itm ? 'down' : 'muted'}">${moneyness == null ? '—' : fmtSigned(moneyness,1)+'%'}</td>
       <td class="num muted">${estimate.iv == null ? '—' : (estimate.iv*100).toFixed(0)+'%'}</td>
       <td class="num">${Number.isFinite(exposure) ? fmtPrettyMoney(exposure,reportingCcyCode(view),0) : '—'}</td>
-      <td title="${escapeHtml(probability == null ? estimate.reason : 'Black–Scholes estimate from this contract’s broker mark and available underlying spot; r = 4%, q = 0, T = DTE/365.')}">${riskPill(tone, probability == null ? '—' : `${(probability*100).toFixed(1)}% · ${label}`)}</td>
+      <td title="${escapeHtml(probability == null ? estimate.reason : `Black–Scholes estimate using latest spot and IV calibrated from matched option/stock quotes at ${estimate.optionAsOf} / ${estimate.spotAsOf}; r = 4%, q = 0, T = DTE/365. IV is held until newer matching quotes are available.`)}">${riskPill(tone, probability == null ? label : `${(probability*100).toFixed(1)}% · ${label}`)}${probability == null ? `<small>${escapeHtml(estimate.reason)}</small>` : ''}</td>
       <td class="num">${Number.isFinite(mark) && Number.isFinite(multiplier) && multiplier !== 0 ? (mark/multiplier).toFixed(2) : '—'}</td><td class="num">${Number.isFinite(multiplier) && multiplier !== 0 ? (Number(p.avgCost)/multiplier).toFixed(2) : '—'}</td>
       <td class="num">${money(value)}</td><td class="num ${plClass(pl)}">${money(pl)}${pct == null ? '' : ` (${pct.toFixed(1)}%)`}</td><td>${brokerLabel(p.channel)}</td>
     </tr>`;
@@ -1702,11 +1702,11 @@ function wheelRiskTable(rows, radar, view, asOf) {
       <div class="option-filter-group"><span class="label-eyebrow">Right</span>${right}</div>
       <label class="risk-search"><span class="visually-hidden">Search contracts</span><input id="riskSearch" type="search" placeholder="Ticker, strike, expiry" value="${escapeHtml(riskSearch)}" /></label>
       <div class="risk-legend" role="group" aria-label="Filter by risk">${levels}</div>
-      <p class="risk-filter-count" role="status">${filtered.length} of ${eligible.length} contracts · ${radar.length} flagged${riskLevelFilter === 'all' ? ' · Prob. ITM >30%' : ''}</p>
+      <p class="risk-filter-count" role="status">${filtered.length} of ${eligible.length} contracts · ${radar.length} flagged${riskLevelFilter === 'all' ? ' · Prob. ITM >30% or Caution for missing inputs' : ''}</p>
     </div>
     <div class="table-scroll"><table class="report risk-table"><thead><tr>${columns.map((label,i)=>`<th scope="col">${escapeHtml(label)}${i===0 ? ' <span class="instrument-hint">(Discuss)</span>' : ''}${label==='Last ($)' || label==='Avg Px' ? '<button type="button" class="help-dot" data-help="Price per underlying share. Position totals include the contract multiplier and quantity." aria-label="Explain option price units">?</button>' : ''}</th>`).join('')}</tr></thead>
     <tbody>${body || `<tr><td colspan="14" class="empty">No contracts match these filters.</td></tr>`}</tbody></table></div>
-    <details class="risk-method"><summary>How Prob. ITM is calculated</summary><p>Implied volatility is solved from each contract’s own broker mark by bisection on Black–Scholes (r = 4%, q = 0, T = DTE/365). The risk-neutral probability of finishing in the money is N(−d₂) for puts and N(d₂) for calls. The default All filter shows only contracts with Prob. ITM above 30%. Choose Caution or Act now to narrow the risk level. Contracts below that threshold or without a probability estimate remain available in Section 03. This estimates finishing in the money, not early assignment. The exposure cards include contracts above 30% and contracts expiring within 7 days; probability-weighted exposure stays unavailable if any included contract cannot be scored.</p></details>
+    <details class="risk-method"><summary>How Prob. ITM is calculated</summary><p>Implied volatility is solved from each contract’s timestamp-matched option and stock quotes by bisection on Black–Scholes (r = 4%, q = 0, T = DTE/365). That IV is applied to the latest stock spot, including pre-market and after-hours prices. Valid matched quotes are retained until newer ones are available; hover over the probability for their timestamps. Volatility can change after the calibration quote. The risk-neutral probability of finishing in the money is N(−d₂) for puts and N(d₂) for calls. The default All filter shows contracts with Prob. ITM above 30%, plus every contract that cannot be calculated. Caution includes calculated probabilities from 45% through 60% and contracts needing review because inputs are missing or invalid; the reason is shown without an invented probability. Act now remains strictly above 60%. Contracts below 30% remain available under Comfortable and in Section 03. This estimates finishing in the money, not early assignment. The exposure cards include contracts above 30%, contracts expiring within 7 days and all contracts needing review for missing or invalid inputs; probability-weighted exposure stays unavailable if any included contract cannot be scored.</p></details>
   </div>`;
 }
 
@@ -1747,7 +1747,7 @@ function renderExpiryRisk(view, asOf) {
       'High-risk ITM exposure',
       radar.length && exposure != null ? fmtPrettyMoney(exposure, reportingCcyCode(view), 0) : '—',
       '',
-      `Total value of shares you could have to buy for short puts, or deliver for short calls, if every contract in this risk list is assigned. ${isWheelDesk ? 'The list includes contracts above 30% probability of finishing in the money and contracts expiring within 7 days.' : 'The list includes contracts with an estimated chance above 30% of finishing in the money, and confirmed ITM contracts expiring within 21 days.'} This is a possible exposure, not a forecast.`,
+      `Total value of shares you could have to buy for short puts, or deliver for short calls, if every contract in this risk list is assigned. ${isWheelDesk ? 'The list includes contracts above 30% probability of finishing in the money, contracts expiring within 7 days and all contracts needing review for missing or invalid inputs.' : 'The list includes contracts with an estimated chance above 30% of finishing in the money, and confirmed ITM contracts expiring within 21 days.'} This is a possible exposure, not a forecast.`,
     ),
     metricCardHtml(
       'Probability-weighted exposure',

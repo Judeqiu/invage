@@ -34,11 +34,13 @@ function fixture() {
     [{ channel: 'ibkr', currency: 'USD', amount: 10000 }, { channel: 'tiger', currency: 'SGD', amount: 1000 }], [],
     '2026-10-28', { reportingCurrency: 'USD', fxRates: { SGD: .75 } });
   for (const p of live.positions) p.brokerMark = definitions.find(row => row[0] === p.ticker)![11] as number;
+  for (const p of live.positions) p.probabilityQuote = { mark: p.brokerMark!, spot: p.currency === 'USD' ? 100 : 130,
+    optionAsOf: '2026-10-28T11:59:00Z', spotAsOf: '2026-10-28T12:00:00Z' };
   const details = openOptionTradeDetails(portfolio, executions, { ibkr: 'ibkr', tiger: 'tiger' });
   details.call.rollDate = '2026-10-01'; details.call.rollPremium = 200;
   const payload: any = { empty: false, displayName: 'Consistency', productProfile: 'consultant', generatedAt: '2026-10-28T12:00:00Z',
     dashboardConfig: { dashboardVersion: 'v2', showOptionRiskModelView: false }, model: buildDashboardModel(live, []),
-    brokerAsOf: { ibkr: '2026-10-28', tiger: '2026-10-28' }, equityPrices: { AAPL: 100, SGX: 130 }, optionTradeDetails: details };
+    brokerAsOf: { ibkr: '2026-10-28', tiger: '2026-10-28' }, equityPrices: { AAPL: 100, SGX: 130 }, optionTradeDetails: details, optionAnalytics: { executions, profits: [], gaps: [] } };
   const pages = buildPageProjections(payload);
   payload.pageProjections = { positions: pages.positions, insights: pages.insights }; payload.aggregatedViews = pages.dashboard;
   const open: any = { ...tradesOpenBook(state), revision: 1 }; open.aggregates = buildTradeProjections(open.rows);
@@ -103,9 +105,10 @@ it.skipIf(!existsSync(executablePath))('keeps fractional strikes, broker P&L and
     for (const width of [1440, 390]) {
       await page.setViewport({ width, height: 1000 });
       await page.goto(origin + '/dashboard/v2.html'); await page.waitForSelector('#expiryTable .risk-row');
+      await page.click('[data-risk-level="ok"]');
       expect(await page.$$eval('#expiryTable .risk-row td:nth-child(5)', nodes => nodes.map(n => n.textContent))).toContain('$82.5');
       expect(await page.$eval('#openPnlExpiryCard', n => n.textContent)).toContain('$506.00');
-      expect(await page.$eval('#openPremiumExpiryCard', n => n.textContent)).toContain('$615.00');
+      expect(await page.$eval('#openPremiumExpiryCard', n => n.textContent)).toContain('$915.00'); // Recorded calendar cash flow, distinct from open/latest-roll premium.
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       await page.goto(origin + '/positions/v2.html'); await page.waitForSelector('#obligationsTable tbody tr');
       expect(await page.$eval('#obligationsTable tbody', n => n.textContent)).toContain('+$600.00');

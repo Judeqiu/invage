@@ -145,3 +145,25 @@ it('recalculates pre-correction projections rather than serving stale gross roll
   expect(calculate).toHaveBeenCalledTimes(2);
   expect(readPortfolioProjection(state)?.version).toBe(PROJECTION_VERSION);
 });
+
+it('retains valid contract quote evidence across source invalidation and a missed quote refresh', async () => {
+  state.portfolio={contract:{instrument:'option',channel:'main',currency:'USD',units:1,avg_price:300,
+    option:{underlying:'AAPL',right:'put',side:'short',strike:120,expiry:'2026-11-20',multiplier:100,mark:200,settlement:'physical'}}};
+  const f=fixture(),original=f.calculate.getMockImplementation()!;
+  let first=true;
+  const pair={mark:200,spot:120,optionAsOf:'2026-10-23T05:59:00.000Z',spotAsOf:'2026-10-23T06:00:00.000Z'};
+  f.calculate.mockImplementation(async(...args)=>{
+    const value=await original(...args);
+    value.equityPrices={AAPL:120};
+    if(first){value.model!.live.positions[0].probabilityQuote=pair;first=false;}
+    return value;
+  });
+  await f.refresh(state.user.id);
+  state.portfolio.contract.units=2;
+  expect(readPortfolioProjection(state)).toBeNull();
+  await f.refresh(state.user.id);
+  const entry=readPortfolioProjection(state)!;
+  expect(entry.dashboard.model!.live.positions[0].probabilityQuote).toEqual(pair);
+  expect(entry.dashboard.model!.live.positions[0].option?.mark).toBe(200);
+  expect((entry.dashboard.aggregatedViews!.live.merged as any).risk.wheel.rows[0].estimate.probability).toBeGreaterThan(0);
+});
