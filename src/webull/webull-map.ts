@@ -248,7 +248,7 @@ export function mapWebullBundleToStatement(bundle: WebullRawBundle, channel: str
   };
   if (!includeHistory || bundle.history_error) return stmt;
   stmt.history=mapWebullHistory(bundle,channel);
-  const executions = bundle.history_plan ? undefined : mapWebullOptionHistory(bundle, lots, channel);
+  const executions = mapWebullOptionHistory(bundle, lots, channel);
   if (executions) stmt.option_executions = executions;
   if (metrics) stmt.metrics = metrics;
   return stmt;

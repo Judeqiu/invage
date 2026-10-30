@@ -117,7 +117,10 @@ function* calculateRelationships(state: InvestorState, filters: RelationshipFilt
     }
     if (fills.length > 250_000) throw new Error('Retained executions exceed the relationship scan limit');
     const trades = fills.filter(f => !f.terminal).map(f => f.at).sort();
-    const recorded = new Map((state.option_executions ?? []).filter(e => e.channel === conn.channel && e.account_id === conn.account_id).map(e => [e.execution_id, e]));
+    // Webull archive IDs are broker order IDs; journal IDs explicitly prefix
+    // those cumulative records with `order:`. Compare the same source identity.
+    const recorded = new Map((state.option_executions ?? []).filter(e => e.channel === conn.channel && e.account_id === conn.account_id)
+      .map(e => [conn.broker_id === 'webull' && e.execution_id.startsWith('order:') ? e.execution_id.slice(6) : e.execution_id, e]));
     const missing = new Set(fills.filter(f => !f.terminal && (!filters.asOf || f.at.slice(0, 10) <= filters.asOf) && !recorded.has(f.id)).map(f => f.id));
     if (missing.size) historyGaps.push({ channel: conn.channel, reason: `${missing.size} archived option fills are missing from imported history. Refresh the broker or import a complete execution statement with contract metadata.` });
     const conflicts = new Set(fills.filter(f => {

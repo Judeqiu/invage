@@ -11,7 +11,7 @@ export function mapWebullHistory(bundle:WebullRawBundle,channel:string):BrokerHi
  const plan=bundle.history_plan;if(!plan)return undefined;
  if(!Array.isArray(bundle.option_history))throw new BrokerParseError('Webull historical orders missing');
  const scope={broker_id:'webull',channel,account_id:bundle.account_id};
- const gaps:BrokerHistoryGap[]=[...(bundle.fee_gaps??[]),{kind:'coverage',reference:null,reason:'Trading API returns cumulative order fills; individual execution history requires separately authorized Broker API access.'}];
+ const gaps:BrokerHistoryGap[]=[...(bundle.fee_gaps??[]),{kind:'coverage',reference:null,reason:'Trading API returns cumulative order fills. Terminal single-leg cash is recorded with order: IDs, using USD for US options when currency is omitted; individual executions and unreported opening/closing intent remain unavailable.'}];
  const account=(row:Row)=>{if(row.account_id!=null&&String(row.account_id)!==bundle.account_id)throw new BrokerParseError('Webull history account mismatch');};
  const orders:BrokerHistoryOrder[]=bundle.option_history.flatMap(raw=>{const group=record(raw);account(group);if(!Array.isArray(group.orders))throw new BrokerParseError('Webull history order group missing orders');return group.orders.map(raw=>{
   const row=webullOrderWithDetails(bundle,record(raw));account(row);const id=text(row.order_id),fees=webullOrderFees(row);
