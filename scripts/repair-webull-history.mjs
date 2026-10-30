@@ -5,16 +5,18 @@
  */
 import 'dotenv/config';
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { openDatabaseRuntime, bindDatabaseRuntime } from 'utarus/database';
 
 process.env.UTARUS_LOADED_BY_HOST = '1';
 const [user, channel, rawId, ...flags] = process.argv.slice(2);
-if (!user || !channel || !rawId || flags.some(flag => flag !== '--apply')) {
-  throw new Error('Usage: repair-webull-history.mjs <user> <channel> <raw-id> [--apply]');
+if (!user || !channel || !rawId || flags.some(flag => flag !== '--apply' && !/^--resume=[a-f0-9-]{36}$/.test(flag))) {
+  throw new Error('Usage: repair-webull-history.mjs <user> <channel> <raw-id> [--apply] [--resume=<repair-id>]');
 }
+const resume = flags.find(flag => flag.startsWith('--resume='))?.slice('--resume='.length);
+if (resume && !flags.includes('--apply')) throw new Error('Resuming publication requires --apply');
 if (!process.env.UTARUS_DATA_ROOT?.startsWith('/')) throw new Error('An absolute host UTARUS_DATA_ROOT is required');
 const database = await openDatabaseRuntime({env:process.env, mode:'personal', onError:error => {throw error;}});
 const release = bindDatabaseRuntime(database);
@@ -120,7 +122,30 @@ try {
     before_months:monthly(before), after_months:monthly(merged),
     unknown_effects:merged.filter(row => owns(row) && row.effect === 'unknown').length,
     unknown_fees:merged.filter(row => owns(row) && row.commission === null).length};
-  if (flags.includes('--apply') && changed) {
+  if (resume) {
+    if (changed) throw new Error('The journal is not yet repaired; run the normal repair first');
+    const directory = join(resolveDataRoot(), 'repairs', 'webull-history', resume);
+    const backup = JSON.parse(readFileSync(join(directory, 'before.json'), 'utf8'));
+    const staged = JSON.parse(readFileSync(join(directory, 'prepared-projection.json'), 'utf8'));
+    // Recreate the exact staged representation using the retained identity index.
+    // This proves the save changed JSON key order only, not any valuation input.
+    const reconstructed = {...snapshot.state, option_executions:merged, option_identities:backup.option_identities};
+    reconstructed.option_identities = buildOptionIdentityIndex(reconstructed);
+    if (staged.userId !== snapshot.state.user.id || portfolioFingerprint(reconstructed) !== staged.fingerprint ||
+        !snapshot.state.log.some(row => row.action === 'webull_order_cash_repair' && row.channel === channel &&
+          row.raw_data_id === file.id && row.source_sha256 === receipt.source.sha256)) {
+      throw new Error('Staged source differs from the repaired state; do not publish it');
+    }
+    staged.fingerprint = portfolioFingerprint(snapshot.state);
+    const latest = await loadInvestor(user);
+    if (portfolioFingerprint(latest.state) !== staged.fingerprint) throw new Error('Source changed during publication');
+    const current = readPortfolioProjection(latest.state);
+    if (!current || current.calculatedAt < staged.calculatedAt) writePortfolioProjection(staged);
+    receipt.saved_revision = latest.revision;
+    receipt.projection_ready = Boolean(readPortfolioProjection(latest.state));
+    receipt.backup = directory;
+    writeFileSync(join(directory, 'publication-receipt.json'), JSON.stringify(receipt, null, 2), {mode:0o600});
+  } else if (flags.includes('--apply') && changed) {
     const directory = join(resolveDataRoot(), 'repairs', 'webull-history', randomUUID());
     mkdirSync(directory, {recursive:true, mode:0o700});
     writeFileSync(join(directory, 'before.json'), JSON.stringify({revision:snapshot.revision,
@@ -136,11 +161,14 @@ try {
     await saveInvestor(snapshot);
     const actual = await loadInvestor(user);
     if (!isDeepStrictEqual(preserved, {portfolio:actual.state.portfolio, cash:actual.state.cash, broker_history:actual.state.broker_history}) ||
-        !isDeepStrictEqual(merged, actual.state.option_executions)) {
+        !isDeepStrictEqual(snapshot.state, actual.state)) {
       throw new Error('State changed concurrently after repair; inspect the saved revision before continuing');
     }
     receipt.saved_revision = actual.revision;
-    if (portfolioFingerprint(actual.state) !== prepared.fingerprint) throw new Error('Projection source changed; retain the staged generation for review');
+    // PostgreSQL jsonb reorders object keys, including newly added identity maps
+    // and normalized execution rows. Semantic equality above proves the staged
+    // inputs survived the save; fingerprint their persisted representation.
+    prepared.fingerprint = portfolioFingerprint(actual.state);
     const current = readPortfolioProjection(actual.state);
     // A background worker may already have installed a newer valid generation.
     if (!current || current.calculatedAt < prepared.calculatedAt) writePortfolioProjection(prepared);
