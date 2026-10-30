@@ -21,7 +21,7 @@ export function retainProbabilityQuotes(dashboard: DashboardPayload, prior?: Das
       );
       if (!pair) return undefined;
       const days = context.OptionProbability.daysToExpiry(option.expiry, pair.spotAsOf.slice(0, 10));
-      const result = context.OptionProbability.currentSpotItmProbability({ ...position, probabilityQuote: pair }, pair.spot, days);
+      const result = context.OptionProbability.currentSpotItmProbability({ ...position, providerIv: undefined, probabilityQuote: pair }, pair.spot, days);
       return result.iv != null ? pair : undefined;
     };
     const current = valid(position.probabilityQuote);
@@ -29,6 +29,10 @@ export function retainProbabilityQuotes(dashboard: DashboardPayload, prior?: Das
       p.currency === position.currency && p.option?.underlying === option.underlying &&
       p.option.right === option.right && p.option.side === option.side && p.option.strike === option.strike &&
       p.option.expiry === option.expiry && p.option.multiplier === option.multiplier);
+    const providerValid = (value: typeof position.providerIv) => value?.source === 'yahoo' &&
+      Number.isFinite(value.iv) && value.iv > 0 && Number.isFinite(Date.parse(value.fetchedAt));
+    if (providerValid(old?.providerIv) && (!providerValid(position.providerIv) ||
+      old!.providerIv!.fetchedAt > position.providerIv!.fetchedAt)) position.providerIv = old!.providerIv;
     const retained = valid(old?.probabilityQuote);
     if (retained && (!current || retained.optionAsOf > current.optionAsOf)) {
       position.probabilityQuote = retained;

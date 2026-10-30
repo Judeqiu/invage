@@ -79,3 +79,30 @@ it('keeps existing scored thresholds and assigns missing evidence to Caution', (
   expect(level(.6)).toBe('warning');
   expect(level(.60001)).toBe('danger');
 });
+
+it('uses same-contract Yahoo IV for the actual INTC contracts without matched prices', () => {
+  for(const [strike,expiry,iv,days,expected] of [
+    [67.5,'2027-01-15',.5512740185546876,77,.4601727940254284],
+    [85,'2027-03-19',.5356491748046875,140,.7476134152097487],
+  ] as const){
+    const p={option:{strike,expiry,right:'put',multiplier:100},brokerMark:119,
+      providerIv:{source:'yahoo',iv,fetchedAt:'2026-10-30T01:00:00Z',asOf:null,optionAsOf:'2026-10-29T19:37:15Z'}};
+    const before=structuredClone(p),result=calculate(p,70.8854,days);
+    expect(result.probability).toBeCloseTo(expected,8);
+    expect(result).toMatchObject({iv,ivSource:'yahoo',ivAsOf:null,ivFetchedAt:p.providerIv.fetchedAt});
+    expect(p).toEqual(before);
+  }
+});
+it('prefers matched IV and uses provider IV when a matched price fails calibration', () => {
+  const p={...contract('put',6.003997632506753),providerIv:{source:'yahoo',iv:.55,fetchedAt:'2026-10-30T01:00:00Z',asOf:null}};
+  expect(calculate(p,90,364)).toMatchObject({ivSource:'matched_prices'});
+  expect(calculate(p,90,364).iv).toBeCloseTo(.2,5);
+  p.probabilityQuote.mark=100000;
+  expect(calculate(p,90,364)).toMatchObject({iv:.55,ivSource:'yahoo'});
+});
+it('keeps invalid or missing provider IV under Caution without an invented probability', () => {
+  for(const iv of [undefined,NaN,Infinity,0,-1]){
+    const p={option:{right:'put',strike:75,multiplier:100,expiry:'2026-12-18'},providerIv:{source:'yahoo',iv,fetchedAt:'2026-10-30T01:00:00Z'}};
+    expect(calculate(p,70.8854,49).probability).toBeNull();
+  }
+});

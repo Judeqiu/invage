@@ -1,7 +1,7 @@
 import { expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
-import { matchingProbabilityQuote, fetchOptionMarks } from '../src/market/fetch-option-marks.js';
+import { matchingProbabilityQuote, fetchOptionMarks, providerIvFromYahooRow } from '../src/market/fetch-option-marks.js';
 import { buildLivePositions } from '../src/report/dashboard-model.js';
 import { yf } from '../src/market/yf-client.js';
 import type { Holding } from '../src/market/types.js';
@@ -54,4 +54,19 @@ it('carries chain evidence through valuation to the browser without altering the
     expect(live.positions[0].probabilityQuote?.mark).toBe(2500);
     expect(live.positions[0].price).toBe(2600);
   } finally { vi.useRealTimers(); }
+});
+
+it('preserves provider IV provenance without assigning the option trade time to IV', async () => {
+  const evidence=providerIvFromYahooRow({...row,impliedVolatility:.55},new Date(now))!;
+  expect(evidence).toMatchObject({iv:.55,source:'yahoo',asOf:null,fetchedAt:new Date(now).toISOString(),optionAsOf:'2026-10-14T19:59:00.000Z'});
+  expect(providerIvFromYahooRow({...row,impliedVolatility:.55,lastTradeDate:'invalid'},new Date(now))?.optionAsOf).toBeNull();
+  vi.useFakeTimers();vi.setSystemTime(now);
+  try {
+    vi.mocked(yf.options).mockResolvedValue({quote,options:[{expirationDate:'2026-10-16',puts:[{...row,impliedVolatility:.55}]}]} as never);
+    const portfolio:Record<string,Holding>={contract:{instrument:'option',units:1,avg_price:2000,currency:'USD',option}};
+    const marks=await fetchOptionMarks(portfolio);
+    expect(marks.contract.providerIv).toEqual(evidence);
+    expect(buildLivePositions(portfolio,{TSLA:361},marks).positions[0].providerIv).toEqual(evidence);
+    expect(marks.contract.mark).toBe(2600);
+  } finally {vi.useRealTimers();}
 });

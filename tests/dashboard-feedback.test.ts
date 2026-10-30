@@ -36,6 +36,9 @@ it.skipIf(!existsSync(chrome))('fits the desk overview and tables, filters risk,
   for (const p of dashboard.model.live.positions) if (p.option?.underlying === 'AAPL') {
     p.probabilityQuote = { mark: p.option.mark, spot: 100, optionAsOf: '2026-10-22T19:59:00Z', spotAsOf: '2026-10-22T20:00:00Z' };
   }
+  const providerRow=dashboard.model.live.positions.find((p: any)=>p.ticker==='caution');
+  delete providerRow.probabilityQuote;
+  providerRow.providerIv={source:'yahoo',iv:.2,fetchedAt:'2026-10-22T10:00:00Z',asOf:null,optionAsOf:null};
   const server=createServer(async(req,res)=>{
     const url=new URL(req.url!,'http://localhost');
     const json=(body:unknown)=>{res.setHeader('Content-Type','application/json');res.end(JSON.stringify(withPageProjections(body)));};
@@ -88,6 +91,7 @@ it.skipIf(!existsSync(chrome))('fits the desk overview and tables, filters risk,
     expect(await frame.$eval('.risk-row',node=>node.textContent)).toContain('88.8%');
     await frame.click('[data-risk-level="warning"]');expect(await frame.$$('.risk-row')).toHaveLength(3);
     expect(await frame.$eval('.risk-table tbody',node=>node.textContent)).toContain('54.0%');
+    expect(await frame.$$eval('.risk-row td:nth-child(9)',nodes=>nodes.some(n=>n.getAttribute('title')?.includes('IV source timestamp unavailable')))).toBe(true);
     await frame.click('[data-risk-level="ok"]');expect(await frame.$$('.risk-row')).toHaveLength(37);
     await frame.click('[data-risk-level="all"]');
     await frame.click('[data-risk-broker="custom-ibkr-account"]');expect(await frame.$$('.risk-row')).toHaveLength(1);

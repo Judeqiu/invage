@@ -20,7 +20,18 @@ export interface OptionProbabilityQuote {
   spotAsOf: string;
 }
 
+export interface ProviderImpliedVolatility {
+  iv: number;
+  source: 'yahoo';
+  /** Retrieval time only: Yahoo does not timestamp its IV field. */
+  fetchedAt: string;
+  asOf: null;
+  optionAsOf: string | null;
+  contractSymbol?: string;
+}
+
 export interface OptionLiveMark {
+  providerIv?: ProviderImpliedVolatility;
   /** Timestamp-checked model inputs, separate from the portfolio valuation. */
   probabilityQuote?: OptionProbabilityQuote;
   /** Premium $ per contract used for MTM. */
@@ -45,6 +56,16 @@ export interface YahooContractRow {
   ask?: number;
   expiration?: Date | string;
   lastTradeDate?: Date | string | number;
+  impliedVolatility?: number;
+}
+
+export function providerIvFromYahooRow(row: YahooContractRow, now = new Date()): ProviderImpliedVolatility | undefined {
+  if (typeof row.impliedVolatility !== 'number' || !Number.isFinite(row.impliedVolatility)) return undefined;
+  const rawTime = row.lastTradeDate;
+  const date = rawTime == null ? null : new Date(typeof rawTime === 'number' && rawTime < 1e12 ? rawTime * 1000 : rawTime);
+  return { iv: row.impliedVolatility, source: 'yahoo', fetchedAt: now.toISOString(), asOf: null,
+    optionAsOf: date && Number.isFinite(date.getTime()) ? date.toISOString() : null,
+    contractSymbol: row.contractSymbol };
 }
 
 /** Pair a recent option trade with the regular-session stock quote from its chain.
@@ -251,6 +272,7 @@ export async function fetchOptionMarks(
           mark,
           source: 'yahoo',
           probabilityQuote,
+          providerIv: providerIvFromYahooRow(row),
           perShare,
           contractSymbol: row.contractSymbol,
           bid: row.bid,

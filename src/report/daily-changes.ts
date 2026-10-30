@@ -2,7 +2,7 @@ import type { PortfolioProjection } from '../state/projection-store.js';
 
 type Point = { currency: string; members: string; values: Record<string, number>; units: Record<string, string>; bases?: Record<string, string> };
 const settlementBasis = 'net-put-expiry-settlement-v1';
-const wheelRiskBasis = 'matched-iv-current-spot-v1';
+const wheelRiskBasis = 'matched-or-provider-iv-current-spot-v2';
 export type DailyAggregateHistory = Record<string, Record<string, Point>>;
 export type DailyChanges = { date: string; previousDate: string; metrics: Record<string, { label: string; delta: number; percent: number | null; unit: string }> };
 const fields: Record<string, string> = {

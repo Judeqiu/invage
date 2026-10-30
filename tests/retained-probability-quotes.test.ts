@@ -53,3 +53,17 @@ it('flags missing-evidence contracts regardless of expiry and calculates the obs
   expect(row.flagged).toBe(true);
   expect(row.estimate.probability).toBeCloseTo(.6479676172,7);
 });
+
+it('retains provider IV for the same contract and keeps the source timestamp unavailable', () => {
+  const prior=dashboard(),next=dashboard();
+  const evidence={iv:.55,source:'yahoo' as const,fetchedAt:'2026-10-29T22:00:00Z',asOf:null,optionAsOf:null};
+  prior.model!.live.positions[0].providerIv=evidence;
+  retainProbabilityQuotes(next,prior);
+  expect(next.model!.live.positions[0].providerIv).toEqual(evidence);
+  expect(next.model!.live.positions[0].probabilityQuote).toBeUndefined();
+  const other=dashboard();other.model!.live.positions[0].option!.strike=80;
+  retainProbabilityQuotes(other,prior);expect(other.model!.live.positions[0].providerIv).toBeUndefined();
+  const newer={...evidence,iv:.6,fetchedAt:'2026-10-29T23:00:00Z'};
+  next.model!.live.positions[0].providerIv=newer;retainProbabilityQuotes(next,prior);
+  expect(next.model!.live.positions[0].providerIv).toEqual(newer);
+});

@@ -61,7 +61,7 @@ function optionFinishItmProbability(position, spot, days) {
 
 // Calibrate IV from matched option/stock prices, then use the latest spot from
 // any trading session. Broker valuation marks remain unchanged.
-function currentSpotItmProbability(position, spot, days) {
+function matchedCurrentSpotItmProbability(position, spot, days) {
   const o = position.option;
   const strike = Number(o?.strike);
   const multiplier = Number(o?.multiplier ?? 100);
@@ -105,6 +105,24 @@ function currentSpotItmProbability(position, spot, days) {
   const iv = (lo + hi) / 2;
   const d2 = (Math.log(currentSpot / strike) + (0.04 - iv * iv / 2) * currentYears) / (iv * Math.sqrt(currentYears));
   return { probability: Math.max(0, Math.min(1, o.right === 'put' ? normalCdf(-d2) : normalCdf(d2))), iv, optionAsOf: quote.optionAsOf, spotAsOf: quote.spotAsOf };
+}
+
+// The same-contract provider IV is a fallback, with its unavailable source time
+// explicit. Never replace a valid matched-price calibration with this estimate.
+function currentSpotItmProbability(position, spot, days) {
+  const matched = matchedCurrentSpotItmProbability(position, spot, days);
+  if (matched.reason === 'Waiting for matching prices') matched.reason = 'No usable matched quotes or provider IV';
+  if (matched.probability != null) return { ...matched, ivSource: 'matched_prices' };
+  const evidence = position.providerIv, o = position.option, iv = evidence?.iv;
+  if (!(Number.isFinite(spot) && spot > 0 && Number.isFinite(days) && days > 0 &&
+    Number.isFinite(o?.strike) && o.strike > 0 && Number.isFinite(o.multiplier) && o.multiplier > 0 &&
+    ['put', 'call'].includes(o.right) && evidence?.source === 'yahoo' && Number.isFinite(iv) && iv > 0 &&
+    Number.isFinite(Date.parse(evidence.fetchedAt)))) return matched;
+  const years = days / 365;
+  const d2 = (Math.log(spot / o.strike) + (.04 - iv * iv / 2) * years) / (iv * Math.sqrt(years));
+  const probability = o.right === 'put' ? normalCdf(-d2) : normalCdf(d2);
+  return { probability, iv, ivSource: 'yahoo', ivAsOf: null, ivFetchedAt: evidence.fetchedAt,
+    optionAsOf: evidence.optionAsOf, calibrationReason: matched.reason };
 }
 
 function riskLevel(probability) {
