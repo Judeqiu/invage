@@ -1,0 +1,22 @@
+[Unit]
+Description=Velovest marketing homepage
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/sites/velovest.lextok.com/current
+Environment=NODE_ENV=production
+Environment=HOST=127.0.0.1
+Environment=PORT=5180
+ExecStart=/usr/bin/node .output/server/index.mjs
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+
+[Install]
+WantedBy=multi-user.target

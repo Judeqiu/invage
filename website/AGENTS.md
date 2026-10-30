@@ -1,0 +1,5 @@
+- The site has a single design served at root URLs (/, /product, /pricing, /signup, ...); retired design prefixes (/compact, /editorial, /signal, /clarity, /academy) are kept only as splat redirect routes so shared links keep working.
+- Shared page copy (personas, Wheel steps, secondary page data) lives in src/components/site-content.ts so the homepage and secondary pages never drift.
+- Keep homepage introductory benefits in the shared HomepageBenefits component so copy and accessibility stay consistent.
+- Pricing, booking slots and checkout helpers live in src/lib/compact-checkout.ts (unit-tested with `bun run test`) so prices are defined once; the checkout is a client-only demo with no real payment or email.
+- Theme colours are defined once in :root in src/styles.css; there are no per-design theme classes.

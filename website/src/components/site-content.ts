@@ -1,0 +1,26 @@
+import { BookOpen, BriefcaseBusiness, CircleDollarSign, RefreshCw, Sprout, TrendingUp, Zap } from "lucide-react";
+
+/** Shared page copy for the Velovest site (homepage and secondary pages). */
+
+export type PageKind = "product" | "traders" | "integrations" | "resources" | "risk";
+
+export const wheelSteps = [
+  { number: "01", title: "Choose deliberately", copy: "Start with a company you are prepared to own and capital you can leave committed.", Icon: BookOpen, tone: "text-chart-1", border: "border-chart-1" },
+  { number: "02", title: "Sell a cash-secured put", copy: "Receive premium while accepting the obligation to buy shares at the strike if assigned.", Icon: CircleDollarSign, tone: "text-primary", border: "border-primary" },
+  { number: "03", title: "Own shares if assigned", copy: "Assignment is a real outcome—not a failure—and the shares can still fall below your purchase price.", Icon: BriefcaseBusiness, tone: "text-chart-2", border: "border-chart-2" },
+  { number: "04", title: "Consider a covered call", copy: "Receive premium while accepting that shares may be called away, limiting some upside.", Icon: RefreshCw, tone: "text-positive", border: "border-positive" },
+] as const;
+
+export const personas = [
+  { id: "learn", Icon: Sprout, title: "New to Options", copy: "Learn the language, mechanics, and trade-offs before deciding whether a strategy belongs in your plan.", question: "How does assignment work in the Wheel?" },
+  { id: "improve", Icon: TrendingUp, title: "Already Trading, But Want to Improve", copy: "Review recent positions and decisions to understand patterns without turning outcomes into promises.", question: "What can I learn from my recent trades?" },
+  { id: "manage", Icon: Zap, title: "Experienced Options Trader", copy: "Monitor positions, expirations, premium, and exposure with less manual checking.", question: "What should I review today?" },
+] as const;
+
+export const pageData = {
+  product: { eyebrow: "Product", title: "An AI workspace that teaches while you review.", copy: "Velovest brings options education, position context, and portfolio review into one place—without executing trades or making decisions for you.", section: "Move from concept to context.", cards: [["01","Learn the mechanics","Understand strikes, premium, expiry, assignment, and strategy obligations."],["02","Study a position","See how those mechanics apply to a simulated or connected position."],["03","Review the portfolio","Organize expirations, premium, exposure, and activity into a repeatable review."],["04","Ask Velovest AI","Ask plain-English questions and verify the response against source information."]] },
+  traders: { eyebrow: "Learning paths", title: "A useful next step at every level.", copy: "Begin with mechanics, study your own patterns, or reduce the manual effort of a more complex portfolio.", section: "Choose the path that matches today.", cards: [["01","New to Options","Build a foundation before deciding whether options belong in your investment plan."],["02","Already Trading, But Want to Improve","Use recent positions and decisions as material for structured reflection."],["03","Experienced Options Trader","Bring positions, expirations, premium, and exposure into one review routine."]] },
+  integrations: { eyebrow: "Integrations", title: "Keep your broker. Add an educational intelligence layer.", copy: "Broker connections give explanations and analysis the context of existing brokerage information. Velovest does not execute trades.", section: "Connection roadmap.", cards: [["IBKR","Interactive Brokers","Connected"],["MOO","moomoo","Connected"],["WEB","Webull","Connected"],["TGR","Tiger Trade","Connected"]] },
+  resources: { eyebrow: "Academy", title: "Start with the obligation, not the opportunity.", copy: "Short lessons make options mechanics, strategy trade-offs, and AI limitations easier to understand before real capital is involved.", section: "Core lessons.", cards: [["01","Options foundations","Contracts, strikes, premium, expiry, exercise, and assignment."],["02","The Wheel strategy","Cash-secured puts, share ownership, covered calls, and the risks between each step."],["03","Risk and capital","Downside, collateral, concentration, missed upside, and suitability."],["04","Using AI responsibly","How to ask useful questions, verify answers, and maintain independent judgment."]] },
+  risk: { eyebrow: "Risk disclosure", title: "Income-oriented does not mean predictable income.", copy: "Options can create losses, obligations, and opportunity costs. Education and software do not remove those risks.", section: "Understand these limits first.", cards: [["01","Assignment is real","A short put can require buying shares at the strike even when their market value is lower."],["02","Shares can keep falling","Premium received may be small compared with losses on assigned or held shares."],["03","Covered calls limit upside","Shares may be called away, and premium may not offset the value of missed gains."],["04","Capital is committed","Cash-secured strategies can tie up substantial capital and reduce flexibility."],["05","No advice or guarantees","Velovest provides educational and informational tools only. Outcomes are never promised."]] },
+} satisfies Record<PageKind,{eyebrow:string;title:string;copy:string;section:string;cards:string[][]}>;
