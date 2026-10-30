@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, json, type Express } from 'express';
 import { requireAuth, requireAdmin } from 'utarus';
 import { SubmissionError, signupSubmissions, type SubmissionRepository } from './submissions.js';
 
@@ -64,4 +64,9 @@ export function createSubmissionAdminRouter(getRepository: () => SubmissionRepos
     }
   });
   return router;
+}
+
+/** Public intake must precede the framework's workflow-wide /api auth middleware. */
+export function mountPublicSignupApi(app: Express, getRepository: () => SubmissionRepository = signupSubmissions) {
+  app.use('/api/domain/invage/academy-signup', json({ limit: Infinity }), createSubmissionPublicRouter(getRepository));
 }

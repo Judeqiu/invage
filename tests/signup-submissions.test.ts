@@ -7,7 +7,7 @@ import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { useTestDatabase, createInvestorFixture } from './helpers/database.js';
 import { SubmissionRepository, type SubmissionInput } from '../src/signup/submissions.js';
-import { createSubmissionAdminRouter, createSubmissionPublicRouter } from '../src/signup/api.js';
+import { createSubmissionAdminRouter, createSubmissionPublicRouter, mountPublicSignupApi } from '../src/signup/api.js';
 
 const database = await useTestDatabase();
 const pool = new pg.Pool({ connectionString: database.databaseUrl });
@@ -42,6 +42,15 @@ beforeAll(async () => {
 afterAll(async () => { await pool.end(); });
 
 describe('Signup submission persistence and Management access', () => {
+  it('accepts public intake before a workflow-wide authenticated API handler', async () => {
+    const host = express();
+    mountPublicSignupApi(host, () => repository);
+    host.use('/api', (_req, res) => { res.sendStatus(401); });
+    const response = await request(host).post('/api/domain/invage/academy-signup/submissions').send(payload('VV-TEST04'));
+    expect(response.status).toBe(201);
+    expect((await request(host).get('/api/domain/invage/academy-signup/admin/submissions')).status).toBe(401);
+  });
+
   it('saves the proof atomically and calculates the package total on the server', async () => {
     const response = await request(app).post('/api/signup/submissions').send(payload('VV-TEST01'));
     expect(response.status).toBe(201);

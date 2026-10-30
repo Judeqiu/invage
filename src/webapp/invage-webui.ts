@@ -19,7 +19,7 @@ import { createBrokerConnectionsRouter } from './broker-api.js';
 import { createDashboardApiRouter } from './dashboard-api.js';
 import { assertInvageChatQuestionCatalog, createInvageChatQuestionLibrary, sampleInvageChatQuestionStarters } from './chat-questions.js';
 import { readDashboardConfig } from './dashboard-config.js';
-import { createSubmissionPublicRouter, createSubmissionAdminRouter } from '../signup/api.js';
+import { createSubmissionAdminRouter } from '../signup/api.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -276,7 +276,6 @@ export function createInvageWebUi(): DomainWebUiExtension {
     }]} : {}),
     apiRouters: [
       ...(consultant ? [
-        {mountPath: '/academy-signup', router: createSubmissionPublicRouter(), auth: 'public' as const},
         {mountPath: '/academy-signup/admin', router: createSubmissionAdminRouter(), auth: 'admin' as const},
       ] : []),
       {

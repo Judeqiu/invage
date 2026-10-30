@@ -16,7 +16,10 @@ No existing portfolio or framework tables change.
 
 `POST https://velovest.lextok.com/api/signup/submissions` forwards JSON to the
 fixed workspace endpoint `/api/domain/invage/academy-signup/submissions`.
-It returns a reference only after PostgreSQL commits. Retrying identical data
+The public intake mounts in `buildInvageApp` before the framework, because
+dynamic workflows otherwise install an authenticated `/api` handler ahead of
+domain routes. Management queries remain on the admin-authenticated domain
+router. It returns a reference only after PostgreSQL commits. Retrying identical data
 with the same reference does not create a duplicate; different data with an
 existing reference returns 409 without overwriting the original. A save
 failure leaves the checkout open and displays an error.
