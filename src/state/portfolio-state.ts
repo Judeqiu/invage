@@ -243,6 +243,8 @@ export interface FixedDeposit {
 }
 
 export interface BrokerConnectionLastSync {
+  positions_as_of?: string;
+  snapshot_deferred?: Array<'cash' | 'positions'>;
   at: string;
   ok: boolean;
   as_of?: string;

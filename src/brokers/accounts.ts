@@ -560,6 +560,8 @@ async function syncBrokerAccountUnlocked(snapshot: InvestorSnapshot, id: string,
       applied = await applyBrokerStatement(snapshot, id, statement, fetched.raw, result => {
         const current = readBrokerAccountModel(state);
         current.connections[id].last_sync = { at, ok: true, as_of: result.asOf, account_id: result.accountId,
+          ...(result.positionsAsOf ? {positions_as_of:result.positionsAsOf} : {}),
+          ...(result.deferred ? {snapshot_deferred:result.deferred} : {}),
           lots_upserted: result.lotsUpserted, lots_removed: result.lotsRemoved,
           ...(result.skipped.length ? { not_imported: result.skipped.map(formatBrokerSkip) } : {}) };
         persistBrokerAccountModel(state, current);
@@ -594,7 +596,7 @@ async function syncBrokerAccountUnlocked(snapshot: InvestorSnapshot, id: string,
       account_id: applied.accountId, lots_upserted: applied.lotsUpserted, lots_removed: applied.lotsRemoved,
       ...(rawId() ? { raw_data_id: rawId() } : {}) });
     applied.archivePath = archivePath;
-    complete = applied.historyReconciliationDeferred === true || !applied.skipped.some(s => s.reason === HISTORY_PENDING_REASON);
+    complete = !applied.deferred?.length && (applied.historyReconciliationDeferred === true || !applied.skipped.some(s => s.reason === HISTORY_PENDING_REASON));
     finishBrokerSync(intent, complete);
     try {
       await publishBrokerSyncSuccess(state.user.id, state.user.admin === true,

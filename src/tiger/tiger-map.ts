@@ -13,6 +13,7 @@ import { envelopeOk, type TigerGatewayEnvelope, type TigerRawBundle } from './ti
 import { BrokerParseError } from '../brokers/errors.js';
 import { mapTigerHistory } from './tiger-history.js';
 import { mapTigerOptionHistory } from './tiger-executions.js';
+import { invalidCashSkip } from '../brokers/snapshot-validation.js';
 
 export function parseNum(value: unknown): number | undefined {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
@@ -213,12 +214,15 @@ function mapPositionsSleeve(env: TigerGatewayEnvelope, channel: string, seen: Se
   return { lots, skipped };
 }
 
-function currencyMap(raw: unknown): Record<string, Record<string, unknown>> {
+function currencyMap(raw: unknown, skipped: BrokerSkip[]): Record<string, Record<string, unknown>> {
   if (Array.isArray(raw)) {
     const out: Record<string, Record<string, unknown>> = {};
     for (const value of raw) {
       const row = asRecord(value);
-      if (row && typeof row.currency === 'string') out[row.currency.toUpperCase()] = row;
+      if (!row || typeof row.currency !== 'string' || !row.currency.trim()) { skipped.push(invalidCashSkip()); continue; }
+      const currency = row.currency.trim().toUpperCase();
+      if (currency in out) skipped.push(invalidCashSkip(currency));
+      out[currency] = row;
     }
     return out;
   }
@@ -227,7 +231,9 @@ function currencyMap(raw: unknown): Record<string, Record<string, unknown>> {
   const out: Record<string, Record<string, unknown>> = {};
   for (const [k, v] of Object.entries(rec)) {
     const inner = asRecord(v);
-    if (inner) out[k.toUpperCase()] = inner;
+    const currency = k.trim().toUpperCase();
+    if (!inner || currency in out) skipped.push(invalidCashSkip(currency || undefined));
+    if (inner) out[currency] = inner;
   }
   return out;
 }
@@ -238,9 +244,9 @@ function cashFromCurrencyAssets(
 ): BrokerCashSleeve[] {
   const cash: BrokerCashSleeve[] = [];
   for (const [ccy, row] of Object.entries(assets)) {
-    if (!/^[A-Z]{3,4}$/.test(ccy)) continue;
+    if (!/^[A-Z]{3,4}$/.test(ccy)) { skipped.push(invalidCashSkip(ccy)); continue; }
     const amount = parseNum(row.cashBalance ?? row.cash_balance);
-    if (amount == null) continue;
+    if (amount == null) { skipped.push(invalidCashSkip(ccy)); continue; }
     cash.push({ currency: ccy, amount });
   }
   return cash;
@@ -263,7 +269,7 @@ function mapPrimeAssets(data: unknown, account: string, asOf: string, skipped: B
     ? asRecord(segments.find((segment) => asRecord(segment)?.category === 'S'))
     : pickSegment(asRecord(segments) ?? {}, 'S');
   const cash = cashFromCurrencyAssets(
-    currencyMap(sec?.currencyAssets ?? sec?.currency_assets),
+    currencyMap(sec?.currencyAssets ?? sec?.currency_assets, skipped),
     skipped,
   );
   let metrics: BrokerConnectionMetrics | undefined;
@@ -294,7 +300,7 @@ function mapGlobalAssets(data: unknown, account: string, asOf: string, skipped: 
   if (!match && rows.length > 0) throw new BrokerParseError(`Tiger assets do not uniquely match requested account ${account}.`);
   const rec = asRecord(match);
   if (!rec) return { cash: [] };
-  const marketValues = currencyMap(rec.marketValues ?? rec.market_values);
+  const marketValues = currencyMap(rec.marketValues ?? rec.market_values, skipped);
   const cash = cashFromCurrencyAssets(
     Object.fromEntries(
       Object.entries(marketValues).map(([ccy, row]) => [ccy, row]),
@@ -335,7 +341,7 @@ export function mapTigerBundleToStatement(bundle: TigerRawBundle, channel: strin
     bundle.assets.method === 'prime_assets'
       ? mapPrimeAssets(assetsData, bundle.account, as_of, skipped)
       : mapGlobalAssets(assetsData, bundle.account, as_of, skipped);
-  if (mapped.cash.length === 0) {
+  if (mapped.cash.length === 0 && !skipped.some(s => s.defer === 'cash')) {
     throw new BrokerParseError('Tiger assets have no importable cash sleeves.');
   }
   const statement: BrokerStatement = {

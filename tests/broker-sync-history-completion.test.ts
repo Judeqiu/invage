@@ -15,7 +15,9 @@ vi.mock('../src/brokers/sync-notification.js',()=>({captureBrokerSyncSnapshot:()
   brokerSyncFacts:()=>({}),publishBrokerSyncSuccess:vi.fn(),publishBrokerSyncFailure:vi.fn()}));
 afterEach(()=>vi.restoreAllMocks());
 
-it.each([false,true])('clears a saved snapshot history conflict but retains a transient fetch retry (transient=%s)',async transient=>{
+it.each(['review','history','cash','positions'] as const)('retains durable retries for incomplete data and clears review-only conflicts: %s',async mode=>{
+  const transient=mode==='history';
+  const deferred=mode==='cash'||mode==='positions' ? [mode] : undefined;
   const state={user:{id:'11111111-2222-4333-8444-555555555555',created_at:'2026-01-01'},
     profile:{display_name:'Test',contact_email:''},log:[]} as InvestorState;
   const source=addBrokerSource(state,'tiger',{tiger_id:'test',license:'TBSG',
@@ -27,10 +29,10 @@ it.each([false,true])('clears a saved snapshot history conflict but retains a tr
   vi.spyOn(adapter,'parseBrokerSnapshot').mockReturnValue({account_id:'A',as_of:'2026-10-27',cash:[],lots:[],skipped:[]});
   const result:BrokerApplyResult={accountId:'A',asOf:'2026-10-27',channel:connection.channel,lotsUpserted:0,lotsRemoved:0,cash:[],
     skipped:[{kind:'event',reason:transient?HISTORY_PENDING_REASON:HISTORY_REVIEW_REASON}],
-    ...(transient?{}:{historyReconciliationDeferred:true})};
+    ...(deferred?{deferred}:{}),...(transient?{}:{historyReconciliationDeferred:true})};
   vi.mocked(applyBrokerStatement).mockResolvedValue(result);
   await syncBrokerAccount(snapshot,id,undefined,'scheduled',true);
   const retry=brokerSyncRetry(state.user.id,id,brokerSyncBinding(connection));
-  if(transient)expect(retry).toMatchObject({attempts:1});
+  if(transient||deferred)expect(retry).toMatchObject({attempts:1});
   else expect(retry).toBeNull();
 });

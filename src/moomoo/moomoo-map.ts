@@ -17,6 +17,7 @@ import type { BrokerConnectionMetrics } from '../state/portfolio-state.js';
 import { envelopeOk, type MooMooRawBundle } from './moomoo-types.js';
 import { mapMooMooHistory, moomooContractMetadata } from './moomoo-history.js';
 import { optionExecutionsFromHistory } from '../brokers/history.js';
+import { invalidCashSkip, invalidCostSkip } from '../brokers/snapshot-validation.js';
 
 export { looksLikeOptionCode } from '../brokers/option-symbol.js';
 
@@ -181,8 +182,9 @@ function mapFunds(d: unknown, asOf: string, skipped: BrokerSkip[]): {
   if (!rec) return { cash: [] };
   const cash: BrokerCashSleeve[] = [];
   for (const [field, iso] of Object.entries(CASH_FIELDS)) {
+    if (!(field in rec)) continue;
     const amount = parseNum(rec[field]);
-    if (amount == null) continue;
+    if (amount == null) { skipped.push(invalidCashSkip(iso)); continue; }
     cash.push({ currency: iso, amount });
   }
   const reportedCurrency = String(rec.currency ?? '').trim().toUpperCase();
@@ -211,6 +213,7 @@ function mapPosition(
   seen: Set<string>,
 ): { lot?: BrokerStatement['lots'][number]; skip?: BrokerSkip } {
   const code = String(item.code ?? '').trim();
+  if (item.cost_price_valid === false) return {skip:invalidCostSkip(code || undefined)};
   const side = String(item.position_side ?? 'LONG').trim().toUpperCase();
   const qty = parseNum(item.qty);
   if (!code) return { skip: skipPos(undefined, 'missing code') };
@@ -258,7 +261,7 @@ export function mapMooMooBundleToStatement(bundle: MooMooRawBundle, channel: str
   const as_of = bundle.fetched_at.slice(0, 10);
   const skipped: BrokerSkip[] = [];
   const { cash, metrics } = mapFunds(bundle.funds.d, as_of, skipped);
-  if (cash.length === 0) {
+  if (cash.length === 0 && !skipped.some(s => s.defer === 'cash')) {
     throw new BrokerParseError('MooMoo funds have no importable cash sleeves.');
   }
   // An absent/malformed list is not evidence that an account has no positions.

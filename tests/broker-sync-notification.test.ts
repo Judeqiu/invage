@@ -151,3 +151,32 @@ it('does not notify for an empty batch, and notification failure does not fail s
   finally { log.mockRestore(); }
   expect(notify).toHaveBeenCalledOnce();
 });
+
+it.each(['cash','positions'] as const)('includes deferred %s alerts in standalone and combined report notifications',async section=>{
+  const notify=vi.fn(async()=>({notification:{} as never,delivery:[]})),summarize=vi.fn(async()=> 'Everything synced.');
+  const note=section==='cash'?'SGD: unreadable cash. Retained SGD 2026-10-30.':'US.AAPL: invalid cost. Retained positions from 2026-10-30.';
+  const facts=brokerSyncFacts('Tiger Brokers','Main',captureBrokerSyncSnapshot(state(),'tiger'),captureBrokerSyncSnapshot(state(),'tiger'),
+    {...applied,deferred:[section],skipped:[{kind:'event',reason:note},{kind:'event',reason:note}]},true);
+  await publishBrokerSyncSuccess('alice',false,facts,{notify,summarize});
+  expect(summarize).not.toHaveBeenCalled();
+  expect(notify.mock.calls[0][0]).toMatchObject({title:'Tiger Brokers sync needs attention',severity:'medium'});
+  expect(notify.mock.calls[0][0].status_hint).toBeUndefined();
+  expect(notify.mock.calls[0][0].body).toContain('partial update');
+  expect(notify.mock.calls[0][0].body.split(note)).toHaveLength(2);
+  await withBrokerSyncBatchNotifications({userId:'alice',date:'2026-11-01',accounts:[{label:'Tiger',status:'succeeded'}]},async()=>{
+    await publishBrokerSyncSuccess('alice',false,facts,{notify,summarize});
+  },notify);
+  expect(notify.mock.calls[1][0]).toMatchObject({title:'Broker sync needs attention',severity:'medium'});
+  expect(notify.mock.calls[1][0].status_hint).toBeUndefined();
+  expect(notify.mock.calls[1][0].body).toContain(note);
+  expect(notify.mock.calls[1][0].body).toContain('automatic retry');
+});
+
+it('describes an incomplete first sync without claiming absent data was reported as zero or retained',()=>{
+  const facts=brokerSyncFacts('Tiger Brokers','Main',captureBrokerSyncSnapshot(state(),'tiger'),captureBrokerSyncSnapshot(state(),'tiger'),
+    {...applied,deferred:['cash'],skipped:[]},false);
+  const summary=fallbackBrokerSyncSummary(facts);
+  expect(summary).toContain('Deferred cash update');
+  expect(summary).not.toContain('no holdings or cash reported');
+  expect(summary).not.toContain('snapshot retained');
+});

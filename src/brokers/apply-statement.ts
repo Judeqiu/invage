@@ -5,6 +5,7 @@ import { mergeOptionExecutions } from './option-executions.js';
 import { mergeOptionLifecycleEvents } from './option-events.js';
 import { appendOptionObservation } from './option-history.js';
 import { normalizeBrokerOptionLot } from './statement.js';
+import { deferredSnapshotSections } from './snapshot-validation.js';
 import { mergeBrokerHistory, optionExecutionsFromHistory } from './history.js';
 import { createHash } from 'node:crypto';
 /**
@@ -129,7 +130,7 @@ export function assertStatementNotOlder(
   asOf: string,
 ): void {
   const previousAsOf = state.broker_connections?.[connectorId]?.last_sync?.ok
-    ? state.broker_connections[connectorId].last_sync.as_of : undefined;
+    ? state.broker_connections[connectorId].last_sync.positions_as_of ?? state.broker_connections[connectorId].last_sync.as_of : undefined;
   const observedAsOf = (state.option_observations ?? [])
     .filter(row => row.connection_id === connectorId && row.source === 'broker')
     .reduce<string | undefined>((latest, row) => !latest || row.as_of > latest ? row.as_of : latest, undefined);
@@ -158,18 +159,27 @@ export async function applyBrokerStatement(
     }
   }
   if (observation?.requireCompleteSnapshot) {
-    const blocking = doc.skipped.filter(s => (s.kind === 'position' || s.kind === 'cash') && s.blocking !== false);
+    const blocking = doc.skipped.filter(s => (s.kind === 'position' || s.kind === 'cash') && s.blocking !== false && !s.defer);
     if (blocking.length) throw new Error('Broker current snapshot is incomplete; retained the previous holdings and cash for automatic retry. Details: ' + blocking.map(formatBrokerSkip).join('; '));
   }
   const channel = connection?.channel ?? getBrokerConnector(connectorId).channel;
+  const deferred = deferredSnapshotSections(doc.skipped);
+  const keepCash = deferred.includes('cash'), keepPositions = deferred.includes('positions');
+  const priorCash = getCashes(state).filter(row => cashSlotKey(row.channel) === cashSlotKey(channel));
+  const priorSync = state.broker_connections?.[connectorId]?.last_sync;
+  const priorPositionDate = priorSync?.positions_as_of ?? (priorSync?.snapshot_deferred?.includes('positions') ? undefined : priorSync?.as_of) ?? (state.option_observations ?? [])
+    .filter(row => row.connection_id === connectorId && row.source === 'broker')
+    .map(row => row.as_of).sort().at(-1);
+  const positionsAsOf = keepPositions ? priorPositionDate : doc.as_of;
   assertStatementNotOlder(state, connectorId, channel, doc.as_of);
+  if (!keepCash && priorCash.some(row => row.updated_at > doc.as_of)) throw new Error('Broker cash statement is older than retained cash; balances were not replaced.');
   // All adapters and custom parsers pass through this before any books writes.
   doc = { ...doc, lots: doc.lots.map(normalizeBrokerOptionLot) };
   if (doc.history && (doc.history.channel !== channel || doc.history.account_id !== doc.account_id || doc.history.broker_id !== (connection?.brokerId ?? connectorId))) throw new Error('History broker/channel/account differs from broker statement');
   // Prepare observation history on a copy, so replay conflicts fail before
   // ledger writes and a failed books transaction leaves the snapshot untouched.
   const observedState = { ...state };
-  appendOptionObservation(observedState, {
+  if (!keepPositions) appendOptionObservation(observedState, {
     statement: doc, brokerId: connection?.brokerId ?? connectorId,
     connectionId: connectorId, channel,
     syncId: observation?.syncId, observedAt: observation?.observedAt,
@@ -217,7 +227,7 @@ export async function applyBrokerStatement(
     throw new Error(`Broker statement has duplicate lot keys on channel ${channel}.`);
   }
   const portfolio = { ...getPortfolio(state) };
-  const { next, removedKeys } = replaceChannelHoldings(portfolio, stamped, channel);
+  const { next, removedKeys } = keepPositions ? {next:portfolio,removedKeys:[]} : replaceChannelHoldings(portfolio, stamped, channel);
   const today = doc.as_of;
   const existing = getPortfolio(state);
   const removed = removedKeys.filter((k) => !stamped.some((l) => l.mapKey === k)).length;
@@ -228,9 +238,9 @@ export async function applyBrokerStatement(
       `broker:${connectorId}:${doc.account_id}:${today}:${fingerprint}`);
   }
 
-  state.option_observations = observedState.option_observations;
+  if (observedState.option_observations !== undefined) state.option_observations = observedState.option_observations;
   setPortfolio(state, next);
-  setCashes(state, replaceChannelCash(getCashes(state), doc.cash, channel, today));
+  if (!keepCash) setCashes(state, replaceChannelCash(getCashes(state), doc.cash, channel, today));
   writeConnectionMetrics(state, connectorId, doc);
   if (executions !== undefined) state.option_executions = executions;
   if (optionEvents !== undefined) state.option_events = optionEvents;
@@ -245,23 +255,35 @@ export async function applyBrokerStatement(
     action: 'broker_sync',
     connector_id: connectorId,
     account_id: doc.account_id,
-    lots: stamped.length,
+    lots: keepPositions ? 0 : stamped.length,
     removed,
     not_imported: doc.skipped.length,
   });
+  const retentionNotes: BrokerApplyResult['skipped'] = [];
+  if (keepCash) retentionNotes.push({kind:'event',reason:priorCash.length
+    ? `Cash update deferred. Retained cash dates: ${priorCash.map(row => `${row.currency} ${row.updated_at}`).join('; ')}. Automatic retry is queued.`
+    : 'Cash update deferred. No previous verified cash balance is available; cash remains unknown. Automatic retry is queued.'});
+  if (keepPositions) retentionNotes.push({kind:'event',reason:priorPositionDate
+    ? `Position update deferred. Retained positions are from ${priorPositionDate}; they are not a current snapshot. Automatic retry is queued.`
+    : 'Position update deferred. No previous verified position snapshot is available. Automatic retry is queued.'});
+  const verifiedDates = [positionsAsOf, ...(keepCash ? priorCash.map(row => row.updated_at) : [doc.as_of])].filter((date):date is string => !!date).sort();
   const result: BrokerApplyResult = {
     accountId: doc.account_id,
-    asOf: today,
+    asOf: deferred.length ? verifiedDates[0] ?? today : today,
+    ...(positionsAsOf ? {positionsAsOf} : {}),
+    ...(deferred.length ? {deferred} : {}),
     channel,
-    lotsUpserted: stamped.length,
+    lotsUpserted: keepPositions ? 0 : stamped.length,
     lotsRemoved: removed,
-    cash: doc.cash,
+    cash: keepCash ? priorCash.map(({currency,amount,settled_amount,accrued_interest}) => ({currency,amount,
+      ...(settled_amount !== undefined ? {settled_amount} : {}), ...(accrued_interest !== undefined ? {accrued_interest} : {})})) : doc.cash,
     skipped: historyReconciliationDeferred
       ? [...doc.skipped.filter(s => s.reason !== HISTORY_PENDING_REASON), { kind: 'event', reason: HISTORY_REVIEW_REASON }]
       : historyError && !doc.skipped.some(s=>s.reason===HISTORY_PENDING_REASON) ? [...doc.skipped, { kind: 'event', reason: HISTORY_PENDING_REASON }] : doc.skipped,
     ...(historyReconciliationDeferred ? { historyReconciliationDeferred: true as const } : {}),
     ...(history ? { historySync:history.sync } : {}),
   };
+  result.skipped = [...result.skipped, ...retentionNotes];
   if (beforeSave) beforeSave(result);
   await saveInvestor(snapshot);
   return result;

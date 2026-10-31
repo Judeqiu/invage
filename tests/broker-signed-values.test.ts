@@ -18,9 +18,9 @@ function bundle(cost:string,mark='5.092',valid=true):any {
     positions:{s:'ok',d:[{position_side:'SHORT',code,qty:'-1',currency:'USD',nominal_price:mark,cost_price:cost,cost_price_valid:valid,security_type:'OPTION'}]},
     option_basicinfo:[{code,contract_size:100,stock_type:'DRVT',stock_owner:'US.SKHY'}]};
 }
-it('preserves negative and zero broker costs/marks/metrics regardless of plausibility or validity flags',()=>{
-  for(const cost of ['-7.4400','0','7.44']) for(const mark of ['-5.092','0','5.092']) for(const valid of [true,false]) {
-    const statement=assertBrokerStatement(mapMooMooBundleToStatement(bundle(cost,mark,valid),'moomoo'));
+it('preserves negative and zero valid broker costs/marks/metrics regardless of plausibility',()=>{
+  for(const cost of ['-7.4400','0','7.44']) for(const mark of ['-5.092','0','5.092']) {
+    const statement=assertBrokerStatement(mapMooMooBundleToStatement(bundle(cost,mark,true),'moomoo'));
     expect(statement.skipped.filter(s=>s.blocking!==false)).toEqual([]);
     expect(statement.lots[0].holding).toMatchObject({avg_price:Number(cost)*100,units:1,option:{side:'short',mark:Number(mark)*100}});
     expect(statement.cash).toEqual([{currency:'USD',amount:-10}]);
@@ -63,7 +63,7 @@ it('persists signed and zero costs, repeats without duplicate money, and closes 
 it('imports signed broker stock quantities and zero costs through the books, then closes them',async()=>{
   const user=randomUUID();
   await createInvestorFixture({user:{id:user,created_at:'2026-10-01',auth_token:randomUUID()},profile:{display_name:'Short stock',contact_email:'short@test.local'},log:[],broker_connections:{moomoo:{enabled:true,credentials:{}}}});
-  const raw=bundle('0');raw.positions.d=[{code:'US.AAPL',qty:'-5',currency:'USD',position_side:'SHORT',cost_price:'0',cost_price_valid:false}];
+  const raw=bundle('0');raw.positions.d=[{code:'US.AAPL',qty:'-5',currency:'USD',position_side:'SHORT',cost_price:'0',cost_price_valid:true}];
   const statement=mapMooMooBundleToStatement(raw,'moomoo');
   expect(statement.lots[0].holding).toMatchObject({units:-5,avg_price:0});
   await applyBrokerStatement(await loadInvestor(user),'moomoo',statement);

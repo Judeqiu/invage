@@ -1,8 +1,10 @@
 # Broker API data requiring review
 
+Implementation follow-up: SH-01 and CL-01 now have safeguards on `main`. An unreadable returned cash sleeve defers the whole cash section; an explicitly invalid required cost defers the whole position section. Saved values retain their original dates, independently valid sections and history continue, and the durable retry remains queued. Standalone and combined report notifications on the existing Notifications page identify the affected currency/holding, explain retention and show that the sync needs attention. Complete daily snapshots are withheld until recovery. Original broker responses retain the supplied values and flags. This change does not establish whether earlier live imports were affected and does not approve the remaining review items.
+
 Date: 2026-11-01 (Singapore). Code reviewed: `01b2184`, `main`.
 
-**All decisions below are pending.** “Recommend” is a proposal, not approval to discard data or change a financial definition. No listed processing issue was fixed by this documentation round. Existing evidence must be preserved while decisions are made.
+**SH-01 and CL-01 have the approved safeguards described above; all other decisions below are pending.** “Recommend” is a proposal, not approval to discard data or change a financial definition. No listed processing issue was fixed by this documentation round. Existing evidence must be preserved while decisions are made.
 
 The companion [coverage audit](2026-11-01-broker-api-coverage.md) explains the request inventory, persistence layers, specification sources, synthetic reproductions and limitations. This file is the separate decision list requested by the user. Reply with item IDs and the desired treatment; related IDs can be approved together.
 
@@ -141,7 +143,7 @@ These rows propose scope decisions. They do **not** assert that any requested da
 
 ## Suggested review order
 
-1. Address SH-01 and CL-01 first: demonstrated acceptance defects can affect retained financial state or calculations.
+1. SH-01 and CL-01: approved safeguards implemented as described above; assess earlier live impact separately.
 2. Address SH-02–SH-06: preserve all returned evidence and account for every record before adding more derived reports.
 3. Prioritize account cash activity, lifecycle events, corrections, Webull partial/multi-leg coverage and unsupported account/instrument paths.
 4. Decide which source-only metrics, lots and contract details should become normalized data, with explicit financial definitions.

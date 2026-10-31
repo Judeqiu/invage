@@ -15,6 +15,7 @@ export const captureBrokerBatchSnapshot = (state: InvestorState, date: string) =
 export async function finishBrokerSyncBatch(state: InvestorState, date: string,
   synced: Record<string, string>, capture = captureBrokerBatchSnapshot) {
   const current = brokerBatchAccounts(state);
+  if (Object.values(readBrokerAccountModel(state).connections).some(conn => conn.enabled && conn.account_id && conn.last_sync?.snapshot_deferred?.length)) return null;
   if (!Object.keys(current).length || !Object.entries(current).every(([id, key]) => synced[id] === key)) return null;
   return await capture(state, date);
 }

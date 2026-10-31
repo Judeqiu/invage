@@ -12,6 +12,7 @@ import {
 } from '../market/position-value.js';
 import type { BrokerConnectionMetrics } from '../state/portfolio-state.js';
 import type { WebullRawBundle, WebullRegion } from './webull-types.js';
+import { invalidCashSkip } from '../brokers/snapshot-validation.js';
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (value == null || typeof value !== 'object' || Array.isArray(value)) return null;
@@ -74,11 +75,11 @@ function mapCash(balances: unknown, asOf: string, skipped: BrokerSkip[]): {
   let metricsCurrency = String(rec.total_asset_currency ?? 'USD').trim().toUpperCase() || 'USD';
   for (const row of rows) {
     const item = asRecord(row);
-    if (!item) continue;
+    if (!item) { skipped.push(invalidCashSkip()); continue; }
     const currency = String(item.currency ?? '').trim().toUpperCase();
-    if (!/^[A-Z]{3,4}$/.test(currency)) continue;
+    if (!/^[A-Z]{3,4}$/.test(currency)) { skipped.push(invalidCashSkip(currency || undefined)); continue; }
     const amount = parseNum(item.cash_balance);
-    if (amount == null) continue;
+    if (amount == null) { skipped.push(invalidCashSkip(currency)); continue; }
     cash.push({ currency, amount });
     const bp = parseNum(item.buying_power);
     if (bp != null && (currency === 'USD' || buyingPower == null)) {
@@ -231,7 +232,7 @@ export function mapWebullBundleToStatement(bundle: WebullRawBundle, channel: str
   if (!/^\d{4}-\d{2}-\d{2}$/.test(asOf)) throw new BrokerParseError('Webull bundle fetched_at is not an ISO timestamp.');
   const skipped: BrokerSkip[] = [];
   const { cash, metrics } = mapCash(bundle.balances, asOf, skipped);
-  if (cash.length === 0) throw new BrokerParseError('Webull balances had no importable cash sleeves.');
+  if (cash.length === 0 && !skipped.some(s => s.defer === 'cash')) throw new BrokerParseError('Webull balances had no importable cash sleeves.');
   const seen = new Set<string>();
   const lots: BrokerStatement['lots'] = [];
   for (const row of positionRows(bundle.positions)) {

@@ -43,6 +43,7 @@ export function captureBrokerSyncSnapshot(state: InvestorState, channel: string)
 }
 
 export interface BrokerSyncFacts {
+  deferred_snapshot?: Array<'cash'|'positions'>;
   broker: string;
   account: string;
   as_of: string;
@@ -88,6 +89,7 @@ export function brokerSyncFacts(broker: string, account: string, before: BrokerS
     cash.push(`${currency} ${oldValue === undefined ? 'previously unrecorded' : formatNumber(oldValue)} → ${newValue === undefined ? 'not reported' : formatNumber(newValue)}`);
   }
   return { broker, account: account.slice(0, 80), as_of: applied.asOf,
+    ...(applied.deferred?.length ? {deferred_snapshot:applied.deferred} : {}),
     initial: !hadPreviousSync && !Object.keys(before.positions).length && !Object.keys(before.cash).length,
     positions_total: Object.keys(after.positions).length,
     added, removed, changed, cash,
@@ -103,8 +105,11 @@ export function fallbackBrokerSyncSummary(facts: BrokerSyncFacts): string {
     facts.cash.length ? `cash: ${facts.cash.slice(0, 3).join('; ')}` : '',
     facts.executions_added ? `${facts.executions_added} new option executions` : '',
   ].filter(Boolean);
-  return `${facts.broker} ${facts.account} synced as of ${facts.as_of}: ${facts.positions_total} holdings. ` +
-    (facts.initial ? `Initial snapshot: ${changes.join('; ') || 'no holdings or cash reported'}.` :
+  return (facts.deferred_snapshot?.length
+    ? `${facts.broker} ${facts.account}: partial update. Deferred ${facts.deferred_snapshot.join(' and ')} update. `
+    : `${facts.broker} ${facts.account} synced as of ${facts.as_of}: ${facts.positions_total} holdings. `) +
+    (facts.deferred_snapshot?.length ? changes.length ? `Changes in accepted data: ${changes.join('; ')}.` : 'No holdings or cash changes were applied.' :
+      facts.initial ? `Initial snapshot: ${changes.join('; ') || 'no holdings or cash reported'}.` :
       changes.length ? `Compared with the previous recorded snapshot: ${changes.join('; ')}.` :
         'No holdings or cash changes from the previous recorded snapshot.') +
     (facts.skipped ? ` ${facts.skipped} rows were not imported.` : '');
@@ -173,9 +178,10 @@ export async function withBrokerSyncBatchNotifications<T>(notice: BrokerSyncBatc
         collected.failures.length > 0 || notice.calculationStatus === 'failed';
       const historyReview = collected.successes.some(facts => facts.coverage_notes?.includes(HISTORY_REVIEW_REASON));
       const historyPending = collected.successes.some(facts => facts.coverage_notes?.includes(HISTORY_PENDING_REASON));
-      const pending = notice.calculationStatus === 'pending' || historyReview || historyPending;
-      const lines = notice.accounts.map(account => `${account.label}: ${account.status === 'succeeded' ? 'synced' : account.status === 'failed' ? 'failed' : 'not synced'}.`);
-      lines.unshift(`${notice.accounts.filter(account => account.status === 'succeeded').length} of ${notice.accounts.length} accounts synced.`);
+      const snapshotDeferred = collected.successes.some(facts => facts.deferred_snapshot?.length);
+      const pending = snapshotDeferred || notice.calculationStatus === 'pending' || historyReview || historyPending;
+      const lines = notice.accounts.map(account => `${account.label}: ${account.status === 'succeeded' ? snapshotDeferred ? 'processed; see data notes' : 'synced' : account.status === 'failed' ? 'failed' : 'not synced'}.`);
+      lines.unshift(`${notice.accounts.filter(account => account.status === 'succeeded').length} of ${notice.accounts.length} accounts ${snapshotDeferred ? 'processed; some snapshot data was retained' : 'synced'}.`);
       lines.push(...collected.successes.map(fallbackBrokerSyncSummary), ...collected.failures);
       const notes = [...new Set(collected.successes.flatMap(facts => (facts.coverage_notes ?? [])
         .map(note => `${facts.broker} ${facts.account}: ${note}`)))];
@@ -184,12 +190,12 @@ export async function withBrokerSyncBatchNotifications<T>(notice: BrokerSyncBatc
       if (notice.calculationStatus === 'ready') lines.push('Portfolio aggregates updated.');
       else if (notice.calculationStatus === 'pending') lines.push('Portfolio aggregates are still being prepared.');
       if (notice.error) lines.push(notice.error);
-      if (notice.retryScheduled) lines.push('Incomplete work is queued for automatic retry.');
+      if (notice.retryScheduled || snapshotDeferred) lines.push('Incomplete work is queued for automatic retry.');
       if (notes.length) lines.push('Data notes:\n' + notes.join('\n'));
       try {
-        await notify({ userId: notice.userId, title: failed ? 'Broker sync needs attention' : historyReview ? 'Broker snapshots saved; history needs review' : pending ? 'Broker sync imported' : 'Broker sync complete',
+        await notify({ userId: notice.userId, title: failed || snapshotDeferred ? 'Broker sync needs attention' : historyReview ? 'Broker snapshots saved; history needs review' : pending ? 'Broker sync imported' : 'Broker sync complete',
           body: `${notice.date}\n${lines.join('\n')}`, source: 'system',
-          severity: failed || historyReview ? 'medium' : 'info', status_hint: failed ? 'failure' : pending ? undefined : 'success', href: '/settings/brokers' });
+          severity: failed || snapshotDeferred || historyReview ? 'medium' : 'info', status_hint: failed ? 'failure' : pending ? undefined : 'success', href: '/settings/brokers' });
       } catch (error) { console.error('[broker/sync-notification] batch publish failed:', error); }
     }
   }
@@ -207,13 +213,14 @@ export async function publishBrokerSyncSuccess(slug: string, isAdmin: boolean, f
   const notes = [...new Set((coverage_notes ?? []).map(note => note.trim()).filter(Boolean))];
   const historyReview = notes.includes(HISTORY_REVIEW_REASON);
   const historyPending = historyReview || notes.includes(HISTORY_PENDING_REASON);
-  try { summary = await deps.summarize(slug, isAdmin, summaryFacts); }
+  const snapshotDeferred = !!facts.deferred_snapshot?.length;
+  try { if (!snapshotDeferred) summary = await deps.summarize(slug, isAdmin, summaryFacts); }
   catch (error) { console.warn('[broker/sync-notification] LLM fallback:', error instanceof Error ? error.message : String(error)); }
   try {
-    await deps.notify({ userId: slug, title: historyReview ? `${facts.broker} snapshot saved; history needs review`
+    await deps.notify({ userId: slug, title: snapshotDeferred ? `${facts.broker} sync needs attention` : historyReview ? `${facts.broker} snapshot saved; history needs review`
       : historyPending ? `${facts.broker} snapshot saved; history pending` : `${facts.broker} sync complete`,
       body: summary + (notes.length ? `\n\nData notes:\n${notes.join('\n')}` : ''),
-      source: 'system', severity: historyReview ? 'medium' : 'info', status_hint: historyPending ? undefined : 'success', href: '/settings/brokers' });
+      source: 'system', severity: snapshotDeferred || historyReview ? 'medium' : 'info', status_hint: snapshotDeferred || historyPending ? undefined : 'success', href: '/settings/brokers' });
   } catch (error) { console.error('[broker/sync-notification] publish failed:', error); }
 }
 

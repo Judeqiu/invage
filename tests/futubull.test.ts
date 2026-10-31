@@ -24,7 +24,8 @@ describe('Futubull OpenD snapshot', () => {
     expect(mapped.lots.map(row => row.ticker)).toEqual(['AAPL', '0700.HK']);
     expect(mapped.lots[0].holding.avg_price).toBe(150);
     expect(mapped.cash).toEqual([{ currency: 'USD', amount: 100.5 }, { currency: 'HKD', amount: 0 }]);
-    expect(mapped.skipped).toHaveLength(1);
+    expect(mapped.skipped).toHaveLength(2);
+    expect(mapped.skipped).toContainEqual(expect.objectContaining({kind:'cash',currency:'SGD',defer:'cash'}));
   });
 
   it('preserves negative cash and rejects absent cash data', () => {

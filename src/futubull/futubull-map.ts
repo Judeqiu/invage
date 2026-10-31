@@ -4,6 +4,7 @@ import { looksLikeOptionCode } from '../brokers/option-symbol.js';
 import type { BrokerStatement } from '../brokers/statement.js';
 import { yahooSymbolFromBroker } from '../brokers/yahoo-symbol.js';
 import { assertHolding, buildHoldingKey } from '../market/position-value.js';
+import { invalidCashSkip, invalidCostSkip } from '../brokers/snapshot-validation.js';
 
 const cashFields: Record<string, string> = {
   us_cash: 'USD', hk_cash: 'HKD', cn_cash: 'CNH', jp_cash: 'JPY', sg_cash: 'SGD',
@@ -31,15 +32,16 @@ export function mapFutubullSnapshot(raw: unknown, channel: string, includeHistor
   const as_of = bundle.fetched_at.slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(as_of)) throw new BrokerParseError('Futubull snapshot date is invalid.');
   const funds = record(bundle.funds[0]);
+  const skipped: BrokerStatement['skipped'] = [];
   const cash: BrokerStatement['cash'] = [];
   for (const [field, currency] of Object.entries(cashFields)) {
+    if (!(field in funds)) continue;
     const amount = number(funds[field]);
-    if (amount === undefined) continue;
+    if (amount === undefined) { skipped.push(invalidCashSkip(currency)); continue; }
     cash.push({ currency, amount });
   }
-  if (cash.length === 0) throw new BrokerParseError('Futubull funds contain no importable per-currency cash.');
+  if (cash.length === 0 && !skipped.some(s => s.defer === 'cash')) throw new BrokerParseError('Futubull funds contain no importable per-currency cash.');
   const lots: BrokerStatement['lots'] = [];
-  const skipped: BrokerStatement['skipped'] = [];
   const seen = new Set<string>();
   for (const value of bundle.positions) {
     const row = record(value);
@@ -53,6 +55,7 @@ export function mapFutubullSnapshot(raw: unknown, channel: string, includeHistor
     const currency = String(row.currency ?? '').toUpperCase();
     const qty = number(row.qty);
     const averageCost = number(row.average_cost);
+    if (averageCost === undefined && row.cost_price_valid === false) { skipped.push(invalidCostSkip(code)); continue; }
     const average = averageCost ?? number(row.cost_price);
     if (!/^[A-Z]{3,4}$/.test(currency) || qty === undefined || average === undefined) {
       skip('unsupported side, currency, quantity, or cost'); continue;

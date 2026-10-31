@@ -158,3 +158,13 @@ describe('shared broker history',()=>{
     expect(()=>patchBrokerAccount(s,id,{account_id:'B'})).toThrow(/cannot be changed/);
   });
 });
+
+it.each(['cash','positions'] as const)('saves valid history independently of deferred %s',async section=>{
+  const s=state(),doc={account_id:'A',as_of:'2026-11-01',cash:[{currency:'USD',amount:100}],lots:[],
+    skipped:[section==='cash'?{kind:'cash' as const,defer:'cash' as const,currency:'SGD',reason:'Unreadable cash'}:
+      {kind:'position' as const,defer:'positions' as const,symbol:'US.AAPL',reason:'Invalid cost'}],history:history('tiger')};
+  const result=await applyBrokerStatement({state:s,revision:1},'tiger',doc,undefined,undefined,undefined,{requireCompleteSnapshot:true});
+  expect(s.broker_history?.tiger.executions).toHaveLength(1);
+  expect(s.option_executions).toHaveLength(1);
+  expect(result.deferred).toEqual([section]);
+});

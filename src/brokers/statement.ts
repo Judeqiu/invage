@@ -1,5 +1,5 @@
-export const HISTORY_PENDING_REASON = 'Historical reconciliation queued; current positions and cash are saved.';
-export const HISTORY_REVIEW_REASON = 'Historical reconciliation needs review; current positions and cash are saved. History will be retried at the next regular or manual sync.';
+export const HISTORY_PENDING_REASON = 'Historical reconciliation queued.';
+export const HISTORY_REVIEW_REASON = 'Historical reconciliation needs review. History will be retried at the next regular or manual sync.';
 /**
  * Canonical broker statement — the only apply input.
  * Catalog parsers (IBKR Flex XML, csv_tables) map vendor rows into this
@@ -18,6 +18,8 @@ import {
 } from '../state/portfolio-state.js';
 
 export interface BrokerSkip {
+  /** Keep this snapshot section unchanged while independently valid sections save. */
+  defer?: 'cash' | 'positions';
   /** Explicitly documented out-of-model totals are nonblocking; malformed current data is not. */
   blocking?: boolean;
   kind: 'position' | 'cash' | 'event';
@@ -72,6 +74,8 @@ export interface BrokerStatement {
 }
 
 export interface BrokerApplyResult {
+  deferred?: Array<'cash' | 'positions'>;
+  positionsAsOf?: string;
   /** A deterministic history conflict does not retry a successfully saved snapshot. */
   historyReconciliationDeferred?: true;
   historySync?: BrokerHistory['sync'];
@@ -189,6 +193,10 @@ function assertSkip(raw: unknown, i: number): BrokerSkip {
     throw new Error(`Broker statement skipped[${i}].reason is required.`);
   }
   const skip: BrokerSkip = { kind: r.kind, reason: r.reason.trim() };
+  if (r.defer !== undefined) {
+    if (!(r.defer === 'cash' && r.kind === 'cash' || r.defer === 'positions' && r.kind === 'position')) throw new Error('Broker skip deferral must match its snapshot section.');
+    skip.defer = r.defer;
+  }
   if (r.blocking !== undefined) {
     if(typeof r.blocking !== 'boolean') throw new Error('Broker skip blocking must be boolean.');
     skip.blocking=r.blocking;
@@ -226,7 +234,7 @@ export function assertBrokerStatement(raw: unknown): BrokerStatement {
   if (typeof o.as_of !== 'string' || !o.as_of.trim()) {
     throw new Error('Broker statement as_of is required.');
   }
-  if (!Array.isArray(o.cash) || o.cash.length === 0) {
+  if (!Array.isArray(o.cash) || o.cash.length === 0 && !(Array.isArray(o.skipped) && o.skipped.some((s,i) => assertSkip(s,i).defer === 'cash'))) {
     throw new Error('Broker statement cash must be a non-empty array of currency sleeves.');
   }
   if (!Array.isArray(o.lots)) {

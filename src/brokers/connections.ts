@@ -166,6 +166,14 @@ export function parseLastSync(raw: unknown, ctx: string): BrokerConnectionLastSy
   if (!at) throw new Error(`${ctx}.at is required.`);
   if (typeof o.ok !== 'boolean') throw new Error(`${ctx}.ok must be a boolean.`);
   const ls: BrokerConnectionLastSync = { at, ok: o.ok };
+  if (o.positions_as_of !== undefined) {
+    if (typeof o.positions_as_of !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(o.positions_as_of)) throw new Error('Invalid retained position date.');
+    ls.positions_as_of = o.positions_as_of;
+  }
+  if (o.snapshot_deferred !== undefined) {
+    if (!Array.isArray(o.snapshot_deferred) || o.snapshot_deferred.some(s => s !== 'cash' && s !== 'positions')) throw new Error('Invalid deferred snapshot sections.');
+    ls.snapshot_deferred = [...new Set(o.snapshot_deferred)] as Array<'cash'|'positions'>;
+  }
   if (o.ok === false) {
     const error = typeof o.error === 'string' ? o.error.trim() : '';
     if (!error) {
@@ -585,6 +593,8 @@ async function syncBrokerConnectionUnlocked(
       try {
     applied = await applyBrokerStatement(snapshot, id, statement, raw.body, result => {
       const last_sync: BrokerConnectionLastSync = { at, ok: true, as_of: result.asOf,
+        ...(result.positionsAsOf ? {positions_as_of:result.positionsAsOf} : {}),
+        ...(result.deferred ? {snapshot_deferred:result.deferred} : {}),
         account_id: result.accountId, lots_upserted: result.lotsUpserted, lots_removed: result.lotsRemoved };
       if (result.skipped.length) last_sync.not_imported = result.skipped.map(formatBrokerSkip);
       writeLastSync(state, id, last_sync, secrets);
@@ -593,7 +603,7 @@ async function syncBrokerConnectionUnlocked(
       } catch(error) { if(!isInvestorRevisionConflict(error)||attempt>=2)throw error; }
     }
     applied.archivePath = archivePath;
-    complete = applied.historyReconciliationDeferred === true || !applied.skipped.some(s=>s.reason===HISTORY_PENDING_REASON);
+    complete = !applied.deferred?.length && (applied.historyReconciliationDeferred === true || !applied.skipped.some(s=>s.reason===HISTORY_PENDING_REASON));
     finishBrokerSync(intent,complete);
     try {
       await publishBrokerSyncSuccess(slug, state.user.admin === true,

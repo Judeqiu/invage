@@ -1,5 +1,8 @@
 # Broker API processing coverage audit
 
+Implementation follow-up: the SH-01/CL-01 safeguards and notification behavior are described in the [separate review register](2026-11-01-broker-api-data-review.md). The reproductions below record behavior before that fix; they remain evidence of the original defects, not a live-account impact assessment.
+
+
 Reviewed: 2026-11-01 (Singapore). Source baseline: `01b21845743225765a1072041de88fcbb7b42e97`, branch `main`.
 
 ## Result

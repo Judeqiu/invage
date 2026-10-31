@@ -229,3 +229,15 @@ it('imports all brokers before final calculations and waits before sending the s
     expect(mocks.notify.mock.calls[0][0].body).toContain('Portfolio aggregates updated.');
   } finally { finish(); unregister(); }
 });
+
+it('does not publish a complete daily snapshot when a broker retained an incomplete section',async()=>{
+  const snapshot=fixture();mocks.load.mockResolvedValue(snapshot);
+  mocks.sync.mockImplementation(async (_snapshot,id)=>{
+    snapshot.state.broker_connections![id].last_sync={at:'2026-11-01T00:00:00Z',ok:true,as_of:'2026-10-30',snapshot_deferred:['cash']};
+    return {applied:{deferred:['cash']},aggregation:{status:'ready'}};
+  });
+  const jobs=createBrokerSyncJobs({now:()=>new Date('2026-11-01T00:00:00Z')});
+  const job=jobs.start(snapshot);
+  await vi.waitFor(()=>expect(jobs.get('alice')?.status).not.toBe('running'));
+  expect(mocks.capture).not.toHaveBeenCalled();
+});
