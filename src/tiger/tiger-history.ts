@@ -1,6 +1,7 @@
 import {enrichTigerCashFees} from './tiger-cash-fees.js';
 import {negateDecimal} from '../brokers/option-executions.js';
-import { assertBrokerHistory, type BrokerHistory, type BrokerHistoryGap, type BrokerHistoryOrder } from '../brokers/history.js';
+import { assertBrokerHistory, type BrokerHistory, type BrokerHistoryExecution, type BrokerHistoryGap, type BrokerHistoryOrder } from '../brokers/history.js';
+import { recoverTigerHistoryMultipliers } from './tiger-cash-metadata.js';
 import { canonicalOptionUnderlying } from '../brokers/option-symbol.js';
 import { tigerMarket, tigerMarketClock, tigerNativeSymbol, tigerYahooSymbol, tigerHistoryTime } from './tiger-markets.js';
 import { historyText as text, historyAmount as amount, optionalHistoryAmount as optional, scaledHistoryQuantity as quantity, historyProduct, putHistoryMultiplier } from '../brokers/history-values.js';
@@ -55,7 +56,7 @@ export function mapTigerHistory(bundle:TigerRawBundle,lots:BrokerLot[],channel:s
  const ordersById=new Map(h.orders.map(row=>[text(row.id),row]));const byOrder=new Map<string,Row[]>();
  for(const row of h.transactions){account(row);const id=text(row.orderId);byOrder.set(id,[...(byOrder.get(id)??[]),row]);}
  const fees=new Map<string,string>();for(const [id,rows]of byOrder){const parent=ordersById.get(id);if(parent)for(const [fill,fee]of tigerCommissions(parent,rows,h.end))fees.set(fill,fee);}
- const executions=h.transactions.flatMap(row=>{
+ let executions:BrokerHistoryExecution[]=h.transactions.flatMap(row=>{
   const parent=ordersById.get(text(row.orderId));
   if(parent&&Array.isArray(parent.attrList)&&parent.attrList.some(attr=>['ASSIGNMENT','EXERCISE','EXPIRE','CASH_SETTLE'].includes(String(attr)))){gaps.push({kind:'coverage',reference:text(row.id),reason:'Lifecycle delivery retained in raw evidence; not counted as a second cash execution.'});return [];}
   const native=identity(row),isOption=row.secType==='OPT',clock=clockFor(row);
@@ -65,13 +66,14 @@ export function mapTigerHistory(bundle:TigerRawBundle,lots:BrokerLot[],channel:s
   const qty=quantity(row.filledQuantity,row.filledQuantityScale??0),price=amount(row.filledPrice),direction=side(row);
   const computed=multiplier?historyProduct(qty,price,multiplier):null;
   const gross=row.filledAmount!=null?amount(row.filledAmount):computed;
-  if(!multiplier)gaps.push({kind:'metadata',reference:native,reason:'Exact expired-contract multiplier unavailable; retained execution cash is unknown.'});
   if(isOption&&parent&&parent.secType!=='OPT')gaps.push({kind:'orders',reference:text(row.orderId),reason:'Multi-leg execution open/close intent not explicitly reported.'});
   if(!parent)gaps.push({kind:'orders',reference:text(row.orderId),reason:'Execution parent order unavailable.'});
   return [{...scope,id:text(row.id),order_id:text(row.orderId),native_symbol:native,symbol:typeof mapped==='string'?mapped:null,instrument:isOption?'option' as const:'security' as const,
    side:direction,effect:isOption&&parent?.secType==='OPT'?effect(parent):'unknown' as const,executed_at:tigerHistoryTime(row.transactionTime,clock),clock,currency:text(row.currency),
    quantity:qty,price,multiplier,gross_cash:gross===null?null:direction==='buy'?negateDecimal(gross):gross,fee_cash:fees.get(text(row.id))??null,option:t?.option??null}];
  });
+ const recovered=recoverTigerHistoryMultipliers(executions);executions=recovered.executions;gaps.push(...recovered.gaps);
+ for(const row of executions)if(row.instrument==='option'&&row.multiplier===null)gaps.push({kind:'metadata',reference:row.native_symbol,reason:row.gross_cash===null?'Exact contract multiplier and execution cash unavailable.':'Exact contract multiplier unavailable; broker-reported execution cash retained.'});
  const orders:BrokerHistoryOrder[]=h.orders.map(row=>{const clock=clockFor(row),fees=tigerOrderFees(row,h.end);return {...scope,id:text(row.id),native_symbol:row.secType==='MLEG'?`tiger:order:${text(row.id)}`:identity(row),side:row.action==='BUY'?'buy':row.action==='SELL'?'sell':'unknown',status:text(row.status),
   created_at:tigerHistoryTime(row.openTime,clock),updated_at:tigerHistoryTime(row.updateTime??row.latestTime??row.openTime,clock),clock,currency:row.currency==null?null:text(row.currency),
   quantity:row.totalQuantity==null?null:quantity(row.totalQuantity,row.totalQuantityScale??0),limit_price:optional(row.limitPrice),filled_quantity:row.filledQuantity==null?null:quantity(row.filledQuantity,row.filledQuantityScale??0),filled_price:optional(row.avgFillPrice),

@@ -376,7 +376,7 @@ export async function fetchTigerRawBundle(
   try {
   const retained=opts?.retainedHistory;
   if(retained&&(retained.account_id!==account||retained.broker_id!=='tiger'))throw new BrokerParseError('Tiger retained fee history scope mismatch');
-  const pending=retained?.executions.some(e=>e.fee_cash===null)??false;
+  const pending=retained?.executions.some(e=>e.fee_cash===null||e.instrument==='option'&&e.multiplier===null)??false;
   const plan=opts?.history&&retained&&pending&&retained.sync.from<opts.history.from?{...opts.history,from:retained.sync.from}:opts?.history;
   const history:TigerRawBundle['history'] = plan ? account_kind === 'global'
     ? { ...await fetchOptionHistory({gateway,credentials,fetchImpl,timestamp:opts?.timestamp},plan,true),mode:plan.mode,gaps:[{kind:'coverage' as const,reference:null,reason:'Tiger Global execution history is not supported by order_transactions.'}] }
