@@ -6,6 +6,8 @@ import { looksLikeOptionCode } from '../brokers/option-symbol.js';
 import { envelopeOk, type MooMooEnvelope, type MooMooRawBundle } from './moomoo-types.js';
 import type { BrokerHistory, BrokerHistorySyncPlan } from '../brokers/history.js';
 import { parseMooMooOrderFees } from './moomoo-fees.js';
+import { moomooContractMetadata } from './moomoo-history.js';
+import { verifiedHistoryMultipliers } from '../brokers/history.js';
 
 export const MOOMOO_HOST = 'webapi.moomoo.com';
 export const MOOMOO_ORIGIN = `https://${MOOMOO_HOST}`;
@@ -461,20 +463,30 @@ export async function fetchMooMooRawBundle(
   const retained=opts?.retainedHistory;
   if(retained&&(retained.account_id!==acc_id||retained.broker_id!==(credentials.broker??'moomoo')))throw new BrokerParseError('Retained fee history scope mismatch');
   const pendingOrders=new Set(retained?.orders.filter(o=>o.legs.length>1&&retained.executions.some(e=>e.order_id===o.id&&e.fee_cash===null)).map(o=>o.id)??[]);
-  const pendingCodes=[...new Set(retained?.executions.filter(e=>e.instrument==='option'&&e.order_id&&pendingOrders.has(e.order_id)).map(e=>e.native_symbol)??[])];
+  const missingMetadata=new Set(retained?.executions.filter(e=>e.instrument==='option'&&e.multiplier===null).map(e=>e.native_symbol)??[]);
+  const pendingCodes=[...new Set([...(retained?.executions.filter(e=>e.instrument==='option'&&e.order_id&&pendingOrders.has(e.order_id)).map(e=>e.native_symbol)??[]),...missingMetadata])];
   const feePlan={...plan,from:retained&&retained.sync.from<plan.from?retained.sync.from:plan.from};
   const fee_fills_history:NonNullable<MooMooRawBundle['fee_fills_history']>=[];const extraGaps:NonNullable<MooMooRawBundle['fee_gaps']>=[];
-  if(plan.mode==='incremental')for(const code of pendingCodes){try{const fetched=await fetchHistory(acc_id,credentials,fetchImpl,feePlan,'fills_history',code);fee_fills_history.push({code,from:feePlan.from,through:feePlan.through,rows:fetched.rows});}catch{extraGaps.push({reference:code,reason:'Retained fee fill history unavailable; pending fees were not discarded.'});}}
-  const allFills=[...fills_history.rows,...fee_fills_history.flatMap(g=>g.rows)];
+  const revisit=async(code:string)=>{try{const fetched=await fetchHistory(acc_id,credentials,fetchImpl,feePlan,'fills_history',code);fee_fills_history.push({code,from:feePlan.from,through:feePlan.through,rows:fetched.rows});}catch{extraGaps.push({reference:code,reason:missingMetadata.has(code)?'Retained contract fill history unavailable; pending metadata was not discarded.':'Retained fee fill history unavailable; pending fees were not discarded.'});}await new Promise(r=>setTimeout(r,650));};
+  if(plan.mode==='incremental')for(const code of pendingCodes)await revisit(code);
+  let allFills=[...fills_history.rows,...fee_fills_history.flatMap(g=>g.rows)];
+  const option_basicinfo=await fetchOptionBasicInfo(positions,credentials,fetchImpl,allFills);
+  const priorSizes=retained?verifiedHistoryMultipliers(retained):undefined;
+  const quotedMetadata=moomooContractMetadata({...snapshot,option_basicinfo,orders_details:orders_history.rows},[],priorSizes);
+  const missingCodes=[...new Set(allFills.filter(f=>looksLikeOptionCode(String(f.code).split('.').slice(1).join('.'))&&!quotedMetadata.has(String(f.code))).map(f=>String(f.code)))];
+  // A new expired contract can have fills predating the incremental window.
+  // Query the same complete interval as its cash before deriving a multiplier.
+  if(plan.mode==='incremental'&&feePlan.from<plan.from)for(const code of missingCodes)if(!pendingCodes.includes(code)){missingMetadata.add(code);await revisit(code);}
+  allFills=[...fills_history.rows,...fee_fills_history.flatMap(g=>g.rows)];
   // Recent fills may belong to orders created before the incremental window.
   const parents = [...orders_history.rows, ...allFills.filter(row => row.order_id != null)];
   const details = await fetchOrderDetails(acc_id, parents, credentials, fetchImpl);
   const fees = await fetchOrderFees(acc_id,
     [...orders_history.rows, ...details.rows], allFills, credentials, fetchImpl);
   const combos=new Set(details.rows.filter(o=>{const info=o.multi_leg_info as {leg_infos?:unknown[]} | undefined;return Array.isArray(info?.leg_infos)&&info.leg_infos.length>1;}).map(o=>String(o.order_id)));
-  const codes=[...new Set(allFills.filter(f=>combos.has(String(f.order_id))).map(f=>String(f.code)))];
+  const exactMetadata=moomooContractMetadata({...snapshot,option_basicinfo,orders_details:details.rows},[],priorSizes);
+  const codes=[...new Set(allFills.filter(f=>combos.has(String(f.order_id))||!exactMetadata.has(String(f.code))&&looksLikeOptionCode(String(f.code).split('.').slice(1).join('.'))).map(f=>String(f.code)))];
   const cash=await fetchCashLogEvidence(acc_id,codes,feePlan,credentials,fetchImpl);
-    const option_basicinfo = await fetchOptionBasicInfo(positions, credentials, fetchImpl, allFills);
     const latestFunds = await getWithSkewRetry({path:`/api/v1.0/accounts/${encodeURIComponent(acc_id)}/funds`,query:'currency=USD',credentials,fetchImpl});
     failIfError(latestFunds, 'funds');
     return { ...snapshot, funds:latestFunds, fetched_at:new Date().toISOString(), option_basicinfo, fills_history, orders_history, orders_details: details.rows,

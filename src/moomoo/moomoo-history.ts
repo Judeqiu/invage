@@ -1,4 +1,5 @@
 import { enrichMooMooCashFees } from './moomoo-cash-fees.js';
+import { recoverMooMooCashMultipliers } from './moomoo-cash-metadata.js';
 import { decimal,addDecimals,negateDecimal } from '../brokers/option-executions.js';
 import { looksLikeOptionCode, parseBrokerOptionCode, optionUnderlyingFromBroker } from '../brokers/option-symbol.js';
 import { yahooSymbolFromBroker } from '../brokers/yahoo-symbol.js';
@@ -64,6 +65,7 @@ export function moomooContractMetadata(bundle: MooMooRawBundle, lots: BrokerLot[
       put(string(leg.leg_code), leg.leg_hp_multiplier);
     }
   }
+  for(const [code,multiplier] of recoverMooMooCashMultipliers(bundle,metadata))put(code,multiplier);
   return metadata;
 }
 

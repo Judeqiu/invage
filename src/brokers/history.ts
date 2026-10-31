@@ -171,6 +171,10 @@ export function mergeBrokerHistory(previous: BrokerHistory | undefined, incoming
       [...executions.values()].filter(r => r.native_symbol === g.reference).every(r => r.multiplier !== null && r.symbol !== null)))
     .filter(g => !(g.kind === 'coverage' && g.reason.startsWith('Order fees unavailable or invalid;') && g.reference && orders.get(g.reference)?.fees))
     .filter(g => {
+      if(g.kind==='coverage'&&g.reference&&g.reason.startsWith('Retained contract fill history')) {
+        const relevant=[...executions.values()].filter(e=>e.native_symbol===g.reference);
+        return !relevant.length||relevant.some(e=>e.multiplier===null||e.gross_cash===null);
+      }
       if (g.kind !== 'coverage' || !g.reference || !/^(Cash-log fee |Retained fee fill history|Tiger cash-log fee enrichment:)/.test(g.reason)) return true;
       const relevant = [...executions.values()].filter(e => e.order_id === g.reference || e.native_symbol === g.reference);
       return !relevant.length || relevant.some(e => e.fee_cash === null);

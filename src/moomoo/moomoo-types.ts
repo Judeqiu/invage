@@ -21,7 +21,8 @@ export interface MooMooRawBundle {
   orders_details?: Record<string, unknown>[];
   /** Order-scoped fee totals and breakdowns from the dedicated read-only endpoint. */
   orders_fees?: Record<string, unknown>[];
-  /** Exact raw cash logs and any additional fill queries used to reconcile leg fees. */
+  /** Exact cash logs and complete contract fill queries for fee/metadata recovery.
+   * The fee_fills_history name is retained for existing archive compatibility. */
   cash_logs?: import('./moomoo-cash-fees.js').CashLogEvidence[];
   fee_fills_history?: Array<{code:string;from:string;through:string;rows:Record<string,unknown>[]} >;
   fee_gaps?: Array<{ reference: string; reason: string }>;
