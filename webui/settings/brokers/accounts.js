@@ -2,6 +2,7 @@ const ROOT = '/api/domain/invage';
 const el = {
   error: document.getElementById('error'),
   list: document.getElementById('list'),
+  feedback: document.getElementById('sync-feedback'),
 };
 let data = null;
 let busy = false;
@@ -11,6 +12,31 @@ let preview = {};
 let managedAccounts = {};
 let dirty = new Set();
 let history = {};
+let syncActivity = null;
+
+function syncFeedback(state, title, message) {
+  el.feedback.hidden = false;
+  el.feedback.className = `sync-feedback ${state}`;
+  el.feedback.innerHTML = `<div class="feedback-heading">${state === 'working' ? '<span class="spinner" aria-hidden="true"></span>' : ''}<strong>${esc(title)}</strong></div>
+    <p>${esc(message)}</p>${state === 'working' ? '<div class="sync-progress" role="progressbar" aria-label="Broker sync in progress"><span></span></div><span class="elapsed" aria-hidden="true">Elapsed: 0s</span>' : ''}`;
+}
+function elapsedTime(started) {
+  const seconds = Math.floor((Date.now() - started) / 1000);
+  return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+}
+function syncResult(result) {
+  if (result.queued) return ['attention', 'Sync queued for retry', result.message || 'Your last saved data remains available. An automatic retry is scheduled.'];
+  const applied = result.applied || {};
+  if (applied.deferred?.length || applied.historyReconciliationDeferred || applied.skipped?.length) {
+    const details = [
+      ...(applied.deferred?.length ? [`Snapshot sections deferred: ${applied.deferred.join(', ')}.`] : []),
+      ...(applied.historyReconciliationDeferred ? ['Historical reconciliation was deferred.'] : []),
+      ...new Set((applied.skipped || []).map(item => `${item.symbol ? item.symbol + ': ' : ''}${item.reason}`)),
+    ];
+    return ['attention', 'Sync finished with items to review', details.join(' ')];
+  }
+  return ['success', 'Sync complete', 'The broker response has been processed. Account status and sync history are up to date.'];
+}
 
 function esc(value) {
   return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;')
@@ -22,7 +48,7 @@ function error(message) {
 }
 async function json(response) {
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.message || `HTTP ${response.status}`);
+  if (!response.ok) throw new Error(body.message || body.error || `HTTP ${response.status}`);
   return body;
 }
 async function call(path, method = 'GET', body) {
@@ -31,7 +57,7 @@ async function call(path, method = 'GET', body) {
     ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
   }));
 }
-async function run(task) {
+async function run(task, sync = null) {
   if (busy) return;
   if (wizard) {
     wizard.config = values('config', broker(wizard.broker_id));
@@ -41,14 +67,49 @@ async function run(task) {
   busy = true;
   error('');
   el.list.querySelectorAll('button').forEach(button => { button.disabled = true; });
+  let timer;
+  let result;
+  let completed = false;
+  if (sync) {
+    syncActivity = sync;
+    syncFeedback('working', `${sync.full ? 'Full sync' : 'Sync'} in progress · ${sync.label}`,
+      sync.full ? 'Requesting available broker history and the latest account data. Full sync can take several minutes. Keep this page open to see the result.'
+        : 'Requesting the latest broker data and updating your account. Keep this page open to see the result.');
+    const card = sync.node.closest('.connector');
+    card.setAttribute('aria-busy', 'true');
+    card.classList.add('syncing');
+    sync.node.innerHTML = '<span class="spinner" aria-hidden="true"></span> Syncing…';
+    el.feedback.scrollIntoView({block: 'nearest', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth'});
+    const started = Date.now();
+    timer = setInterval(() => {
+      const elapsed = el.feedback.querySelector('.elapsed');
+      if (elapsed) elapsed.textContent = `Elapsed: ${elapsedTime(started)}`;
+    }, 1000);
+  }
   try {
-    await task();
+    result = await task();
+    completed = true;
     await load();
+    if (sync) {
+      const [state, title, message] = syncResult(result);
+      syncFeedback(state, `${title} · ${sync.label}`, message);
+    }
   } catch (e) {
-    error(e instanceof Error ? e.message : String(e));
+    const message = e instanceof Error ? e.message : String(e);
+    if (sync) {
+      syncFeedback('attention', completed ? 'Sync responded · refresh unavailable' : 'Sync could not be confirmed',
+        completed ? `${syncResult(result)[1]}. Account details could not be refreshed: ${message}. Use Refresh to check the latest status.`
+          : `${message}. Use Refresh to check account status before trying again; the server may still be processing the request.`);
+    } else error(message);
   } finally {
+    clearInterval(timer);
     busy = false;
+    syncActivity = null;
     render();
+    if (sync) {
+      const button = [...el.list.querySelectorAll('[data-action]')].find(node => node.dataset.id === sync.id && node.dataset.action === (sync.full ? 'full-sync' : 'sync'));
+      button?.focus({preventScroll: true});
+    }
   }
 }
 async function load() {
@@ -131,17 +192,20 @@ function existingCard(c) {
   const status = c.status === 'needs_setup' ? c.account_id ? 'Access incomplete' : 'Select account'
     : c.status === 'ready' ? 'Ready to validate' : c.status === 'verified' ? 'Synced'
     : c.status === 'paused' ? 'Paused' : c.status === 'retrying' ? 'Retrying' : 'Sync error';
-  return `<section class="connector">
+  return `<section class="connector${syncActivity?.id === c.id ? ' syncing' : ''}" aria-busy="${syncActivity?.id === c.id}">
     <div class="card-head"><div><div class="title">${esc(c.label)}</div>
       <div class="cap">${esc(b.display_name)} · ${esc(c.account_id || 'Account selection needed')} · ${esc(c.channel)}</div></div>
       <span class="chip ${c.status === 'paused' ? 'off' : c.status === 'error' ? 'error' : c.status === 'verified' ? 'connected' : 'needs_credentials'}">${esc(status)}</span></div>
-    <p class="hint">${esc(last)}</p>
-    <p class="hint">Sync latest refreshes recent data. Full sync imports available history${c.history_sync?.historical_imported ? " · History imported" : ""}.</p>
+    <p class="last">${esc(last)}</p>
     <div class="actions">
       <button data-action="manage" data-id="${esc(c.id)}">${open ? 'Close' : 'Manage'}</button>
       <button data-action="preview" data-id="${esc(c.id)}" ${busy || dirty.has(c.id) || !c.account_id ? 'disabled' : ''}>Preview</button>
-      <button data-action="sync" data-id="${esc(c.id)}" ${busy || dirty.has(c.id) || !c.enabled || !c.account_id || (!c.last_sync && !preview[c.id]) ? 'disabled' : ''}>Sync latest</button>
+    </div>
+    <div class="sync-controls"><div class="actions" role="group" aria-label="Sync ${esc(c.label)}">
+      <button class="primary" data-action="sync" data-id="${esc(c.id)}" ${busy || dirty.has(c.id) || !c.enabled || !c.account_id || (!c.last_sync && !preview[c.id]) ? 'disabled' : ''}>Sync latest</button>
       <button data-action="full-sync" data-id="${esc(c.id)}" ${busy || dirty.has(c.id) || !c.enabled || !c.account_id || (!c.last_sync && !preview[c.id]) ? 'disabled' : ''}>Full sync</button>
+    </div><p class="hint">Sync latest refreshes recent data. Full sync imports available history${c.history_sync?.historical_imported ? ' · History imported' : ''}.</p></div>
+    <div class="actions raw-actions">
       ${c.latest_raw_data ? `<a href="${ROOT}/broker-accounts/${encodeURIComponent(c.id)}/raw-data" download>Download latest raw</a>` : ''}
     </div>
     ${dirty.has(c.id) ? '<p class="hint">Save changes before preview or sync.</p>' : ''}
@@ -333,7 +397,7 @@ async function action(node) {
   } else if (a === 'preview') {
     await run(async () => { preview[id] = await call(`/broker-accounts/${encodeURIComponent(id)}/preview`, 'POST'); });
   } else if (a === 'sync' || a === 'full-sync') {
-    await run(() => call(`/broker-accounts/${encodeURIComponent(id)}/sync`, 'POST', {full_sync:a === 'full-sync'}));
+    await run(() => call(`/broker-accounts/${encodeURIComponent(id)}/sync`, 'POST', {full_sync:a === 'full-sync'}), {id, label:c.label, full:a === 'full-sync', node});
   } else if (a === 'token-create' || a === 'token-check') {
     await run(async () => {
       const got = await call(`/broker-access/${encodeURIComponent(c.source_id)}/webull-token`,
