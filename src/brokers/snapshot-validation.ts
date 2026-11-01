@@ -1,4 +1,13 @@
 import type { BrokerSkip } from './statement.js';
+import type { BrokerHistory } from './history.js';
+
+/** Report history gaps after reconciliation with retained account evidence. */
+export function reconciledHistorySkips(skipped: BrokerSkip[], incoming?: BrokerHistory, reconciled?: BrokerHistory): BrokerSkip[] {
+  if (!incoming || !reconciled) return skipped;
+  return skipped.filter(skip => !incoming.sync.gaps.some(gap =>
+    gap.kind === 'metadata' && skip.kind === 'event' && gap.reference === (skip.symbol ?? null) && gap.reason === skip.reason &&
+    !reconciled.sync.gaps.some(current => current.kind === gap.kind && current.reference === gap.reference && current.reason === gap.reason)));
+}
 
 export function invalidCashSkip(currency?: string): BrokerSkip {
   return {kind:'cash', defer:'cash', ...(currency ? {currency} : {}),

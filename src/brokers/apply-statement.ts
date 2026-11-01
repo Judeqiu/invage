@@ -5,7 +5,7 @@ import { mergeOptionExecutions } from './option-executions.js';
 import { mergeOptionLifecycleEvents } from './option-events.js';
 import { appendOptionObservation } from './option-history.js';
 import { normalizeBrokerOptionLot } from './statement.js';
-import { deferredSnapshotSections } from './snapshot-validation.js';
+import { deferredSnapshotSections, reconciledHistorySkips } from './snapshot-validation.js';
 import { mergeBrokerHistory, optionExecutionsFromHistory } from './history.js';
 import { createHash } from 'node:crypto';
 /**
@@ -223,6 +223,9 @@ export async function applyBrokerStatement(
     history = undefined; executions = undefined; optionEvents = undefined;
   }
   const stamped = stampLots(doc.lots, channel);
+  // The raw parser may lack expired-contract metadata already verified in the
+  // retained history. Only a successful account-bound merge resolves its notice.
+  doc = { ...doc, skipped: reconciledHistorySkips(doc.skipped, doc.history, history) };
   if (new Set(stamped.map((lot) => lot.mapKey)).size !== stamped.length) {
     throw new Error(`Broker statement has duplicate lot keys on channel ${channel}.`);
   }
