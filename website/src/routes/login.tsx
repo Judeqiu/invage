@@ -13,6 +13,6 @@ export const Route = createFileRoute("/login")({
   ] }),
   beforeLoad: ({ location }) => {
     // Authenticate on the workspace origin so its existing session cookie and return path work.
-    throw redirect({ href: `https://chat.velovest.lextok.com/login${location.searchStr}` });
+    throw redirect({ href: `https://chat.velovest.ai/login${location.searchStr}` });
   },
 });

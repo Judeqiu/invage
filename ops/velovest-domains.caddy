@@ -1,0 +1,5 @@
+# Velovest only. Existing hostnames remain available during DNS propagation.
+chat.velovest.ai, chat.velovest.lextok.com, chat.victor.lextok.com {
+    encode zstd gzip
+    reverse_proxy 127.0.0.1:3030
+}

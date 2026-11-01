@@ -52,7 +52,7 @@ export default {
         try {
           // A fixed upstream keeps submissions in the workspace database. No browser
           // cookies or Authorization headers are forwarded to the public endpoint.
-          const upstream = await fetch("https://chat.velovest.lextok.com/api/domain/invage/academy-signup/submissions", {
+          const upstream = await fetch("https://chat.velovest.ai/api/domain/invage/academy-signup/submissions", {
             method: "POST",
             headers: { "Content-Type": request.headers.get("content-type") ?? "application/json" },
             body: await request.arrayBuffer(),

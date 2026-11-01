@@ -13,4 +13,4 @@ Allow: /
 User-agent: *
 Allow: /
 
-Sitemap: https://velovest.lextok.com/sitemap.xml
+Sitemap: https://velovest.ai/sitemap.xml
