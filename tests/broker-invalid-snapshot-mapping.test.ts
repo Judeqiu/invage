@@ -1,4 +1,5 @@
 import {expect,it} from 'vitest';
+import {cashSnapshotPolicy} from '../src/brokers/snapshot-validation.js';
 import {assertBrokerStatement} from '../src/brokers/statement.js';
 import type {TigerRawBundle} from '../src/tiger/tiger-types.js';
 import type {MooMooRawBundle} from '../src/moomoo/moomoo-types.js';
@@ -20,10 +21,11 @@ const mappings = [
   ['webull',()=>mapWebullBundleToStatement(webull as WebullRawBundle,'webull',false)],
   ['futubull-opend',()=>mapFutubullSnapshot(opend,'futubull',false)],
 ] as const;
-it.each(mappings)('%s flags a returned unreadable currency and defers the full cash section',(_name,map)=>{
+it.each(mappings)('%s identifies an unreadable currency without discarding readable cash',(_name,map)=>{
   const statement=assertBrokerStatement(map());
   expect(statement.skipped).toContainEqual(expect.objectContaining({kind:'cash',currency:'SGD',defer:'cash'}));
   expect(statement.cash).toEqual([{currency:'USD',amount:100}]);
+  expect(cashSnapshotPolicy(statement)).toEqual({partial:true,all:false,cash:[{currency:'USD',amount:100}]});
 });
 it.each([false,true])('Cloud invalid cost remains unchanged in source evidence and deferred for both brands (%s)',futu=>{
   const raw={...cloud,schema:futu?'invage.futubull.cloud.raw.v1':'invage.moomoo.raw.v1',

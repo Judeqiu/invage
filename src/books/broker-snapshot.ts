@@ -9,7 +9,7 @@ import { ensureHousehold } from './accounts.js';
 import { assertCurrency, fromMinor, toMinor } from './money.js';
 import { postHoldingClose, postHoldingOpen } from './position-ops.js';
 import { postCashAdjustment, postOpeningBalance } from './ops.js';
-import { deferredSnapshotSections } from '../brokers/snapshot-validation.js';
+import { cashSnapshotPolicy, deferredSnapshotSections } from '../brokers/snapshot-validation.js';
 
 interface StampedLot { mapKey: string; holding: Holding; currency: string }
 interface ExistingPosition {
@@ -30,6 +30,7 @@ export async function booksApplyBrokerSnapshot(
   externalRef: string,
 ): Promise<{ journals: number }> {
   const deferred = deferredSnapshotSections(statement.skipped);
+  const cashPolicy = cashSnapshotPolicy(statement);
   const desired = new Map<string, StampedLot>();
   for (const lot of lots) {
     if (lot.holding.units === 0) continue;
@@ -38,7 +39,7 @@ export async function booksApplyBrokerSnapshot(
     desired.set(lot.mapKey, { ...lot, currency });
   }
   const desiredCash = new Map<string, bigint>();
-  for (const row of statement.cash) {
+  for (const row of cashPolicy.cash) {
     const currency = assertCurrency(row.currency);
     if (desiredCash.has(currency)) throw new Error(`Duplicate broker cash currency ${currency}.`);
     desiredCash.set(currency, toMinor(row.amount));
@@ -128,7 +129,7 @@ export async function booksApplyBrokerSnapshot(
         journals++;
       }
     }
-    if (!deferred.includes('cash')) {
+    if (!cashPolicy.all) {
       const cash = await client.query<ExistingCash>(
         `SELECT a.currency, b.balance_minor::text
          FROM accounts a JOIN account_balances b ON b.account_id = a.id
@@ -137,7 +138,7 @@ export async function booksApplyBrokerSnapshot(
         [ctx.householdId, channel],
       );
       const existingCash = new Map(cash.rows.map((row) => [row.currency, BigInt(row.balance_minor)]));
-      for (const currency of new Set([...existingCash.keys(), ...desiredCash.keys()])) {
+      for (const currency of new Set([...(cashPolicy.partial ? [] : existingCash.keys()), ...desiredCash.keys()])) {
         const prior = existingCash.get(currency) ?? 0n;
         const target = desiredCash.get(currency) ?? 0n;
         const delta = target - prior;

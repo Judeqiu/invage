@@ -1,4 +1,4 @@
-import type { BrokerSkip } from './statement.js';
+import type { BrokerSkip, BrokerStatement } from './statement.js';
 import type { BrokerHistory } from './history.js';
 
 /** Report history gaps after reconciliation with retained account evidence. */
@@ -11,7 +11,21 @@ export function reconciledHistorySkips(skipped: BrokerSkip[], incoming?: BrokerH
 
 export function invalidCashSkip(currency?: string): BrokerSkip {
   return {kind:'cash', defer:'cash', ...(currency ? {currency} : {}),
-    reason:'Broker cash currency or amount is unavailable or unreadable. The previous cash snapshot is retained with its original dates; no cash from this response was applied.'};
+    reason:currency
+      ? 'Broker cash amount is unavailable or unreadable. This currency retains its previous balance and date, if available; its balance remains unknown otherwise.'
+      : 'Broker cash currency is unavailable or unreadable. The previous cash snapshot is retained with its original dates; no cash from this response was applied.'};
+}
+
+/** An unidentifiable cash row can affect any currency, so retain the whole set.
+ * With identifiable gaps, update only independently readable currencies and
+ * retain every unreported sleeve; absence in a partial response never means zero.
+ */
+export function cashSnapshotPolicy(statement: Pick<BrokerStatement, 'cash' | 'skipped'>) {
+  const gaps = statement.skipped.filter(skip => skip.defer === 'cash');
+  const unavailable = new Set(gaps.map(skip => skip.currency?.trim().toUpperCase()));
+  const all = [...unavailable].some(currency => !currency || !/^[A-Z]{3,4}$/.test(currency));
+  return { partial:gaps.length > 0, all,
+    cash:all ? [] : statement.cash.filter(row => !unavailable.has(row.currency)) };
 }
 
 export function invalidCostSkip(symbol?: string): BrokerSkip {

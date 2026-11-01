@@ -33,17 +33,20 @@ const positions=(id:string)=>withHouseholdTx(id,async c=>(await c.query(
   `SELECT a.external_key,b.balance_minor::text,b.quantity::text FROM accounts a JOIN account_balances b ON b.account_id=a.id
    WHERE a.household_id=$1 AND a.kind='position' ORDER BY a.external_key`,[id])).rows);
 
-it('retains the entire cash set and original dates in state and books while valid positions advance',async()=>{
+it('updates readable cash while retaining unavailable balances and dates in state and books',async()=>{
   const id=await fixture(),before=(await loadInvestor(id)).state,ledger=await balances(id);
   const doc=statement('2026-11-01');doc.cash=[{currency:'USD',amount:999}];
   doc.lots[0].holding.units=3;doc.skipped=[invalidCashSkip('SGD')];
   const result=await apply(id,doc),after=(await loadInvestor(id)).state;
-  expect(after.cash).toEqual(before.cash);expect(await balances(id)).toEqual(ledger);
+  expect(after.cash!.find(c=>c.currency==='USD')).toMatchObject({amount:999,updated_at:'2026-11-01'});
+  expect(after.cash!.find(c=>c.currency==='SGD')).toEqual(before.cash!.find(c=>c.currency==='SGD'));
+  expect((await balances(id)).find(c=>c.currency==='USD')?.amount).toBe(999);
+  expect((await balances(id)).find(c=>c.currency==='SGD')).toEqual(ledger.find(c=>c.currency==='SGD'));
   expect(Object.values(after.portfolio!)[0].units).toBe(3);
   expect(result).toMatchObject({asOf:'2026-10-30',positionsAsOf:'2026-11-01',deferred:['cash'],lotsUpserted:1});
   expect(result.skipped.map(s=>s.reason).join(' ')).toContain('SGD 2026-10-30');
   expect(doc.skipped).toHaveLength(1); // Retries must not mutate or duplicate source diagnostics.
-  await apply(id,doc);expect(await balances(id)).toEqual(ledger);
+  const updatedLedger=await balances(id);await apply(id,doc);expect(await balances(id)).toEqual(updatedLedger);
   expect((await loadInvestor(id)).state.option_observations!.at(-1)!.as_of).toBe('2026-11-01');
   await apply(id,statement('2026-11-01'));
   expect((await loadInvestor(id)).state.broker_connections!.tiger.last_sync?.snapshot_deferred).toBeUndefined();
@@ -74,4 +77,32 @@ it('keeps first-sync unknown data unknown and allows recovery without a placehol
   expect(result.skipped.map(s=>s.reason).join(' ')).toContain('No previous verified');
   await apply(id,statement('2026-11-01'));
   expect((await loadInvestor(id)).state.broker_connections!.tiger.last_sync).toMatchObject({as_of:'2026-11-01',positions_as_of:'2026-11-01'});
+});
+
+it('defers all cash for an unidentified currency, retaining both balances and dates',async()=>{
+  const id=await fixture(),before=(await loadInvestor(id)).state.cash,ledger=await balances(id);
+  const doc=statement('2026-11-01');doc.cash=[{currency:'USD',amount:999}];doc.skipped=[invalidCashSkip()];
+  const result=await apply(id,doc);
+  expect((await loadInvestor(id)).state.cash).toEqual(before);expect(await balances(id)).toEqual(ledger);
+  expect(result.skipped.map(s=>s.reason).join(' ')).toContain('no cash from this response was applied');
+});
+it('retains omitted currencies in a partial snapshot and never creates missing balances as zero',async()=>{
+  const id=await fixture(),before=(await loadInvestor(id)).state.cash,ledger=await balances(id);
+  const doc=statement('2026-11-01');doc.cash=[{currency:'USD',amount:0}];doc.skipped=[invalidCashSkip('MYR'),invalidCashSkip('AUD')];
+  const result=await apply(id,doc),after=(await loadInvestor(id)).state;
+  expect(after.cash!.find(c=>c.currency==='USD')).toMatchObject({amount:0,updated_at:'2026-11-01'});
+  expect(after.cash!.find(c=>c.currency==='SGD')).toEqual(before!.find(c=>c.currency==='SGD'));
+  expect(after.cash!.some(c=>['MYR','AUD'].includes(c.currency))).toBe(false);
+  expect((await balances(id)).find(c=>c.currency==='USD')?.amount??0).toBe(0);
+  expect((await balances(id)).find(c=>c.currency==='SGD')).toEqual(ledger.find(c=>c.currency==='SGD'));
+  expect(result.skipped.map(s=>s.reason).join(' ')).toContain('Cash remains unknown: MYR, AUD; no zero balance was substituted');
+});
+it('withholds contradictory currencies and preserves a newer retained balance during partial updates',async()=>{
+  const id=await fixture(),before=(await loadInvestor(id)).state.cash;
+  const doc=statement('2026-11-01');doc.cash=[{currency:'USD',amount:-25},{currency:'SGD',amount:999}];doc.skipped=[invalidCashSkip('SGD')];
+  await apply(id,doc);
+  expect((await loadInvestor(id)).state.cash!.find(c=>c.currency==='SGD')).toEqual(before!.find(c=>c.currency==='SGD'));
+  const prior=(await loadInvestor(id)).state.cash;
+  await expect(apply(id,{...doc,as_of:'2026-10-31'})).rejects.toThrow(/older than/);
+  expect((await loadInvestor(id)).state.cash).toEqual(prior);
 });

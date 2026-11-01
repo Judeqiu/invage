@@ -5,7 +5,7 @@ import { mergeOptionExecutions } from './option-executions.js';
 import { mergeOptionLifecycleEvents } from './option-events.js';
 import { appendOptionObservation } from './option-history.js';
 import { normalizeBrokerOptionLot } from './statement.js';
-import { deferredSnapshotSections, reconciledHistorySkips } from './snapshot-validation.js';
+import { cashSnapshotPolicy, deferredSnapshotSections, reconciledHistorySkips } from './snapshot-validation.js';
 import { mergeBrokerHistory, optionExecutionsFromHistory } from './history.js';
 import { createHash } from 'node:crypto';
 /**
@@ -46,9 +46,11 @@ export function replaceChannelCash(
   sleeves: BrokerCashSleeve[],
   channel: string,
   updatedAt: string,
+  partial = false,
 ): CashBalance[] {
   const ch = cashSlotKey(channel);
-  const kept = cashes.filter((c) => cashSlotKey(c.channel) !== ch);
+  const reported = new Set(sleeves.map(row => row.currency));
+  const kept = cashes.filter((c) => cashSlotKey(c.channel) !== ch || partial && !reported.has(c.currency));
   return [
     ...kept,
     ...sleeves.map((row) => {
@@ -164,7 +166,8 @@ export async function applyBrokerStatement(
   }
   const channel = connection?.channel ?? getBrokerConnector(connectorId).channel;
   const deferred = deferredSnapshotSections(doc.skipped);
-  const keepCash = deferred.includes('cash'), keepPositions = deferred.includes('positions');
+  const cashPolicy = cashSnapshotPolicy(doc);
+  const keepCash = cashPolicy.all, keepPositions = deferred.includes('positions');
   const priorCash = getCashes(state).filter(row => cashSlotKey(row.channel) === cashSlotKey(channel));
   const priorSync = state.broker_connections?.[connectorId]?.last_sync;
   const priorPositionDate = priorSync?.positions_as_of ?? (priorSync?.snapshot_deferred?.includes('positions') ? undefined : priorSync?.as_of) ?? (state.option_observations ?? [])
@@ -172,7 +175,8 @@ export async function applyBrokerStatement(
     .map(row => row.as_of).sort().at(-1);
   const positionsAsOf = keepPositions ? priorPositionDate : doc.as_of;
   assertStatementNotOlder(state, connectorId, channel, doc.as_of);
-  if (!keepCash && priorCash.some(row => row.updated_at > doc.as_of)) throw new Error('Broker cash statement is older than retained cash; balances were not replaced.');
+  const updatingCash = new Set(cashPolicy.cash.map(row => row.currency));
+  if (!keepCash && priorCash.some(row => (!cashPolicy.partial || updatingCash.has(row.currency)) && row.updated_at > doc.as_of)) throw new Error('Broker cash statement is older than retained cash; balances were not replaced.');
   // All adapters and custom parsers pass through this before any books writes.
   doc = { ...doc, lots: doc.lots.map(normalizeBrokerOptionLot) };
   if (doc.history && (doc.history.channel !== channel || doc.history.account_id !== doc.account_id || doc.history.broker_id !== (connection?.brokerId ?? connectorId))) throw new Error('History broker/channel/account differs from broker statement');
@@ -243,7 +247,7 @@ export async function applyBrokerStatement(
 
   if (observedState.option_observations !== undefined) state.option_observations = observedState.option_observations;
   setPortfolio(state, next);
-  if (!keepCash) setCashes(state, replaceChannelCash(getCashes(state), doc.cash, channel, today));
+  if (!keepCash) setCashes(state, replaceChannelCash(getCashes(state), cashPolicy.cash, channel, today, cashPolicy.partial));
   writeConnectionMetrics(state, connectorId, doc);
   if (executions !== undefined) state.option_executions = executions;
   if (optionEvents !== undefined) state.option_events = optionEvents;
@@ -266,10 +270,20 @@ export async function applyBrokerStatement(
   if (keepCash) retentionNotes.push({kind:'event',reason:priorCash.length
     ? `Cash update deferred. Retained cash dates: ${priorCash.map(row => `${row.currency} ${row.updated_at}`).join('; ')}. Automatic retry is queued.`
     : 'Cash update deferred. No previous verified cash balance is available; cash remains unknown. Automatic retry is queued.'});
+  else if (cashPolicy.partial) {
+    const retained = priorCash.filter(row => !updatingCash.has(row.currency));
+    const missing = [...new Set(doc.skipped.filter(skip => skip.defer === 'cash').map(skip => skip.currency!))]
+      .filter(currency => !priorCash.some(row => row.currency === currency));
+    retentionNotes.push({kind:'event',reason:`Cash updated only for readable currencies: ${cashPolicy.cash.map(row => row.currency).join(', ') || 'none'}.` +
+      (retained.length ? ` Retained cash dates: ${retained.map(row => `${row.currency} ${row.updated_at}`).join('; ')}.` : '') +
+      (missing.length ? ` Cash remains unknown: ${missing.join(', ')}; no zero balance was substituted.` : '') +
+      ' Unavailable cash will be retried at the next sync.'});
+  }
   if (keepPositions) retentionNotes.push({kind:'event',reason:priorPositionDate
     ? `Position update deferred. Retained positions are from ${priorPositionDate}; they are not a current snapshot. Automatic retry is queued.`
     : 'Position update deferred. No previous verified position snapshot is available. Automatic retry is queued.'});
-  const verifiedDates = [positionsAsOf, ...(keepCash ? priorCash.map(row => row.updated_at) : [doc.as_of])].filter((date):date is string => !!date).sort();
+  const appliedCash = getCashes(state).filter(row => cashSlotKey(row.channel) === cashSlotKey(channel));
+  const verifiedDates = [positionsAsOf, ...appliedCash.map(row => row.updated_at)].filter((date):date is string => !!date).sort();
   const result: BrokerApplyResult = {
     accountId: doc.account_id,
     asOf: deferred.length ? verifiedDates[0] ?? today : today,
@@ -278,8 +292,8 @@ export async function applyBrokerStatement(
     channel,
     lotsUpserted: keepPositions ? 0 : stamped.length,
     lotsRemoved: removed,
-    cash: keepCash ? priorCash.map(({currency,amount,settled_amount,accrued_interest}) => ({currency,amount,
-      ...(settled_amount !== undefined ? {settled_amount} : {}), ...(accrued_interest !== undefined ? {accrued_interest} : {})})) : doc.cash,
+    cash: appliedCash.map(({currency,amount,settled_amount,accrued_interest}) => ({currency,amount,
+      ...(settled_amount !== undefined ? {settled_amount} : {}), ...(accrued_interest !== undefined ? {accrued_interest} : {})})),
     skipped: historyReconciliationDeferred
       ? [...doc.skipped.filter(s => s.reason !== HISTORY_PENDING_REASON), { kind: 'event', reason: HISTORY_REVIEW_REASON }]
       : historyError && !doc.skipped.some(s=>s.reason===HISTORY_PENDING_REASON) ? [...doc.skipped, { kind: 'event', reason: HISTORY_PENDING_REASON }] : doc.skipped,
