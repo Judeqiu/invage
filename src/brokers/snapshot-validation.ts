@@ -20,11 +20,11 @@ export function invalidCashSkip(currency?: string): BrokerSkip {
  * With identifiable gaps, update only independently readable currencies and
  * retain every unreported sleeve; absence in a partial response never means zero.
  */
-export function cashSnapshotPolicy(statement: Pick<BrokerStatement, 'cash' | 'skipped'>) {
+export function cashSnapshotPolicy(statement: Pick<BrokerStatement, 'cash' | 'skipped' | 'cash_omitted'>) {
   const gaps = statement.skipped.filter(skip => skip.defer === 'cash');
   const unavailable = new Set(gaps.map(skip => skip.currency?.trim().toUpperCase()));
   const all = [...unavailable].some(currency => !currency || !/^[A-Z]{3,4}$/.test(currency));
-  return { partial:gaps.length > 0, all,
+  return { partial:gaps.length > 0 || !!statement.cash_omitted?.length, all,
     cash:all ? [] : statement.cash.filter(row => !unavailable.has(row.currency)) };
 }
 

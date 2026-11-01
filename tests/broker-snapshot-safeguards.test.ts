@@ -106,3 +106,21 @@ it('withholds contradictory currencies and preserves a newer retained balance du
   await expect(apply(id,{...doc,as_of:'2026-10-31'})).rejects.toThrow(/older than/);
   expect((await loadInvestor(id)).state.cash).toEqual(prior);
 });
+it('completes cash sync for documented empty currency groups without creating balances or retry warnings',async()=>{
+  const id=await fixture(),doc=statement('2026-11-01');doc.cash_omitted=['MYR','AUD'];
+  const result=await apply(id,doc),after=(await loadInvestor(id)).state;
+  expect(result.deferred).toBeUndefined();expect(result.skipped).toEqual([]);
+  expect(after.cash!.map(c=>c.currency).sort()).toEqual(['SGD','USD']);
+  expect(after.cash!.every(c=>c.updated_at==='2026-11-01')).toBe(true);
+  expect((await balances(id)).map(c=>c.currency).sort()).toEqual(['SGD','USD']);
+});
+it('preserves a previously reported currency when its group becomes empty, retaining freshness warnings',async()=>{
+  const id=await fixture(),before=(await loadInvestor(id)).state.cash,ledger=await balances(id);
+  const doc=statement('2026-11-01');doc.cash=[{currency:'USD',amount:6602.15}];doc.cash_omitted=['SGD'];
+  const result=await apply(id,doc),after=(await loadInvestor(id)).state;
+  expect(after.cash!.find(c=>c.currency==='SGD')).toEqual(before!.find(c=>c.currency==='SGD'));
+  expect(after.cash!.find(c=>c.currency==='USD')).toMatchObject({amount:6602.15,updated_at:'2026-11-01'});
+  expect((await balances(id)).find(c=>c.currency==='SGD')).toEqual(ledger.find(c=>c.currency==='SGD'));
+  expect(result.deferred).toEqual(['cash']);expect(result.skipped).toContainEqual(expect.objectContaining({currency:'SGD',defer:'cash'}));
+  expect(result.skipped.map(s=>s.reason).join(' ')).toContain('SGD 2026-10-30');
+});

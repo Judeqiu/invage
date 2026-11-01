@@ -5,7 +5,7 @@ import { mergeOptionExecutions } from './option-executions.js';
 import { mergeOptionLifecycleEvents } from './option-events.js';
 import { appendOptionObservation } from './option-history.js';
 import { normalizeBrokerOptionLot } from './statement.js';
-import { cashSnapshotPolicy, deferredSnapshotSections, reconciledHistorySkips } from './snapshot-validation.js';
+import { cashSnapshotPolicy, deferredSnapshotSections, invalidCashSkip, reconciledHistorySkips } from './snapshot-validation.js';
 import { mergeBrokerHistory, optionExecutionsFromHistory } from './history.js';
 import { createHash } from 'node:crypto';
 /**
@@ -165,10 +165,15 @@ export async function applyBrokerStatement(
     if (blocking.length) throw new Error('Broker current snapshot is incomplete; retained the previous holdings and cash for automatic retry. Details: ' + blocking.map(formatBrokerSkip).join('; '));
   }
   const channel = connection?.channel ?? getBrokerConnector(connectorId).channel;
+  const priorCash = getCashes(state).filter(row => cashSlotKey(row.channel) === cashSlotKey(channel));
+  // An empty optional group is normal on first observation. Once this account
+  // has reported that currency, its disappearance is a real freshness gap.
+  const missingKnown = (doc.cash_omitted ?? []).filter(currency => priorCash.some(row => row.currency === currency));
+  if (missingKnown.length) doc = {...doc, skipped:[...doc.skipped,
+    ...missingKnown.filter(currency => !doc.skipped.some(skip => skip.defer === 'cash' && skip.currency === currency)).map(invalidCashSkip)]};
   const deferred = deferredSnapshotSections(doc.skipped);
   const cashPolicy = cashSnapshotPolicy(doc);
   const keepCash = cashPolicy.all, keepPositions = deferred.includes('positions');
-  const priorCash = getCashes(state).filter(row => cashSlotKey(row.channel) === cashSlotKey(channel));
   const priorSync = state.broker_connections?.[connectorId]?.last_sync;
   const priorPositionDate = priorSync?.positions_as_of ?? (priorSync?.snapshot_deferred?.includes('positions') ? undefined : priorSync?.as_of) ?? (state.option_observations ?? [])
     .filter(row => row.connection_id === connectorId && row.source === 'broker')
@@ -270,7 +275,7 @@ export async function applyBrokerStatement(
   if (keepCash) retentionNotes.push({kind:'event',reason:priorCash.length
     ? `Cash update deferred. Retained cash dates: ${priorCash.map(row => `${row.currency} ${row.updated_at}`).join('; ')}. Automatic retry is queued.`
     : 'Cash update deferred. No previous verified cash balance is available; cash remains unknown. Automatic retry is queued.'});
-  else if (cashPolicy.partial) {
+  else if (deferred.includes('cash')) {
     const retained = priorCash.filter(row => !updatingCash.has(row.currency));
     const missing = [...new Set(doc.skipped.filter(skip => skip.defer === 'cash').map(skip => skip.currency!))]
       .filter(currency => !priorCash.some(row => row.currency === currency));

@@ -176,13 +176,23 @@ export function mapMooMooMarginMetrics(d: unknown, asOf: string): BrokerConnecti
 
 function mapFunds(d: unknown, asOf: string, skipped: BrokerSkip[]): {
   cash: BrokerCashSleeve[];
+  omitted?: string[];
   metrics?: BrokerConnectionMetrics;
 } {
   const rec = asRecord(d);
   if (!rec) return { cash: [] };
   const cash: BrokerCashSleeve[] = [];
+  const omitted: string[] = [];
   for (const [field, iso] of Object.entries(CASH_FIELDS)) {
     if (!(field in rec)) continue;
+    // Both Cloud brands document successful responses with all three currency
+    // fields empty. This is an unreported group, not a numeric balance or zero.
+    // https://open.futunn.com/api/trading/account/get-funds
+    const prefix = field.slice(0, -5);
+    if (rec[field] === '' && rec[`${prefix}_avl_withdrawal_cash`] === '' && rec[`${prefix}_net_cash_power`] === '') {
+      omitted.push(iso);
+      continue;
+    }
     const amount = parseNum(rec[field]);
     if (amount == null) { skipped.push(invalidCashSkip(iso)); continue; }
     cash.push({ currency: iso, amount });
@@ -204,7 +214,7 @@ function mapFunds(d: unknown, asOf: string, skipped: BrokerSkip[]): {
         blocking: false, reason: `Fund assets ${amount.toFixed(2)} ${currency} recorded as an account total only. Moomoo does not return individual fund holdings; fund lot count, units and cost basis are unavailable. This total is separate from cash and excluded from itemized NAV and P/L.` });
     }
   }
-  return { cash, metrics };
+  return { cash, metrics, ...(omitted.length ? {omitted} : {}) };
 }
 
 function mapPosition(
@@ -260,7 +270,7 @@ export function mapMooMooBundleToStatement(bundle: MooMooRawBundle, channel: str
   }
   const as_of = bundle.fetched_at.slice(0, 10);
   const skipped: BrokerSkip[] = [];
-  const { cash, metrics } = mapFunds(bundle.funds.d, as_of, skipped);
+  const { cash, metrics, omitted } = mapFunds(bundle.funds.d, as_of, skipped);
   if (cash.length === 0 && !skipped.some(s => s.defer === 'cash')) {
     throw new BrokerParseError('MooMoo funds have no importable cash sleeves.');
   }
@@ -293,6 +303,7 @@ export function mapMooMooBundleToStatement(bundle: MooMooRawBundle, channel: str
     account_id: bundle.acc_id,
     as_of,
     cash,
+    ...(omitted ? {cash_omitted:omitted} : {}),
     lots,
     skipped,
   };

@@ -68,6 +68,9 @@ export interface BrokerStatement {
   as_of: string;
   from_date?: string;
   cash: BrokerCashSleeve[];
+  /** Broker's documented empty currency groups: no balance supplied, never zero.
+   * Preserve any previously recorded sleeve rather than treating omission as deletion. */
+  cash_omitted?: string[];
   lots: BrokerLot[];
   skipped: BrokerSkip[];
   metrics?: BrokerConnectionMetrics;
@@ -222,7 +225,7 @@ export function assertBrokerStatement(raw: unknown): BrokerStatement {
   }
   const o = raw as Record<string, unknown>;
   rejectVendorShape(o);
-  const allowed = new Set(['account_id', 'as_of', 'from_date', 'cash', 'lots', 'skipped', 'metrics', 'option_executions', 'option_events', 'history']);
+  const allowed = new Set(['account_id', 'as_of', 'from_date', 'cash', 'cash_omitted', 'lots', 'skipped', 'metrics', 'option_executions', 'option_events', 'history']);
   for (const k of Object.keys(o)) {
     if (!allowed.has(k)) {
       throw new Error(`Broker statement: unknown field "${k}".`);
@@ -268,6 +271,13 @@ export function assertBrokerStatement(raw: unknown): BrokerStatement {
     lots,
     skipped,
   };
+  if (o.cash_omitted !== undefined) {
+    if (!Array.isArray(o.cash_omitted) || o.cash_omitted.some(c => typeof c !== 'string' || !/^[A-Z]{3,4}$/.test(c)) ||
+        new Set(o.cash_omitted).size !== o.cash_omitted.length || o.cash_omitted.some(c => seenCcy.has(c))) {
+      throw new Error('Broker omitted cash currencies must be distinct currency codes without a reported balance.');
+    }
+    doc.cash_omitted = [...o.cash_omitted];
+  }
   if (o.from_date != null) {
     if (typeof o.from_date !== 'string' || !o.from_date.trim()) {
       throw new Error('Broker statement from_date must be a date when set.');
