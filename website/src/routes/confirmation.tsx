@@ -27,7 +27,7 @@ export const Route = createFileRoute("/confirmation")({
     { name: "description", content: "Your PayNow proof of payment has been received and is being verified." },
     { name: "robots", content: "noindex" },
     { property: "og:title", content: "Proof of Payment Received — Velovest" },
-    { property: "og:description", content: "You will receive an appointment confirmation email once payment is verified." },
+    { property: "og:description", content: "You will receive the outcome by email after payment review." },
     { property: "og:type", content: "website" },
     { name: "twitter:card", content: "summary_large_image" },
   ] }),
@@ -36,6 +36,6 @@ export const Route = createFileRoute("/confirmation")({
 
 function ConfirmationRoute() {
   const { ref, pkg, date, time, name, email } = Route.useSearch();
-  const booking: Booking | null = ref && pkg && date && time && name && email ? { ref, pkg, date, time, name, email } : null;
+  const booking: Booking | null = ref && pkg && name && email ? (pkg === "renewal" ? { ref, pkg, name, email } : date && time ? { ref, pkg, date, time, name, email } : null) : null;
   return <CompactConfirmation booking={booking}/>;
 }

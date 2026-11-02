@@ -34,9 +34,12 @@ export async function notifyNewSignup(input: Signup): Promise<void> {
         `Reference: ${input.reference}`, `Customer: ${input.name}`,
         `Email: ${input.email}`, `Phone: ${input.phone}`,
         `Package: ${input.packageName}`, `Submitted amount: SGD ${input.amountSgd}`,
-        `Requested session: ${input.sessionDate} ${input.sessionTime} (Singapore time)`, '',
-        'Payment has not been verified. The payment proof is retained privately in the signup record.',
+        ...(input.packageId === 'renewal' ? ['System subscription renewal · no onboarding session.'] :
+          [`Requested session: ${input.sessionDate} ${input.sessionTime} (Singapore time)`]), '',
+        'Payment has not been verified. The original payment proof is attached and retained in the signup record.',
       ].join('\n'),
+      attachments: [{ filename: input.proof.filename, contentType: input.proof.contentType, content: input.proof.data,
+        contentDisposition: 'attachment' }],
     });
     if (!result.accepted.length || result.rejected.length) throw new Error('Signup notification was not accepted');
   } finally {

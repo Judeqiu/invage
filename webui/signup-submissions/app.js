@@ -29,7 +29,7 @@
       const tr = node('tr');
       const customer = node('td'); customer.append(node('strong', row.customer_name), node('small', row.customer_email), node('small', row.reference));
       const pkg = node('td'); pkg.append(node('strong', row.package_name), node('small', 'SGD ' + row.amount_sgd));
-      const session = node('td'); session.append(node('strong', (row.confirmed_session_date || row.session_date) + ' · ' + (row.confirmed_session_time || row.session_time)), node('small', row.status === 'approved' ? 'Confirmed' : 'Requested'));
+      const session = node('td'); session.append(node('strong', row.package_id === 'renewal' ? 'System subscription' : (row.confirmed_session_date || row.session_date) + ' · ' + (row.confirmed_session_time || row.session_time)), node('small', row.package_id === 'renewal' ? 'No session required' : row.status === 'approved' ? 'Confirmed' : 'Requested'));
       const status = node('td'); status.append(node('span', row.status === 'approved' ? 'Approved' : 'Needs review', 'badge ' + row.status), node('small', emailLabel(row)));
       const action = node('td'); const button = node('button', row.status === 'approved' ? 'View signup' : 'Review');
       button.type = 'button'; button.addEventListener('click', () => openReview(row.id)); action.append(button);
@@ -54,6 +54,9 @@
     for (const control of $('review').querySelectorAll('button, input, select')) control.disabled = value;
     if (!value && pdfDocument) { $('pdf-previous').disabled = pdfPage <= 1; $('pdf-next').disabled = pdfPage >= pdfDocument.numPages; }
     if (!value && detail?.submission.status === 'approved') $('send-email').disabled = !detail.mailConfigured || detail.submission.email_status === 'sent';
+    if (!value && detail?.submission.package_id === 'renewal') {
+      for (const id of ['session-date','session-time','session-confirmed']) $(id).disabled = true;
+    }
     $('review').setAttribute('aria-busy', String(value));
   }
   function releaseProof() {
@@ -120,7 +123,7 @@
     const entries = data.relatedSubmissions.map(row => row.reason + ' · ' + row.reference);
     entries.push(...data.sessionConflicts.map(row => 'Another approved signup has this onboarding time · ' + row.reference));
     const date = $('session-date').value, time = $('session-time').value;
-    if (Date.parse(date + 'T' + time + ':00+08:00') <= Date.now()) entries.push('This onboarding time is in the past. Choose a new time or confirm your reviewed decision explicitly.');
+    if (data.submission.package_id !== 'renewal' && Date.parse(date + 'T' + time + ':00+08:00') <= Date.now()) entries.push('This onboarding time is in the past. Choose a new time or confirm your reviewed decision explicitly.');
     if (data.existingAccount?.inactive) entries.push('This email belongs to an inactive account. Resolve it before approving.');
     $('warnings').replaceChildren(...(entries.length ? entries.map(text => node('li', text)) : [node('li', 'No matching submissions or approved-session conflicts found.', 'clear')]));
     $('warnings-wrap').hidden = entries.length === 0;
@@ -129,15 +132,19 @@
   function renderDetail(data, reset) {
     detail = data; mailConfigured = data.mailConfigured;
     const row = data.submission;
+    const renewal = row.package_id === 'renewal';
+    $('session-fields').hidden = renewal; $('session-confirmed-wrap').hidden = renewal;
+    $('session-date').required = !renewal;
+    $('approval-legend').textContent = renewal ? 'Confirm system subscription renewal' : 'Confirm onboarding · Singapore time';
     $('review-reference').textContent = row.reference;
     $('review-title').textContent = row.status === 'approved' ? 'Approved signup' : 'Review signup';
     $('review-content').hidden = false;
     addDetails($('customer-details'), [['Customer', row.customer_name], ['Email', row.customer_email], ['Phone', row.customer_phone],
       ['Package', row.package_name], ['Amount', 'SGD ' + row.amount_sgd], ['Bank transaction', row.bank_transaction_id],
-      ['Requested session', row.session_date + ' · ' + row.session_time + ' SGT'], ['Submitted', dateTime(row.created_at)]]);
+      renewal ? ['Subscription', 'Velovest system access · no session required'] : ['Requested session', row.session_date + ' · ' + row.session_time + ' SGT'], ['Submitted', dateTime(row.created_at)]]);
     if (reset) {
-      $('session-date').value = row.confirmed_session_date || row.session_date;
-      $('session-time').value = row.confirmed_session_time || row.session_time;
+      $('session-date').value = renewal ? '' : row.confirmed_session_date || row.session_date;
+      $('session-time').value = renewal ? '' : row.confirmed_session_time || row.session_time;
       for (const id of ['payment-verified','session-confirmed','link-existing','warnings-ack','unknown-ack']) $(id).checked = false;
       $('approval-confirm').hidden = true; $('approval-action').hidden = false;
     }
@@ -167,7 +174,7 @@
       $('approval-confirm').hidden = true;
       let actor = row.approved_by; try { actor = JSON.parse(actor).name; } catch { /* legacy display */ }
       addDetails($('approved-details'), [['Approved', dateTime(row.approved_at)], ['Reviewed by', actor], ['Account', row.account_kind === 'new' ? 'Created' : 'Existing account linked'],
-        ['Confirmed session', row.confirmed_session_date + ' · ' + row.confirmed_session_time + ' SGT'], ['Access email', emailLabel(row)],
+        renewal ? ['Subscription', 'Velovest system access · no session required'] : ['Confirmed session', row.confirmed_session_date + ' · ' + row.confirmed_session_time + ' SGT'], ['Access email', emailLabel(row)],
         ['Last attempt', dateTime(row.email_attempted_at)], ['Provider accepted', dateTime(row.email_accepted_at)], ['Message ID', row.email_message_id]]);
       $('email-problem').hidden = !row.email_error; $('email-problem').textContent = row.email_error || '';
       $('unknown-wrap').hidden = !['unknown','sending'].includes(row.email_status);
@@ -194,10 +201,11 @@
   }
   function decision() {
     if (!$('decision-form').reportValidity()) throw new Error('Check the session details.');
-    if (!$('payment-verified').checked || !$('session-confirmed').checked) throw new Error('Confirm that you verified the payment and the onboarding session.');
+    if (!$('payment-verified').checked || (detail.submission.package_id !== 'renewal' && !$('session-confirmed').checked)) throw new Error('Confirm that you verified the payment and the onboarding session.');
     if (detail.existingAccount && !$('link-existing').checked) throw new Error('Confirm linking the existing account without changing its password.');
     if (!$('warnings-wrap').hidden && !$('warnings-ack').checked) throw new Error('Review and acknowledge the duplicate or booking warnings.');
-    return {paymentVerified:true,sessionConfirmed:true,sessionDate:$('session-date').value,sessionTime:$('session-time').value,
+    return {paymentVerified:true,sessionConfirmed:detail.submission.package_id !== 'renewal',
+      ...(detail.submission.package_id === 'renewal' ? {} : {sessionDate:$('session-date').value,sessionTime:$('session-time').value}),
       warningsAcknowledged:$('warnings-ack').checked,
       ...(detail.existingAccount ? {linkExistingUserId:detail.existingAccount.userId} : {})};
   }
@@ -205,12 +213,12 @@
     if (busy || !detail) return;
     try {
       const input = decision(); setBusy(true); notify('review-message', 'Checking the latest signup and session details…');
-      const updated = await api('/' + detail.submission.id + '?sessionDate=' + encodeURIComponent(input.sessionDate) + '&sessionTime=' + encodeURIComponent(input.sessionTime));
+      const updated = await api('/' + detail.submission.id + (detail.submission.package_id === 'renewal' ? '' : '?sessionDate=' + encodeURIComponent(input.sessionDate) + '&sessionTime=' + encodeURIComponent(input.sessionTime)));
       renderDetail(updated, false);
       if (updated.submission.status === 'approved') { notify('review-message','This signup was already approved. Its saved status is shown below.'); return; }
       decision();
       $('confirm-summary').textContent = 'Approve ' + updated.submission.customer_name + ' · SGD ' + updated.submission.amount_sgd +
-        '. Confirm ' + input.sessionDate + ' at ' + input.sessionTime + ' SGT. ' + (updated.mailConfigured ? 'Send the access email to ' : 'Queue the access email for ') + updated.submission.customer_email + '.';
+        (updated.submission.package_id === 'renewal' ? '. System subscription renewal; no session required. ' : '. Confirm ' + input.sessionDate + ' at ' + input.sessionTime + ' SGT. ') + (updated.mailConfigured ? 'Send the access email to ' : 'Queue the access email for ') + updated.submission.customer_email + '.';
       $('approval-confirm').hidden = false; $('approval-action').hidden = true; notify('review-message', 'Review the email preview, then confirm approval.'); $('approve').focus();
     } catch (error) { notify('review-message', errorText(error), true); }
     finally { setBusy(false); }

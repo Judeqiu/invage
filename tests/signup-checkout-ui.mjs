@@ -51,7 +51,34 @@ try{
   assert.ok(submitted.proofBase64);assert.equal(submitted.email,'checkout@example.invalid');assert.equal(submitted.packageId,'novice');
   assert.equal(submitted.amountSgd,undefined);
   await page.screenshot({path:'/tmp/velovest-signup-customer-confirmation.png',fullPage:true});
-  console.log('PASS: built customer signup — real QR display, requested sessions, proof upload and successful intake redirect, accurate pending-review receipt, no external API or email calls.');
+  // Renewal deep links go directly to payment, without a date/time or receipt appointment.
+  await page.goto(origin+'/signup?package=renewal',{waitUntil:'networkidle0'});
+  await page.waitForSelector('input[autocomplete="name"]');
+  assert.equal(await page.$('[aria-label="Available dates"]'),null);
+  assert.equal(await page.$$eval('[aria-label="Sign-up progress"] li',els=>els.length),3);
+  assert.match(await page.evaluate(()=>document.body.innerText),/228.00 SGD/);
+  await page.type('input[autocomplete="name"]','Renewal test customer');
+  await page.type('input[type="email"]','renewal@example.invalid');
+  await (await page.$('input[type="file"]')).uploadFile('website/public/favicon.png');
+  await page.click('input[type="checkbox"]');await page.click('button[type="submit"]');
+  await page.waitForFunction(()=>location.pathname==='/confirmation'&&document.body.innerText.includes('signup and payment evidence have been saved for review'));
+  assert.equal(submitted.packageId,'renewal');
+  assert.equal(submitted.sessionDate,undefined);assert.equal(submitted.sessionTime,undefined);
+  const renewalText=await page.evaluate(()=>document.body.innerText);
+  assert.match(renewalText,/Velovest system access · 12 months/);
+  assert.doesNotMatch(renewalText,/Requested session|Requested onboarding session|Your onboarding session|appointment confirmation email|Invalid Date|undefined|null/);
+  assert.equal(new URL(page.url()).searchParams.has('date'),false);
+  await page.waitForFunction(()=>window.scrollY===0);
+  await page.screenshot({path:'/tmp/velovest-renewal-confirmation.png',fullPage:true});
+  // Selecting renewal after a guided-package booking clears stale selections.
+  await page.goto(origin+'/signup?package=novice',{waitUntil:'networkidle0'});
+  await page.waitForSelector('[aria-label="Available dates"] button');await page.click('[aria-label="Available dates"] button');await page.click('[aria-label="Available times"] button');
+  await (await page.$('button::-p-text(Change package)')).click();
+  await (await page.$('button::-p-text(Choose Yearly Renewal)')).click();
+  await page.waitForSelector('input[autocomplete="name"]');
+  assert.equal(await page.$('[aria-label="Available dates"]'),null);
+  assert.doesNotMatch(await page.$eval('[aria-label="Order summary"]',el=>el.innerText),/Requested onboarding|Not selected yet/);
+  console.log('PASS: guided signup retains booking; renewal deep link and package switch skip booking, submit proof without slots, and show a subscription-only receipt. No external API or email calls.');
 }finally{
   if(browser)await browser.close();
   if(app.exitCode===null){app.kill('SIGTERM');await once(app,'exit');}

@@ -11,8 +11,8 @@ export class SubmissionError extends Error {
 export interface SubmissionInput {
   reference: string;
   packageId: string;
-  sessionDate: string;
-  sessionTime: string;
+  sessionDate?: string | null;
+  sessionTime?: string | null;
   name: string;
   email: string;
   phone: string;
@@ -27,8 +27,8 @@ export interface SubmissionSummary {
   package_id: string;
   package_name: string;
   amount_sgd: string;
-  session_date: string;
-  session_time: string;
+  session_date: string | null;
+  session_time: string | null;
   customer_name: string;
   customer_email: string;
   customer_phone: string;
@@ -59,11 +59,13 @@ export const summaryColumns = `id, reference, package_id, package_name, amount_s
 export function validateSubmission(input: SubmissionInput) {
   if (!/^VV-[A-Z0-9]{6}$/.test(input.reference)) throw new SubmissionError('Invalid submission reference.');
   if (!isPackageId(input.packageId)) throw new SubmissionError('Choose a valid package.');
-  const date = new Date(`${input.sessionDate}T00:00:00Z`);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.sessionDate) || !Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== input.sessionDate || [0, 6].includes(date.getUTCDay())) {
+  const sessionDate = input.packageId === 'renewal' ? null : input.sessionDate;
+  const sessionTime = input.packageId === 'renewal' ? null : input.sessionTime;
+  const date = new Date(`${sessionDate}T00:00:00Z`);
+  if (input.packageId !== 'renewal' && (typeof sessionDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(sessionDate) || !Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== sessionDate || [0, 6].includes(date.getUTCDay()))) {
     throw new SubmissionError('Choose a valid weekday session date.');
   }
-  if (!isSlotTime(input.sessionTime)) throw new SubmissionError('Choose a valid session time.');
+  if (input.packageId !== 'renewal' && !isSlotTime(sessionTime)) throw new SubmissionError('Choose a valid session time.');
   if (input.name.trim().length < 2) throw new SubmissionError('Enter your full name.');
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email.trim())) throw new SubmissionError('Enter a valid email address.');
   if (!input.consentAccepted) throw new SubmissionError('Please confirm the acknowledgement to continue.');
@@ -72,6 +74,7 @@ export function validateSubmission(input: SubmissionInput) {
   if (!/^(image\/[^\s;]+|application\/pdf)$/.test(input.proof.contentType)) throw new SubmissionError('Upload an image or PDF.');
   return {
     ...input, name: input.name.trim(), email: input.email.trim(),
+    sessionDate: sessionDate ?? null, sessionTime: sessionTime ?? null,
     phone: input.phone.trim(), bankTransactionId: input.bankTransactionId.trim(),
     packageId: input.packageId,
     packageName: packages[input.packageId].name,

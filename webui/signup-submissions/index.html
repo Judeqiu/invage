@@ -32,10 +32,10 @@
           <section><h3>Customer &amp; package</h3><dl id="customer-details"></dl></section>
           <section><h3>Review checks</h3><ul id="warnings" class="warnings"></ul><p id="account-plan"></p></section>
           <form id="decision-form">
-            <fieldset id="approval-fields"><legend>Confirm onboarding · Singapore time</legend>
-              <div class="session-fields"><label for="session-date">Session date<input id="session-date" type="date" required></label><label for="session-time">Session time<select id="session-time"><option>10:00</option><option>11:00</option><option>14:00</option><option>15:00</option><option>16:00</option><option>17:00</option></select></label></div>
+            <fieldset id="approval-fields"><legend id="approval-legend">Confirm onboarding · Singapore time</legend>
+              <div class="session-fields" id="session-fields"><label for="session-date">Session date<input id="session-date" type="date" required></label><label for="session-time">Session time<select id="session-time"><option>10:00</option><option>11:00</option><option>14:00</option><option>15:00</option><option>16:00</option><option>17:00</option></select></label></div>
               <label class="check"><input id="payment-verified" type="checkbox">I verified the payment against our payment records.</label>
-              <label class="check"><input id="session-confirmed" type="checkbox">I confirm this onboarding session with the customer.</label>
+              <label class="check" id="session-confirmed-wrap"><input id="session-confirmed" type="checkbox">I confirm this onboarding session with the customer.</label>
               <label class="check" id="link-existing-wrap" hidden><input id="link-existing" type="checkbox"><span id="link-existing-copy"></span></label>
               <label class="check" id="warnings-wrap" hidden><input id="warnings-ack" type="checkbox">I reviewed the duplicate and booking warnings and want to proceed.</label>
             </fieldset>

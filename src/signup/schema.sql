@@ -7,8 +7,8 @@ CREATE TABLE IF NOT EXISTS velovest_signup.submissions (
     package_id text NOT NULL,
     package_name text NOT NULL,
     amount_sgd numeric NOT NULL,
-    session_date date NOT NULL,
-    session_time text NOT NULL,
+    session_date date,
+    session_time text,
     customer_name text NOT NULL,
     customer_email text NOT NULL,
     customer_phone text NOT NULL,
@@ -24,6 +24,11 @@ CREATE TABLE IF NOT EXISTS velovest_signup.submissions (
 );
 REVOKE ALL ON TABLE velovest_signup.submissions FROM PUBLIC;
 CREATE INDEX IF NOT EXISTS signup_submissions_created_at ON velovest_signup.submissions (created_at DESC, id DESC);
+
+-- System-only renewals have no appointment. Preserve all historical records.
+ALTER TABLE velovest_signup.submissions
+    ALTER COLUMN session_date DROP NOT NULL,
+    ALTER COLUMN session_time DROP NOT NULL;
 
 -- Additive upgrade for the existing intake table; submitted evidence is immutable.
 ALTER TABLE velovest_signup.submissions

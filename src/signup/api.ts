@@ -22,7 +22,7 @@ export function createSubmissionPublicRouter(getRepository: () => SubmissionRepo
       if (proofData.toString('base64') !== encoded) throw new SubmissionError('Invalid payment-proof encoding.');
       const result = await getRepository().save({
         reference: requiredText('reference'), packageId: requiredText('packageId'),
-        sessionDate: requiredText('sessionDate'), sessionTime: requiredText('sessionTime'),
+        sessionDate: b.sessionDate, sessionTime: b.sessionTime,
         name: requiredText('name'), email: requiredText('email'), phone: requiredText('phone'),
         bankTransactionId: requiredText('bankTransactionId'), consentAccepted: b.consentAccepted === true,
         proof: { filename: requiredText('proofFilename'), contentType: requiredText('proofContentType'), data: proofData },
@@ -110,7 +110,8 @@ export function createSubmissionAdminRouter(getRepository: () => SubmissionRepos
   router.post('/submissions/:id/approve', async (req, res) => {
     try {
       const body = req.body;
-      if (!body || typeof body !== 'object' || typeof body.sessionDate !== 'string' || typeof body.sessionTime !== 'string' ||
+      if (!body || typeof body !== 'object' ||
+        (body.sessionDate != null && typeof body.sessionDate !== 'string') || (body.sessionTime != null && typeof body.sessionTime !== 'string') ||
         (body.linkExistingUserId !== undefined && typeof body.linkExistingUserId !== 'string')) {
         throw new SubmissionError('Review confirmation is required.');
       }

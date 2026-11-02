@@ -53,6 +53,23 @@ beforeAll(async()=> {
 afterAll(async()=>{await pool.end();});
 
 describe('Signup review, atomic account approval and access email delivery',()=>{
+  it('approves a system renewal without a session confirmation or slot and omits appointment email content', async () => {
+    configured = false;
+    await repository.save({reference:'VV-REN001',packageId:'renewal',name:'Renewal customer',email:'renewal@example.invalid',
+      phone:'',bankTransactionId:'renewal-payment',consentAccepted:true,
+      proof:{filename:'renewal.pdf',contentType:'application/pdf',data:Buffer.from('%PDF-renewal')}});
+    const row = (await repository.list('VV-REN001'))[0];
+    const preview = await review.detail(row.id);
+    expect(preview.sessionConflicts).toEqual([]);
+    expect(preview.emailPreview.text).toContain('System subscription renewal');
+    expect(preview.emailPreview.text).not.toContain('Onboarding:');
+    const response = await approve(row.id,{paymentVerified:true,sessionConfirmed:false,warningsAcknowledged:true});
+    expect(response.status).toBe(200);
+    expect(response.body.submission).toMatchObject({status:'approved',session_date:null,session_time:null,
+      confirmed_session_date:null,confirmed_session_time:null,amount_sgd:'228',email_status:'pending'});
+    expect(response.body.emailPreview.text).not.toMatch(/during onboarding|Onboarding:/);
+    expect(response.body.submission.account_user_id).toBeTruthy();
+  });
   it('protects detail, approve and send APIs from anonymous/user access and cross-origin mutations',async()=>{
     const row=await submission();
     for(const suffix of ['', '/approve','/send-email']) {

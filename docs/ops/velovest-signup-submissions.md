@@ -1,6 +1,6 @@
 # Signup review and account approval
 
-The website saves contact details, the requested session and original payment
+The website saves contact details, any requested session and original payment
 proof in `velovest_signup.submissions` in the existing Velovest application
 PostgreSQL database. Pricing is computed server-side from `src/signup/catalog.ts`.
 An identical retry is idempotent; different evidence cannot overwrite a reference.
@@ -8,6 +8,14 @@ Submission commits before the customer is redirected to the receipt page.
 The receipt says that review is pending; it does not claim an email was sent.
 Calendar selections are requests, not reservations. No synthetic booked slots or
 assumed appointment-capacity rules are used.
+
+The S$228 yearly renewal is a Velovest system subscription only. It goes directly
+from package selection to payment, with no booking step. New renewal submissions
+store NULL session date/time; receipt, operator notification, approval and customer
+access message have no appointment requirement. Other packages retain their
+required onboarding date/time. Historical records are preserved. Apply the
+rerunnable signup schema migration before activating this version: it removes
+the session columns' NOT NULL requirement without deleting existing values.
 
 ## Management
 
@@ -31,7 +39,8 @@ Review checks surface matching email, payment evidence hash and bank transaction
 IDs, approved sessions at the proposed time, and past appointments. These are
 review warnings, not automatic accusations or an assumed capacity limit. The
 admin must acknowledge warnings, verify payment independently, and explicitly
-confirm the session. A proposed date/time is reflected in the server-generated
+confirm the session for guided packages. Renewals require payment review but no
+session confirmation or session-conflict checks. A proposed date/time is reflected in the server-generated
 email preview before final confirmation. Dates/times remain in Singapore time.
 
 “Approve & send access email” (or “Approve & queue access email” before mail setup)
@@ -60,8 +69,10 @@ of the Signup submissions page's visibility.
 
 Newly inserted submissions attempt one SMTP notification after the record is
 committed. The summary includes reference, customer contact details, package,
-server-calculated submitted amount and requested session in Singapore time.
-Payment proof stays in the private database and is not attached. The summary
+server-calculated submitted amount and, for guided packages, requested session in Singapore time.
+The original payment-proof bytes are attached with the submitted filename and
+content type, and are also retained in the private database. Renewals are labeled
+as system subscriptions without a session. The summary
 does not claim payment was verified. Identical retries retain the existing record
 ID and do not send another notification.
 
@@ -114,7 +125,7 @@ open each queued signup and choose “Send queued email”. There is no automati
 bulk sending when configuration changes. Test the configured sender with an
 explicitly authorized test recipient before claiming live delivery works.
 
-The access email contains reference, submitted package/amount, confirmed session,
+The access email contains reference, submitted package/amount, confirmed session for guided packages,
 login URL and email. A new account gets a cryptographically random password;
 normal login is allowed and the message recommends changing it. There is no
 forced first-login change or new password expiry. An existing account receives

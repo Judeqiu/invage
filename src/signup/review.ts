@@ -4,7 +4,7 @@ import { blankState, getAccountAuthority, hashPassword, verifyPassword } from 'u
 import { createSecretCodec, getDatabaseRuntime } from 'utarus/database';
 import { initialUsageAccount } from '../../node_modules/utarus/dist/database/initial-usage.js';
 import { sendTransactionalMail } from '../../node_modules/utarus/dist/mail/transactional.js';
-import { formatSessionDate, formatSlot, isSlotTime, type SlotTime } from './catalog.js';
+import { formatSessionDate, formatSlot, isSlotTime } from './catalog.js';
 import { SubmissionError, SubmissionRepository, summaryColumns, type SubmissionSummary } from './submissions.js';
 
 type Codec = ReturnType<typeof createSecretCodec>;
@@ -39,31 +39,38 @@ export function signupLoginUrl() {
   return new URL('login', url.href.replace(/\/?$/, '/')).href;
 }
 export function accessEmail(row: Pick<SubmissionSummary, 'reference' | 'customer_name' | 'customer_email' |
-  'package_name' | 'amount_sgd' | 'session_date' | 'session_time' | 'confirmed_session_date' | 'confirmed_session_time'>,
+  'package_id' | 'package_name' | 'amount_sgd' | 'session_date' | 'session_time' | 'confirmed_session_date' | 'confirmed_session_time'>,
   loginUrl: string, password: string | null) {
   const date = row.confirmed_session_date ?? row.session_date;
-  const time = (row.confirmed_session_time ?? row.session_time) as SlotTime;
+  const time = row.confirmed_session_time ?? row.session_time;
+  let sessionDescription = 'System subscription renewal · no onboarding session.';
+  if (row.package_id !== 'renewal') {
+    if (!date || !validSessionDate(date) || !isSlotTime(time)) throw new SubmissionError('The signup is missing a valid onboarding session.');
+    sessionDescription = `Onboarding: ${formatSessionDate(date)}, ${formatSlot(time)}`;
+  }
   return {
     subject: `Your Velovest signup is approved (${row.reference})`,
     text: [
       `Hi ${row.customer_name},`, '',
       'Your payment has been verified and your Velovest signup is approved.', '',
       `Reference: ${row.reference}`, `Package: ${row.package_name}`, `Payment verified: SGD ${row.amount_sgd}`,
-      `Onboarding: ${formatSessionDate(date)}, ${formatSlot(time)}`, '',
+      sessionDescription, '',
       `Sign in: ${loginUrl}`, `Username (email): ${row.customer_email}`,
       ...(password ? [`Temporary password: ${password}`, '',
         'We recommend changing this password after signing in. Open your profile settings and choose Change password.'] :
         ['', 'Use your existing Velovest password. Your password has not been changed.']),
-      '', 'You can sign in now. We will guide you through your package and dashboard during onboarding.',
-      'Please reply to this email if you need help with your account or appointment.', '', 'The Velovest team',
+      '', row.package_id === 'renewal' ? 'You can sign in to the Velovest system using the details above.' :
+        'You can sign in now. We will guide you through your package and dashboard during onboarding.',
+      row.package_id === 'renewal' ? 'Please reply to this email if you need help with your account or subscription.' :
+        'Please reply to this email if you need help with your account or appointment.', '', 'The Velovest team',
     ].join('\n'),
   };
 }
 export interface ApprovalInput {
   paymentVerified: boolean;
   sessionConfirmed: boolean;
-  sessionDate: string;
-  sessionTime: string;
+  sessionDate?: string | null;
+  sessionTime?: string | null;
   linkExistingUserId?: string;
   warningsAcknowledged: boolean;
 }
@@ -94,7 +101,7 @@ export class SignupReview {
         (lower(trim(customer_email))=lower(trim($2)) OR (bank_transaction_id<>'' AND bank_transaction_id=$3)
         OR proof_sha256=(SELECT proof_sha256 FROM velovest_signup.submissions WHERE id=$1))
       ORDER BY created_at DESC, id DESC`, [row.id, row.customer_email, row.bank_transaction_id]);
-    const conflicts = await this.sessionConflicts(row.id,
+    const conflicts = row.package_id === 'renewal' ? [] : await this.sessionConflicts(row.id,
       row.confirmed_session_date ?? row.session_date, row.confirmed_session_time ?? row.session_time);
     return {
       existingAccount: existing ? { userId: existing.state.user.id, name: existing.state.profile.display_name,
@@ -102,7 +109,7 @@ export class SignupReview {
       relatedSubmissions: related.rows, sessionConflicts: conflicts,
     };
   }
-  private async sessionConflicts(id: string, date: string, time: string, client: Pick<PoolClient, 'query'> = this.repository.pool) {
+  private async sessionConflicts(id: string, date: string | null, time: string | null, client: Pick<PoolClient, 'query'> = this.repository.pool) {
     const result = await client.query<{ reference: string }>(`SELECT reference FROM velovest_signup.submissions
       WHERE id<>$1 AND status='approved' AND confirmed_session_date=$2 AND confirmed_session_time=$3
       ORDER BY created_at,id`, [id, date, time]);
@@ -110,7 +117,7 @@ export class SignupReview {
   }
   async detail(id: string, proposed?: {date: string; time: string}) {
     const row = await this.row(id);
-    if (proposed && row.status === 'submitted') {
+    if (proposed && row.status === 'submitted' && row.package_id !== 'renewal') {
       if (!validSessionDate(proposed.date) || !isSlotTime(proposed.time)) throw new SubmissionError('Choose a valid weekday session date and time.');
       row.confirmed_session_date = proposed.date;
       row.confirmed_session_time = proposed.time;
@@ -143,8 +150,7 @@ export class SignupReview {
   }
 
   async approve(id: string, input: ApprovalInput, actor: string) {
-    if (!input.paymentVerified || !input.sessionConfirmed) throw new SubmissionError('Confirm payment verification and the onboarding session.');
-    if (!validSessionDate(input.sessionDate) || !isSlotTime(input.sessionTime)) throw new SubmissionError('Choose a valid weekday session date and time.');
+    if (!input.paymentVerified) throw new SubmissionError('Confirm payment verification.');
     if (process.env.UTARUS_ACCOUNTS_MODE && process.env.UTARUS_ACCOUNTS_MODE !== 'local') {
       throw new SubmissionError('This approval flow requires the configured local account authority.', 503);
     }
@@ -156,15 +162,22 @@ export class SignupReview {
       const row = await this.row(id, client);
       if (row.status === 'approved') { await client.query('COMMIT'); return this.detail(id); }
       if (row.status !== 'submitted') throw new SubmissionError('This submission is not awaiting approval.', 409);
+      const renewal = row.package_id === 'renewal';
+      const sessionDate = renewal ? null : input.sessionDate ?? null;
+      const sessionTime = renewal ? null : input.sessionTime ?? null;
+      if (!renewal && !input.sessionConfirmed) throw new SubmissionError('Confirm the onboarding session.');
+      if (!renewal && (!sessionDate || !validSessionDate(sessionDate) || !isSlotTime(sessionTime))) {
+        throw new SubmissionError('Choose a valid weekday session date and time.');
+      }
       // Match the framework registration lock, including JavaScript email normalization.
       const email = row.customer_email.trim().toLowerCase();
       const lock = createHash('sha256').update(JSON.stringify(['signup-email', email])).digest().readBigInt64BE().toString();
       await client.query('SELECT pg_advisory_xact_lock($1::bigint)', [lock]);
       // Serialize decisions for the same requested time, but leave capacity decisions to the admin.
-      await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [`velovest-session:${input.sessionDate}:${input.sessionTime}`]);
+      if (!renewal) await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [`velovest-session:${sessionDate}:${sessionTime}`]);
       const context = await this.context(row);
-      const conflicts = await this.sessionConflicts(id, input.sessionDate, input.sessionTime, client);
-      if ((context.relatedSubmissions.length || conflicts.length || Date.parse(`${input.sessionDate}T${input.sessionTime}:00+08:00`) <= Date.now()) && !input.warningsAcknowledged) {
+      const conflicts = renewal ? [] : await this.sessionConflicts(id, sessionDate, sessionTime, client);
+      if ((context.relatedSubmissions.length || conflicts.length || (!renewal && Date.parse(`${sessionDate}T${sessionTime}:00+08:00`) <= Date.now())) && !input.warningsAcknowledged) {
         throw new SubmissionError('Review and acknowledge the duplicate, past-session or booking warnings before approval.', 409);
       }
       const existing = await getAccountAuthority().users.findByEmail(email);
@@ -193,7 +206,7 @@ export class SignupReview {
       await client.query(`UPDATE velovest_signup.submissions SET status='approved', approved_at=now(), approved_by=$2,
         account_user_id=$3, account_kind=$4, confirmed_session_date=$5, confirmed_session_time=$6,
         email_status='pending', access_secret=$7 WHERE id=$1`,
-      [id, actor, userId, existing ? 'existing' : 'new', input.sessionDate, input.sessionTime, secret]);
+      [id, actor, userId, existing ? 'existing' : 'new', sessionDate, sessionTime, secret]);
       await this.event(client, id, existing ? 'Approved; existing account linked; access email queued' : 'Approved; account created; access email queued', actor);
       if (input.warningsAcknowledged) await this.event(client, id, 'Reviewer acknowledged duplicate / booking warnings', actor);
       await client.query('COMMIT');

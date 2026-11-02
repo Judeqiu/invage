@@ -10,6 +10,7 @@ const sample={id:'00000000-0000-4000-8000-000000000001',reference:'VV-UI0001',cu
   package_id:'novice',package_name:'New to Options',amount_sgd:'1080',session_date:'2099-11-02',session_time:'10:00',bank_transaction_id:'BANK-123',proof_filename:'payment.png',status:'submitted',created_at:'2026-11-02T02:00:00Z',
   email_status:'not_queued',approved_at:null,approved_by:null,account_user_id:null,account_kind:null,confirmed_session_date:null,confirmed_session_time:null,email_attempted_at:null,email_accepted_at:null,email_message_id:null,email_error:null};
 const rows=[structuredClone(sample),{...structuredClone(sample),id:'00000000-0000-4000-8000-000000000002',reference:'VV-UI0002',customer_name:'Existing customer',customer_email:'existing@example.invalid'}];
+rows.push({...structuredClone(sample),id:'00000000-0000-4000-8000-000000000003',reference:'VV-UI0003',customer_name:'Renewal customer',customer_email:'renewal@example.invalid',package_id:'renewal',package_name:'Yearly Renewal',amount_sgd:'228',session_date:null,session_time:null});
 let configured=false,approvalCount=0,sendCount=0,releaseApproval, pdfBytes;
 const holdApproval=new Promise(resolve=>{releaseApproval=resolve;});
 function detail(row,date,time) {
@@ -37,7 +38,7 @@ const server=createServer(async(req,res)=>{
         if(action==='approve'){
           approvalCount++;await holdApproval;
           Object.assign(row,{status:'approved',approved_at:new Date().toISOString(),approved_by:JSON.stringify({name:'Review operator'}),account_user_id:'22222222-2222-4222-8222-222222222222',account_kind:'new',
-            confirmed_session_date:input.sessionDate,confirmed_session_time:input.sessionTime,email_status:'pending'});
+            confirmed_session_date:input.sessionDate??null,confirmed_session_time:input.sessionTime??null,email_status:'pending'});
         }else if(action==='send-email'){
           sendCount++;row.email_status='sent';row.email_accepted_at=new Date().toISOString();row.email_message_id='browser-receipt';
         }
@@ -58,7 +59,7 @@ try{
   await page.evaluateOnNewDocument(()=>Object.defineProperty(navigator,'clipboard',{value:{writeText:async text=>{window.copiedAccess=text;}}}));
   await page.setViewport({width:1440,height:1000});
   await page.goto(`http://127.0.0.1:${server.address().port}${root}index.html`,{waitUntil:'networkidle0'});
-  await page.waitForSelector('#rows button');assert.equal(await page.$$eval('#rows tr',els=>els.length),2);
+  await page.waitForSelector('#rows button');assert.equal(await page.$$eval('#rows tr',els=>els.length),3);
   assert.equal(await page.$eval('#mail-setup',el=>el.hidden),false);
   await page.click('#rows button');await page.waitForSelector('#review-content:not([hidden])');
   await page.waitForFunction(()=>document.querySelector('#proof-preview img')?.complete);
@@ -111,5 +112,21 @@ try{
   await page.click('#pdf-next');await page.waitForFunction(()=>document.querySelector('#pdf-page').innerText==='Page 2 of 2');
   assert.equal(await page.$eval('#pdf-next',el=>el.disabled),true);
   await page.click('#pdf-previous');await page.waitForFunction(()=>document.querySelector('#pdf-page').innerText==='Page 1 of 2');
+  await page.click('#close-review');
+  await page.waitForFunction(()=>!document.querySelector('#review').open&&document.querySelector('#email-preview').textContent==='');
+  await page.evaluate(()=>{const row=[...document.querySelectorAll('#rows tr')].find(row=>row.innerText.includes('Yearly Renewal'));row.querySelector('button').click();});
+  await page.waitForSelector('#review-content:not([hidden])');
+  assert.equal(await page.$eval('#session-fields',el=>el.hidden),true);
+  assert.equal(await page.$eval('#session-fields',el=>getComputedStyle(el).display),'none');
+  assert.equal(await page.$eval('#session-date',el=>el.disabled),true);
+  assert.equal(await page.$eval('#session-confirmed-wrap',el=>el.hidden),true);
+  assert.doesNotMatch(await page.$eval('#email-preview',el=>el.innerText),/Onboarding:|during onboarding/);
+  await page.click('#payment-verified');await page.click('#warnings-ack');await page.click('#review-approval');
+  await page.waitForSelector('#approval-confirm:not([hidden])');
+  assert.match(await page.$eval('#confirm-summary',el=>el.innerText),/no session required/);
+  await page.click('#approve');await page.waitForSelector('#approved-state:not([hidden])');
+  assert.equal(rows[2].confirmed_session_date,null);assert.equal(rows[2].confirmed_session_time,null);
+  assert.doesNotMatch(await page.$eval('#approved-details',el=>el.innerText),/null|undefined|Confirmed session/);
+  await page.screenshot({path:'/tmp/velovest-renewal-review.png',fullPage:true});
   console.log('PASS: signup Management browser flow — private image and two-page PDF rendering, XSS-safe details, warning and approval confirmations, duplicate click prevention, queued/setup state, email retry, existing-account preview, responsive layout.');
 }catch(error){process.exitCode=1;throw error;}finally{releaseApproval();await browser.close();await new Promise(resolve=>server.close(resolve));}

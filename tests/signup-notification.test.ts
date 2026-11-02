@@ -49,7 +49,7 @@ it('uses a saved recipient immediately, preserves other settings and defaults to
   expect(smtp.send).toHaveBeenCalledTimes(2);
 });
 
-it('sends the server-calculated summary over authenticated TLS with no proof or credentials in the message', async () => {
+it('sends the server-calculated summary and original proof over authenticated TLS without exposing credentials', async () => {
   recipient('operator@example.invalid');
   await notifyNewSignup(validateSubmission(input));
   expect(smtp.create).toHaveBeenCalledWith(expect.objectContaining({
@@ -60,9 +60,21 @@ it('sends the server-calculated summary over authenticated TLS with no proof or 
   expect(mail.text).toContain('Submitted amount: SGD 1080');
   for (const value of ['VV-NOTIFY', 'Test customer', input.email, input.phone, '2026-11-02 10:00']) expect(mail.text).toContain(value);
   expect(mail.text).toContain('Payment has not been verified');
-  expect(mail.attachments).toBeUndefined();
+  expect(mail.attachments).toEqual([{filename:input.proof.filename,contentType:input.proof.contentType,content:input.proof.data,contentDisposition:'attachment'}]);
   expect(JSON.stringify(mail)).not.toContain('synthetic-test-secret');
   expect(smtp.close).toHaveBeenCalledOnce();
+});
+
+it('accepts a renewal without a booking and keeps it out of both notification and access email session details', async () => {
+  const renewal = validateSubmission({...input,packageId:'renewal',sessionDate:undefined,sessionTime:undefined});
+  expect(renewal).toMatchObject({sessionDate:null,sessionTime:null,amountSgd:228});
+  recipient('operator@example.invalid');
+  await notifyNewSignup(renewal);
+  expect(smtp.send.mock.calls[0][0].text).toContain('System subscription renewal');
+  expect(smtp.send.mock.calls[0][0].text).not.toContain('Requested session:');
+  expect(smtp.send.mock.calls[0][0].attachments[0].content).toEqual(input.proof.data);
+  for (const packageId of ['novice','experienced']) expect(() => validateSubmission({...input,packageId,sessionDate:undefined,sessionTime:undefined})).toThrow('session date');
+  expect(validateSubmission({...input,packageId:'renewal'})).toMatchObject({sessionDate:null,sessionTime:null});
 });
 
 it('rejects multiple recipients, missing sender credentials and SMTP rejection without pretending delivery succeeded', async () => {

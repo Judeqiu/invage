@@ -42,6 +42,19 @@ beforeAll(async () => {
 afterAll(async () => { await pool.end(); });
 
 describe('Signup submission persistence and Management access', () => {
+  it('stores a system renewal without invented booking dates and notifies once across retries', async () => {
+    const notifications: unknown[] = [];
+    const renewalRepository = new SubmissionRepository(pool, async value => { notifications.push(value); });
+    const renewalApp = express().use(express.json()).use(createSubmissionPublicRouter(() => renewalRepository));
+    const {sessionDate,sessionTime,...body} = payload('VV-RENEW1');
+    for (let attempt = 0; attempt < 2; attempt++) {
+      expect((await request(renewalApp).post('/submissions').send({...body,packageId:'renewal'})).status).toBe(201);
+    }
+    const stored = await pool.query('SELECT amount_sgd::text,session_date,session_time,proof_data FROM velovest_signup.submissions WHERE reference=$1',['VV-RENEW1']);
+    expect(stored.rows).toEqual([{amount_sgd:'228',session_date:null,session_time:null,proof_data:proof}]);
+    expect(notifications).toHaveLength(1);
+    expect(notifications[0]).toMatchObject({packageId:'renewal',sessionDate:null,sessionTime:null,proof:{data:proof}});
+  });
   it('accepts public intake before a workflow-wide authenticated API handler', async () => {
     const host = express();
     mountPublicSignupApi(host, () => repository);

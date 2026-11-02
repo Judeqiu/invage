@@ -11,6 +11,7 @@ import {
 
 const eyebrow = "text-[10px] font-bold uppercase text-primary";
 const field = "mt-1.5 h-10 w-full border border-input bg-background px-3 text-sm outline-none placeholder:text-muted-foreground focus:ring-2 focus:ring-ring aria-[invalid=true]:border-destructive";
+const RENEWAL_ACCESS_NOTE = "Your renewal is a subscription to the Velovest system. No onboarding session is required. We’ll email the outcome after payment review.";
 const ACCESS_NOTE = "After your signup is approved, we’ll email your login details. Your onboarding session will help you get started.";
 
 /* ---------- Shared pieces ---------- */
@@ -34,11 +35,13 @@ function PackageCard({ id, selected, children }: { id: PackageId; selected?: boo
 
 const STEPS = [["Choose package", "Package"], ["Request onboarding", "Session"], ["Pay via PayNow", "PayNow"], ["Payment verification", "Verify"]] as const;
 
-function Stepper({ current }: { current: number }) {
-  return <ol className="grid grid-cols-4 gap-1.5" aria-label="Sign-up progress">
-    {STEPS.map(([label, short], index) => <li key={label} aria-current={index === current ? "step" : undefined} className={cn("border-t-2 pt-2", index <= current ? "border-primary" : "border-border")}>
-      <span className={cn("flex items-center gap-1 text-[10px] font-bold uppercase", index < current ? "text-chart-2" : index === current ? "text-primary" : "text-muted-foreground")}>{(index < current) && <Check className="size-3"/>}Step {index + 1}</span>
-      <span className={cn("mt-0.5 block text-xs font-semibold", index <= current ? "text-foreground" : "text-muted-foreground")}><span className="hidden sm:inline">{label}</span><span className="sm:hidden">{short}</span></span>
+function Stepper({ current, renewal = false }: { current: number; renewal?: boolean }) {
+  const steps = renewal ? STEPS.filter((_, index) => index !== 1) : STEPS;
+  const active = renewal && current > 0 ? current - 1 : current;
+  return <ol className={cn("grid gap-1.5", renewal ? "grid-cols-3" : "grid-cols-4")} aria-label="Sign-up progress">
+    {steps.map(([label, short], index) => <li key={label} aria-current={index === active ? "step" : undefined} className={cn("border-t-2 pt-2", index <= active ? "border-primary" : "border-border")}>
+      <span className={cn("flex items-center gap-1 text-[10px] font-bold uppercase", index < active ? "text-chart-2" : index === active ? "text-primary" : "text-muted-foreground")}>{(index < active) && <Check className="size-3"/>}Step {index + 1}</span>
+      <span className={cn("mt-0.5 block text-xs font-semibold", index <= active ? "text-foreground" : "text-muted-foreground")}><span className="hidden sm:inline">{label}</span><span className="sm:hidden">{short}</span></span>
     </li>)}
   </ol>;
 }
@@ -49,9 +52,9 @@ function OrderSummary({ pkg, date, time }: { pkg: PackageId; date?: string | und
     <p className={eyebrow}>Order summary</p>
     <p className="mt-2 font-semibold">{info.name} <span className="font-normal text-muted-foreground">· {info.tier}</span></p>
     <ul className="mt-3 space-y-1.5 border-t border-border pt-3 text-xs">{packageItems(pkg).map(item => <li key={item.id} className="flex gap-2"><Check className="mt-0.5 size-3.5 shrink-0 text-chart-2"/><span className="text-muted-foreground">{item.name}</span></li>)}</ul>
-    <div className="mt-3 flex items-start gap-2 border-t border-border pt-3 text-xs"><CalendarDays className="mt-0.5 size-4 shrink-0 text-primary"/><div><p className="font-semibold">Requested onboarding</p><p className="text-muted-foreground">{date && time ? <>{formatSessionDate(date)}<br/>{formatSlot(time)}</> : "Not selected yet"}</p></div></div>
+    {pkg !== "renewal" && <div className="mt-3 flex items-start gap-2 border-t border-border pt-3 text-xs"><CalendarDays className="mt-0.5 size-4 shrink-0 text-primary"/><div><p className="font-semibold">Requested onboarding</p><p className="text-muted-foreground">{date && time ? <>{formatSessionDate(date)}<br/>{formatSlot(time)}</> : "Not selected yet"}</p></div></div>}
     <div className="mt-3 flex items-baseline justify-between border-t border-border pt-3"><span className="text-sm font-semibold">Total via PayNow</span><span className="text-xl font-semibold tabular-nums">{formatSGD(packageTotal(pkg), true)} <span className="text-[10px] font-normal text-muted-foreground">SGD</span></span></div>
-    <p className="mt-3 border-l-2 border-primary pl-2 text-[11px] leading-5 text-muted-foreground">{ACCESS_NOTE}</p>
+    <p className="mt-3 border-l-2 border-primary pl-2 text-[11px] leading-5 text-muted-foreground">{pkg === "renewal" ? RENEWAL_ACCESS_NOTE : ACCESS_NOTE}</p>
   </aside>;
 }
 
@@ -72,9 +75,9 @@ export function CompactPricingTeaser() {
 
 const howItWorks = [
   [Check, "Choose a package", "Pick the path that matches your experience."],
-  [CalendarDays, "Request onboarding", "Choose a preferred 60-minute session in Singapore time."],
+  [CalendarDays, "Request onboarding", "Guided packages include a preferred 60-minute session. System renewal needs no booking."],
   [QrCode, "Pay via PayNow", "Scan the QR code, then upload your proof of payment."],
-  [ShieldCheck, "Get confirmed", "Appointment confirmed by email once payment is verified."],
+  [ShieldCheck, "Get confirmed", "Receive the outcome by email once payment is verified."],
 ] as const;
 
 export function CompactPricingPage() {
@@ -83,7 +86,7 @@ export function CompactPricingPage() {
     <section className="border-b border-border px-4 py-8 sm:px-6 sm:py-10 lg:px-8"><div className="mx-auto max-w-7xl text-center">
       <p className={eyebrow}>Velovest Academy · Pricing</p>
       <h1 className="mx-auto mt-3 max-w-4xl text-balance text-3xl font-semibold leading-[1.08] sm:text-5xl">Structured packages. Clear, upfront pricing.</h1>
-      <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-muted-foreground sm:text-base sm:leading-7">Choose the path that matches where you are. Every package includes Velovest Dashboard access, set up with you during your onboarding session.</p>
+      <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-muted-foreground sm:text-base sm:leading-7">Choose the path that matches where you are. Every package includes Velovest Dashboard access. Guided packages include onboarding; yearly renewal is system access only.</p>
     </div></section>
 
     <section className="bg-elevated px-4 py-8 sm:px-6 sm:py-10 lg:px-8"><div className="mx-auto max-w-7xl">
@@ -140,7 +143,7 @@ function Field({ label, error, children, optional }: { label: string; error?: st
 
 export function CompactCheckout({ initialPackage }: { initialPackage?: PackageId | undefined }) {
   const navigate = useNavigate();
-  const [step, setStep] = useState(initialPackage ? 1 : 0);
+  const [step, setStep] = useState(initialPackage === "renewal" ? 2 : initialPackage ? 1 : 0);
   const [pkg, setPkg] = useState<PackageId | undefined>(initialPackage);
   const [dates, setDates] = useState<string[]>([]);
   const [date, setDate] = useState<string>();
@@ -163,13 +166,13 @@ export function CompactCheckout({ initialPackage }: { initialPackage?: PackageId
 
   const clearError = (key: keyof Errors) => setErrors(prev => { if (!prev[key]) return prev; const next = { ...prev }; delete next[key]; return next; });
   const set = <K extends keyof Details>(key: K, value: Details[K]) => { setDetails(prev => ({ ...prev, [key]: value })); clearError(key); };
-  const choose = (id: PackageId) => { setPkg(id); setStep(1); };
+  const choose = (id: PackageId) => { setPkg(id); setDate(undefined); setTime(undefined); setStep(id === "renewal" ? 2 : 1); };
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     const found = validate(details, proof);
     setErrors(found);
-    if (Object.keys(found).length > 0 || !pkg || !date || !time || !reference) return;
+    if (Object.keys(found).length > 0 || !pkg || (pkg !== "renewal" && (!date || !time)) || !reference) return;
     if (!proof) return;
     setSubmissionError(undefined);
     setProcessing(true);
@@ -183,7 +186,7 @@ export function CompactCheckout({ initialPackage }: { initialPackage?: PackageId
       const response = await fetch("/api/signup/submissions", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          reference, packageId: pkg, sessionDate: date, sessionTime: time,
+          reference, packageId: pkg, ...(pkg === "renewal" ? {} : { sessionDate: date, sessionTime: time }),
           name: details.name, email: details.email, phone: details.phone,
           bankTransactionId: details.txn, consentAccepted: details.agree,
           proofFilename: proof.name, proofContentType: proof.type, proofBase64,
@@ -191,7 +194,7 @@ export function CompactCheckout({ initialPackage }: { initialPackage?: PackageId
       });
       const saved = await response.json() as { reference?: string; error?: string };
       if (!response.ok || !saved.reference) throw new Error(saved.error ?? "Your submission could not be saved. Please retry.");
-      await navigate({ to: "/confirmation", search: { ref: saved.reference, pkg, date, time, name: details.name.trim(), email: details.email.trim() } });
+      await navigate({ to: "/confirmation", search: { ref: saved.reference, pkg, ...(pkg !== "renewal" && date && time ? { date, time } : {}), name: details.name.trim(), email: details.email.trim() } });
     } catch (error) {
       setSubmissionError(error instanceof Error ? error.message : "Your submission could not be saved. Please retry.");
     } finally {
@@ -204,7 +207,7 @@ export function CompactCheckout({ initialPackage }: { initialPackage?: PackageId
   return <MarketingLayout>
     <section className="px-4 py-6 sm:px-6 sm:py-8 lg:px-8"><div className="mx-auto max-w-6xl">
       <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between"><div><p className={eyebrow}>Sign up · Velovest Academy</p><h1 className="mt-2 text-2xl font-semibold leading-tight sm:text-4xl">{titles[step]}</h1></div><p className="text-xs text-muted-foreground">Already have an account? <Link to="/login" className="font-semibold text-primary">Login</Link></p></div>
-      <div className="mt-4"><Stepper current={step}/></div>
+      <div className="mt-4"><Stepper current={step} renewal={pkg === "renewal"}/></div>
 
       {step === 0 && <div className="mt-6 grid gap-3 lg:grid-cols-3">{PACKAGE_IDS.map(id => <PackageCard key={id} id={id} selected={pkg === id}><Button className="w-full" variant={packages[id].featured ? "default" : "outline"} onClick={() => choose(id)}>Choose {packages[id].name} <ArrowRight/></Button></PackageCard>)}</div>}
 
@@ -260,11 +263,11 @@ export function CompactCheckout({ initialPackage }: { initialPackage?: PackageId
             {errors.proof && <p className="mt-1 text-xs text-destructive">{errors.proof}</p>}
           </fieldset>
 
-          <label className="mt-4 flex items-start gap-2.5 text-xs leading-5 text-muted-foreground"><input type="checkbox" checked={details.agree} onChange={e => set("agree", e.target.checked)} className="mt-0.5 size-4 shrink-0 accent-primary" aria-invalid={!!errors.agree}/><span>I have read the <Link to="/risk-disclosure" className="font-semibold text-primary">Risk Disclosure</Link> and understand that my appointment is confirmed only after payment is verified, and that login details will be emailed after approval, ahead of my onboarding session.</span></label>
+          <label className="mt-4 flex items-start gap-2.5 text-xs leading-5 text-muted-foreground"><input type="checkbox" checked={details.agree} onChange={e => set("agree", e.target.checked)} className="mt-0.5 size-4 shrink-0 accent-primary" aria-invalid={!!errors.agree}/><span>I have read the <Link to="/risk-disclosure" className="font-semibold text-primary">Risk Disclosure</Link> and understand that {pkg === "renewal" ? "my system subscription renewal is reviewed after payment, with no onboarding session required." : "my appointment is confirmed only after payment is verified, and that login details will be emailed after approval, ahead of my onboarding session."}</span></label>
           {errors.agree && <p className="mt-1 text-xs text-destructive">{errors.agree}</p>}
-          <p className="mt-3 border border-warning/40 bg-warning/10 px-3 py-2 text-xs">Submitted payment proofs are stored privately for administrator review.</p>
+          <p className="mt-3 border border-warning/40 bg-warning/10 px-3 py-2 text-xs">Submitted payment proofs are stored privately and attached to the signup notification sent to our configured reviewer.</p>
           {submissionError && <p role="alert" className="mt-4 text-sm text-destructive">{submissionError}</p>}
-          <div className="mt-4 flex flex-col-reverse gap-2 border-t border-border pt-4 sm:flex-row sm:justify-between"><Button type="button" variant="outline" onClick={() => setStep(1)} disabled={processing}><ArrowLeft/>Change booking</Button><Button type="submit" disabled={processing}>{processing ? <><Loader2 className="animate-spin"/>Submitting…</> : <><Upload/>Submit proof of payment</>}</Button></div>
+          <div className="mt-4 flex flex-col-reverse gap-2 border-t border-border pt-4 sm:flex-row sm:justify-between"><Button type="button" variant="outline" onClick={() => setStep(pkg === "renewal" ? 0 : 1)} disabled={processing}><ArrowLeft/>{pkg === "renewal" ? "Change package" : "Change booking"}</Button><Button type="submit" disabled={processing}>{processing ? <><Loader2 className="animate-spin"/>Submitting…</> : <><Upload/>Submit proof of payment</>}</Button></div>
         </form>}
 
         <OrderSummary pkg={pkg} date={date} time={time}/>
@@ -275,11 +278,14 @@ export function CompactCheckout({ initialPackage }: { initialPackage?: PackageId
 
 /* ---------- Proof-of-payment acknowledgement ---------- */
 
-export type Booking = { ref: string; pkg: PackageId; date: string; time: SlotTime; name: string; email: string };
+export type Booking = { ref: string; name: string; email: string } & (
+  { pkg: "renewal"; date?: undefined; time?: undefined } |
+  { pkg: Exclude<PackageId, "renewal">; date: string; time: SlotTime }
+);
 
 export function CompactConfirmation({ booking }: { booking: Booking | null }) {
   if (!booking) return <MarketingLayout><section className="px-4 py-12 sm:px-6 lg:px-8"><div className="mx-auto max-w-xl border border-border bg-card p-6 text-center">
-    <h1 className="text-2xl font-semibold">We couldn’t find that booking.</h1><p className="mt-2 text-sm text-muted-foreground">Start from the pricing page to choose a package and book your onboarding session.</p>
+    <h1 className="text-2xl font-semibold">We couldn’t find that booking.</h1><p className="mt-2 text-sm text-muted-foreground">Start from the pricing page to choose a package or system subscription renewal.</p>
     <Button asChild className="mt-4"><Link to="/pricing">View pricing <ArrowRight/></Link></Button>
   </div></section></MarketingLayout>;
 
@@ -293,24 +299,25 @@ export function CompactConfirmation({ booking }: { booking: Booking | null }) {
     ["Amount", <span className="font-semibold">{total} SGD · PayNow</span>],
     ["Proof of payment", <span className="inline-flex items-center gap-1 text-positive"><CheckCircle2 className="size-3.5"/>Received</span>],
     ["Payment status", <span className="inline-flex items-center gap-1 text-warning"><Hourglass className="size-3.5"/>Pending verification</span>],
-    ["Requested session", <>{formatSessionDate(date)}<br/>{formatSlot(time)}</>],
+    ...(pkg === "renewal" ? [["Subscription", "Velovest system access · 12 months"] as [string, ReactNode]] :
+      [["Requested session", <>{formatSessionDate(date)}<br/>{formatSlot(time)}</>] as [string, ReactNode]]),
     ["Submitted by", <>{name}<br/><span className="text-muted-foreground">{email}</span></>],
   ];
   const timeline: Array<[string, string, "done" | "now" | "next"]> = [
     ["Proof of payment submitted", "Received just now.", "done"],
     ["Payment verification", VERIFICATION_NOTE, "now"],
-    ["Approval & access email", `Sent to ${email} after an administrator verifies payment and confirms your session.`, "next"],
-    ["Your onboarding session", `${formatSessionDate(date)}, ${formatSlot(time)}. ${ACCESS_NOTE}`, "next"],
+    ["Approval & access email", pkg === "renewal" ? `Sent to ${email} after an administrator verifies payment. No session booking is required.` : `Sent to ${email} after an administrator verifies payment and confirms your session.`, "next"],
+    ...(pkg === "renewal" ? [] : [["Your onboarding session", `${formatSessionDate(date)}, ${formatSlot(time)}. ${ACCESS_NOTE}`, "next"] as [string, string, "next"]]),
   ];
 
   return <MarketingLayout>
     <section className="px-4 py-6 sm:px-6 sm:py-8 lg:px-8"><div className="mx-auto max-w-6xl">
-      <Stepper current={3}/>
+      <Stepper current={3} renewal={pkg === "renewal"}/>
       <div className="mt-6 flex flex-col gap-4 sm:flex-row sm:items-start">
         <span className="grid size-12 shrink-0 place-items-center bg-positive/15 text-positive"><FileCheck2 className="size-6"/></span>
         <div><p className={eyebrow}>Signup received</p><h1 className="mt-1 text-balance text-2xl font-semibold leading-tight sm:text-4xl">Thank you. We’ve received your proof of payment.</h1><p className="mt-2 text-sm leading-6 text-muted-foreground">Thanks, {firstName}. Your signup and payment evidence have been saved for review. We’ll send the outcome to <span className="font-semibold text-foreground">{email}</span>.</p></div>
       </div>
-      <div className="mt-4 flex gap-3 border-l-4 border-warning bg-secondary p-4"><Hourglass className="mt-0.5 size-5 shrink-0 text-warning"/><div><p className="font-semibold">Your payment is being verified.</p><p className="mt-1 text-sm leading-6 text-muted-foreground">You’ll receive an appointment confirmation email once your payment is verified — {VERIFICATION_NOTE.charAt(0).toLowerCase() + VERIFICATION_NOTE.slice(1)} {ACCESS_NOTE}</p></div></div>
+      <div className="mt-4 flex gap-3 border-l-4 border-warning bg-secondary p-4"><Hourglass className="mt-0.5 size-5 shrink-0 text-warning"/><div><p className="font-semibold">Your payment is being verified.</p><p className="mt-1 text-sm leading-6 text-muted-foreground">{pkg === "renewal" ? "You’ll receive the renewal outcome by email after payment review." : "You’ll receive an appointment confirmation email once your payment is verified."} {VERIFICATION_NOTE} {pkg === "renewal" ? RENEWAL_ACCESS_NOTE : ACCESS_NOTE}</p></div></div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-2 lg:items-start">
         <div className="grid gap-4">
@@ -334,16 +341,16 @@ export function CompactConfirmation({ booking }: { booking: Booking | null }) {
             <div className="mt-3 space-y-3 border-t border-border pt-3 text-sm leading-6">
               <p>Hi {firstName},</p>
               <p>After review, we’ll email <strong>{email}</strong> with the outcome for your <strong>{info.name}</strong> signup.</p>
-              <p>Your approval email will include your confirmed session, sign-in link and account details. New customers receive a temporary password with a recommendation to change it after signing in. Existing customers keep their current password.</p>
-              <p className="border-l-2 border-primary bg-card px-3 py-2">Requested onboarding session<br/><strong>{formatSessionDate(date)}</strong><br/>{formatSlot(time)}</p>
-              <p>{ACCESS_NOTE}</p>
+              <p>{pkg === "renewal" ? "Your approval email will include your sign-in link and account details, with no onboarding appointment." : "Your approval email will include your confirmed session, sign-in link and account details."} New customers receive a temporary password with a recommendation to change it after signing in. Existing customers keep their current password.</p>
+              {pkg !== "renewal" && <p className="border-l-2 border-primary bg-card px-3 py-2">Requested onboarding session<br/><strong>{formatSessionDate(date)}</strong><br/>{formatSlot(time)}</p>}
+              <p>{pkg === "renewal" ? RENEWAL_ACCESS_NOTE : ACCESS_NOTE}</p>
               <p className="text-muted-foreground">Reference: {ref}</p>
               <p>Thank you,<br/>The Velovest team</p>
             </div>
           </div>
         </article>
       </div>
-      <p className="mt-4 text-[10px] leading-4 text-muted-foreground">Your payment evidence is stored privately for administrator review. Submission does not confirm payment or your requested session. Velovest provides education and software tools only — not investment advice.</p>
+      <p className="mt-4 text-[10px] leading-4 text-muted-foreground">Your payment evidence is stored privately and attached to our reviewer notification. Submission does not confirm payment{pkg === "renewal" ? " or subscription renewal" : " or your requested session"}. Velovest provides education and software tools only — not investment advice.</p>
     </div></section>
   </MarketingLayout>;
 }
