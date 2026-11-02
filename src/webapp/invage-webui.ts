@@ -271,7 +271,7 @@ export function createInvageWebUi(): DomainWebUiExtension {
     ],
     ...(consultant ? {managementSections: [{
       id: 'signup-submissions', title: 'Signup submissions',
-      description: 'Search website submissions and download private payment proofs.',
+      description: 'Review payment evidence, approve signups and track access emails.',
       iframeSrc: '/domain-assets/invage/signup-submissions/index.html',
     }]} : {}),
     apiRouters: [

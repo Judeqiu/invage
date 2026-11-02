@@ -10,20 +10,45 @@
 </head>
 <body>
   <main>
-    <h1>Signup submissions</h1>
-    <p>Website submissions and requested sessions. Submission does not confirm a payment, reserve a slot or create an account.</p>
-    <form id="search-form">
-      <label for="search">Search submissions</label>
-      <div class="search-controls"><input id="search" type="search" placeholder="Reference, name, email, package, session or transaction ID"><button type="submit">Search</button><button id="refresh" type="button">Refresh</button></div>
+    <header class="page-heading"><div><p class="eyebrow">Management</p><h1>Signup submissions</h1><p>Review payment evidence, confirm onboarding and welcome each customer.</p></div><button id="refresh" type="button" class="secondary">Refresh</button></header>
+    <p id="mail-setup" class="notice" hidden>Email delivery is awaiting setup. You can review and approve signups; access emails stay queued until a sender is configured. Then open the approved signup and send its queued email.</p>
+    <form id="search-form" class="search-controls">
+      <label for="search">Search submissions<input id="search" type="search" placeholder="Reference, customer, email or bank transaction"></label>
+      <label for="status-filter">Show<select id="status-filter"><option value="submitted">Needs review</option><option value="awaiting-email">Approved · email outstanding</option><option value="approved">Approved</option><option value="all">All submissions</option></select></label>
+      <button type="submit">Search</button>
     </form>
     <p id="message" role="status" aria-live="polite">Loading submissions…</p>
     <div class="table-scroll" role="region" aria-label="Signup submissions table" tabindex="0">
-      <table>
-        <thead><tr><th>Submitted (SGT)</th><th>Reference</th><th>Name</th><th>Email</th><th>Phone</th><th>Package</th><th>Amount (SGD)</th><th>Requested session (SGT)</th><th>Bank transaction ID</th><th>Status</th><th>Payment proof</th></tr></thead>
-        <tbody id="rows"></tbody>
-      </table>
+      <table><thead><tr><th>Customer / reference</th><th>Package / amount</th><th>Onboarding (SGT)</th><th>Submitted (SGT)</th><th>Review / email</th><th></th></tr></thead><tbody id="rows"></tbody></table>
     </div>
   </main>
+  <dialog id="review" aria-labelledby="review-title">
+    <header class="review-heading"><div><p class="eyebrow" id="review-reference"></p><h2 id="review-title">Review signup</h2></div><button id="close-review" type="button" class="secondary">Close</button></header>
+    <p id="review-message" role="status" aria-live="polite"></p>
+    <div id="review-content" hidden>
+      <div class="review-grid">
+        <section class="proof-panel" aria-labelledby="proof-title"><div class="section-heading"><h3 id="proof-title">Payment evidence</h3><div><a id="open-proof" target="_blank" rel="noopener">Open original</a> <a id="download-proof" download>Download</a></div></div><p id="proof-name" class="muted"></p><div id="proof-preview" aria-live="polite"></div><div class="zoom-controls" id="zoom-controls" hidden><button type="button" id="zoom-in" class="secondary">Zoom in</button><button type="button" id="zoom-reset" class="secondary">Fit image</button></div><p class="muted">Compare the amount, recipient, date and bank transaction with your payment records. An uploaded screenshot alone does not verify a transfer.</p></section>
+        <div class="details-panel">
+          <section><h3>Customer &amp; package</h3><dl id="customer-details"></dl></section>
+          <section><h3>Review checks</h3><ul id="warnings" class="warnings"></ul><p id="account-plan"></p></section>
+          <form id="decision-form">
+            <fieldset id="approval-fields"><legend>Confirm onboarding · Singapore time</legend>
+              <div class="session-fields"><label for="session-date">Session date<input id="session-date" type="date" required></label><label for="session-time">Session time<select id="session-time"><option>10:00</option><option>11:00</option><option>14:00</option><option>15:00</option><option>16:00</option><option>17:00</option></select></label></div>
+              <label class="check"><input id="payment-verified" type="checkbox">I verified the payment against our payment records.</label>
+              <label class="check"><input id="session-confirmed" type="checkbox">I confirm this onboarding session with the customer.</label>
+              <label class="check" id="link-existing-wrap" hidden><input id="link-existing" type="checkbox"><span id="link-existing-copy"></span></label>
+              <label class="check" id="warnings-wrap" hidden><input id="warnings-ack" type="checkbox">I reviewed the duplicate and booking warnings and want to proceed.</label>
+            </fieldset>
+            <section id="email-section"><h3>Access email preview</h3><p id="email-to" class="muted"></p><p id="email-subject" class="email-subject"></p><pre id="email-preview"></pre><p id="email-caption" class="muted"></p></section>
+            <div id="approval-action"><button type="button" id="review-approval">Review approval</button><p class="muted">Nothing is approved until you confirm below.</p></div>
+            <section id="approval-confirm" class="confirmation" hidden><h3>Ready to approve?</h3><p id="confirm-summary"></p><button type="submit" id="approve">Approve &amp; send access email</button><button type="button" id="cancel-confirm" class="secondary">Back to review</button></section>
+          </form>
+          <section id="approved-state" hidden><h3>Approval &amp; email status</h3><dl id="approved-details"></dl><p id="email-problem" class="notice" hidden></p><label id="unknown-wrap" class="check" hidden><input type="checkbox" id="unknown-ack">I checked the mail provider. I understand retrying may send a duplicate email with the same access details.</label><button type="button" id="send-email">Send queued email</button></section>
+          <section><h3>Activity</h3><ol id="history" class="history"></ol></section>
+        </div>
+      </div>
+    </div>
+  </dialog>
   <script src="app.js" defer></script>
 </body>
 </html>

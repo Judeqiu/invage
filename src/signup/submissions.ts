@@ -35,12 +35,25 @@ export interface SubmissionSummary {
   proof_filename: string;
   status: string;
   created_at: Date;
+  approved_at: Date | null;
+  approved_by: string | null;
+  account_user_id: string | null;
+  account_kind: 'new' | 'existing' | null;
+  confirmed_session_date: string | null;
+  confirmed_session_time: string | null;
+  email_status: string;
+  email_attempted_at: Date | null;
+  email_accepted_at: Date | null;
+  email_message_id: string | null;
+  email_error: string | null;
 }
 
-const summaryColumns = `id, reference, package_id, package_name, amount_sgd::text,
+export const summaryColumns = `id, reference, package_id, package_name, amount_sgd::text,
   to_char(session_date, 'YYYY-MM-DD') AS session_date, session_time,
   customer_name, customer_email, customer_phone, bank_transaction_id,
-  proof_filename, status, created_at`;
+  proof_filename, status, created_at, approved_at, approved_by, account_user_id, account_kind,
+  to_char(confirmed_session_date, 'YYYY-MM-DD') AS confirmed_session_date,
+  confirmed_session_time, email_status, email_attempted_at, email_accepted_at, email_message_id, email_error`;
 
 export function validateSubmission(input: SubmissionInput) {
   if (!/^VV-[A-Z0-9]{6}$/.test(input.reference)) throw new SubmissionError('Invalid submission reference.');
@@ -66,7 +79,7 @@ export function validateSubmission(input: SubmissionInput) {
 }
 
 export class SubmissionRepository {
-  constructor(private readonly pool: pg.Pool) {}
+  constructor(readonly pool: pg.Pool) {}
 
   async save(raw: SubmissionInput): Promise<{ reference: string }> {
     const input = validateSubmission(raw);
@@ -104,8 +117,8 @@ export class SubmissionRepository {
   }
 
   async proof(id: string) {
-    const result = await this.pool.query<{ proof_filename: string; proof_data: Buffer }>(
-      'SELECT proof_filename, proof_data FROM velovest_signup.submissions WHERE id = $1::uuid', [id]);
+    const result = await this.pool.query<{ proof_filename: string; proof_content_type: string; proof_data: Buffer }>(
+      'SELECT proof_filename, proof_content_type, proof_data FROM velovest_signup.submissions WHERE id = $1::uuid', [id]);
     return result.rows[0];
   }
 }

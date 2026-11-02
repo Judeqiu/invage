@@ -6,12 +6,12 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
   PACKAGE_IDS, SLOT_TIMES, VERIFICATION_NOTE, bookableDates, createReference, dateParts, formatSessionDate, formatSlot, formatSGD,
-  isSlotTaken, packageItems, packageMinutes, packageTotal, packages, serviceItems, type PackageId, type SlotTime,
+  packageItems, packageMinutes, packageTotal, packages, serviceItems, type PackageId, type SlotTime,
 } from "@/lib/compact-checkout";
 
 const eyebrow = "text-[10px] font-bold uppercase text-primary";
 const field = "mt-1.5 h-10 w-full border border-input bg-background px-3 text-sm outline-none placeholder:text-muted-foreground focus:ring-2 focus:ring-ring aria-[invalid=true]:border-destructive";
-const ACCESS_NOTE = "Access to the Velovest system will be given during your onboarding session.";
+const ACCESS_NOTE = "After your signup is approved, we’ll email your login details. Your onboarding session will help you get started.";
 
 /* ---------- Shared pieces ---------- */
 
@@ -32,7 +32,7 @@ function PackageCard({ id, selected, children }: { id: PackageId; selected?: boo
   </article>;
 }
 
-const STEPS = [["Choose package", "Package"], ["Book onboarding", "Booking"], ["Pay via PayNow", "PayNow"], ["Payment verification", "Verify"]] as const;
+const STEPS = [["Choose package", "Package"], ["Request onboarding", "Session"], ["Pay via PayNow", "PayNow"], ["Payment verification", "Verify"]] as const;
 
 function Stepper({ current }: { current: number }) {
   return <ol className="grid grid-cols-4 gap-1.5" aria-label="Sign-up progress">
@@ -199,7 +199,7 @@ export function CompactCheckout({ initialPackage }: { initialPackage?: PackageId
     }
   };
 
-  const titles = ["Choose your package.", "Book your onboarding session.", "Pay via PayNow."];
+  const titles = ["Choose your package.", "Request your onboarding session.", "Pay via PayNow."];
 
   return <MarketingLayout>
     <section className="px-4 py-6 sm:px-6 sm:py-8 lg:px-8"><div className="mx-auto max-w-6xl">
@@ -216,11 +216,11 @@ export function CompactCheckout({ initialPackage }: { initialPackage?: PackageId
           </button>; })}</div>
 
           <h2 className="mt-5 flex items-center gap-2 text-base font-semibold"><Clock className="size-4 text-primary"/>Pick a time {date && <span className="text-sm font-normal text-muted-foreground">· {formatSessionDate(date)}</span>}</h2>
-          {date ? <div className="mt-3 grid grid-cols-2 gap-1.5 sm:grid-cols-3" role="group" aria-label="Available times">{SLOT_TIMES.map(t => { const taken = isSlotTaken(date, t); const active = t === time; return <button key={t} type="button" disabled={taken} aria-pressed={active} onClick={() => setTime(t)} className={cn("border px-2 py-2.5 text-left text-sm transition-colors disabled:cursor-not-allowed", active ? "border-primary bg-primary text-primary-foreground" : taken ? "border-border bg-muted text-muted-foreground line-through" : "border-border bg-elevated hover:border-primary/60")}>
-            <span className="block font-semibold">{formatSlot(t, false)}</span><span className={cn("block text-[10px]", active ? "text-primary-foreground" : "text-muted-foreground")}>{taken ? "Booked" : "60 min · available"}</span>
+          {date ? <div className="mt-3 grid grid-cols-2 gap-1.5 sm:grid-cols-3" role="group" aria-label="Available times">{SLOT_TIMES.map(t => { const active = t === time; return <button key={t} type="button" aria-pressed={active} onClick={() => setTime(t)} className={cn("border px-2 py-2.5 text-left text-sm transition-colors disabled:cursor-not-allowed", active ? "border-primary bg-primary text-primary-foreground" : "border-border bg-elevated hover:border-primary/60")}>
+            <span className="block font-semibold">{formatSlot(t, false)}</span><span className={cn("block text-[10px]", active ? "text-primary-foreground" : "text-muted-foreground")}>Requested · confirmed after review</span>
           </button>; })}</div> : <p className="mt-2 border border-dashed border-border p-4 text-sm text-muted-foreground">Select a date to see available times.</p>}
 
-          <p className="mt-4 text-xs leading-5 text-muted-foreground">Your selected slot is held while your payment is verified. {ACCESS_NOTE}</p>
+          <p className="mt-4 text-xs leading-5 text-muted-foreground">Your selected time is a request. Our team will confirm it when reviewing your signup. {ACCESS_NOTE}</p>
           <div className="mt-4 flex flex-col-reverse gap-2 border-t border-border pt-4 sm:flex-row sm:justify-between"><Button variant="outline" onClick={() => setStep(0)}><ArrowLeft/>Change package</Button><Button disabled={!date || !time} onClick={() => setStep(2)}>Continue to payment <ArrowRight/></Button></div>
         </div>}
 
@@ -299,8 +299,8 @@ export function CompactConfirmation({ booking }: { booking: Booking | null }) {
   const timeline: Array<[string, string, "done" | "now" | "next"]> = [
     ["Proof of payment submitted", "Received just now.", "done"],
     ["Payment verification", VERIFICATION_NOTE, "now"],
-    ["Appointment confirmation email", `Sent to ${email} once your payment is verified.`, "next"],
-    ["Onboarding session & system access", `${formatSessionDate(date)}, ${formatSlot(time)}. ${ACCESS_NOTE}`, "next"],
+    ["Approval & access email", `Sent to ${email} after an administrator verifies payment and confirms your session.`, "next"],
+    ["Your onboarding session", `${formatSessionDate(date)}, ${formatSlot(time)}. ${ACCESS_NOTE}`, "next"],
   ];
 
   return <MarketingLayout>
@@ -308,7 +308,7 @@ export function CompactConfirmation({ booking }: { booking: Booking | null }) {
       <Stepper current={3}/>
       <div className="mt-6 flex flex-col gap-4 sm:flex-row sm:items-start">
         <span className="grid size-12 shrink-0 place-items-center bg-positive/15 text-positive"><FileCheck2 className="size-6"/></span>
-        <div><p className={eyebrow}>Payment acknowledgement</p><h1 className="mt-1 text-balance text-2xl font-semibold leading-tight sm:text-4xl">Thank you. We’ve received your proof of payment.</h1><p className="mt-2 text-sm leading-6 text-muted-foreground">Thanks, {firstName}. An acknowledgement email has been sent to <span className="font-semibold text-foreground">{email}</span>.</p></div>
+        <div><p className={eyebrow}>Signup received</p><h1 className="mt-1 text-balance text-2xl font-semibold leading-tight sm:text-4xl">Thank you. We’ve received your proof of payment.</h1><p className="mt-2 text-sm leading-6 text-muted-foreground">Thanks, {firstName}. Your signup and payment evidence have been saved for review. We’ll send the outcome to <span className="font-semibold text-foreground">{email}</span>.</p></div>
       </div>
       <div className="mt-4 flex gap-3 border-l-4 border-warning bg-secondary p-4"><Hourglass className="mt-0.5 size-5 shrink-0 text-warning"/><div><p className="font-semibold">Your payment is being verified.</p><p className="mt-1 text-sm leading-6 text-muted-foreground">You’ll receive an appointment confirmation email once your payment is verified — {VERIFICATION_NOTE.charAt(0).toLowerCase() + VERIFICATION_NOTE.slice(1)} {ACCESS_NOTE}</p></div></div>
 
@@ -327,14 +327,14 @@ export function CompactConfirmation({ booking }: { booking: Booking | null }) {
           </article>
         </div>
 
-        <article className="border border-border bg-elevated" aria-label="Acknowledgement email preview">
-          <div className="flex items-center gap-2 border-b border-border px-4 py-3 text-xs"><Mail className="size-4 text-primary"/><span className="font-semibold">Acknowledgement email</span><span className="ml-auto truncate text-muted-foreground">Sent to {email}</span></div>
+        <article className="border border-border bg-elevated" aria-label="Approval email information">
+          <div className="flex items-center gap-2 border-b border-border px-4 py-3 text-xs"><Mail className="size-4 text-primary"/><span className="font-semibold">Your approval email</span><span className="ml-auto truncate text-muted-foreground">After review</span></div>
           <div className="p-4 sm:p-5">
-            <dl className="space-y-1 text-xs"><div className="flex gap-2"><dt className="w-14 text-muted-foreground">From</dt><dd>Velovest Academy</dd></div><div className="flex gap-2"><dt className="w-14 text-muted-foreground">Subject</dt><dd className="font-semibold">We’ve received your proof of payment ({ref})</dd></div></dl>
+            <dl className="space-y-1 text-xs"><div className="flex gap-2"><dt className="w-14 text-muted-foreground">From</dt><dd>Velovest Academy</dd></div><div className="flex gap-2"><dt className="w-14 text-muted-foreground">Subject</dt><dd className="font-semibold">Your Velovest signup is approved ({ref})</dd></div></dl>
             <div className="mt-3 space-y-3 border-t border-border pt-3 text-sm leading-6">
               <p>Hi {firstName},</p>
-              <p>Thank you for submitting your proof of payment of <strong>{total} SGD</strong> via PayNow for the <strong>{info.name}</strong> package.</p>
-              <p>Our team is now verifying your payment. <strong>You will receive an appointment confirmation email once your payment is verified — normally within 3 working hours.</strong></p>
+              <p>After review, we’ll email <strong>{email}</strong> with the outcome for your <strong>{info.name}</strong> signup.</p>
+              <p>Your approval email will include your confirmed session, sign-in link and account details. New customers receive a temporary password with a recommendation to change it after signing in. Existing customers keep their current password.</p>
               <p className="border-l-2 border-primary bg-card px-3 py-2">Requested onboarding session<br/><strong>{formatSessionDate(date)}</strong><br/>{formatSlot(time)}</p>
               <p>{ACCESS_NOTE}</p>
               <p className="text-muted-foreground">Reference: {ref}</p>
@@ -343,7 +343,7 @@ export function CompactConfirmation({ booking }: { booking: Booking | null }) {
           </div>
         </article>
       </div>
-      <p className="mt-4 text-[10px] leading-4 text-muted-foreground">Prototype preview: no payment was processed, no file was stored and no email was sent. Velovest provides education and software tools only — not investment advice.</p>
+      <p className="mt-4 text-[10px] leading-4 text-muted-foreground">Your payment evidence is stored privately for administrator review. Submission does not confirm payment or your requested session. Velovest provides education and software tools only — not investment advice.</p>
     </div></section>
   </MarketingLayout>;
 }

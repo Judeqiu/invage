@@ -70,13 +70,6 @@ export function bookableDates(now: Date, count = 10): string[] {
   return dates;
 }
 
-/** Deterministic "already booked" slots so the demo calendar looks realistic. */
-export function isSlotTaken(date: string, time: SlotTime) {
-  let hash = 0;
-  for (const char of `${date}${time}`) hash = (hash * 31 + char.charCodeAt(0)) % 9973;
-  return hash % 4 === 0;
-}
-
 const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 

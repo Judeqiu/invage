@@ -1,3 +1,8 @@
+> Historical prototype handoff. For the implemented signup review, account approval,
+> private proof previews and deferred transactional email setup, follow
+> [the current signup runbook](../docs/ops/velovest-signup-submissions.md).
+> The original capacity limits, demo availability and email promises below are not current requirements.
+
 # Velovest Academy website — developer & AI-agent handoff
 
 This folder is the complete source of the Velovest Academy marketing site and
