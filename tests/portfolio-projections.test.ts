@@ -167,3 +167,20 @@ it('retains valid contract quote evidence across source invalidation and a misse
   expect(entry.dashboard.model!.live.positions[0].option?.mark).toBe(200);
   expect((entry.dashboard.aggregatedViews!.live.merged as any).risk.wheel.rows[0].estimate.probability).toBeGreaterThan(0);
 });
+
+it('prepares historical lifecycle evidence without invalidating its saved input or changing daily checkpoints', async () => {
+  const { refresh } = fixture();
+  await refresh(state.user.id);
+  const prior = readPortfolioProjection(state)!;
+  const events: import('../src/brokers/option-events.js').OptionLifecycleEvent[] = [{id:'statement:test',broker_id:'ibkr',channel:'main',account_id:'A1',
+    underlying:'AAPL',right:'put',strike:'100',expiry:'2022-10-28',multiplier:'100',date:'2022-10-28',kind:'expiration',settlement:'unknown',
+    contracts:'1',currency:'USD',proceeds:'0',fees:'0',source:'broker_statement',source_ref:'a'.repeat(64),replaces_execution_ids:[]}];
+  const { prepareExecutionImportProjection } = await import('../src/state/prepare-execution-import.js');
+  const prepared = await prepareExecutionImportProjection(state, [], 'manual', undefined, events);
+  expect(prepared.optionHistory.events).toContainEqual(events[0]);
+  expect(prepared.dashboard.generatedAt).toBe(prior.dashboard.generatedAt);
+  expect(prepared.dashboard.model).toEqual(prior.dashboard.model);
+  expect(prepared.dailyAggregateHistory).toEqual(prior.dailyAggregateHistory);
+  expect(readPortfolioProjection(state)).toEqual(prior);
+  expect(state.option_events).toBeUndefined();
+});

@@ -52,7 +52,10 @@ export async function prepareExecutionImportProjection(state: InvestorState, mer
     tradeHistory:{...tradeHistory, aggregates:buildTradeProjections(tradeHistory.rows,true),
       gaps:[...optionHistory.gaps,...relationships.historyGaps]},
     brokers:buildBrokerProjections(projectedState,dashboard,openTrades.rows,tradeHistory.rows)};
-  attachDailyChanges(prepared, prior.dailyAggregateHistory ?? {});
+  // A historical lifecycle repair reuses the saved valuation date and must not
+  // manufacture a new daily close or rewrite retained daily checkpoints.
+  if (events !== undefined) attachDailyChanges({...prepared, calculatedAt:prior.calculatedAt}, prior.dailyAggregateHistory ?? {});
+  else attachDailyChanges(prepared, prior.dailyAggregateHistory ?? {});
   for (const [broker, projection] of Object.entries(prior.brokers)) {
     if (broker === brokerId) continue;
     if (!isDeepStrictEqual(projection.journal, prepared.brokers[broker]?.journal) ||
