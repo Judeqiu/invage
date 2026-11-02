@@ -87,14 +87,14 @@ try{
   assert.match(copied,/Temporary password: fixture-manual-share-password/);
   assert.match(copied,/Sign in: https:\/\/chat.velovest.lextok.com\/login/);
   assert.equal(sendCount,0);
-  await page.evaluate(()=>{navigator.clipboard.writeText=async()=>{throw new Error('Clipboard denied');};document.execCommand=()=>true;});
-  await page.click('#copy-access');await page.waitForFunction(()=>document.querySelector('#copy-message').innerText.includes('copied'));
+  await page.evaluate(()=>{navigator.clipboard.writeText=async()=>{throw new Error('Clipboard denied');};document.execCommand=()=>{window.fallbackCopies=(window.fallbackCopies||0)+1;return true;};});
+  await page.click('#copy-access');await page.waitForFunction(()=>window.fallbackCopies===1);
   assert.equal(await page.$$eval('#review textarea',els=>els.length),0);
 
   await page.setViewport({width:390,height:844});await page.screenshot({path:'/tmp/velovest-signup-review-mobile.png',fullPage:true});
   assert.equal(await page.$eval('#review',el=>el.scrollWidth<=el.clientWidth+1),true);
   await page.click('#close-review');
-  assert.equal(await page.$eval('#email-preview',el=>el.textContent),'');
+  await page.waitForFunction(()=>document.querySelector('#email-preview').textContent==='');
   configured=true;await page.select('#status-filter','approved');await page.click('#refresh');
   await page.waitForFunction(()=>document.querySelector('#mail-setup').hidden);
   await page.click('#rows button');await page.waitForSelector('#approved-state:not([hidden])');
@@ -112,4 +112,4 @@ try{
   assert.equal(await page.$eval('#pdf-next',el=>el.disabled),true);
   await page.click('#pdf-previous');await page.waitForFunction(()=>document.querySelector('#pdf-page').innerText==='Page 1 of 2');
   console.log('PASS: signup Management browser flow — private image and two-page PDF rendering, XSS-safe details, warning and approval confirmations, duplicate click prevention, queued/setup state, email retry, existing-account preview, responsive layout.');
-}finally{releaseApproval();await browser.close();await new Promise(resolve=>server.close(resolve));}
+}catch(error){process.exitCode=1;throw error;}finally{releaseApproval();await browser.close();await new Promise(resolve=>server.close(resolve));}
