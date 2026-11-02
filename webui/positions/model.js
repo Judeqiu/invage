@@ -1,6 +1,6 @@
 /* Read-only projection of the same valued portfolio used by the dashboard. */
 (() => {
-  const equityColumns = ['Ticker', 'Shares', 'Avg cost', 'Total cost', 'Last', 'Market value', 'Unrealized P&L', 'Return', '% of NAV', 'Covered', 'Broker'];
+  const equityColumns = ['Ticker', 'Shares', 'Avg cost', 'Total cost', 'Last', 'Market value', 'Unrealized P&L', 'Return', '% of NAV', 'Shares held / call shares', 'Broker'];
   const obligationColumns = ['Ticker', 'Last', 'Shares held', 'Put contracts', 'Cash if assigned', 'Call contracts', 'Shares if called', 'Premium', 'Open P&L', 'Nearest expiry', 'High risk'];
   const finite = value => typeof value === 'number' && Number.isFinite(value);
   const sum = values => values.every(finite) ? values.reduce((a, b) => a + b, 0) : null;
@@ -36,6 +36,7 @@
       return map;
     };
     const shortGroups = bySymbol(shorts);
+    const callDelivery = calls => sum(calls.map(p => !fresh(p) ? null : p.option.settlement === 'cash' ? 0 : p.option.settlement === 'physical' ? p.contingentShareObligation : null));
     const channelNav = all ? live : live?.byChannel?.find(row => row.channel === channel);
     const nav = channelNav?.navComplete !== false && finite(channelNav?.totalValue) && channelNav.totalValue > 0 ? channelNav.totalValue : null;
     const stockRows = (list, isFund = false) => [...bySymbol(list)].map(([ticker, lines]) => {
@@ -50,7 +51,7 @@
       if (!isFund) for (const ch of new Set(lines.map(p => p.channel))) {
         const owned = sum(lines.filter(p => p.channel === ch).map(p => p.units));
         const channelCalls = calls.filter(p => p.channel === ch);
-        const delivery = sum(channelCalls.map(p => !fresh(p) ? null : p.option.settlement === 'cash' ? 0 : p.option.settlement === 'physical' ? p.contingentShareObligation : null));
+        const delivery = callDelivery(channelCalls);
         if (delivery == null) { covered = null; break; }
         covered += Math.min(owned, delivery);
       }
@@ -58,7 +59,7 @@
         cost, last: value != null && shares > 0 ? value / shares : null, value, pnl,
         returnPct: pnl != null && cost > 0 ? pnl / cost * 100 : null,
         navPct: nav != null && value != null ? value / nav * 100 : null,
-        covered, idle: covered != null ? shares - covered : null,
+        covered, callShares: isFund ? null : callDelivery(calls), idle: covered != null ? shares - covered : null,
         brokers: [...new Set(lines.map(p => p.channel))].sort(), estimated: lines.some(p => p.pricingMode === 'cost') };
     }).sort((a, b) => a.ticker.localeCompare(b.ticker));
     const stocks = stockRows(equity), fundRows = stockRows(funds, true);
@@ -81,7 +82,7 @@
         shares: sum(equity.filter(p => symbol(p.ticker) === ticker).map(p => p.units)),
         putContracts: sum(puts.map(p => p.units)), callContracts: sum(calls.map(p => p.units)),
         cashIfAssigned: sum(puts.map(p => fresh(p) && comparable(p) && p.option.settlement === 'physical' ? p.contingentCashObligation : null)),
-        sharesIfCalled: sum(calls.map(p => !fresh(p) ? null : p.option.settlement === 'cash' ? 0 : p.option.settlement === 'physical' ? p.contingentShareObligation : null)),
+        sharesIfCalled: callDelivery(calls),
         premium: sum(premiums), premiumSubtotal: premiums.filter(finite).reduce((a, b) => a + b, 0),
         missingPremium: premiums.filter(p => p == null).length, knownPremium: premiums.filter(finite).length,
         pnl: sum(lines.map(p => valued(p) && fresh(p)
@@ -97,7 +98,7 @@
     return { ccy, channels, stocks, funds: fundRows, obligations,
       dates: Object.entries(payload?.brokerAsOf || {}).filter(([ch]) => all || ch === channel),
       cash: channelNav?.navComplete !== false && (all || channelNav) && finite(channelNav?.cashAmount) ? channelNav.cashAmount : null,
-      totals: { shares: totalShares, cost: totalCost, value: totalValue, pnl: totalPnl,
+      totals: { shares: totalShares, callShares: sum(stocks.map(p => p.callShares)), cost: totalCost, value: totalValue, pnl: totalPnl,
         returnPct: totalPnl != null && totalCost > 0 ? totalPnl / totalCost * 100 : null,
         coveragePct: totalCovered != null && totalShares > 0 ? totalCovered / totalShares * 100 : null,
         cashIfAssigned: sum(obligations.map(p => p.cashIfAssigned)), premium: sum(obligations.map(p => p.premium)) },

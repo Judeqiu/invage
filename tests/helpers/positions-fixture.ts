@@ -2,7 +2,7 @@ export function positionsFixture(): any {
   const stock = (channel: string, units: number, avg: number) => ({ ticker:'AAPL@' + channel, channel, units, instrument:'equity', currency:'USD', avgCost:avg, price:100, cost:units * avg, value:units * 100, pl:units * (100 - avg), pricingMode:'live' });
   const option = (right: string, strike: number, units: number, mark: number) => ({ ticker:'AAPL-' + right, channel:'ibkr', units, instrument:'option', currency:'USD', pricingMode:'option',
     option:{ underlying:'AAPL', right, side:'short', strike, expiry:'2026-11-20', multiplier:100, settlement:'physical', mark },
-    probabilityQuote:{ spot:100, mark, spotAsOf:'2026-10-20T20:00:00Z' },
+    probabilityQuote:{ spot:100, mark, spotAsOf:'2026-10-20T20:00:00Z', optionAsOf:'2026-10-20T20:00:00Z' },
     avgCost:500, price:mark, cost:-500 * units, value:-mark * units, pl:(500 - mark) * units,
     contingentCashObligation:right === 'put' ? strike * 100 * units : 0,
     contingentShareObligation:right === 'call' ? units * 100 : 0 });
