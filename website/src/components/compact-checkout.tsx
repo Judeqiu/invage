@@ -260,7 +260,7 @@ export function CompactCheckout({ initialPackage }: { initialPackage?: PackageId
             {errors.proof && <p className="mt-1 text-xs text-destructive">{errors.proof}</p>}
           </fieldset>
 
-          <label className="mt-4 flex items-start gap-2.5 text-xs leading-5 text-muted-foreground"><input type="checkbox" checked={details.agree} onChange={e => set("agree", e.target.checked)} className="mt-0.5 size-4 shrink-0 accent-primary" aria-invalid={!!errors.agree}/><span>I have read the <Link to="/risk-disclosure" className="font-semibold text-primary">Risk Disclosure</Link> and understand that my appointment is confirmed only after payment is verified, and that access to the Velovest system is given during my onboarding session.</span></label>
+          <label className="mt-4 flex items-start gap-2.5 text-xs leading-5 text-muted-foreground"><input type="checkbox" checked={details.agree} onChange={e => set("agree", e.target.checked)} className="mt-0.5 size-4 shrink-0 accent-primary" aria-invalid={!!errors.agree}/><span>I have read the <Link to="/risk-disclosure" className="font-semibold text-primary">Risk Disclosure</Link> and understand that my appointment is confirmed only after payment is verified, and that login details will be emailed after approval, ahead of my onboarding session.</span></label>
           {errors.agree && <p className="mt-1 text-xs text-destructive">{errors.agree}</p>}
           <p className="mt-3 border border-warning/40 bg-warning/10 px-3 py-2 text-xs">Submitted payment proofs are stored privately for administrator review.</p>
           {submissionError && <p role="alert" className="mt-4 text-sm text-destructive">{submissionError}</p>}

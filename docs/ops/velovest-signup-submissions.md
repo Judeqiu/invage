@@ -14,8 +14,10 @@ assumed appointment-capacity rules are used.
 Management → Signup submissions is consultant-only. Search has no result cutoff;
 filters distinguish needs-review, approved and outstanding access email records.
 The review dialog shows contact/package/payment details alongside the original
-private evidence. Known raster images support zoom; PDFs use a sandboxed preview
-with open/download alternatives. Signatures determine preview types, not the
+private evidence. Known raster images support zoom; PDFs render to canvas with the pinned framework PDF.js dependency, with page
+navigation and open/download alternatives. PDF scripts and XFA are not executed;
+original PDFs are sandboxed when opened directly. Every page remains accessible,
+without a page-count cutoff. Signatures determine preview types, not the
 uploaded MIME label. Unsupported files remain downloadable attachments. All
 proof and review endpoints require administrator authentication and no-store.
 Approval and email mutations also require same-origin JSON requests.
@@ -118,7 +120,8 @@ Verification:
 
 - `npm run build` and `cd website && npm test && npm run build`.
 - `node node_modules/vitest/vitest.mjs run tests/signup-submissions.test.ts tests/signup-review.test.ts`.
-- `node --import tsx tests/signup-review-ui.mjs` for the mocked Management browser flow.
+- `node --import tsx tests/signup-review-ui.mjs` for the mocked Management browser flow, including multi-page PDF canvas rendering.
+- `node --import tsx tests/signup-checkout-ui.mjs` after the website build for the customer journey with intercepted test intake (no production requests).
 
 Database tests require `UTARUS_TEST_DATABASE_URL` naming the dedicated
 `utarus_test_admin`. Their helper creates and drops disposable databases. Never

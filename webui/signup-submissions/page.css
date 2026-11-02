@@ -74,3 +74,6 @@ h1, h2 { font-family: inherit; font-weight: 650; }
 dialog { margin: auto; }
 .proof-panel { position: sticky; top: 108px; }
 @media(max-width:760px) { .proof-panel { position: static; } }
+
+#pdf-controls { align-items: center; justify-content: space-between; flex-wrap: wrap; }
+#pdf-page { font-size: 12px; color: #526b80; }

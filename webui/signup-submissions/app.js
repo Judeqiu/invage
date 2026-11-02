@@ -3,7 +3,7 @@
   const base = '/api/domain/invage/academy-signup/admin/submissions';
   const $ = id => document.getElementById(id);
   const sgt = new Intl.DateTimeFormat('en-SG', { timeZone: 'Asia/Singapore', dateStyle: 'medium', timeStyle: 'short' });
-  let submissions = [], mailConfigured = false, detail = null, generation = 0, reviewGeneration = 0, busy = false, proofUrl;
+  let submissions = [], mailConfigured = false, detail = null, generation = 0, reviewGeneration = 0, busy = false, proofUrl, pdfTask, pdfDocument, pdfPage = 1, pdfGeneration = 0;
   const dateTime = value => value ? sgt.format(new Date(value)) : '—';
   const node = (tag, text, className) => { const el = document.createElement(tag); if (text !== undefined) el.textContent = text; if (className) el.className = className; return el; };
   const errorText = error => error instanceof Error ? error.message : 'Something went wrong. Refresh and try again.';
@@ -52,21 +52,58 @@
   function setBusy(value) {
     busy = value;
     for (const control of $('review').querySelectorAll('button, input, select')) control.disabled = value;
+    if (!value && pdfDocument) { $('pdf-previous').disabled = pdfPage <= 1; $('pdf-next').disabled = pdfPage >= pdfDocument.numPages; }
     if (!value && detail?.submission.status === 'approved') $('send-email').disabled = !detail.mailConfigured || detail.submission.email_status === 'sent';
     $('review').setAttribute('aria-busy', String(value));
   }
-  function releaseProof() { if (proofUrl) { URL.revokeObjectURL(proofUrl); proofUrl = undefined; } }
+  function releaseProof() {
+    if (proofUrl) { URL.revokeObjectURL(proofUrl); proofUrl = undefined; }
+    ++pdfGeneration;
+    if (pdfTask) { void pdfTask.destroy().catch(() => {}); pdfTask = undefined; }
+    pdfDocument = undefined;
+  }
+  async function renderPdfPage(pageNumber) {
+    const document = pdfDocument;
+    if (!document) return;
+    const current = ++pdfGeneration;
+    $('pdf-previous').disabled = true; $('pdf-next').disabled = true;
+    $('pdf-page').textContent = 'Loading page ' + pageNumber + '…';
+    try {
+      const page = await document.getPage(pageNumber);
+      const natural = page.getViewport({scale:1});
+      const width = Math.max(240,$('proof-preview').clientWidth - 24);
+      const viewport = page.getViewport({scale:width / natural.width});
+      const canvas = node('canvas'); const ratio = window.devicePixelRatio || 1;
+      canvas.width = Math.ceil(viewport.width * ratio); canvas.height = Math.ceil(viewport.height * ratio);
+      canvas.style.width = '100%'; canvas.style.height = 'auto';
+      canvas.setAttribute('role','img'); canvas.setAttribute('aria-label','Payment evidence page ' + pageNumber + ' of ' + document.numPages);
+      await page.render({canvasContext:canvas.getContext('2d'),viewport,transform:[ratio,0,0,ratio,0,0]}).promise;
+      if (current !== pdfGeneration) return;
+      pdfPage = pageNumber; $('proof-preview').replaceChildren(canvas);
+      $('pdf-page').textContent = 'Page ' + pageNumber + ' of ' + document.numPages;
+    } catch (error) {
+      if (current === pdfGeneration) $('proof-preview').replaceChildren(node('p','This PDF could not be rendered. Use Open original or Download to review it.'));
+    } finally {
+      if (current === pdfGeneration) { $('pdf-previous').disabled = pdfPage <= 1; $('pdf-next').disabled = pdfPage >= document.numPages; }
+    }
+  }
   async function loadProof(id, current) {
-    releaseProof(); $('proof-preview').replaceChildren(node('p', 'Loading private payment evidence…')); $('zoom-controls').hidden = true;
+    releaseProof(); $('proof-preview').replaceChildren(node('p', 'Loading private payment evidence…')); $('zoom-controls').hidden = true; $('pdf-controls').hidden = true;
     try {
       const response = await fetch(base + '/' + id + '/proof?preview=true', { credentials: 'same-origin', cache: 'no-store' });
       if (!response.ok) throw new Error('Payment evidence could not be loaded. Use Open original or Download, or refresh the review.');
       const type = response.headers.get('content-type')?.split(';')[0];
       if (current !== reviewGeneration || !$('review').open) return;
       if (type === 'application/pdf') {
-        const iframe = node('iframe'); iframe.title = 'Private payment proof PDF'; iframe.setAttribute('sandbox', '');
-        iframe.src = base + '/' + id + '/proof?preview=true';
-        $('proof-preview').replaceChildren(iframe, node('p', 'If your browser cannot preview this PDF, use Open original or Download.', 'muted'));
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        const pdfjs = await import(base + '/pdfjs/pdf.mjs');
+        if (current !== reviewGeneration || !$('review').open) return;
+        pdfjs.GlobalWorkerOptions.workerSrc = base + '/pdfjs/pdf.worker.mjs';
+        pdfTask = pdfjs.getDocument({data:bytes,isEvalSupported:false,enableXfa:false,useSystemFonts:true});
+        const document = await pdfTask.promise;
+        if (current !== reviewGeneration || !$('review').open) { void document.destroy(); return; }
+        pdfDocument = document; pdfPage = 1; $('pdf-controls').hidden = false;
+        await renderPdfPage(1);
       } else if (['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(type)) {
         const blob = await response.blob(); if (current !== reviewGeneration || !$('review').open) return;
         proofUrl = URL.createObjectURL(blob);
@@ -199,6 +236,8 @@
     if (!$('unknown-wrap').hidden && !$('unknown-ack').checked) { notify('review-message','Check the mail provider and acknowledge a possible duplicate before retrying.',true); return; }
     void mutate('/send-email', {acknowledgeUnknown:$('unknown-ack').checked}, 'Sending the queued access email…');
   });
+  $('pdf-previous').addEventListener('click', () => { if (pdfDocument && pdfPage > 1) void renderPdfPage(pdfPage - 1); });
+  $('pdf-next').addEventListener('click', () => { if (pdfDocument && pdfPage < pdfDocument.numPages) void renderPdfPage(pdfPage + 1); });
   $('zoom-in').addEventListener('click', () => { const image = $('proof-preview').querySelector('img'); if (image) image.style.width = (parseFloat(image.style.width) || 100) + 50 + '%'; });
   $('zoom-reset').addEventListener('click', () => { const image = $('proof-preview').querySelector('img'); if (image) image.style.width = '100%'; });
   $('close-review').addEventListener('click', () => { if (!busy) $('review').close(); });

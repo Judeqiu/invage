@@ -1,3 +1,5 @@
+import { createRequire } from 'node:module';
+import { dirname, resolve } from 'node:path';
 import { Router, json, type Express } from 'express';
 import { requireAuth, requireAdmin, sessionUser } from 'utarus';
 import { SignupReview, signupMailer, type ApprovalInput } from './review.js';
@@ -54,6 +56,15 @@ export function createSubmissionAdminRouter(getRepository: () => SubmissionRepos
     }
     if (!req.is('application/json')) { res.status(415).json({error:'Expected application/json.'}); return; }
     next();
+  });
+  // PDF.js is already supplied by the pinned Utarus dependency. Serve only its
+  // two viewer modules through administrator authentication, never upload paths.
+  router.get('/submissions/pdfjs/:asset', (req, res) => {
+    const asset = String(req.params.asset);
+    if (!['pdf.mjs','pdf.worker.mjs'].includes(asset)) { res.sendStatus(404); return; }
+    const require = createRequire(import.meta.url);
+    const root = dirname(require.resolve('pdfjs-dist/package.json'));
+    res.type('application/javascript').sendFile(resolve(root,'build',asset));
   });
   router.get('/submissions', async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');

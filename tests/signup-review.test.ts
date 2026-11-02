@@ -66,6 +66,10 @@ describe('Signup review, atomic account approval and access email delivery',()=>
     expect((await request(app).get('/api/admin/submissions/not-an-id').set('Cookie',adminCookie)).status).toBe(400);
   });
   it('previews known file signatures privately and never renders a forged SVG/HTML inline',async()=>{
+    expect((await request(app).get('/api/admin/submissions/pdfjs/pdf.mjs')).status).toBe(401);
+    const module=await request(app).get('/api/admin/submissions/pdfjs/pdf.mjs').set('Cookie',adminCookie);
+    expect(module.status).toBe(200); expect(module.headers['content-type']).toContain('javascript');
+    expect((await request(app).get('/api/admin/submissions/pdfjs/not-a-viewer.mjs').set('Cookie',adminCookie)).status).toBe(404);
     const pdf=await submission();
     const response=await request(app).get(`/api/admin/submissions/${pdf.id}/proof?preview=true`).set('Cookie',adminCookie);
     expect(response.headers['content-type']).toContain('application/pdf');

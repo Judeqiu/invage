@@ -10,7 +10,7 @@ const sample={id:'00000000-0000-4000-8000-000000000001',reference:'VV-UI0001',cu
   package_id:'novice',package_name:'New to Options',amount_sgd:'1080',session_date:'2099-11-02',session_time:'10:00',bank_transaction_id:'BANK-123',proof_filename:'payment.png',status:'submitted',created_at:'2026-11-02T02:00:00Z',
   email_status:'not_queued',approved_at:null,approved_by:null,account_user_id:null,account_kind:null,confirmed_session_date:null,confirmed_session_time:null,email_attempted_at:null,email_accepted_at:null,email_message_id:null,email_error:null};
 const rows=[structuredClone(sample),{...structuredClone(sample),id:'00000000-0000-4000-8000-000000000002',reference:'VV-UI0002',customer_name:'Existing customer',customer_email:'existing@example.invalid'}];
-let configured=false,approvalCount=0,sendCount=0,releaseApproval;
+let configured=false,approvalCount=0,sendCount=0,releaseApproval, pdfBytes;
 const holdApproval=new Promise(resolve=>{releaseApproval=resolve;});
 function detail(row,date,time) {
   const copy={...row,...(date?{confirmed_session_date:date,confirmed_session_time:time}:{})};
@@ -25,10 +25,12 @@ const server=createServer(async(req,res)=>{
     if(url.pathname.startsWith(base)) {
       res.setHeader('Cache-Control','no-store');
       const suffix=url.pathname.slice(base.length);
+      if(suffix.startsWith('/pdfjs/')){const asset=suffix.split('/').at(-1);if(!['pdf.mjs','pdf.worker.mjs'].includes(asset)){res.writeHead(404);res.end();return;}
+        res.setHeader('Content-Type','application/javascript');res.end(readFileSync('node_modules/pdfjs-dist/build/'+asset));return;}
       if(!suffix){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({submissions:rows,mailConfigured:configured}));return;}
       const [,id,action]=suffix.split('/');const row=rows.find(r=>r.id===id);
       if(!row){res.writeHead(404);res.end('{}');return;}
-      if(action==='proof'){res.setHeader('Content-Type','image/png');res.end(readFileSync('website/public/favicon.png'));return;}
+      if(action==='proof'){res.setHeader('Content-Type',row.id===rows[1].id?'application/pdf':'image/png');res.end(row.id===rows[1].id?pdfBytes:readFileSync('website/public/favicon.png'));return;}
       res.setHeader('Content-Type','application/json');
       if(req.method==='POST'){
         let body='';for await(const chunk of req)body+=chunk;const input=JSON.parse(body);
@@ -49,6 +51,9 @@ const server=createServer(async(req,res)=>{
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 const browser=await puppeteer.launch({executablePath:process.env.CHROME_PATH??'/usr/bin/chromium',headless:true,args:['--no-sandbox']});
 try{
+  const pdfPage=await browser.newPage();
+  await pdfPage.setContent('<h1>Payment evidence · page one</h1><p>SGD 1080 · bank transfer fixture</p><div style="break-before:page"><h1>Payment evidence · page two</h1><p>Reference details</p></div>');
+  pdfBytes=Buffer.from(await pdfPage.pdf({format:'A4'}));await pdfPage.close();
   const page=await browser.newPage();await page.setViewport({width:1440,height:1000});
   await page.goto(`http://127.0.0.1:${server.address().port}${root}index.html`,{waitUntil:'networkidle0'});
   await page.waitForSelector('#rows button');assert.equal(await page.$$eval('#rows tr',els=>els.length),2);
@@ -83,5 +88,10 @@ try{
   await page.click('#close-review');await page.select('#status-filter','submitted');
   await page.click('#rows button');await page.waitForSelector('#link-existing-wrap:not([hidden])');
   assert.match(await page.$eval('#email-preview',el=>el.innerText),/Use your existing Velovest password/);
-  console.log('PASS: signup Management browser flow — private image, XSS-safe details, warning and approval confirmations, duplicate click prevention, queued/setup state, email retry, existing-account preview, responsive layout.');
+  await page.waitForSelector('#proof-preview canvas');
+  assert.equal(await page.$eval('#pdf-page',el=>el.innerText),'Page 1 of 2');
+  await page.click('#pdf-next');await page.waitForFunction(()=>document.querySelector('#pdf-page').innerText==='Page 2 of 2');
+  assert.equal(await page.$eval('#pdf-next',el=>el.disabled),true);
+  await page.click('#pdf-previous');await page.waitForFunction(()=>document.querySelector('#pdf-page').innerText==='Page 1 of 2');
+  console.log('PASS: signup Management browser flow — private image and two-page PDF rendering, XSS-safe details, warning and approval confirmations, duplicate click prevention, queued/setup state, email retry, existing-account preview, responsive layout.');
 }finally{releaseApproval();await browser.close();await new Promise(resolve=>server.close(resolve));}
