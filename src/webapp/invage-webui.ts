@@ -20,6 +20,7 @@ import { createDashboardApiRouter } from './dashboard-api.js';
 import { assertInvageChatQuestionCatalog, createInvageChatQuestionLibrary, sampleInvageChatQuestionStarters } from './chat-questions.js';
 import { readDashboardConfig } from './dashboard-config.js';
 import { createSubmissionAdminRouter } from '../signup/api.js';
+import { createManagementRouter } from '../management/api.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -274,9 +275,14 @@ export function createInvageWebUi(): DomainWebUiExtension {
       description: 'Review payment evidence, approve signups and track access emails.',
       iframeSrc: '/domain-assets/invage/signup-submissions/index.html',
     }]} : {}),
+    ...(consultant ? {managementUserSections:[{
+      id:'velovest-manager-role',title:'Velovest manager',
+      iframeSrc:'/domain-assets/invage/management/role.html',iframeHeightPx:230,
+    }]} : {}),
     apiRouters: [
       ...(consultant ? [
         {mountPath: '/academy-signup/admin', router: createSubmissionAdminRouter(), auth: 'admin' as const},
+        {mountPath: '/management', router: createManagementRouter(), auth: 'user' as const},
       ] : []),
       {
         mountPath: '',

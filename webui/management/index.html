@@ -1,0 +1,19 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Velovest Management</title><link rel="stylesheet" href="page.css"></head>
+<body><main>
+  <header><h1>Management</h1><p class="muted">velovest_manager</p></header>
+  <nav aria-label="Management sections"><button id="users-tab" type="button" aria-pressed="true">Users</button><button id="access-tab" type="button" aria-pressed="false">Access</button></nav>
+  <p id="message" role="status" aria-live="polite"></p>
+  <section id="users-section" aria-labelledby="users-title"><h2 id="users-title">Subscription users</h2>
+    <p>Subscriber details are read-only. Administrator accounts are excluded.</p>
+    <form id="search-form"><label for="search">Search users</label><div class="controls"><input id="search" type="search" placeholder="Name, email, user ID or reference"><button type="submit">Search</button><button id="refresh-users" type="button">Refresh</button></div></form>
+    <p id="user-count" class="muted"></p>
+    <div class="table-scroll"><table><thead><tr><th>User</th><th>Subscription</th><th>Reference</th><th>Credits used</th><th>Joined</th><th></th></tr></thead><tbody id="users"></tbody></table></div>
+    <aside id="user-details" hidden><div class="heading"><h2>Subscriber details</h2><button id="close-details" type="button">Close</button></div><dl id="details"></dl></aside>
+  </section>
+  <section id="access-section" aria-labelledby="access-title" hidden><h2 id="access-title">Access</h2>
+    <p>Issue normal signup invite codes.</p>
+    <form id="invite-form"><label for="comment">Comment (optional)</label><div class="controls"><input id="comment"><button id="create-invite" type="submit">New signup invite</button></div></form>
+    <div id="new-invite" hidden><p id="new-code" class="role-name"></p><a id="invite-link" target="_blank" rel="noopener">Open signup link</a><button id="copy-invite" type="button">Copy signup link</button></div>
+    <div class="table-scroll"><table><thead><tr><th>Invite code</th><th>Created</th><th>Comment</th><th>Status</th></tr></thead><tbody id="invites"></tbody></table></div>
+  </section>
+</main><script src="app.js" defer></script></body></html>
