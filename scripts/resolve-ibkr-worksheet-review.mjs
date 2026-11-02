@@ -10,7 +10,7 @@ import {isDeepStrictEqual} from 'node:util';
 import {openDatabaseRuntime,bindDatabaseRuntime} from 'utarus/database';
 import {reconstructSpreadsheetTrades} from '../src/brokers/spreadsheet-trades.ts';
 import {readIBKRReviewStatement,planIBKRWorksheetReview} from '../src/brokers/ibkr-worksheet-review.ts';
-import {mergeOptionExecutions} from '../src/brokers/option-executions.ts';
+import {addDecimals,negateDecimal,mergeOptionExecutions} from '../src/brokers/option-executions.ts';
 import {mergeOptionLifecycleEvents} from '../src/brokers/option-events.ts';
 const [user,journal,original,directory,...flags]=process.argv.slice(2);
 const expected=flags.find(f=>f.startsWith('--sources-sha256='))?.slice(17);
@@ -49,7 +49,7 @@ try{
    if(!saved||!isDeepStrictEqual(saved,e))throw Error('Prior approved worksheet reconstruction differs; review before proceeding');}
   const plan=planIBKRWorksheetReview(reconstructed.review.map(r=>r.source),statements,{channel:manifest.scope.channel,account_id:manifest.scope.account_id});
   const oldExecutions=before.option_executions??[],oldEvents=before.option_events??[];
-  for(const e of plan.executions)if(oldExecutions.some(p=>p.channel===e.channel&&p.account_id===e.account_id&&p.execution_id!==e.execution_id&&p.executed_at.slice(0,10)===e.executed_at.slice(0,10)&&p.underlying===e.underlying&&p.expiry===e.expiry&&p.right===e.right&&p.strike===e.strike))throw Error('Statement trade overlaps existing execution; explicit deduplication review required');
+  for(const e of plan.executions)if(oldExecutions.some(p=>p.channel===e.channel&&p.account_id===e.account_id&&p.execution_id!==e.execution_id&&p.executed_at.slice(0,10)===e.executed_at.slice(0,10)&&p.underlying===e.underlying&&p.expiry===e.expiry&&p.right===e.right&&p.strike===e.strike&&p.side===e.side&&!/[1-9]/.test(addDecimals(p.contracts,negateDecimal(e.contracts)))&&!/[1-9]/.test(addDecimals(p.gross_premium,negateDecimal(e.gross_premium)))))throw Error('Statement trade overlaps existing execution; explicit deduplication review required');
   for(const e of plan.events)if(oldEvents.some(p=>p.channel===e.channel&&p.account_id===e.account_id&&p.id!==e.id&&p.date===e.date&&p.underlying===e.underlying&&p.expiry===e.expiry&&p.right===e.right&&p.strike===e.strike))throw Error('Statement event overlaps existing lifecycle evidence');
   const executions=mergeOptionExecutions(oldExecutions,plan.executions),events=mergeOptionLifecycleEvents(oldEvents,plan.events);
   const added=executions.length-oldExecutions.length,addedEvents=events.length-oldEvents.length;
@@ -87,5 +87,5 @@ try{
   }
   console.log(JSON.stringify({...receipt,resolutions:undefined,prior_ibkr_journal:undefined,prepared_ibkr_journal:undefined}));
  });
-}finally{const {closePool}=await import('../src/books/db.ts');await closePool();release();await db.close();}
-process.exit(0);
+}catch(error){console.error(error);process.exitCode=1;}finally{const {closePool}=await import('../src/books/db.ts');await closePool();release();await db.close();}
+process.exit(process.exitCode??0);
