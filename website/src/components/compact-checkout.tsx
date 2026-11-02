@@ -49,7 +49,7 @@ function OrderSummary({ pkg, date, time }: { pkg: PackageId; date?: string | und
     <p className={eyebrow}>Order summary</p>
     <p className="mt-2 font-semibold">{info.name} <span className="font-normal text-muted-foreground">· {info.tier}</span></p>
     <ul className="mt-3 space-y-1.5 border-t border-border pt-3 text-xs">{packageItems(pkg).map(item => <li key={item.id} className="flex gap-2"><Check className="mt-0.5 size-3.5 shrink-0 text-chart-2"/><span className="text-muted-foreground">{item.name}</span></li>)}</ul>
-    <div className="mt-3 flex items-start gap-2 border-t border-border pt-3 text-xs"><CalendarDays className="mt-0.5 size-4 shrink-0 text-primary"/><div><p className="font-semibold">Onboarding session</p><p className="text-muted-foreground">{date && time ? <>{formatSessionDate(date)}<br/>{formatSlot(time)}</> : "Not booked yet"}</p></div></div>
+    <div className="mt-3 flex items-start gap-2 border-t border-border pt-3 text-xs"><CalendarDays className="mt-0.5 size-4 shrink-0 text-primary"/><div><p className="font-semibold">Requested onboarding</p><p className="text-muted-foreground">{date && time ? <>{formatSessionDate(date)}<br/>{formatSlot(time)}</> : "Not selected yet"}</p></div></div>
     <div className="mt-3 flex items-baseline justify-between border-t border-border pt-3"><span className="text-sm font-semibold">Total via PayNow</span><span className="text-xl font-semibold tabular-nums">{formatSGD(packageTotal(pkg), true)} <span className="text-[10px] font-normal text-muted-foreground">SGD</span></span></div>
     <p className="mt-3 border-l-2 border-primary pl-2 text-[11px] leading-5 text-muted-foreground">{ACCESS_NOTE}</p>
   </aside>;
@@ -72,7 +72,7 @@ export function CompactPricingTeaser() {
 
 const howItWorks = [
   [Check, "Choose a package", "Pick the path that matches your experience."],
-  [CalendarDays, "Book onboarding", "Select a 60-minute slot in Singapore time."],
+  [CalendarDays, "Request onboarding", "Choose a preferred 60-minute session in Singapore time."],
   [QrCode, "Pay via PayNow", "Scan the QR code, then upload your proof of payment."],
   [ShieldCheck, "Get confirmed", "Appointment confirmed by email once payment is verified."],
 ] as const;

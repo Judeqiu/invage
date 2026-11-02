@@ -38,7 +38,7 @@ export function createSubmissionPublicRouter(getRepository: () => SubmissionRepo
 export function createSubmissionAdminRouter(getRepository: () => SubmissionRepository = signupSubmissions,
   getReview: () => SignupReview = () => new SignupReview(getRepository())) {
   const router = Router();
-  router.use(requireAuth, requireAdmin, sessionUser);
+  router.use(requireAuth, requireAdmin);
   router.use((_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
   router.param('id', (req, res, next, id) => {
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {

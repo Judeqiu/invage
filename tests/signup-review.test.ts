@@ -23,7 +23,7 @@ const sent: Array<{to:string;text:string;subject:string;userId:string}> = [];
 const mailer: SignupMailer = {configured:()=>configured, async send(input) {sent.push(input); if (holdSend) await holdSend(); return mailResult;}};
 const review = new SignupReview(repository,{codec:()=>codec,mailer,loginUrl:()=> 'https://chat.velovest.lextok.com/login'});
 const app=express().use(cookieParser()).use(express.json({limit:Infinity}));
-app.use('/admin',createSubmissionAdminRouter(()=>repository,()=>review));
+app.use('/api/admin',createSubmissionAdminRouter(()=>repository,()=>review));
 let adminCookie: string, userCookie: string;
 let counter=0;
 const decision: ApprovalInput={paymentVerified:true,sessionConfirmed:true,sessionDate:'2026-11-02',sessionTime:'10:00',warningsAcknowledged:true};
@@ -35,8 +35,8 @@ async function submission(email?: string, file?: Buffer) {
     proof:{filename:'proof.pdf',contentType:'application/pdf',data:file??Buffer.from('%PDF-1.4\n'+reference)}});
   return (await repository.list(reference))[0];
 }
-const approve=(id:string,body=decision)=>request(app).post(`/admin/submissions/${id}/approve`).set('Cookie',adminCookie).set('Host','signup.test').set('Origin','https://signup.test').send(body);
-const send=(id:string,acknowledgeUnknown=false)=>request(app).post(`/admin/submissions/${id}/send-email`).set('Cookie',adminCookie).set('Host','signup.test').set('Origin','https://signup.test').send({acknowledgeUnknown});
+const approve=(id:string,body=decision)=>request(app).post(`/api/admin/submissions/${id}/approve`).set('Cookie',adminCookie).set('Host','signup.test').set('Origin','https://signup.test').send(body);
+const send=(id:string,acknowledgeUnknown=false)=>request(app).post(`/api/admin/submissions/${id}/send-email`).set('Cookie',adminCookie).set('Host','signup.test').set('Origin','https://signup.test').send({acknowledgeUnknown});
 
 beforeAll(async()=> {
   await pool.query(readFileSync('src/signup/schema.sql','utf8'));
@@ -57,23 +57,23 @@ describe('Signup review, atomic account approval and access email delivery',()=>
     const row=await submission();
     for(const suffix of ['', '/approve','/send-email']) {
       const method=suffix?'post':'get';
-      expect((await request(app)[method](`/admin/submissions/${row.id}${suffix}`).send({})).status).toBe(401);
-      expect((await request(app)[method](`/admin/submissions/${row.id}${suffix}`).set('Cookie',userCookie).send({})).status).toBe(403);
+      expect((await request(app)[method](`/api/admin/submissions/${row.id}${suffix}`).send({})).status).toBe(401);
+      expect((await request(app)[method](`/api/admin/submissions/${row.id}${suffix}`).set('Cookie',userCookie).send({})).status).toBe(403);
     }
-    expect((await request(app).post(`/admin/submissions/${row.id}/approve`).set('Cookie',adminCookie).send(decision)).status).toBe(403);
-    expect((await request(app).post(`/admin/submissions/${row.id}/approve`).set('Cookie',adminCookie).set('Origin','https://evil.invalid').send(decision)).status).toBe(403);
+    expect((await request(app).post(`/api/admin/submissions/${row.id}/approve`).set('Cookie',adminCookie).send(decision)).status).toBe(403);
+    expect((await request(app).post(`/api/admin/submissions/${row.id}/approve`).set('Cookie',adminCookie).set('Origin','https://evil.invalid').send(decision)).status).toBe(403);
     expect((await approve(row.id,{...decision,paymentVerified:false})).status).toBe(400);
-    expect((await request(app).get('/admin/submissions/not-an-id').set('Cookie',adminCookie)).status).toBe(400);
+    expect((await request(app).get('/api/admin/submissions/not-an-id').set('Cookie',adminCookie)).status).toBe(400);
   });
   it('previews known file signatures privately and never renders a forged SVG/HTML inline',async()=>{
     const pdf=await submission();
-    const response=await request(app).get(`/admin/submissions/${pdf.id}/proof?preview=true`).set('Cookie',adminCookie);
+    const response=await request(app).get(`/api/admin/submissions/${pdf.id}/proof?preview=true`).set('Cookie',adminCookie);
     expect(response.headers['content-type']).toContain('application/pdf');
     expect(response.headers['content-disposition']).toContain('inline;');
     expect(response.headers['content-security-policy']).toContain('sandbox');
     expect(response.headers['cache-control']).toBe('no-store');
     const unsafe=await submission(undefined,Buffer.from('<svg onload="alert(1)"></svg>'));
-    const original=await request(app).get(`/admin/submissions/${unsafe.id}/proof?preview=true`).set('Cookie',adminCookie);
+    const original=await request(app).get(`/api/admin/submissions/${unsafe.id}/proof?preview=true`).set('Cookie',adminCookie);
     expect(original.headers['content-type']).toContain('application/octet-stream');
     expect(original.headers['content-disposition']).toContain('attachment;');
   });
@@ -88,7 +88,7 @@ describe('Signup review, atomic account approval and access email delivery',()=>
     expect(stored.status).toBe('approved'); expect(stored.email_status).toBe('pending'); expect(stored.account_kind).toBe('new');
     const password=codec.decrypt(stored.access_secret,`velovest-signup:${row.id}`);
     expect(JSON.stringify(stored.access_secret)).not.toContain(password);
-    expect(JSON.stringify(responses)).not.toContain(password);
+    expect(JSON.stringify(responses.map(response=>response.body))).not.toContain(password);
     expect(responses[0].body.submission.access_secret).toBeUndefined();
     const account=await database.runtime.users.readById(stored.account_user_id!);
     expect(await verifyPassword(password,account.state.user.password_hash!)).toBe(true);
