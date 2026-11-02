@@ -138,20 +138,6 @@ function Field({ label, error, children, optional }: { label: string; error?: st
   return <label className="block text-sm font-medium">{label}{optional && <span className="font-normal text-muted-foreground"> (optional)</span>}{children}{error && <span className="mt-1 block text-xs text-destructive">{error}</span>}</label>;
 }
 
-/** Placeholder PayNow QR artwork — swap for the business's real PayNow QR image. */
-function DemoQr({ seed }: { seed: string }) {
-  const n = 25;
-  const finder = (x: number, y: number) => [[0, 0], [n - 7, 0], [0, n - 7]].some(([fx = 0, fy = 0]) => x >= fx && x < fx + 7 && y >= fy && y < fy + 7);
-  const finderOn = (x: number, y: number) => { for (const [fx, fy] of [[0, 0], [n - 7, 0], [0, n - 7]] as const) { const dx = x - fx, dy = y - fy; if (dx >= 0 && dx < 7 && dy >= 0 && dy < 7) return dx === 0 || dx === 6 || dy === 0 || dy === 6 || (dx >= 2 && dx <= 4 && dy >= 2 && dy <= 4); } return false; };
-  let h = 7; for (const c of seed) h = (h * 31 + c.charCodeAt(0)) >>> 0;
-  const cells: Array<[number, number]> = [];
-  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
-    const on = finder(x, y) ? finderOn(x, y) : (((x * 73856093) ^ (y * 19349663) ^ h) >>> 0) % 7 < 3;
-    if (on) cells.push([x, y]);
-  }
-  return <svg viewBox={`-2 -2 ${n + 4} ${n + 4}`} className="size-full" role="img" aria-label="PayNow QR code (sample)"><rect x="-2" y="-2" width={n + 4} height={n + 4} className="fill-foreground"/>{cells.map(([x, y]) => <rect key={`${x}-${y}`} x={x} y={y} width="1.02" height="1.02" className="fill-background"/>)}</svg>;
-}
-
 export function CompactCheckout({ initialPackage }: { initialPackage?: PackageId | undefined }) {
   const navigate = useNavigate();
   const [step, setStep] = useState(initialPackage ? 1 : 0);
@@ -241,7 +227,7 @@ export function CompactCheckout({ initialPackage }: { initialPackage?: PackageId
         {step === 2 && <form noValidate onSubmit={submit} className="border border-border bg-card p-4 sm:p-5">
           <fieldset><legend className="flex items-center gap-2 text-base font-semibold"><span className="grid size-5 place-items-center bg-primary text-[10px] font-bold text-primary-foreground">1</span>Scan &amp; pay with PayNow</legend>
             <div className="mt-3 grid gap-4 sm:grid-cols-[180px_1fr] sm:items-center">
-              <div className="mx-auto w-44 border border-border bg-foreground p-2 sm:w-full"><DemoQr seed={reference ?? "velovest"}/><p className="pt-1.5 text-center text-[10px] font-bold uppercase text-background">PayNow · Sample QR</p></div>
+              <div className="mx-auto w-44 border border-border bg-foreground p-2 sm:w-full"><img src="/velovest-paynow.jpg" alt="Velovest PayNow QR code" width={300} height={300} className="aspect-square w-full object-contain"/><p className="pt-1.5 text-center text-[10px] font-bold uppercase text-background">PayNow</p></div>
               <div className="space-y-2 text-sm">
                 <dl className="divide-y divide-border border-y border-border">
                   <div className="flex justify-between gap-3 py-2"><dt className="text-muted-foreground">Amount</dt><dd className="text-lg font-semibold tabular-nums">{formatSGD(packageTotal(pkg), true)} SGD</dd></div>
@@ -276,7 +262,7 @@ export function CompactCheckout({ initialPackage }: { initialPackage?: PackageId
 
           <label className="mt-4 flex items-start gap-2.5 text-xs leading-5 text-muted-foreground"><input type="checkbox" checked={details.agree} onChange={e => set("agree", e.target.checked)} className="mt-0.5 size-4 shrink-0 accent-primary" aria-invalid={!!errors.agree}/><span>I have read the <Link to="/risk-disclosure" className="font-semibold text-primary">Risk Disclosure</Link> and understand that my appointment is confirmed only after payment is verified, and that access to the Velovest system is given during my onboarding session.</span></label>
           {errors.agree && <p className="mt-1 text-xs text-destructive">{errors.agree}</p>}
-          <p className="mt-3 border border-warning/40 bg-warning/10 px-3 py-2 text-xs">The PayNow QR is a sample. Submitted payment proofs are stored privately for administrator review.</p>
+          <p className="mt-3 border border-warning/40 bg-warning/10 px-3 py-2 text-xs">Submitted payment proofs are stored privately for administrator review.</p>
           {submissionError && <p role="alert" className="mt-4 text-sm text-destructive">{submissionError}</p>}
           <div className="mt-4 flex flex-col-reverse gap-2 border-t border-border pt-4 sm:flex-row sm:justify-between"><Button type="button" variant="outline" onClick={() => setStep(1)} disabled={processing}><ArrowLeft/>Change booking</Button><Button type="submit" disabled={processing}>{processing ? <><Loader2 className="animate-spin"/>Submitting…</> : <><Upload/>Submit proof of payment</>}</Button></div>
         </form>}
