@@ -51,6 +51,46 @@ account limit is added or changed by approval.
 
 ## Access email and deferred setup
 
+### Operator notification for new signups
+
+Management → Config includes **Signup notification email** in the existing
+portfolio configuration. Set one destination mailbox there; blank disables
+notifications. Changes apply to the next signup without a restart, independently
+of the Signup submissions page's visibility.
+
+Newly inserted submissions attempt one SMTP notification after the record is
+committed. The summary includes reference, customer contact details, package,
+server-calculated submitted amount and requested session in Singapore time.
+Payment proof stays in the private database and is not attached. The summary
+does not claim payment was verified. Identical retries retain the existing record
+ID and do not send another notification.
+
+The notification sender uses IONOS independently of customer access emails:
+
+```dotenv
+INVAGE_SIGNUP_SMTP_HOST=smtp.ionos.com
+INVAGE_SIGNUP_SMTP_PORT=465
+INVAGE_SIGNUP_SMTP_USER=support@lextok.com
+INVAGE_SIGNUP_SMTP_FROM=support@lextok.com
+INVAGE_SIGNUP_SMTP_PASSWORD=<mailbox password installed securely on the server>
+```
+
+IONOS documents TLS on port 465, or STARTTLS on port 587, with the full mailbox
+address as username. Both modes require encryption and certificate verification.
+See [IONOS SMTP settings](https://www.ionos.com/help/index.php?id=2490).
+Keep the password in the service environment, never Management config or Git.
+Restart the service after changing sender environment variables.
+
+This is an immediate delivery attempt, not a durable mail queue: failure or a
+process interruption can leave a saved signup without a notification. SMTP
+failure logs a generic diagnostic without credentials or customer contents and
+does not fail the customer submission. There is no automatic retry or historical
+bulk send; check the saved signups independently when diagnosing mail failures.
+SMTP acceptance establishes server acceptance, not inbox delivery. Live sending
+must be verified separately after the credentials and recipient are configured.
+
+### Customer access email
+
 The transport uses the framework's existing transactional-mail adapter. Its current
 implementation is Postmark. The sender/provider decision and credentials were
 explicitly deferred by the owner; production mail is not yet configured. No

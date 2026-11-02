@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import pg from 'pg';
 import { readDatabaseConfig } from '../../node_modules/utarus/dist/database/config.js';
 import { isPackageId, isSlotTime, packageTotal, packages } from './catalog.js';
+import { notifyNewSignup } from './notification.js';
 
 export class SubmissionError extends Error {
   constructor(message: string, public readonly status = 400) { super(message); }
@@ -79,7 +80,8 @@ export function validateSubmission(input: SubmissionInput) {
 }
 
 export class SubmissionRepository {
-  constructor(readonly pool: pg.Pool) {}
+  constructor(readonly pool: pg.Pool,
+    private readonly notify: typeof notifyNewSignup = notifyNewSignup) {}
 
   async save(raw: SubmissionInput): Promise<{ reference: string }> {
     const input = validateSubmission(raw);
@@ -90,7 +92,8 @@ export class SubmissionRepository {
       name: input.name, email: input.email, phone: input.phone, txn: input.bankTransactionId,
       consent: true, proof: { name: input.proof.filename, type: input.proof.contentType, sha256: proofHash },
     })).digest('hex');
-    const result = await this.pool.query<{ reference: string }>(`
+    const newId = randomUUID();
+    const result = await this.pool.query<{ reference: string; id: string }>(`
       INSERT INTO velovest_signup.submissions
       (id, reference, package_id, package_name, amount_sgd, session_date, session_time,
        customer_name, customer_email, customer_phone, bank_transaction_id, consent_accepted,
@@ -98,12 +101,21 @@ export class SubmissionRepository {
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,true,$12,$13,$14,$15,$16)
       ON CONFLICT (reference) DO UPDATE SET reference = EXCLUDED.reference
         WHERE submissions.submission_fingerprint = EXCLUDED.submission_fingerprint
-      RETURNING reference`, [randomUUID(), input.reference, input.packageId, input.packageName,
+      RETURNING reference, id`, [newId, input.reference, input.packageId, input.packageName,
       input.amountSgd, input.sessionDate, input.sessionTime, input.name, input.email,
       input.phone, input.bankTransactionId, input.proof.filename, input.proof.contentType,
       proofHash, input.proof.data, fingerprint]);
     if (!result.rows[0]) throw new SubmissionError('This reference already belongs to a different submission. Your changes were not saved.', 409);
-    return result.rows[0];
+    // The retained ID identifies identical retries, including concurrent requests.
+    // Mail runs after the INSERT commits; delivery failure cannot undo intake.
+    if (result.rows[0].id === newId) {
+      try { await this.notify(input); }
+      catch {
+        // SMTP errors can include credentials, recipient details or message contents.
+        console.error('[signup notification] Delivery not confirmed; signup remains saved.');
+      }
+    }
+    return { reference: result.rows[0].reference };
   }
 
   async list(search: string): Promise<SubmissionSummary[]> {
