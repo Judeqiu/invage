@@ -269,7 +269,7 @@ export function createInvageWebUi(): DomainWebUiExtension {
         iframeHeightPx: 760,
       },
     ],
-    ...(consultant ? {managementSections: [{
+    ...(consultant && process.env.INVAGE_SHOW_SIGNUP_SUBMISSIONS === 'true' ? {managementSections: [{
       id: 'signup-submissions', title: 'Signup submissions',
       description: 'Review payment evidence, approve signups and track access emails.',
       iframeSrc: '/domain-assets/invage/signup-submissions/index.html',

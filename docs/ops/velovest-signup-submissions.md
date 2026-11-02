@@ -11,7 +11,12 @@ assumed appointment-capacity rules are used.
 
 ## Management
 
-Management → Signup submissions is consultant-only. Search has no result cutoff;
+Management → Signup submissions is consultant-only and hidden by default. Reuse
+the application `.env` file to set `INVAGE_SHOW_SIGNUP_SUBMISSIONS=true` and
+restart the app to show it; set it to `false` (or leave it unset) to hide it.
+This setting controls only the Management entry: public signup intake, saved
+submissions and administrator-protected review APIs remain unchanged.
+Search has no result cutoff;
 filters distinguish needs-review, approved and outstanding access email records.
 The review dialog shows contact/package/payment details alongside the original
 private evidence. Known raster images support zoom; PDFs render to canvas with the pinned framework PDF.js dependency, with page
