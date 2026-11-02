@@ -43,6 +43,7 @@ try{
   await page.click('input[type="checkbox"]');
   await page.click('button[type="submit"]');
   await page.waitForFunction(()=>location.pathname==='/confirmation'&&document.body.innerText.includes('signup and payment evidence have been saved for review'));
+  await page.waitForFunction(()=>window.scrollY===0);
   const text=await page.evaluate(()=>document.body.innerText);
   assert.match(text,/signup and payment evidence have been saved for review/);
   assert.doesNotMatch(text,/acknowledgement email has been sent|Prototype preview|no file was stored/);
