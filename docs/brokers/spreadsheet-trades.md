@@ -37,3 +37,33 @@ daily history, and retains a newer valid projection. Source files are rechecked
 before saving; the persisted state is verified before publication. Recovery
 artifacts live under `data/repairs/spreadsheet-trades/` and must be inspected if
 publication fails after the account save.
+
+## Resolve held IBKR rows from Activity CSVs
+
+`scripts/resolve-ibkr-worksheet-review.mjs` resolves only the rows rejected by the
+original worksheet reconstruction. It requires the same account-bound journal,
+workbook and manifest, plus a directory of immutable statement CSVs and review
+files. `sources.json` lists their `{name, sha256}` pairs; its checksum must be
+supplied as `--sources-sha256=HEX`. It defaults to preview; `--apply` saves the repair.
+
+Matching requires a unique statement order with the same contract description,
+date and cash magnitude. The broker supplies the signed proceeds, exact signed
+commission, quantity, instrument multiplier and opening/closing code. Cash
+magnitude identifies evidence only; it never replaces the broker's signed cash.
+Same-day opening and closing orders are distinguished by the recorded cash.
+No order aggregate is presented as an execution-level broker fill or inserted
+into broker API history. Statement record IDs retain the source hash and CSV line.
+
+Explicit `Ep` and `A` codes resolve expirations and assignments. Assignments also
+require a unique stock delivery with matching quantity, strike, date/time and
+signed principal. Share principal stays outside option premium cash. Lifecycle
+quantity discrepancies remain in the resolution receipt alongside the unchanged
+worksheet row. Expiration does not imply a settlement method.
+
+The repair verifies the prior approved import, refuses overlapping records,
+prepares account and broker views from the existing valid saved valuation, and
+checks optimistic revisions, source checksums and readback. It retains source
+files, row-level evidence, a state backup, prepared views and a receipt. Repeating
+an identical repair adds nothing. It preserves current holdings, cash, raw broker
+history, valuation timestamps and daily history. It does not revise other accepted
+worksheet rows or claim that the supplied months establish full historical coverage.

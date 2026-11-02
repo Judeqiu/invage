@@ -7,7 +7,7 @@ import { buildExecutionJournal, type OptionExecution } from '../brokers/option-e
 import type { BrokerHistory } from '../brokers/history.js';
 
 /** Prepare an execution-only import from saved valuations without refreshing market evidence. */
-export async function prepareExecutionImportProjection(state: InvestorState, merged: OptionExecution[], brokerId: string, history?: Record<string, BrokerHistory>) {
+export async function prepareExecutionImportProjection(state: InvestorState, merged: OptionExecution[], brokerId: string, history?: Record<string, BrokerHistory>, events?: InvestorState['option_events']) {
   const prior = readPortfolioProjection(state);
   if (!prior) throw new Error('A valid saved portfolio projection is required before this repair');
   const { prepareOptionRelationships } = await import('../webapp/option-relationships-data.js');
@@ -18,7 +18,7 @@ export async function prepareExecutionImportProjection(state: InvestorState, mer
   const { buildPageProjections, buildTradeProjections } = await import('../report/page-projections.js');
   const { buildBrokerProjections } = await import('../report/broker-projections.js');
   const { attachDailyChanges } = await import('../report/daily-changes.js');
-  const projectedState = {...state, option_executions:merged, ...(history ? {broker_history:history} : {})};
+  const projectedState = {...state, option_executions:merged, ...(history ? {broker_history:history} : {}), ...(events ? {option_events:events} : {})};
   projectedState.option_identities = buildOptionIdentityIndex(projectedState);
   const relationships = await prepareOptionRelationships(projectedState);
   const journal = buildExecutionJournal(merged);
