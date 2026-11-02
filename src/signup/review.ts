@@ -50,7 +50,7 @@ export function accessEmail(row: Pick<SubmissionSummary, 'reference' | 'customer
       'Your payment has been verified and your Velovest signup is approved.', '',
       `Reference: ${row.reference}`, `Package: ${row.package_name}`, `Payment verified: SGD ${row.amount_sgd}`,
       `Onboarding: ${formatSessionDate(date)}, ${formatSlot(time)}`, '',
-      `Sign in: ${loginUrl}`, `Email: ${row.customer_email}`,
+      `Sign in: ${loginUrl}`, `Username (email): ${row.customer_email}`,
       ...(password ? [`Temporary password: ${password}`, '',
         'We recommend changing this password after signing in. Open your profile settings and choose Change password.'] :
         ['', 'Use your existing Velovest password. Your password has not been changed.']),
@@ -118,17 +118,30 @@ export class SignupReview {
     const context = await this.context(row);
     const history = await this.repository.pool.query(`SELECT event,actor,created_at FROM velovest_signup.review_events
       WHERE submission_id=$1 ORDER BY id`, [id]);
-    let includePassword = !context.existingAccount || row.account_kind === 'new';
-    if (row.account_user_id && row.access_secret) {
-      const password = this.codec().decrypt(row.access_secret, `velovest-signup:${id}`);
+    let password: string | null = !context.existingAccount && row.status === 'submitted'
+      ? '[Generated securely on approval]' : null;
+    let manualShareAvailable = false;
+    let accessMessageNotice = '';
+    if (row.status === 'approved' && row.account_user_id) {
       const account = await getAccountAuthority().users.readById(row.account_user_id);
-      includePassword = Boolean(account.state.user.password_hash && await verifyPassword(password, account.state.user.password_hash));
-    } else if (row.status === 'approved') includePassword = false;
+      manualShareAvailable = !account.state.user.deleted_at &&
+        account.state.profile.contact_email.trim().toLowerCase() === row.customer_email.trim().toLowerCase();
+      if (!manualShareAvailable) accessMessageNotice = 'The account is inactive or its email changed. Resolve the account before sharing these instructions.';
+      else if (row.account_kind === 'new' && row.access_secret) {
+        const generated = this.codec().decrypt(row.access_secret, `velovest-signup:${id}`);
+        if (account.state.user.password_hash && await verifyPassword(generated, account.state.user.password_hash)) password = generated;
+        else accessMessageNotice = 'The customer has changed their password. The original temporary password is no longer shown; use the current-password instructions below.';
+      } else if (row.account_kind === 'new') {
+        accessMessageNotice = 'The original temporary password was not retained for this record and cannot be recovered. No password has been reset.';
+      } else accessMessageNotice = 'Existing account: its password is unchanged and cannot be displayed. The message instructs the customer to use their current password.';
+    }
     return { submission: this.publicRow(row), ...context, history: history.rows,
-      mailConfigured: this.mailer.configured(),
-      emailPreview: accessEmail(row, this.loginUrl(), includePassword ? '[Generated securely when approved; never displayed here]' : null),
+      mailConfigured: this.mailer.configured(), manualShareAvailable, accessMessageNotice,
+      temporaryPasswordAvailable: row.status === 'approved' && password !== null,
+      emailPreview: accessEmail(row, this.loginUrl(), password),
     };
   }
+
   async approve(id: string, input: ApprovalInput, actor: string) {
     if (!input.paymentVerified || !input.sessionConfirmed) throw new SubmissionError('Confirm payment verification and the onboarding session.');
     if (!validSessionDate(input.sessionDate) || !isSlotTime(input.sessionTime)) throw new SubmissionError('Choose a valid weekday session date and time.');
@@ -223,7 +236,7 @@ export class SignupReview {
       await client.query('BEGIN');
       if (result.outcome === 'accepted') {
         await client.query(`UPDATE velovest_signup.submissions SET email_status='sent', email_accepted_at=now(),
-          email_message_id=$3, email_error=NULL, access_secret=NULL WHERE id=$1 AND email_attempt_id=$2`, [id,attempt,result.messageId]);
+          email_message_id=$3, email_error=NULL WHERE id=$1 AND email_attempt_id=$2`, [id,attempt,result.messageId]);
         await this.event(client,id,'Access email accepted by provider (delivery to inbox is not yet verified)',actor);
       } else {
         const status = result.outcome === 'rejected' ? 'failed' : 'unknown';

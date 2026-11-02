@@ -39,7 +39,7 @@
               <label class="check" id="link-existing-wrap" hidden><input id="link-existing" type="checkbox"><span id="link-existing-copy"></span></label>
               <label class="check" id="warnings-wrap" hidden><input id="warnings-ack" type="checkbox">I reviewed the duplicate and booking warnings and want to proceed.</label>
             </fieldset>
-            <section id="email-section"><h3>Access email preview</h3><p id="email-to" class="muted"></p><p id="email-subject" class="email-subject"></p><pre id="email-preview"></pre><p id="email-caption" class="muted"></p></section>
+            <section id="email-section"><h3 id="email-title">Access email preview</h3><p id="email-to" class="muted"></p><p id="email-subject" class="email-subject"></p><pre id="email-preview"></pre><p id="email-caption" class="muted"></p><p id="access-notice" class="notice" hidden></p><button id="copy-access" type="button" class="secondary" hidden>Copy access message</button><p id="copy-message" role="status" aria-live="polite" class="muted"></p></section>
             <div id="approval-action"><button type="button" id="review-approval">Review approval</button><p class="muted">Nothing is approved until you confirm below.</p></div>
             <section id="approval-confirm" class="confirmation" hidden><h3>Ready to approve?</h3><p id="confirm-summary"></p><button type="submit" id="approve">Approve &amp; send access email</button><button type="button" id="cancel-confirm" class="secondary">Back to review</button></section>
           </form>

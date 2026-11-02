@@ -76,10 +76,18 @@ forced first-login change or new password expiry. An existing account receives
 instructions to use its current password.
 
 The new password is encrypted with the existing database secret codec and
-submission-bound authenticated encryption while the email is pending. It never
-appears in logs or admin API responses. Encryption keys must remain available
-while queued messages exist. Upon provider acceptance, the pending secret is
-removed; only the account's encrypted password hash and provider receipt remain.
+submission-bound authenticated encryption for approved access-message sharing. It never
+appears in logs or list responses. After approval, authenticated administrators
+can view and copy the complete access message, including the generated temporary
+password, in the private review detail. Copying does not send an email or change
+email status. Closing the dialog clears the displayed message from the page.
+Encryption keys must remain available for these records. Provider acceptance
+retains the encrypted generated password so the approver
+can still copy the access message for manual sharing. It is displayed only while
+it matches the active account password and the account email still matches the
+submission. The customer’s chosen replacement password is never displayed.
+Older records whose generated password was already removed cannot recover it;
+the UI explains this without resetting any password.
 If the customer has changed their password before sending/retrying, the message
 uses existing-password instructions rather than mailing stale credentials.
 
@@ -97,8 +105,10 @@ Approval/account state is independent of email status:
 Per-submission send locks prevent concurrent sends. Retrying does not recreate
 accounts or reset passwords. A repeated send for a recorded accepted message is
 a no-op. There is no general resend or automatic password reset action. All
-attempts and decisions have an activity trail. Provider error bodies and passwords
-are not logged or exposed to admins. Failure after approval may return an error;
+attempts and decisions have an activity trail. Provider error bodies are not
+exposed to admins, and passwords are never logged.
+Only the generated signup password may be shown in the approved private review,
+under the owner-approved manual-sharing flow. Failure after approval may return an error;
 refreshing the review reveals the committed approval and queued/attempt status.
 
 ## Migration and verification

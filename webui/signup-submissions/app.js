@@ -143,7 +143,7 @@
     }
     warnings(data);
     const existing = data.existingAccount;
-    $('account-plan').textContent = row.account_kind === 'new' ? 'A new customer account was created. Its password is never shown in Management.' :
+    $('account-plan').textContent = row.account_kind === 'new' ? 'A new customer account was created. Its access message is available below for manual sharing.' :
       existing ? 'An account already uses this email. Link it explicitly; its password and existing data will stay unchanged.' :
       'Approval will create one customer account and a securely generated temporary password. The email recommends changing it after login.';
     $('link-existing-wrap').hidden = !existing || row.status === 'approved';
@@ -151,9 +151,15 @@
     $('email-to').textContent = 'To: ' + row.customer_email;
     $('email-subject').textContent = data.emailPreview.subject;
     $('email-preview').textContent = data.emailPreview.text;
-    $('email-caption').textContent = row.email_status === 'sent' ? 'Provider acceptance is recorded below. The sent password is not retained or displayed here; this is a template preview.' :
-      data.mailConfigured ? 'This transactional email is sent after approval. Provider acceptance is recorded separately from inbox delivery.' :
-      'Email is awaiting sender setup. Approval will queue these access details securely; it will not report them as sent.';
+    $('email-title').textContent = row.status === 'approved' ? 'Access message · ready to share' : 'Access email preview';
+    $('email-caption').textContent = row.status === 'approved'
+      ? 'Copy this message to share the login instructions yourself. Copying does not send an email or change its delivery status.'
+      : data.mailConfigured ? 'This transactional email is sent after approval. Provider acceptance is recorded separately from inbox delivery.'
+      : 'Email is awaiting sender setup. Approval will queue these access details securely; it will not report them as sent.';
+    $('access-notice').hidden = !data.accessMessageNotice;
+    $('access-notice').textContent = data.accessMessageNotice || '';
+    $('copy-access').hidden = row.status !== 'approved' || !data.manualShareAvailable;
+    $('copy-message').textContent = '';
     $('approval-fields').hidden = row.status === 'approved'; $('approval-action').hidden = row.status === 'approved';
     $('approved-state').hidden = row.status !== 'approved';
     $('approve').textContent = data.mailConfigured ? 'Approve & send access email' : 'Approve & queue access email';
@@ -236,13 +242,28 @@
     if (!$('unknown-wrap').hidden && !$('unknown-ack').checked) { notify('review-message','Check the mail provider and acknowledge a possible duplicate before retrying.',true); return; }
     void mutate('/send-email', {acknowledgeUnknown:$('unknown-ack').checked}, 'Sending the queued access email…');
   });
+  $('copy-access').addEventListener('click', async () => {
+    if (busy || !detail?.manualShareAvailable) return;
+    const message = 'To: ' + detail.submission.customer_email + '\nSubject: ' + detail.emailPreview.subject + '\n\n' + detail.emailPreview.text;
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');
+      await navigator.clipboard.writeText(message);
+      $('copy-message').textContent = 'Access message copied. You can paste it into your message to the customer.';
+    } catch {
+      const text = node('textarea'); text.value = message; text.readOnly = true;
+      text.style.position = 'fixed'; text.style.opacity = '0'; $('review').append(text); text.select();
+      let copied = false; try { copied = document.execCommand('copy'); } catch { /* allow manual selection */ }
+      text.remove(); $('copy-access').focus();
+      $('copy-message').textContent = copied ? 'Access message copied. You can paste it into your message to the customer.' : 'Clipboard access was denied. Select the message above and copy it manually.';
+    }
+  });
   $('pdf-previous').addEventListener('click', () => { if (pdfDocument && pdfPage > 1) void renderPdfPage(pdfPage - 1); });
   $('pdf-next').addEventListener('click', () => { if (pdfDocument && pdfPage < pdfDocument.numPages) void renderPdfPage(pdfPage + 1); });
   $('zoom-in').addEventListener('click', () => { const image = $('proof-preview').querySelector('img'); if (image) image.style.width = (parseFloat(image.style.width) || 100) + 50 + '%'; });
   $('zoom-reset').addEventListener('click', () => { const image = $('proof-preview').querySelector('img'); if (image) image.style.width = '100%'; });
   $('close-review').addEventListener('click', () => { if (!busy) $('review').close(); });
   $('review').addEventListener('cancel', event => { if (busy) event.preventDefault(); });
-  $('review').addEventListener('close', () => { ++reviewGeneration; releaseProof(); });
+  $('review').addEventListener('close', () => { ++reviewGeneration; releaseProof(); detail = null; $('email-preview').textContent = ''; $('copy-message').textContent = ''; });
   $('search-form').addEventListener('submit', event => { event.preventDefault(); void load(); });
   $('status-filter').addEventListener('change', renderRows);
   $('refresh').addEventListener('click', () => { void load(); });

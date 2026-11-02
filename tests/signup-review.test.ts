@@ -92,7 +92,10 @@ describe('Signup review, atomic account approval and access email delivery',()=>
     expect(stored.status).toBe('approved'); expect(stored.email_status).toBe('pending'); expect(stored.account_kind).toBe('new');
     const password=codec.decrypt(stored.access_secret,`velovest-signup:${row.id}`);
     expect(JSON.stringify(stored.access_secret)).not.toContain(password);
-    expect(JSON.stringify(responses.map(response=>response.body))).not.toContain(password);
+    expect(responses[0].body.emailPreview.text).toContain('Temporary password: '+password);
+    expect(responses[0].body.manualShareAvailable).toBe(true);
+    expect((await review.detail(row.id)).emailPreview.text).toContain(password);
+    expect(JSON.stringify(await repository.list(row.reference))).not.toContain(password);
     expect(responses[0].body.submission.access_secret).toBeUndefined();
     const account=await database.runtime.users.readById(stored.account_user_id!);
     expect(await verifyPassword(password,account.state.user.password_hash!)).toBe(true);
@@ -132,11 +135,15 @@ describe('Signup review, atomic account approval and access email delivery',()=>
     expect(proposed.emailPreview.text).toContain('Tuesday, 3 November 2026, 2:00 PM');
     expect((await review.row(two.id)).confirmed_session_date).toBeNull();
   });
-  it('records provider acceptance, clears the pending secret and never sends twice for repeated actions',async()=>{
+  it('records provider acceptance, retains encrypted access details for manual sharing and never sends twice',async()=>{
     configured=true; mailResult={outcome:'accepted',messageId:'receipt-accepted'};
     const row=await submission(); const before=sent.length;
     const response=await approve(row.id); expect(response.status).toBe(200);
-    const stored=await review.row(row.id); expect(stored.email_status).toBe('sent'); expect(stored.access_secret).toBeNull();
+    const stored=await review.row(row.id); expect(stored.email_status).toBe('sent'); expect(stored.access_secret).not.toBeNull();
+    const password=codec.decrypt(stored.access_secret,`velovest-signup:${row.id}`);
+    expect((await review.detail(row.id)).emailPreview.text).toBe(sent.at(-1)?.text);
+    expect((await review.detail(row.id)).emailPreview.text).toContain('Temporary password: '+password);
+    expect((await review.detail(row.id)).emailPreview.text).toContain('Username (email): '+row.customer_email);
     expect(stored.email_message_id).toBe('receipt-accepted');
     expect(sent.at(-1)?.text).toContain('Temporary password:');
     expect(sent.at(-1)?.text).toContain('recommend changing this password');
@@ -178,5 +185,27 @@ describe('Signup review, atomic account approval and access email delivery',()=>
     finally {release();await first;holdSend=undefined;}
     expect(sent.at(-1)!.text).toContain('Use your existing Velovest password');
     expect(sent.at(-1)!.text).not.toContain('Temporary password:');
+    const updated=await review.detail(row.id);
+    expect(updated.temporaryPasswordAvailable).toBe(false);
+    expect(updated.emailPreview.text).not.toContain('Temporary password:');
+    expect(updated.accessMessageNotice).toContain('changed their password');
   });
+  it('does not invent a password for older cleared records or expose credentials for a changed account email',async()=>{
+    configured=false;
+    const row=await submission(); await review.approve(row.id,decision,'test');
+    const stored=await review.row(row.id);
+    const account=await database.runtime.users.readById(stored.account_user_id!);
+    account.state.profile.contact_email='moved-'+row.customer_email;
+    await database.runtime.users.update(account.state,account.revision);
+    const changed=await review.detail(row.id);
+    expect(changed.manualShareAvailable).toBe(false);
+    expect(changed.emailPreview.text).not.toContain('Temporary password:');
+    const legacy=await submission(); await review.approve(legacy.id,decision,'test');
+    await pool.query('UPDATE velovest_signup.submissions SET access_secret=NULL WHERE id=$1',[legacy.id]);
+    const old=await review.detail(legacy.id);
+    expect(old.temporaryPasswordAvailable).toBe(false);
+    expect(old.accessMessageNotice).toContain('cannot be recovered');
+    expect(old.emailPreview.text).toContain('Use your existing Velovest password');
+  });
+
 });

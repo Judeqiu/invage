@@ -14,10 +14,10 @@ let configured=false,approvalCount=0,sendCount=0,releaseApproval, pdfBytes;
 const holdApproval=new Promise(resolve=>{releaseApproval=resolve;});
 function detail(row,date,time) {
   const copy={...row,...(date?{confirmed_session_date:date,confirmed_session_time:time}:{})};
-  return {submission:copy,mailConfigured:configured,
+  return {submission:copy,mailConfigured:configured,manualShareAvailable:row.status==='approved',accessMessageNotice:'',
     existingAccount:row.id===rows[1].id?{userId:'11111111-1111-4111-8111-111111111111',name:'Existing customer',email:row.customer_email,inactive:false}:null,
     relatedSubmissions:[{reference:'VV-DUP001',reason:'Same bank transaction ID'}],sessionConflicts:[],history:[],
-    emailPreview:accessEmail(copy,'https://chat.velovest.lextok.com/login',row.id===rows[1].id?null:'[Generated securely when approved; never displayed here]')};
+    emailPreview:accessEmail(copy,'https://chat.velovest.lextok.com/login',row.id===rows[1].id?null:row.status==='approved'?'fixture-manual-share-password':'[Generated securely on approval]')};
 }
 const server=createServer(async(req,res)=>{
   try {
@@ -54,7 +54,9 @@ try{
   const pdfPage=await browser.newPage();
   await pdfPage.setContent('<h1>Payment evidence · page one</h1><p>SGD 1080 · bank transfer fixture</p><div style="break-before:page"><h1>Payment evidence · page two</h1><p>Reference details</p></div>');
   pdfBytes=Buffer.from(await pdfPage.pdf({format:'A4'}));await pdfPage.close();
-  const page=await browser.newPage();await page.setViewport({width:1440,height:1000});
+  const page=await browser.newPage();
+  await page.evaluateOnNewDocument(()=>Object.defineProperty(navigator,'clipboard',{value:{writeText:async text=>{window.copiedAccess=text;}}}));
+  await page.setViewport({width:1440,height:1000});
   await page.goto(`http://127.0.0.1:${server.address().port}${root}index.html`,{waitUntil:'networkidle0'});
   await page.waitForSelector('#rows button');assert.equal(await page.$$eval('#rows tr',els=>els.length),2);
   assert.equal(await page.$eval('#mail-setup',el=>el.hidden),false);
@@ -76,15 +78,31 @@ try{
   releaseApproval();await page.waitForFunction(()=>document.querySelector('#review-message').innerText.includes('email setup is pending'));
   assert.equal(await page.$eval('#send-email',el=>el.disabled),true);
   assert.match(await page.$eval('#approved-details',el=>el.innerText),/Awaiting email setup/);
+  assert.match(await page.$eval('#email-preview',el=>el.innerText),/Temporary password: fixture-manual-share-password/);
+  await page.click('#copy-access');
+  await page.waitForFunction(()=>document.querySelector('#copy-message').innerText.includes('copied'));
+  const copied=await page.evaluate(()=>window.copiedAccess);
+  assert.match(copied,/Subject: Your Velovest signup is approved/);
+  assert.match(copied,/Username \(email\): new@example.invalid/);
+  assert.match(copied,/Temporary password: fixture-manual-share-password/);
+  assert.match(copied,/Sign in: https:\/\/chat.velovest.lextok.com\/login/);
+  assert.equal(sendCount,0);
+  await page.evaluate(()=>{navigator.clipboard.writeText=async()=>{throw new Error('Clipboard denied');};document.execCommand=()=>true;});
+  await page.click('#copy-access');await page.waitForFunction(()=>document.querySelector('#copy-message').innerText.includes('copied'));
+  assert.equal(await page.$$eval('#review textarea',els=>els.length),0);
+
   await page.setViewport({width:390,height:844});await page.screenshot({path:'/tmp/velovest-signup-review-mobile.png',fullPage:true});
   assert.equal(await page.$eval('#review',el=>el.scrollWidth<=el.clientWidth+1),true);
   await page.click('#close-review');
+  assert.equal(await page.$eval('#email-preview',el=>el.textContent),'');
   configured=true;await page.select('#status-filter','approved');await page.click('#refresh');
   await page.waitForFunction(()=>document.querySelector('#mail-setup').hidden);
   await page.click('#rows button');await page.waitForSelector('#approved-state:not([hidden])');
   assert.equal(await page.$eval('#send-email',el=>el.disabled),false);
   await page.click('#send-email');await page.waitForFunction(()=>document.querySelector('#approved-details').innerText.includes('Accepted by email provider'));
   assert.equal(sendCount,1);assert.equal(await page.$eval('#send-email',el=>el.hidden),true);
+  assert.match(await page.$eval('#email-preview',el=>el.innerText),/Temporary password: fixture-manual-share-password/);
+  await page.click('#copy-access');await page.waitForFunction(()=>document.querySelector('#copy-message').innerText.includes('copied'));
   await page.click('#close-review');await page.select('#status-filter','submitted');
   await page.click('#rows button');await page.waitForSelector('#link-existing-wrap:not([hidden])');
   assert.match(await page.$eval('#email-preview',el=>el.innerText),/Use your existing Velovest password/);
