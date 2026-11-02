@@ -40,7 +40,7 @@
     notify('Loading signup invite codes…');$('invites').replaceChildren();
     try {
       const data=await api('/invites');
-      $('invites').replaceChildren(...data.codes.map(code=>{const row=node('tr');row.append(node('td',code.code),node('td',code.createdAt),node('td',code.comment),node('td',code.usedAt?'Used':'Unused'));return row;}));notify(data.codes.length?'':'No signup invite codes yet.');
+      $('invites').replaceChildren(...data.codes.map(code=>{const row=node('tr');row.append(node('td',code.code),node('td',code.recipientEmail||'Generated at signup'),node('td',code.createdAt),node('td',code.comment),node('td',code.usedAt?'Used':'Unused'));return row;}));notify(data.codes.length?'':'No signup invite codes yet.');
     }catch(error){notify(error.message,true);}
   }
   function tab(access) {
@@ -54,7 +54,7 @@
   $('invite-form').addEventListener('submit',async event=>{
     event.preventDefault();if($('create-invite').disabled)return;$('create-invite').disabled=true;notify('Creating signup invite…');
     try {
-      const data=await api('/invites',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({comment:$('comment').value})});
+      const data=await api('/invites',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({comment:$('comment').value,recipientEmail:$('recipient-email').value})});
       inviteLink=data.onboardUrl;$('new-code').textContent=data.code;$('invite-link').href=inviteLink;$('new-invite').hidden=false;
       await invites();notify('Signup invite created.');
     }catch(error){notify(error.message+' Refresh the code list before retrying if the result is uncertain.',true);}

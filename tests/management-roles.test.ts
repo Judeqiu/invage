@@ -5,7 +5,7 @@ import cookieParser from 'cookie-parser';
 import request from 'supertest';
 import pg from 'pg';
 import { afterAll,beforeAll,beforeEach,expect,it } from 'vitest';
-import { createAdminOnboardCode,validateInviteCode } from 'utarus';
+import { createAdminOnboardCode,validateInviteCode,redeemInviteInstantly } from 'utarus';
 import { adminRouter } from '../node_modules/utarus/dist/webapp/chat/admin-router.js';
 import { useTestDatabase,createInvestorFixture } from './helpers/database.js';
 import { ManagementRepository } from '../src/management/repository.js';
@@ -75,4 +75,15 @@ it('revokes a manager in an existing session and removes their navigation on ref
   await patch(ids.manager,{enabled:false}).expect(200);
   await request(app).get('/api/management/users').set('Cookie',cookies.manager).expect(403);
   expect((await request(app).get('/manifest').set('Cookie',cookies.manager)).body.nav).toEqual([]);
+});
+
+it('uses the manager-entered email when the invitation creates an ordinary account',async()=>{
+  const created=await request(app).post('/api/management/invites').set('Cookie',cookies.manager)
+    .set('Host','management.test').set('Origin','https://management.test').send({recipientEmail:' Customer@Example.com '}).expect(200);
+  expect(created.body.recipientEmail).toBe('customer@example.com');
+  const account=await redeemInviteInstantly({code:created.body.code,displayName:'Customer',web:true,language:'en'});
+  expect(account.state.profile.contact_email).toBe('customer@example.com');
+  expect(account.state.user.admin).not.toBe(true);
+  expect(await repository.isManager(account.userId)).toBe(false);
+  await expect(validateInviteCode(created.body.code)).rejects.toThrow(/used/);
 });

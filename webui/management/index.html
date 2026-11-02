@@ -12,8 +12,8 @@
   </section>
   <section id="access-section" aria-labelledby="access-title" hidden><h2 id="access-title">Access</h2>
     <p>Issue normal signup invite codes.</p>
-    <form id="invite-form"><label for="comment">Comment (optional)</label><div class="controls"><input id="comment"><button id="create-invite" type="submit">New signup invite</button></div></form>
+    <form id="invite-form"><label for="recipient-email">Account email (optional)</label><input id="recipient-email" type="email" autocomplete="email"><p class="muted">The new account will use this email for login. Leave blank to generate an address.</p><label for="comment">Comment (optional)</label><div class="controls"><input id="comment"><button id="create-invite" type="submit">New signup invite</button></div></form>
     <div id="new-invite" hidden><p id="new-code" class="role-name"></p><a id="invite-link" target="_blank" rel="noopener">Open signup link</a><button id="copy-invite" type="button">Copy signup link</button></div>
-    <div class="table-scroll"><table><thead><tr><th>Invite code</th><th>Created</th><th>Comment</th><th>Status</th></tr></thead><tbody id="invites"></tbody></table></div>
+    <div class="table-scroll"><table><thead><tr><th>Invite code</th><th>Account email</th><th>Created</th><th>Comment</th><th>Status</th></tr></thead><tbody id="invites"></tbody></table></div>
   </section>
 </main><script src="app.js" defer></script></body></html>

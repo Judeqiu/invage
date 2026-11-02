@@ -77,3 +77,13 @@ it('fails closed on role lookup failure and rejects malformed user IDs',async()=
   await request(app).get('/api/management/users').set('x-test-user','manager').expect(503);
   log.mockRestore();
 });
+
+it('accepts optional recipient email and rejects malformed values without issuing codes',async()=>{
+  await mutate('post','/invites').send({comment:'Customer',recipientEmail:' Customer@Example.com '}).expect(200);
+  expect(actions.issue).toHaveBeenCalledWith(expect.objectContaining({recipientEmail:'customer@example.com'}));
+  for(const recipientEmail of ['invalid',123,null,'a@b.com\u0000']) await mutate('post','/invites').send({recipientEmail}).expect(400);
+  expect(actions.issue).toHaveBeenCalledOnce();
+  actions.invites.mockResolvedValue([{code:'INV-EMAIL',created_at:'2026-11-03',recipient_email:'customer@example.com'}]);
+  const response=await request(app).get('/api/management/invites').set('x-test-user','manager').expect(200);
+  expect(response.body.codes[0].recipientEmail).toBe('customer@example.com');
+});

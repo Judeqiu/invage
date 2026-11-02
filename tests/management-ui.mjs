@@ -35,10 +35,10 @@ const server=createServer(async(req,res)=>{
   if(path==='/api/domain/invage/management/users/'+ids.subscriber){json(res,{user:subscriber,billingEnabled:false});return;}
   if(path==='/api/domain/invage/management/invites'){
    if(req.method==='POST'){
-    let body='';for await(const chunk of req)body+=chunk;assert.deepEqual(JSON.parse(body),{comment:'Customer signup'});issued++;await heldInvite;
+    let body='';for await(const chunk of req)body+=chunk;assert.deepEqual(JSON.parse(body),{comment:'Customer signup',recipientEmail:'customer@example.invalid'});issued++;await heldInvite;
     json(res,{code:'INV-MANAGER',createdAt:'2026-11-02',onboardUrl:'http://127.0.0.1:'+server.address().port+'/login?invite=INV-MANAGER'});return;
    }
-   json(res,{codes:[{code:'INV-CUSTOMER',createdAt:'2026-11-02',comment:'Normal signup',usedAt:null}]});return;
+   json(res,{codes:[{code:'INV-CUSTOMER',createdAt:'2026-11-02',comment:'Normal signup',recipientEmail:'customer@example.invalid',usedAt:null}]});return;
   }
   if(path.startsWith('/api/')){json(res,{count:0});return;}
   const domain='/domain-assets/invage/management/';
@@ -78,8 +78,9 @@ try {
  assert.match(await panel.$eval('#details',el=>el.innerText),/Subscriber <img src=x>/);
  assert.equal(await panel.$('#details img'),null);
  await panel.click('#access-tab');await panel.waitForSelector('#invites tr');
+ assert.match(await panel.$eval('#invites',el=>el.innerText),/customer@example.invalid/);
  assert.doesNotMatch(await panel.evaluate(()=>document.body.innerText),/Admin onboard codes|New admin code|ADM-/);
- await panel.type('#comment','Customer signup');await panel.click('#create-invite');
+ await panel.type('#recipient-email','customer@example.invalid');await panel.type('#comment','Customer signup');await panel.click('#create-invite');
  await panel.waitForFunction(()=>document.getElementById('create-invite').disabled);
  await panel.$eval('#create-invite',button=>button.click());assert.equal(issued,1);
  releaseInvite();await panel.waitForSelector('#new-invite:not([hidden])');

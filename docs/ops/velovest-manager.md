@@ -59,3 +59,14 @@ Validation: `npm run build`; focused `management-api` and `management-roles`
 tests; `node --import tsx tests/management-ui.mjs` renders the real built framework
 drawer and the manager workspace with synthetic API responses. PostgreSQL tests
 use disposable databases under `utarus_test_admin`, never an application DB.
+
+Managers can optionally enter an Account email when creating an invite. It is
+stored on the invitation and becomes the new account's login/contact email on
+redemption. Leaving it blank preserves generated addresses. This does not send
+an email or verify ownership. An address already in use cannot create a second
+account; a failed redemption leaves the invitation unused.
+
+The pinned framework includes schema migration 35 (`invitation_recipient_email`),
+which adds a nullable `utarus.invites.recipient_email` column. Run the framework
+migration step with the database owner before starting the updated application.
+Existing invitation rows retain null and continue to generate addresses.
