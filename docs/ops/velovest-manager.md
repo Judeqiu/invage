@@ -22,8 +22,10 @@ Managers see a Management destination with three tabs:
   recorded; this view does not recompute entitlement or reset usage.
 - **Access:** list and issue normal signup invite codes and copy signup links.
   Admin elevation codes and organization-role invites are not exposed. The
-  creation endpoint accepts only an optional comment; callers cannot supply
-  roles, organization IDs, custom codes or administrator flags.
+  creation endpoint accepts only an optional comment and account email; callers
+  cannot supply roles, organization IDs, custom codes or administrator flags.
+- **Signup dates:** a month calendar and disabled-date list. Click a date to
+  disable or re-enable it; all dates, including weekends, start enabled.
 
 Assignments live in `velovest_management.role_assignments` in the existing
 application database, independently of user-editable profiles and portfolio
@@ -86,3 +88,31 @@ horizon cutoff. Disabled choices are unavailable, and a newly disabled date is
 rejected by the submission API even if the form was already open. Date toggles
 and intake serialize per date in PostgreSQL. Existing submissions and identical
 retries are preserved. Renewal remains independent of onboarding dates.
+
+## Manager interaction behavior
+
+The workspace follows the admin console's neutral styling, compact tabs, tables
+and subscriber side drawer. Tab content, search and scroll positions stay in
+memory within the open page. Returning to a tab revalidates its data without
+clearing the current view. Nothing is cached in browser storage; role checks
+remain live on every API request. A denied request clears the private view.
+
+Date changes appear immediately with an explicit Saving state. The date itself
+cannot be submitted twice while pending; other dates can still be changed.
+Confirmation uses the PATCH response, avoiding a second list request. On failure,
+the previous display is restored and the error asks the manager to refresh to
+confirm actual persistence before retrying. A refresh response started before a
+mutation cannot overwrite the new state. Concurrent save failures stay visible
+until reconciled or retried. Calendar arrows support day/week keyboard movement;
+month navigation has no date horizon cutoff. Weekends remain eligible by default.
+
+Subscriber details open immediately from the existing list data and revalidate
+in the background. The modal drawer supports Escape, focus containment and focus
+restoration. Invite creation adds its returned record and signup link without
+waiting for another list request; a stale list response cannot remove the new
+invite. Server authorization, account permissions and eligibility rules are
+unchanged. This UI refinement requires no new migration or framework pin.
+
+The browser regression exercises the real framework shell with synthetic users
+and controlled latency/failure responses. Its timings establish client behavior
+under that simulated delay, not production server or database latency.

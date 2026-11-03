@@ -1,24 +1,38 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Velovest Management</title><link rel="stylesheet" href="page.css"></head>
-<body><main>
-  <header><h1>Management</h1><p class="muted">velovest_manager</p></header>
-  <nav aria-label="Management sections"><button id="users-tab" type="button" aria-pressed="true">Users</button><button id="access-tab" type="button" aria-pressed="false">Access</button><button id="dates-tab" type="button" aria-pressed="false">Signup dates</button></nav>
-  <p id="message" role="status" aria-live="polite"></p>
-  <section id="users-section" aria-labelledby="users-title"><h2 id="users-title">Subscription users</h2>
-    <p>Subscriber details are read-only. Administrator accounts are excluded.</p>
-    <form id="search-form"><label for="search">Search users</label><div class="controls"><input id="search" type="search" placeholder="Name, email, user ID or reference"><button type="submit">Search</button><button id="refresh-users" type="button">Refresh</button></div></form>
-    <p id="user-count" class="muted"></p>
-    <div class="table-scroll"><table><thead><tr><th>User</th><th>Subscription</th><th>Reference</th><th>Credits used</th><th>Joined</th><th></th></tr></thead><tbody id="users"></tbody></table></div>
-    <aside id="user-details" hidden><div class="heading"><h2>Subscriber details</h2><button id="close-details" type="button">Close</button></div><dl id="details"></dl></aside>
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Velovest Management</title><link rel="stylesheet" href="page.css"></head>
+<body>
+<main>
+  <header class="workspace-header"><div class="title-group"><span class="workspace-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3 4 6v6c0 5 8 9 8 9s8-4 8-9V6l-8-3Z"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg></span><div><h1>Management</h1><p>Velovest manager workspace</p></div></div></header>
+  <nav role="tablist" aria-label="Management sections"><button id="users-tab" role="tab" aria-selected="true" aria-controls="users-section" type="button">Users</button><button id="access-tab" role="tab" aria-selected="false" aria-controls="access-section" tabindex="-1" type="button">Access</button><button id="dates-tab" role="tab" aria-selected="false" aria-controls="dates-section" tabindex="-1" type="button">Signup dates</button></nav>
+  <p id="message" role="alert" hidden></p>
+  <section id="users-section" role="tabpanel" aria-labelledby="users-tab">
+    <div class="section-heading"><div><h2>Subscription users</h2><p>Account details, subscriptions and credit usage. Read-only access.</p></div><button id="refresh-users" class="secondary" type="button">Refresh</button></div>
+    <form id="search-form" class="search-form"><label class="sr-only" for="search">Search users</label><input id="search" type="search" placeholder="Search name, email, user ID or reference…"><button type="submit">Search</button></form>
+    <p id="users-status" class="status" role="status" aria-live="polite"></p>
+    <div class="table-frame"><div class="table-scroll"><table><thead><tr><th>User</th><th>Subscription</th><th>Reference</th><th>Credits used</th><th>Joined</th><th><span class="sr-only">Details</span></th></tr></thead><tbody id="users"></tbody></table></div><div class="table-footer"><span id="user-count">Loading subscribers…</span><span>Administrator accounts are excluded</span></div></div>
   </section>
-  <section id="access-section" aria-labelledby="access-title" hidden><h2 id="access-title">Access</h2>
-    <p>Issue normal signup invite codes.</p>
-    <form id="invite-form"><label for="recipient-email">Account email (optional)</label><input id="recipient-email" type="email" autocomplete="email"><p class="muted">The new account will use this email for login. Leave blank to generate an address.</p><label for="comment">Comment (optional)</label><div class="controls"><input id="comment"><button id="create-invite" type="submit">New signup invite</button></div></form>
-    <div id="new-invite" hidden><p id="new-code" class="role-name"></p><a id="invite-link" target="_blank" rel="noopener">Open signup link</a><button id="copy-invite" type="button">Copy signup link</button></div>
-    <div class="table-scroll"><table><thead><tr><th>Invite code</th><th>Account email</th><th>Created</th><th>Comment</th><th>Status</th></tr></thead><tbody id="invites"></tbody></table></div>
+  <section id="access-section" role="tabpanel" aria-labelledby="access-tab" hidden>
+    <div class="section-heading"><div><h2>Signup access</h2><p>Create an invite and share its signup link with your customer.</p></div><button id="refresh-invites" class="secondary" type="button">Refresh</button></div>
+    <form id="invite-form" class="invite-form"><div class="form-fields"><div><label for="recipient-email">Account email <span class="muted">(optional)</span></label><input id="recipient-email" type="email" autocomplete="email" placeholder="customer@example.com"><p class="field-hint">Used for login. Leave blank to generate an address.</p></div><div><label for="comment">Comment <span class="muted">(optional)</span></label><input id="comment" placeholder="A note to identify this invite"></div></div><button id="create-invite" type="submit">Create signup invite</button></form>
+    <p id="access-status" class="status" role="status" aria-live="polite"></p>
+    <div id="new-invite" class="invite-result" hidden><div><span class="eyebrow">Ready to share</span><p id="new-code" class="code"></p><a id="invite-link" target="_blank" rel="noopener">Open signup link <span aria-hidden="true">↗</span></a></div><button id="copy-invite" type="button">Copy signup link</button></div>
+    <div class="table-frame"><div class="table-scroll"><table><thead><tr><th>Invite code</th><th>Account email</th><th>Created</th><th>Comment</th><th>Status</th></tr></thead><tbody id="invites"></tbody></table></div><div id="invite-count" class="table-footer">Loading invites…</div></div>
   </section>
-  <section id="dates-section" aria-labelledby="dates-title" hidden><h2 id="dates-title">Signup dates</h2>
-    <p>Every date is enabled by default, including weekends. Disabled dates cannot be selected for new signups. Existing submissions are preserved. Dates use Singapore time.</p>
-    <form id="date-form"><label for="signup-date">Date</label><div class="controls"><input id="signup-date" type="date" required><button id="disable-date" type="submit">Disable date</button><button id="enable-date" type="button">Enable date</button><button id="refresh-dates" type="button">Refresh</button></div></form>
-    <h3>Disabled dates</h3><div class="table-scroll"><table><thead><tr><th>Date (SGT)</th><th>Status</th><th></th></tr></thead><tbody id="disabled-dates"></tbody></table></div>
+  <section id="dates-section" role="tabpanel" aria-labelledby="dates-tab" hidden>
+    <div class="section-heading"><div><h2>Signup dates</h2><p>Click a date to change availability. All dates start enabled, including weekends.</p></div><button id="refresh-dates" class="secondary" type="button">Refresh</button></div>
+    <p id="dates-status" class="status" role="status" aria-live="polite"></p>
+    <div class="date-layout">
+      <div class="calendar-panel"><div class="calendar-heading"><h3 id="calendar-month" aria-live="polite"></h3><div class="calendar-navigation"><button id="previous-month" type="button" class="icon-button secondary" aria-label="Previous month">‹</button><button id="current-month" type="button" class="secondary">Today</button><button id="next-month" type="button" class="icon-button secondary" aria-label="Next month">›</button></div></div>
+        <div class="weekdays" aria-hidden="true"><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span></div>
+        <div id="calendar-days" class="calendar-days" role="group" aria-labelledby="calendar-month"></div>
+        <div class="calendar-legend"><span><i class="legend-dot enabled-dot"></i>Enabled</span><span><i class="legend-dot disabled-dot"></i>Disabled</span><span><i class="legend-dot pending-dot"></i>Saving</span></div>
+        <p class="calendar-note">Singapore time (SGT · UTC+8). Changes apply to new signups; existing submissions are preserved.</p>
+      </div>
+      <aside class="disabled-panel" aria-labelledby="disabled-title"><div class="disabled-heading"><h3 id="disabled-title" tabindex="-1">Disabled dates</h3><span id="disabled-count" class="badge">0</span></div><p class="field-hint">Re-enable a date here or on the calendar.</p><ul id="disabled-dates" class="disabled-list"></ul><p id="dates-empty" class="empty-state" hidden>No disabled dates.<br><span>Every date is available for signup.</span></p></aside>
+    </div>
   </section>
-</main><script src="app.js" defer></script></body></html>
+</main>
+<dialog id="user-details" aria-labelledby="details-title"><div class="drawer-heading"><div><span class="eyebrow">Subscriber details</span><h2 id="details-title"></h2><p id="details-email"></p></div><button id="close-details" class="icon-button secondary" type="button" aria-label="Close subscriber details">×</button></div><p id="details-status" class="status" role="status" aria-live="polite"></p><dl id="details"></dl><p class="drawer-note">Subscriber information is read-only.</p></dialog>
+<script src="app.js" defer></script>
+</body></html>
