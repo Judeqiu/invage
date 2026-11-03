@@ -2,6 +2,7 @@ import { ArrowRight, Menu, X } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import logoSmall from "@/assets/velovest-logo-320.webp?no-inline";
 import logoLarge from "@/assets/velovest-logo-640.webp?no-inline";
+import logoExtraLarge from "@/assets/velovest-logo-1280.webp?no-inline";
 import { useEffect, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 
@@ -15,7 +16,7 @@ const navigation = [
 
 export function Brand() {
   return <Link to="/" aria-label="Velovest.ai home" className="flex w-fit flex-none items-center">
-    <img src={logoSmall} srcSet={`${logoSmall} 320w, ${logoLarge} 640w`} sizes="(min-width: 640px) 140px, 125px" alt="Velovest.ai — Intelligent Investment Technology" width={640} height={165} className="h-8 w-auto sm:h-9" />
+    <img src={logoSmall} srcSet={`${logoSmall} 320w, ${logoLarge} 640w, ${logoExtraLarge} 1280w`} sizes="(min-width: 640px) 146px, 130px" alt="Velovest.ai — Intelligent Investment Technology" width={2351} height={583} className="h-8 w-auto sm:h-9" />
   </Link>;
 }
 

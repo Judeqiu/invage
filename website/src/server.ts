@@ -73,7 +73,13 @@ export default {
       }
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
-      return await normalizeCatastrophicSsrResponse(response);
+      const normalized = await normalizeCatastrophicSsrResponse(response);
+      // Revalidate HTML so a new release advertises its new fingerprinted assets.
+      // Image assets keep their existing one-year immutable cache policy.
+      if (normalized.headers.get("content-type")?.includes("text/html")) {
+        normalized.headers.set("Cache-Control", "no-cache");
+      }
+      return normalized;
     } catch (error) {
       console.error(error);
       return new Response(renderErrorPage(), {
