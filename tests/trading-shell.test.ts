@@ -2,12 +2,14 @@ import { afterEach, expect, it } from 'vitest';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { buildWebUiManifest } from 'utarus';
+import { assertL10nConfig } from '../node_modules/utarus/dist/l10n/validate.js';
 import { createInvageWebUi, createInvageChromeCatalogs, invageWebUiStaticDir } from '../src/webapp/invage-webui.js';
 const profile = process.env.INVAGE_PRODUCT_PROFILE;
 afterEach(() => {process.env.INVAGE_PRODUCT_PROFILE=profile;});
 it('enables the reference shell only for the consultant profile, retaining all report and broker routes', () => {
   process.env.INVAGE_PRODUCT_PROFILE='consultant';
   const webUi=createInvageWebUi(),manifest=buildWebUiManifest({webUi} as never);
+  expect(() => assertL10nConfig({webUi,l10n:{defaultLanguage:'en',languages:['en'],catalogs:createInvageChromeCatalogs()}} as never,'invage')).not.toThrow();
   expect(manifest.shell).toMatchObject({variant:'trading',primaryNavIds:['dashboard','positions','trades','insights','account-risk','chat','brokers'],syncAction:{label:'Sync brokers',statusPath:'/api/domain/invage/broker-sync/status',actionPath:'/api/domain/invage/broker-sync'},logoUrl:'/domain-assets/invage/velovest-logo-dark.webp'});
   expect(manifest.shell?.workspaceLabel).toBeUndefined();
   expect(manifest.nav.find(n=>n.id==='chat')?.label).toBe('AI Chat');

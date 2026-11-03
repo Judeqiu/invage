@@ -13,6 +13,8 @@
   "settings.portfolio.description": "Choose the currency used for portfolio totals",
   "settings.brokers.title": "Brokers",
   "settings.brokers.description": "Connect read-only brokerage channels",
+  "settings.credits.title": "Credits",
+  "settings.credits.description": "Your weekly AI credit allowance",
   "page.dashboard": "Portfolio Dashboard",
   "page.positions": "Positions",
   "page.option-risk": "Option risk index",
