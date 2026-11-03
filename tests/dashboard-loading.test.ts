@@ -159,3 +159,51 @@ it.skipIf(!existsSync(chrome)).each(['index.html', 'v2.html'])('%s renders the s
     }
   }
 }, 20000);
+
+it.skipIf(!existsSync(chrome))('reuses the parent-tab response only after owner/generation revalidation', async () => {
+  const root = resolve('webui');
+  let generation = 'owner-a-1';
+  let name = 'First account';
+  const received: Array<string | undefined> = [];
+  const server = createServer((req, res) => {
+    const url = new URL(req.url!, 'http://localhost');
+    if (url.pathname === '/shell') return res.end('<iframe src="/dashboard/v2.html"></iframe>');
+    if (url.pathname.endsWith('/dashboard')) {
+      received.push(req.headers['if-none-match']);
+      const etag = '"' + generation + '"';
+      res.setHeader('Cache-Control', 'private, no-store');
+      res.setHeader('ETag', etag);
+      if (req.headers['if-none-match'] === etag) { res.statusCode = 304; return res.end(); }
+      res.setHeader('Content-Type', 'application/json');
+      return res.end(JSON.stringify(withPageProjections({ empty: true, model: null, displayName: name, productProfile: 'consultant' })));
+    }
+    if (url.pathname.endsWith('/option-history')) { res.setHeader('Content-Type', 'application/json'); return res.end(JSON.stringify({ episodes: [], connections: [], gaps: [], next_offset: null })); }
+    const file = resolve(root, '.' + url.pathname);
+    if (!file.startsWith(root + '/') || !existsSync(file)) { res.statusCode = 404; return res.end(); }
+    res.setHeader('Content-Type', extname(file) === '.js' ? 'text/javascript' : extname(file) === '.css' ? 'text/css' : 'text/html');
+    res.end(readFileSync(file));
+  });
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  const browser = await puppeteer.launch({ executablePath: chrome, headless: true, args: ['--no-sandbox'] });
+  try {
+    const page = await browser.newPage();
+    const errors: string[] = []; page.on('pageerror', e => errors.push(e.message));
+    const origin = `http://127.0.0.1:${(server.address() as any).port}`;
+    await page.setRequestInterception(true);
+    page.on('request', req => req.url().startsWith(origin) ? req.continue() : req.abort());
+    await page.goto(origin + '/shell');
+    const frame = page.frames().find(f => f.url().endsWith('/dashboard/v2.html'))!;
+    await frame.waitForSelector('#dashboard:not(.hidden)');
+    await frame.waitForFunction(() => document.getElementById('loadProgress')!.getAttribute('aria-valuenow') === '8');
+    await frame.goto(origin + '/dashboard/v2.html');
+    await frame.waitForSelector('#dashboard:not(.hidden)');
+    expect(received).toEqual([undefined, '"owner-a-1"']);
+    expect(await frame.$eval('#subtitle', n => n.textContent)).toContain('First account');
+    expect(await frame.$eval('#loading', n => n.classList.contains('hidden'))).toBe(true);
+    generation = 'owner-b-1'; name = 'Different account';
+    await frame.goto(origin + '/dashboard/v2.html');
+    await frame.waitForSelector('#dashboard:not(.hidden)');
+    expect(await frame.$eval('#subtitle', n => n.textContent)).toContain('Different account');
+    expect(errors).toEqual([]);
+  } finally { await browser.close(); server.closeAllConnections(); await new Promise<void>(r => server.close(() => r())); }
+}, 15000);

@@ -107,8 +107,12 @@ let historySearchTimer = null;
 const collapsedOptionMonths = new Set();
 // Keep each chart's disclosure choice when filters or refreshed data redraw it.
 const premiumChartExpansion = new Map();
+const premiumYearExpansion = new Map();
 el.premiumEngine?.addEventListener('toggle', event => {
   const details = event.target;
+  if (details.matches?.('details.premium-year')) {
+    premiumYearExpansion.set(details.dataset.year, details.open);
+  }
   if (details.matches?.('details.bar-more')) {
     premiumChartExpansion.set(details.closest('.metric-card').id, details.open);
   }
@@ -1988,12 +1992,16 @@ function renderPremiumEngine(view) {
   const openHelp = 'For live rolled positions, uses the latest verified replacement opening credit plus the old-contract closing debit, once and before fees. Does not add the replacement opening credit again. An unverified roll is unavailable. Other live positions use reconciled opening execution cash, not broker book cost. Missing opening evidence is unavailable. Trading and Portfolio show opening premium only; a latest roll also includes its closing leg. Archived views use snapshot cost basis because live roll records cannot establish a historical roll. Grouped by current expiry or underlying, not trade date; this is not lifetime cash flow or realized profit.';
   const chart = (title, values, caption, options) => {
     if (!isWheelDesk) return premiumChartCard(title, values, caption, options);
-    const ordered = options.newestFirst ? [...values].sort(([a], [b]) => b.localeCompare(a)) : [...values];
-    const entries = ordered.map(([label, row]) => ({ label: options.monthly ? monthLabel(label) : label, value: row,
+    const ordered = options.monthly ? [...values].sort(([a], [b]) => {
+      const knownA = /^\d{4}-\d{2}$/.test(a), knownB = /^\d{4}-\d{2}$/.test(b);
+      if (knownA !== knownB) return knownA ? -1 : 1;
+      return options.newestFirst ? b.localeCompare(a) : a.localeCompare(b);
+    }) : [...values];
+    const entries = ordered.map(([label, row]) => ({ label: options.monthly && /^\d{4}-\d{2}$/.test(label) ? monthLabel(label) : label, year: label.slice(0, 4), value: row,
       display: row == null ? '—' : options.percent ? row.toFixed(1) + '%' : fmtPrettyMoney(row, ccy, 2) }));
-    return cssBarCard(title, entries, caption, { ...options, limit: 5, expanded: premiumChartExpansion.get(options.id) === true });
+    return cssBarCard(title, entries, caption, { ...options, limit: 5, expanded: premiumChartExpansion.get(options.id) === true, yearExpansion: premiumYearExpansion });
   };
-  const openCards = chart('Premium Collected by Month', data.byMonth, 'Before fees · recorded trades by trade month', { ...common, id: 'openPremiumExpiryCard', type: 'area', monthly: true, newestFirst: true, help: 'Money received from selling options, minus money paid to buy options, grouped by the month each trade occurred, newest first. Includes recorded opening, closing and protective option trades, before brokerage fees, in the selected account scope and reporting currency. This is cash flow, not profit; missing history can make it incomplete.' }) +
+  const openCards = chart('Premium Collected by Month', data.byMonth, 'Before fees · recorded trades by trade month', { ...common, id: 'openPremiumExpiryCard', type: 'area', monthly: true, newestFirst: true, yearGroups: true, help: 'Money received from selling options, minus money paid to buy options, grouped by the month each trade occurred, newest first. Includes recorded opening, closing and protective option trades, before brokerage fees, in the selected account scope and reporting currency. This is cash flow, not profit; missing history can make it incomplete.' }) +
     chart('NAV concentration', book.concentration, 'Signed market value as % of NAV', { id: 'premiumConcentrationCard', percent: true, help: 'Signed market value divided by NAV, including option liabilities. Unavailable when NAV is incomplete or non-positive.' }) +
     chart('Net option premium by underlying', book.premiumByUnderlying, view.isLive ? 'Open book · net of verified roll buybacks' : 'Archived opening cost basis', { ...common, id: 'openPremiumUnderlyingCard', help: openHelp }) +
     chart('Open P&L by expiry month', book.pnlByExpiry, 'Unrealized · before fees', { ...common, id: 'openPnlExpiryCard', type: 'pnl', monthly: true, help: 'Broker-snapshot option market value minus recorded signed position cost, matching Sections 01 and 03, grouped by expiry month. Archived views retain snapshot valuation. NAV and concentration retain their separate portfolio valuation basis.' });
@@ -3019,14 +3027,35 @@ function updateLoading(step, info = {}) {
   if (step === 4 && info.total > 0) details.push(`Opening prices checked for ${info.processed} of ${info.total} stocks`);
   loadUi.insights.textContent = details.join(' · ') || 'Preparing your dashboard…';
 }
+// The app shell survives iframe navigation. Retain one complete response in
+// memory only, then require an authenticated generation match before displaying it.
+function dashboardMemory() {
+  try {
+    const owner = parent.location.origin === location.origin ? parent : window;
+    const key = Symbol.for('velovest.dashboard-response');
+    return { read: () => owner[key], write: value => { owner[key] = value; } };
+  } catch { return { read: () => null, write: () => {} }; }
+}
 async function fetchDashboardWithProgress(signal, force = false, onSnapshot) {
-  const response = await fetch(`${API}?progress=1${force ? '&refresh=1' : '&preview=1'}`, { credentials: 'include', signal, headers: { Accept: 'text/event-stream' } });
+  const memory = dashboardMemory();
+  const cached = force ? null : memory.read();
+  const headers = { Accept: 'text/event-stream' };
+  if (cached?.etag) headers['If-None-Match'] = cached.etag;
+  const response = await fetch(`${API}?progress=1${force ? '&refresh=1' : '&preview=1'}`, { credentials: 'include', signal, headers });
+  if (response.status === 304 && cached) return cached.payload;
+  const remember = body => {
+    const etag = response.headers.get('etag');
+    if (etag) memory.write({ etag, payload: body });
+    else memory.write(null);
+    return body;
+  };
   if (!response.ok) {
+    memory.write(null);
     throw new Error(response.status === 401 ? 'Your session has ended. Sign in again, then retry.' : 'The dashboard could not load. Please retry.');
   }
   // Older hosts and fixtures can still return the existing JSON response.
   if (!(response.headers.get('content-type') || '').includes('text/event-stream')) {
-    try { return await response.json(); } catch { throw new Error('The dashboard response was interrupted. Please retry.'); }
+    try { return remember(await response.json()); } catch { throw new Error('The dashboard response was interrupted. Please retry.'); }
   }
   if (!response.body) throw new Error('No dashboard data was received. Please retry.');
   const reader = response.body.getReader();
@@ -3056,7 +3085,7 @@ async function fetchDashboardWithProgress(signal, force = false, onSnapshot) {
     }
   } finally { reader.releaseLock(); }
   if (!result || typeof result !== 'object') throw new Error('Loading stopped before the dashboard was ready. Please retry.');
-  return result;
+  return remember(result);
 }
 
 function paintLoadingStage() {
@@ -3094,7 +3123,12 @@ async function load(force = false) {
   let historyStarted = false;
   loadStartedAt = performance.now(); loadPosition = 0; loadCounts = {};
   el.error.classList.add('hidden');
-  el.loading.classList.toggle('hidden', showingSnapshot);
+  // Fast reads already return a saved generation; avoid flashing the full
+  // progress panel on every page return. Keep progress for genuinely slow reads.
+  el.loading.classList.add('hidden');
+  const loadingReveal = setTimeout(() => {
+    if (!showingSnapshot) el.loading.classList.remove('hidden');
+  }, 250);
   el.dashboard.setAttribute('aria-busy', showingSnapshot ? 'false' : 'true');
   loadUi.progress.classList.remove('failed');
   loadUi.hint.textContent = 'Progress advances as each step finishes.';
@@ -3145,7 +3179,7 @@ async function load(force = false) {
     el.error.classList.remove('hidden');
     return false;
   } finally {
-    clearInterval(timer); clearTimeout(timeout); controller.abort();
+    clearTimeout(loadingReveal); clearInterval(timer); clearTimeout(timeout); controller.abort();
     loadingClock();
     el.dashboard.setAttribute('aria-busy', 'false');
     loading = false;
@@ -3228,10 +3262,19 @@ el.openOptions?.addEventListener('input', event => {
   if (event.target.id !== 'optionSearch') return;
   optionSearch = event.target.value;
   clearTimeout(optionSearchTimer);
+  const original = event.target;
   optionSearchTimer = setTimeout(() => {
+    // Read the current selection at redraw time; the user may have moved it
+    // since typing, or moved focus to a different control during the debounce.
+    const focused = document.activeElement === original;
+    const { selectionStart, selectionEnd, selectionDirection } = original;
     const view = buildView(selectedDate,selectedChannel);
     if (view) renderOpenOptions(view);
-    document.getElementById('optionSearch')?.focus();
+    const input = document.getElementById('optionSearch');
+    if (focused && input) {
+      input.focus({ preventScroll: true });
+      if (selectionStart != null) input.setSelectionRange(selectionStart, selectionEnd, selectionDirection);
+    }
   },150);
 });
 

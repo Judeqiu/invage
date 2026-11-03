@@ -110,7 +110,7 @@ it.skipIf(!existsSync(executablePath))('renders V2 with shared data, clarifies m
       'AAPL-C-130': { currency: 'USD', stoGrossPremium: 240 },
     };
     for (const position of dashboard.model.live.positions) {
-      if (position.option) position.probabilityQuote = { mark: position.option.mark, spot: dashboard.equityPrices[position.option.underlying], spotAsOf: dashboard.generatedAt };
+      if (position.option) position.probabilityQuote = { mark: position.option.mark, spot: dashboard.equityPrices[position.option.underlying], optionAsOf: dashboard.generatedAt, spotAsOf: dashboard.generatedAt };
     }
     dashboard.optionAnalytics.executions = [
       { channel: 'ibkr', account_id: 'A', underlying: 'AAPL', executed_at: '2026-10-20', currency: 'USD', gross_premium: 250, commission: -1 },
@@ -137,6 +137,8 @@ it.skipIf(!existsSync(executablePath))('renders V2 with shared data, clarifies m
     expect(await frame.$$eval('#openPremiumExpiryCard .bar-meta > span:first-child', nodes => nodes.map(n => n.textContent))).toEqual(['Oct 2026', 'Sep 2026', 'Aug 2026']);
     expect(await frame.$$eval('#openPremiumExpiryCard .bar-meta .num', nodes => nodes.map(n => n.textContent))).toEqual(['$200.00', '$90.00', '$80.00']);
     expect(await frame.$eval('#openPremiumExpiryCard', n => n.textContent)).not.toContain('Nov 2026');
+    expect(await frame.$eval('#openPremiumExpiryCard .premium-year', n => (n as HTMLDetailsElement).open)).toBe(true);
+    expect(await frame.$eval('#openPremiumExpiryCard .premium-year > summary', n => n.textContent)).toContain('$370.00');
     expect(await frame.$eval('#openPnlExpiryCard', n => n.textContent)).toContain('-$200.00');
     expect(await frame.$eval('#openPremiumUnderlyingCard', n => n.textContent)).toContain('$940.00');
     await frame.click('#channelPills [data-channel="ibkr"]');
@@ -173,7 +175,7 @@ it.skipIf(!existsSync(executablePath))('renders V2 with shared data, clarifies m
     // Every premium-engine chart keeps all categories and exposes a five-row preview.
     const manyOptions: any = {};
     dashboard.equityPrices = {};
-    for (let i = 1; i <= 7; i++) {
+    for (const i of [7, 1, 6, 2, 5, 3, 4]) {
       const underlying = 'STOCK' + i;
       manyOptions[underlying + '-PUT'] = { instrument: 'option', units: 1, avg_price: 100, currency: 'USD', channel: 'ibkr',
         option: { underlying, right: 'put', side: 'short', strike: 10, multiplier: 100, expiry: `2027-${String(i).padStart(2, '0')}-15`, settlement: 'physical', mark: 50 } };
@@ -185,7 +187,11 @@ it.skipIf(!existsSync(executablePath))('renders V2 with shared data, clarifies m
     }));
     await frame.goto(origin + '/dashboard/v2.html');
     await frame.waitForSelector('#premiumEngine .bar-more');
-    const chartIds = ['openPremiumExpiryCard', 'premiumConcentrationCard', 'openPremiumUnderlyingCard', 'openPnlExpiryCard'];
+    expect(await frame.$$eval('#openPnlExpiryCard .bar-meta > span:first-child', nodes => nodes.map(n => n.textContent))).toEqual(['Jan 2027','Feb 2027','Mar 2027','Apr 2027','May 2027','Jun 2027','Jul 2027']);
+    expect(await frame.$$('#openPremiumExpiryCard .bar-row')).toHaveLength(7);
+    expect(await frame.$eval('#openPremiumExpiryCard .premium-year', n => (n as HTMLDetailsElement).open)).toBe(true);
+    expect(await frame.$eval('#openPremiumExpiryCard .premium-year > summary', n => n.textContent)).toContain('$700.00');
+    const chartIds = ['premiumConcentrationCard', 'openPremiumUnderlyingCard', 'openPnlExpiryCard'];
     for (const id of chartIds) {
       const card = '#' + id;
       expect(await frame.$$(card + ' > .bar-list > .bar-row')).toHaveLength(5);
@@ -199,12 +205,30 @@ it.skipIf(!existsSync(executablePath))('renders V2 with shared data, clarifies m
     }
     // Redrawing with a broker filter retains independent chart choices.
     await frame.click('#openPremiumExpiryCard summary');
-    await expect.poll(() => frame.$eval('#openPremiumExpiryCard .bar-more', n => (n as HTMLDetailsElement).open)).toBe(false);
+    await expect.poll(() => frame.$eval('#openPremiumExpiryCard .premium-year', n => (n as HTMLDetailsElement).open)).toBe(false);
     await frame.click('#channelPills [data-channel="ibkr"]');
-    expect(await frame.$eval('#openPremiumExpiryCard .bar-more', n => (n as HTMLDetailsElement).open)).toBe(false);
+    expect(await frame.$eval('#openPremiumExpiryCard .premium-year', n => (n as HTMLDetailsElement).open)).toBe(false);
     expect(await frame.$eval('#premiumConcentrationCard .bar-more', n => (n as HTMLDetailsElement).open)).toBe(true);
     await frame.click('#premiumConcentrationCard summary');
     expect(await frame.$$eval('#premiumConcentrationCard .bar-row', nodes => nodes.filter(n => n.getBoundingClientRect().height > 0).length)).toBe(5);
+    // A delayed redraw preserves typing order, middle edits, selection and focus.
+    await frame.type('#optionSearch', 'STOCK', { delay: 220 });
+    await new Promise(r => setTimeout(r, 200));
+    expect(await frame.$eval('#optionSearch', n => (n as HTMLInputElement).value)).toBe('STOCK');
+    await frame.$eval('#optionSearch', n => {
+      const input = n as HTMLInputElement;
+      input.setSelectionRange(2, 4, 'backward');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await new Promise(r => setTimeout(r, 200));
+    expect(await frame.$eval('#optionSearch', n => {
+      const input = n as HTMLInputElement;
+      return [input.selectionStart, input.selectionEnd, input.selectionDirection];
+    })).toEqual([2, 4, 'backward']);
+    await frame.$eval('#optionSearch', n => n.dispatchEvent(new Event('input', { bubbles: true })));
+    await frame.focus('#optionHistoryTab');
+    await new Promise(r => setTimeout(r, 200));
+    expect(await frame.evaluate(() => document.activeElement?.id)).toBe('optionHistoryTab');
     dashboard.dashboardConfig.showTotalPremium = false;
     dashboard.dashboardConfig.showRealizedPnl = false;
     await frame.goto(origin + '/dashboard/v2.html');

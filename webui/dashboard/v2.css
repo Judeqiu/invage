@@ -207,3 +207,10 @@ footer { color: var(--muted-foreground); border-color: var(--border); font-size:
 @media(max-width:600px) { #premiumEngine { grid-template-columns: minmax(0,1fr); } }
 #premiumEngine > #openPremiumExpiryCard, #premiumEngine > #premiumConcentrationCard { grid-column: auto; }
 #premiumEngine > .metric-card:has(> .card-explain) { padding-bottom: 2.8rem; }
+
+.premium-year { margin-top: .75rem; }
+.premium-year > summary { display: flex; align-items: center; gap: .5rem; cursor: pointer; padding: .5rem 0; font-weight: 600; }
+.premium-year > summary::before { content: '▸'; color: var(--brand); }
+.premium-year[open] > summary::before { content: '▾'; }
+.premium-year > summary .num { margin-left: auto; }
+.premium-year > .bar-list { margin-top: .5rem; }

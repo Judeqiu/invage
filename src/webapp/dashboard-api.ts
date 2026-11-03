@@ -3,6 +3,7 @@
  * Mounted by DomainExtension.webUi at /api/domain/invage (auth: user).
  */
 
+import { createHash } from 'node:crypto';
 import { createExperienceSettingsRouter, riskPageEnabled, dailyChangesEnabled } from './experience-settings.js';
 import { buildAccountRisk } from './account-risk-data.js';
 import { readProductProfile } from '../agents/roster.js';
@@ -381,7 +382,19 @@ export function createDashboardApiRouter(): Router {
       if (!user?.userId) { res.status(401).json({ error: 'unauthorized', message: 'No session user.' }); return; }
       const snapshot = await loadInvestor(await targetUserId(req, user));
       // Even refresh=1 only rereads the persisted generation. Refresh work runs after sync.
-      const body = dashboardBody(snapshot);
+      const saved = requirePortfolioProjection(snapshot.state);
+      const body = dashboardBody(snapshot, saved);
+      // Validate identity and the current saved generation before reusing a
+      // dashboard held only in the parent tab's memory. Never cache it on disk.
+      const etag = '"' + createHash('sha256').update(JSON.stringify([
+        snapshot.state.user.id, snapshot.revision, saved.fingerprint, saved.calculatedAt,
+        body.displayName, body.productProfile, body.productName, body.dashboardConfig, body.analysisContextId,
+      ])).digest('hex') + '"';
+      res.setHeader('ETag', etag);
+      if (req.query.refresh !== '1' && req.get('If-None-Match') === etag) {
+        res.status(304).end();
+        return;
+      }
       if (streaming) {
         res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
         res.setHeader('X-Accel-Buffering', 'no');

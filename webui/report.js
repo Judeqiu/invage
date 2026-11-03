@@ -389,6 +389,19 @@ function cssBarCard(title, rows, caption, options = {}) {
       <div class="bar-track"><div class="bar-fill${down}" style="width:${pct.toFixed(1)}%"></div></div>
     </div>`;
   };
+  if (options.yearGroups) {
+    const years = new Map();
+    for (const row of rows) {
+      if (!years.has(row.year)) years.set(row.year, []);
+      years.get(row.year).push(row);
+    }
+    const groups = [...years].map(([year, months]) => {
+      const total = months.some(row => row.value == null) ? null : months.reduce((sum, row) => sum + row.value, 0);
+      const display = total == null ? 'Unavailable' : fmtPrettyMoney(total, options.ccy, 2);
+      return `<details class="premium-year" data-year="${esc(year)}"${options.yearExpansion?.get(year) !== false ? ' open' : ''}><summary><span>${esc(year)}</span><span class="num${total < 0 ? ' down' : ''}">${esc(display)}</span></summary><div class="bar-list">${months.map(renderRow).join('')}</div></details>`;
+    }).join('');
+    return `<div class="metric-card" id="${esc(options.id)}"><div class="label-eyebrow">${esc(title)}</div>${groups}<div class="metric-sub bar-caption">${options.help ? `<button class="help-dot" type="button" aria-label="Explain ${esc(title)}" data-help="${esc(options.help)}">?</button> ` : ''}${esc(caption)}</div></div>`;
+  }
   const limit = options.limit || rows.length;
   const more = rows.slice(limit);
   return `<div class="metric-card"${options.id ? ` id="${esc(options.id)}"` : ''}>

@@ -1,3 +1,4 @@
+import { isSyntheticDemo, syntheticDashboard } from '../demo/showcase.js';
 /**
  * Sync-time calculation pipeline for the persisted portfolio read model.
  * HTTP pages read projection-store; they never call this calculation pipeline.
@@ -258,6 +259,8 @@ export async function loadDashboardForSlug(
   } catch (e) {
     throw e; // auth / missing user still hard-fails
   }
+
+  if (isSyntheticDemo(state)) return syntheticDashboard(state);
 
   const portfolio = getPortfolio(state);
   const deposits = getDeposits(state);

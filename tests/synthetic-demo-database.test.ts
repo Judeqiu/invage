@@ -1,0 +1,30 @@
+import { beforeAll, expect, it } from 'vitest';
+import { blankState, getAccountAuthority, hashPassword, verifyPassword } from 'utarus';
+import { useTestDatabase } from './helpers/database.js';
+import { DEMO_EMAIL, DEMO_NAME, seedSyntheticPortfolio } from '../src/demo/showcase.js';
+import type { InvestorState } from '../src/state/portfolio-state.js';
+import { loadInvestor, saveInvestor } from '../src/state/investor-store.js';
+import { createPortfolioProjectionRefresher } from '../src/state/portfolio-projections.js';
+import { readPortfolioProjection } from '../src/state/projection-store.js';
+
+await useTestDatabase({ books: true });
+const { migrateBooks } = await import('../src/books/index.js');
+beforeAll(migrateBooks);
+it('registers and reads back the synthetic account, books and saved views using normal repositories', async () => {
+  const state = blankState({ displayName: DEMO_NAME, contactEmail: DEMO_EMAIL, language: 'en' }) as InvestorState;
+  seedSyntheticPortfolio(state);
+  state.user.password_hash = await hashPassword('local-test-only-password');
+  await getAccountAuthority().registration.register({ state, mail: null, invitation: null });
+  await saveInvestor(await loadInvestor(state.user.id));
+  await createPortfolioProjectionRefresher()(state.user.id, true);
+  const snapshot = await loadInvestor(state.user.id);
+  expect(snapshot.state.synthetic_demo).toEqual({ version: 1 });
+  expect(snapshot.state.profile.contact_email).toBe(DEMO_EMAIL);
+  expect(await verifyPassword('local-test-only-password', snapshot.state.user.password_hash!)).toBe(true);
+  const saved = readPortfolioProjection(snapshot.state)!;
+  expect(saved.dashboard.model?.live.positions).toHaveLength(5);
+  expect(saved.dashboard.displayName).toBe(DEMO_NAME);
+  expect(saved.openTrades.rows.length).toBeGreaterThan(0);
+  expect(saved.tradeHistory.rows.length).toBeGreaterThan(0);
+  expect(Object.keys(snapshot.state.broker_connections ?? {})).toEqual([]);
+});

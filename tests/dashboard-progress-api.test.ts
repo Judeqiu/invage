@@ -114,3 +114,26 @@ it('reads personal daily-change preferences without rebuilding saved calculation
   expect((await request(app()).get('/dashboard?progress=1')).text).toContain('"showDailyChanges":true');
   expect(mocks.calculate).not.toHaveBeenCalled();
 });
+
+it('revalidates a memory-held dashboard only after authenticating its owner and generation', async () => {
+  await persistPortfolioFixture(state);
+  const server = app();
+  const first = await request(server).get('/dashboard?progress=1');
+  expect(first.headers.etag).toMatch(/^"[a-f0-9]{64}"$/);
+  const same = await request(server).get('/dashboard?progress=1').set('If-None-Match', first.headers.etag);
+  expect(same.status).toBe(304);
+  expect(same.text).toBe('');
+  expect(same.headers['cache-control']).toBe('private, no-store');
+  expect((await request(server).get('/dashboard?progress=1&refresh=1').set('If-None-Match', first.headers.etag)).status).toBe(200);
+  expect((await request(app(false)).get('/dashboard?progress=1').set('If-None-Match', first.headers.etag)).status).toBe(401);
+  const other = '00000000-0000-4000-8000-000000000012';
+  await persistPortfolioFixture({ ...state, user: { ...state.user, id: other } });
+  const otherResponse = await request(app(true, other)).get('/dashboard?progress=1').set('If-None-Match', first.headers.etag);
+  expect(otherResponse.status).toBe(200);
+  expect(otherResponse.headers.etag).not.toBe(first.headers.etag);
+  state.cash = { amount: 50, currency: 'USD', updated_at: '2026-10-23' };
+  await persistPortfolioFixture(state);
+  const changed = await request(server).get('/dashboard?progress=1').set('If-None-Match', first.headers.etag);
+  expect(changed.status).toBe(200);
+  expect(changed.headers.etag).not.toBe(first.headers.etag);
+});

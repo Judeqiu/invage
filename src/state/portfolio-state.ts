@@ -322,6 +322,8 @@ export interface InvestorState extends UserState {
   option_observations?: import('../brokers/option-history.js').OptionObservation[];
   /** Bookkeeper channel recon session. Omit when none. Unknown keys fail on read. */
   recon?: import('../recon/types.js').ChannelReconSession;
+  /** Explicit opt-in for the user-approved fictional showcase account only. */
+  synthetic_demo?: { version: 1 };
   portfolio?: Record<string, Holding>;
   /** Optional recorded cash; omit entirely when unknown. Single or multi-channel. */
   cash?: CashStorage;
