@@ -21,6 +21,7 @@ import { assertInvageChatQuestionCatalog, createInvageChatQuestionLibrary, sampl
 import { readDashboardConfig } from './dashboard-config.js';
 import { createSubmissionAdminRouter } from '../signup/api.js';
 import { createManagementRouter } from '../management/api.js';
+import { createCreditsRouter } from './credits-api.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -251,8 +252,10 @@ export function createInvageWebUi(): DomainWebUiExtension {
         title: 'Brokers',
       },
     ] satisfies NonNullable<DomainWebUiExtension['routes']>).filter(route => route.path !== '/option-risk' || readDashboardConfig().showOptionRiskCalculator); },
-    ...(consultant ? {visibleSettingsSections: ['brokers']} : {}),
+    ...(consultant ? {visibleSettingsSections: ['brokers','credits']} : {}),
     settingsSections: [
+      ...(consultant ? [{id:'credits',title:'Credits',description:'Your weekly AI credit allowance',icon:'credit-card',
+        iframeSrc:'/domain-assets/invage/settings/credits/index.html',iframeHeightPx:520}] : []),
       {id:'experience',title:'Your experience',description:'Choose the optional pages in your workspace',icon:'layout-dashboard',iframeSrc:'/domain-assets/invage/settings/experience/index.html',iframeHeightPx:460},
       {
         id: 'portfolio',
@@ -282,6 +285,7 @@ export function createInvageWebUi(): DomainWebUiExtension {
     }]} : {}),
     apiRouters: [
       ...(consultant ? [
+        {mountPath: '/credits', router: createCreditsRouter(), auth: 'user' as const},
         {mountPath: '/academy-signup/admin', router: createSubmissionAdminRouter(), auth: 'admin' as const},
         {mountPath: '/management', router: createManagementRouter(), auth: 'user' as const},
       ] : []),

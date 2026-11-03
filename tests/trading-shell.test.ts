@@ -13,7 +13,7 @@ it('enables the reference shell only for the consultant profile, retaining all r
   expect(manifest.nav.find(n=>n.id==='chat')?.label).toBe('AI Chat');
   expect(createInvageChromeCatalogs().en['nav.chat']).toBe('AI Chat');
   expect(manifest.nav.find(n=>n.id==='brokers')?.path).toBe('/settings/brokers');
-  expect(manifest.visibleSettingsSections).toEqual(['brokers']);
+  expect(manifest.visibleSettingsSections).toEqual(['brokers','credits']);
   expect(manifest.settingsSections.some(n=>n.id==='brokers')).toBe(true);
   expect(manifest.nav.some(n=>n.id==='admin'&&n.adminOnly)).toBe(true);
   for(const id of ['dashboard','positions','trades','insights']) expect(manifest.routes.some(r=>r.path==='/'+id)).toBe(true);

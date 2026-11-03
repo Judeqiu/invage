@@ -184,6 +184,9 @@ export const invageExtension: DomainExtension = {
   // Do NOT set plans / UTARUS_BILLING_ENABLED until Stripe prices exist.
   billing: {
     creditRates: INVAGE_CREDIT_RATES,
+    ...(readProductProfile() === 'consultant' ? {
+      weeklyCreditLimit: {credits:1000,weekStartsOn:1,utcOffsetMinutes:480},
+    } : {}),
   },
 
   /** Dashboard tab + domain APIs in the Utarus WebUI shell. */

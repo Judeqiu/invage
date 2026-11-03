@@ -1,0 +1,5 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Credits · Velovest</title><link rel="stylesheet" href="../../report.css"><link rel="stylesheet" href="./page.css"></head>
+<body><main><h1>Weekly credits</h1><p class="muted">Your AI allowance refreshes every Monday at 00:00 Singapore time.</p>
+<section id="balance" hidden aria-label="Credit balance"><p class="balance"><strong id="remaining"></strong> <span>credits remaining</span></p><progress id="progress" aria-label="Weekly credits used"></progress><p id="used"></p><p id="reset"></p><p id="explanation">When your weekly credits are used, AI chat pauses until the next reset. Each completed model call or tool is metered; a call already in progress can take usage above the allowance. Unused credits do not carry over.</p></section>
+<p id="message" role="status" aria-live="polite">Loading your credits…</p><button id="refresh" type="button">Refresh balance</button></main><script src="./app.js"></script></body></html>
