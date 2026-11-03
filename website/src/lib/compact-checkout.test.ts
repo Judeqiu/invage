@@ -19,10 +19,10 @@ describe("Velovest pricing matrix", () => {
 });
 
 describe("Onboarding booking in Singapore time", () => {
-  test("offers only weekdays, starting the day after today in Singapore", () => {
+  test("offers weekends and weekdays, starting the day after today in Singapore", () => {
     // Friday 30 Oct 2026, 23:30 UTC = Saturday 31 Oct 07:30 in Singapore
     const dates = bookableDates(new Date("2026-10-30T23:30:00Z"), 3);
-    expect(dates).toEqual(["2026-11-02", "2026-11-03", "2026-11-04"]);
+    expect(dates).toEqual(["2026-11-01", "2026-11-02", "2026-11-03"]);
   });
 
   test("labels slots as 60-minute sessions in SGT", () => {

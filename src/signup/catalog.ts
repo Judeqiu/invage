@@ -57,17 +57,17 @@ export function isSlotTime(value: unknown): value is SlotTime {
   return typeof value === "string" && (SLOT_TIMES as readonly string[]).includes(value);
 }
 
-/** Next `count` weekdays (Mon–Fri) after today in Singapore, as YYYY-MM-DD. */
+/** Calendar dates after today in Singapore, for paged date choices. */
 export function bookableDates(now: Date, count = 10): string[] {
   const sg = new Date(now.getTime() + SGT_OFFSET_MS);
-  let day = Date.UTC(sg.getUTCFullYear(), sg.getUTCMonth(), sg.getUTCDate());
-  const dates: string[] = [];
-  while (dates.length < count) {
-    day += DAY_MS;
-    const weekday = new Date(day).getUTCDay();
-    if (weekday !== 0 && weekday !== 6) dates.push(new Date(day).toISOString().slice(0, 10));
-  }
-  return dates;
+  const day = Date.UTC(sg.getUTCFullYear(), sg.getUTCMonth(), sg.getUTCDate());
+  return Array.from({ length: count }, (_, index) => new Date(day + (index + 1) * DAY_MS).toISOString().slice(0, 10));
+}
+
+export function validSessionDate(value: unknown): value is string {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00Z`);
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
 
 const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];

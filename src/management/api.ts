@@ -1,3 +1,4 @@
+import { signupSubmissions, SubmissionError, type SubmissionRepository } from '../signup/submissions.js';
 import { Router, type Request, type RequestHandler } from 'express';
 import { requireAuth, requireAdmin, sessionUser, issueInviteCode, listInviteCodes, isBillingEnabled } from 'utarus';
 import { inviteOnboardUrl, originFromRequest } from '../../node_modules/utarus/dist/onboarding/invite-url.js';
@@ -7,7 +8,7 @@ type RepositorySource = () => ManagementRepository;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const actor = (req: Request) => JSON.stringify({userId:sessionUser(req).userId ?? null,name:sessionUser(req).displayName});
 
-export function createManagementRouter(getRepository: RepositorySource = managementRepository) {
+export function createManagementRouter(getRepository: RepositorySource = managementRepository, getSignup: () => SubmissionRepository = signupSubmissions) {
   const router = Router();
   router.use(requireAuth);
   router.use((_req,res,next) => {res.setHeader('Cache-Control','private, no-store');next();});
@@ -53,6 +54,15 @@ export function createManagementRouter(getRepository: RepositorySource = managem
       next();
     } catch (error) {next(error);}
   });
+  router.get('/signup-dates', async (_req,res) => {
+    res.json({disabledDates:await getSignup().disabledDates()});
+  });
+  router.patch('/signup-dates/:date', async (req,res) => {
+    if (!req.body || Object.keys(req.body).join(',') !== 'enabled' || typeof req.body.enabled !== 'boolean')
+      throw new ManagementError('Send enabled: true or false.');
+    await getSignup().setDateEnabled(String(req.params.date),req.body.enabled,actor(req));
+    res.json({date:req.params.date,enabled:req.body.enabled});
+  });
   router.get('/users',async(req,res) => {
     if (req.query.q!==undefined && typeof req.query.q!=='string') throw new ManagementError('Invalid search.');
     res.json({users:await getRepository().subscribers(typeof req.query.q==='string'?req.query.q.trim():''),billingEnabled:isBillingEnabled()});
@@ -81,7 +91,7 @@ export function createManagementRouter(getRepository: RepositorySource = managem
   // fall through into a framework admin handler or an account mutation.
   router.use((_req,res)=>{res.status(403).json({error:'This action is not available to velovest_manager.'});});
   router.use((error:unknown,_req:Request,res:import('express').Response,_next:import('express').NextFunction) => {
-    if (error instanceof ManagementError) {res.status(error.status).json({error:error.message});return;}
+    if (error instanceof ManagementError || error instanceof SubmissionError) {res.status(error.status).json({error:error.message});return;}
     console.error('[management] operation failed');res.status(503).json({error:'Management is unavailable. Please retry.'});
   });
   return router;

@@ -92,13 +92,16 @@ it('rejects multiple recipients, missing sender credentials and SMTP rejection w
 
 it('notifies only for an inserted ID, after save succeeds, and keeps the public response unchanged on mail failure', async () => {
   let savedId: string | undefined;
+  let conflict=false;
   const query = vi.fn(async (_sql: string, args: unknown[]) => {
+    if (!_sql.includes('INSERT INTO velovest_signup.submissions')) return {rows:[]};
+    if (conflict) return {rows:[]};
     savedId ??= String(args[0]);
     return { rows: [{ id: savedId, reference: input.reference }] };
   });
   const notify = vi.fn(async () => { expect(savedId).toBeDefined(); throw new Error('secret SMTP diagnostic'); });
   const log = vi.spyOn(console, 'error').mockImplementation(() => {});
-  const repository = new SubmissionRepository({ query } as unknown as pg.Pool, notify);
+  const repository = new SubmissionRepository({ connect:async()=>({query,release:()=>{}}) } as unknown as pg.Pool, notify);
   const app = express().use(express.json()).use(createSubmissionPublicRouter(() => repository));
   const { proof, ...body } = input;
   const payload = { ...body, proofFilename: proof.filename, proofContentType: proof.contentType, proofBase64: proof.data.toString('base64') };
@@ -109,7 +112,7 @@ it('notifies only for an inserted ID, after save succeeds, and keeps the public 
   }
   expect(notify).toHaveBeenCalledOnce();
   expect(JSON.stringify(log.mock.calls)).not.toContain('secret SMTP diagnostic');
-  query.mockResolvedValueOnce({ rows: [] });
+  conflict=true;
   await expect(repository.save(input)).rejects.toMatchObject({ status: 409 });
   expect(notify).toHaveBeenCalledOnce();
 });

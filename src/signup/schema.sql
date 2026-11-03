@@ -56,3 +56,11 @@ CREATE TABLE IF NOT EXISTS velovest_signup.review_events (
 REVOKE ALL ON TABLE velovest_signup.review_events FROM PUBLIC;
 CREATE INDEX IF NOT EXISTS signup_review_events_submission
     ON velovest_signup.review_events(submission_id, id);
+
+-- Absent dates are enabled, including weekends. Disabling never alters submissions.
+CREATE TABLE IF NOT EXISTS velovest_signup.disabled_dates (
+    session_date date PRIMARY KEY,
+    updated_by text NOT NULL,
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+REVOKE ALL ON TABLE velovest_signup.disabled_dates FROM PUBLIC;

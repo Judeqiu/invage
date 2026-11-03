@@ -10,4 +10,5 @@ GRANT UPDATE (reference, status, approved_at, approved_by, account_user_id, acco
   ON TABLE velovest_signup.submissions TO :"application_role";
 GRANT SELECT, INSERT ON TABLE velovest_signup.review_events TO :"application_role";
 GRANT USAGE, SELECT ON SEQUENCE velovest_signup.review_events_id_seq TO :"application_role";
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE velovest_signup.disabled_dates TO :"application_role";
 COMMIT;

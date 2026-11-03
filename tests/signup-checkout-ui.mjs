@@ -3,6 +3,8 @@ import { createServer } from 'node:net';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import puppeteer from 'puppeteer-core';
+import {bookableDates} from '../src/signup/catalog.ts';
+const disabledDate=bookableDates(new Date(),1)[0];
 
 const reserve=createServer();await new Promise(resolve=>reserve.listen(0,'127.0.0.1',resolve));
 const port=reserve.address().port;await new Promise(resolve=>reserve.close(resolve));
@@ -24,6 +26,7 @@ try{
   await page.setRequestInterception(true);
   page.on('request',req=>{
     const url=new URL(req.url());
+    if(url.pathname==='/api/signup/dates'){void req.respond({status:200,contentType:'application/json',body:JSON.stringify({disabledDates:[disabledDate]})});return;}
     if(url.pathname==='/api/signup/submissions'){
       submitted=JSON.parse(req.postData());
       void req.respond({status:201,contentType:'application/json',body:JSON.stringify({reference:submitted.reference})});return;
@@ -32,7 +35,15 @@ try{
     void req.continue();
   });
   await page.goto(origin+'/signup?package=novice',{waitUntil:'networkidle0'});
-  await page.waitForSelector('[aria-label="Available dates"] button');await page.click('[aria-label="Available dates"] button');
+  await page.waitForSelector('[aria-label="Available dates"] button:not([disabled])');
+  assert.equal(await page.$eval('[aria-label="Available dates"] button',button=>button.disabled),true);
+  const initialLabels=await page.$$eval('[aria-label="Available dates"] button',buttons=>buttons.map(button=>button.getAttribute('aria-label')));
+  await(await page.$('button::-p-text(Later dates)')).click();
+  await page.waitForFunction(first=>document.querySelector('[aria-label="Available dates"] button').getAttribute('aria-label')!==first,{},initialLabels[0]);
+  await(await page.$('button::-p-text(Earlier dates)')).click();
+  await page.waitForFunction(first=>document.querySelector('[aria-label="Available dates"] button').getAttribute('aria-label')===first,{},initialLabels[0]);
+  await page.screenshot({path:'/tmp/velovest-signup-date-availability.png',fullPage:true});
+  await page.click('[aria-label="Available dates"] button:not([disabled])');
   const times=await page.$$eval('[aria-label="Available times"] button',buttons=>buttons.map(button=>({text:button.innerText,disabled:button.disabled})));
   assert.ok(times.length>0);assert.ok(times.every(slot=>!slot.disabled&&slot.text.includes('confirmed after review')));
   await page.click('[aria-label="Available times"] button');await (await page.$('button::-p-text(Continue to payment)')).click();
@@ -72,7 +83,9 @@ try{
   await page.screenshot({path:'/tmp/velovest-renewal-confirmation.png',fullPage:true});
   // Selecting renewal after a guided-package booking clears stale selections.
   await page.goto(origin+'/signup?package=novice',{waitUntil:'networkidle0'});
-  await page.waitForSelector('[aria-label="Available dates"] button');await page.click('[aria-label="Available dates"] button');await page.click('[aria-label="Available times"] button');
+  await page.waitForSelector('[aria-label="Available dates"] button:not([disabled])');
+  assert.equal(await page.$eval('[aria-label="Available dates"] button',button=>button.disabled),true);
+  await page.click('[aria-label="Available dates"] button:not([disabled])');await page.click('[aria-label="Available times"] button');
   await (await page.$('button::-p-text(Change package)')).click();
   await (await page.$('button::-p-text(Choose Yearly Renewal)')).click();
   await page.waitForSelector('input[autocomplete="name"]');

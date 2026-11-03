@@ -43,12 +43,40 @@
       $('invites').replaceChildren(...data.codes.map(code=>{const row=node('tr');row.append(node('td',code.code),node('td',code.recipientEmail||'Generated at signup'),node('td',code.createdAt),node('td',code.comment),node('td',code.usedAt?'Used':'Unused'));return row;}));notify(data.codes.length?'':'No signup invite codes yet.');
     }catch(error){notify(error.message,true);}
   }
-  function tab(access) {
-    $('users-section').hidden=access;$('access-section').hidden=!access;
-    $('users-tab').setAttribute('aria-pressed',String(!access));$('access-tab').setAttribute('aria-pressed',String(access));
-    void(access?invites():users());
+  async function dates() {
+    notify('Loading signup dates…');$('disabled-dates').replaceChildren();
+    try {
+      const data=await api('/signup-dates');
+      $('disabled-dates').replaceChildren(...data.disabledDates.map(date=>{
+        const row=node('tr'),action=node('td'),button=node('button','Enable');button.type='button';
+        button.addEventListener('click',()=>void saveDate(date,true));action.append(button);
+        row.append(node('td',date),node('td','Disabled'),action);return row;
+      }));notify(data.disabledDates.length?'':'All dates are enabled, including weekends.');
+    } catch(error){notify(error.message,true);}
   }
-  $('users-tab').addEventListener('click',()=>tab(false));$('access-tab').addEventListener('click',()=>tab(true));
+  let savingDate=false;
+  async function saveDate(date,enabled) {
+    if(savingDate)return;
+    if(!date){notify('Choose a date.',true);return;}
+    savingDate=true;$('enable-date').disabled=true;$('disable-date').disabled=true;
+    try {
+      await api('/signup-dates/'+encodeURIComponent(date),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled})});
+      await dates();notify(date+(enabled?' enabled.':' disabled.'));
+    }catch(error){notify(error.message,true);}
+    finally{savingDate=false;$('enable-date').disabled=false;$('disable-date').disabled=false;}
+  }
+  function tab(selected) {
+    for(const name of ['users','access','dates']) {
+      $(name+'-section').hidden=name!==selected;
+      $(name+'-tab').setAttribute('aria-pressed',String(name===selected));
+    }
+    void(selected==='users'?users():selected==='access'?invites():dates());
+  }
+  $('users-tab').addEventListener('click',()=>tab('users'));$('access-tab').addEventListener('click',()=>tab('access'));
+  $('dates-tab').addEventListener('click',()=>tab('dates'));
+  $('date-form').addEventListener('submit',event=>{event.preventDefault();void saveDate($('signup-date').value,false);});
+  $('enable-date').addEventListener('click',()=>void saveDate($('signup-date').value,true));
+  $('refresh-dates').addEventListener('click',()=>void dates());
   $('search-form').addEventListener('submit',event=>{event.preventDefault();void users();});$('refresh-users').addEventListener('click',()=>void users());
   $('close-details').addEventListener('click',()=>{++selectedGeneration;$('user-details').hidden=true;});
   $('invite-form').addEventListener('submit',async event=>{

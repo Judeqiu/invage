@@ -11,7 +11,7 @@ assignment tab. Only active non-admin accounts can receive this role. Existing
 full administrators retain their normal console and cannot receive this role.
 No accounts are assigned automatically.
 
-Managers see a Management destination with exactly two tabs:
+Managers see a Management destination with three tabs:
 
 - **Users:** read-only subscriber account/contact, reference, recorded
   subscription and credit-usage summaries. All non-admin active accounts are
@@ -70,3 +70,19 @@ The pinned framework includes schema migration 35 (`invitation_recipient_email`)
 which adds a nullable `utarus.invites.recipient_email` column. Run the framework
 migration step with the database owner before starting the updated application.
 Existing invitation rows retain null and continue to generate addresses.
+
+## Signup dates
+
+Managers use **Management → Signup dates** to disable or re-enable individual
+calendar dates. All dates are enabled by default, including weekends. An absent
+row means enabled. Overrides persist in `velovest_signup.disabled_dates` in the
+existing application database, with the last actor and timestamp. No extra
+file or database is required. Reapply `scripts/migration/signup-submissions.sql`
+as the database administrator before starting the updated code.
+
+The public date-availability API exposes only disabled dates. Signup displays
+calendar dates in Singapore time, with earlier/later navigation and no future
+horizon cutoff. Disabled choices are unavailable, and a newly disabled date is
+rejected by the submission API even if the form was already open. Date toggles
+and intake serialize per date in PostgreSQL. Existing submissions and identical
+retries are preserved. Renewal remains independent of onboarding dates.

@@ -2,6 +2,7 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createManagementRouter, managerManifest } from '../src/management/api.js';
+import type { SubmissionRepository } from '../src/signup/submissions.js';
 import type { ManagementRepository } from '../src/management/repository.js';
 
 const actions=vi.hoisted(()=>({issue:vi.fn(),invites:vi.fn()}));
@@ -17,10 +18,11 @@ const identity=vi.fn(async(id:string)=>({userId:id,admin:id===ids.admin,deleted:
 const repository={identity,isManager:vi.fn(async(id:string)=>id===ids.manager&&assigned),
   subscribers:vi.fn(async()=>[{userId:ids.user,displayName:'Subscriber'}]),
   setRole:vi.fn(async(_id:string,enabled:boolean)=>{assigned=enabled;return{manager:enabled,admin:false,deleted:false};})};
+const signup={disabledDates:vi.fn(async()=>['2026-11-07']),setDateEnabled:vi.fn(async()=>{})};
 const app=express().use(express.json());
 app.use((req:any,_res,next)=>{const key=req.get('x-test-user') as keyof typeof ids;if(ids[key])req.user={type:key==='admin'?'admin':'user',userId:ids[key],displayName:key};next();});
 app.get('/manifest',managerManifest(()=>repository as unknown as ManagementRepository),(_req,res)=>res.json({nav:[{id:'dashboard'}],routes:[{path:'/dashboard'}]}));
-app.use('/api/management',createManagementRouter(()=>repository as unknown as ManagementRepository));
+app.use('/api/management',createManagementRouter(()=>repository as unknown as ManagementRepository,()=>signup as unknown as SubmissionRepository));
 const mutate=(method:'post'|'patch',path:string,user='manager')=>request(app)[method]('/api/management'+path).set('x-test-user',user).set('Host','management.test').set('Origin','https://management.test');
 beforeEach(()=>{
   assigned=true;vi.clearAllMocks();
@@ -86,4 +88,17 @@ it('accepts optional recipient email and rejects malformed values without issuin
   actions.invites.mockResolvedValue([{code:'INV-EMAIL',created_at:'2026-11-03',recipient_email:'customer@example.com'}]);
   const response=await request(app).get('/api/management/invites').set('x-test-user','manager').expect(200);
   expect(response.body.codes[0].recipientEmail).toBe('customer@example.com');
+});
+
+it('restricts date configuration to current managers and requires same-origin strict JSON mutations',async()=>{
+  for(const user of ['user','admin']) await request(app).get('/api/management/signup-dates').set('x-test-user',user).expect(403);
+  const dates=await request(app).get('/api/management/signup-dates').set('x-test-user','manager').expect(200);
+  expect(dates.body.disabledDates).toEqual(['2026-11-07']);
+  expect(dates.headers['cache-control']).toBe('private, no-store');
+  await request(app).patch('/api/management/signup-dates/2026-11-07').set('x-test-user','manager').send({enabled:false}).expect(403);
+  await mutate('patch','/signup-dates/2026-11-07').send({enabled:false,admin:true}).expect(400);
+  await mutate('patch','/signup-dates/2026-11-07').send({enabled:false}).expect(200);
+  expect(signup.setDateEnabled).toHaveBeenCalledWith('2026-11-07',false,expect.stringContaining(ids.manager));
+  assigned=false;
+  await mutate('patch','/signup-dates/2026-11-07').send({enabled:true}).expect(403);
 });

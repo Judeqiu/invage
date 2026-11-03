@@ -8,6 +8,11 @@ import { SubmissionError, signupSubmissions, type SubmissionRepository } from '.
 
 export function createSubmissionPublicRouter(getRepository: () => SubmissionRepository = signupSubmissions) {
   const router = Router();
+  router.get('/dates', async (_req,res) => {
+    res.setHeader('Cache-Control','no-store');
+    try { res.json({disabledDates:await getRepository().disabledDates()}); }
+    catch { res.status(503).json({error:'Date availability is unavailable. Please retry.'}); }
+  });
   router.post('/submissions', async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     try {

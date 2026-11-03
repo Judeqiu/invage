@@ -4,7 +4,7 @@ import { blankState, getAccountAuthority, hashPassword, verifyPassword } from 'u
 import { createSecretCodec, getDatabaseRuntime } from 'utarus/database';
 import { initialUsageAccount } from '../../node_modules/utarus/dist/database/initial-usage.js';
 import { sendTransactionalMail } from '../../node_modules/utarus/dist/mail/transactional.js';
-import { formatSessionDate, formatSlot, isSlotTime } from './catalog.js';
+import { formatSessionDate, formatSlot, isSlotTime, validSessionDate } from './catalog.js';
 import { SubmissionError, SubmissionRepository, summaryColumns, type SubmissionSummary } from './submissions.js';
 
 type Codec = ReturnType<typeof createSecretCodec>;
@@ -118,7 +118,7 @@ export class SignupReview {
   async detail(id: string, proposed?: {date: string; time: string}) {
     const row = await this.row(id);
     if (proposed && row.status === 'submitted' && row.package_id !== 'renewal') {
-      if (!validSessionDate(proposed.date) || !isSlotTime(proposed.time)) throw new SubmissionError('Choose a valid weekday session date and time.');
+      if (!validSessionDate(proposed.date) || !isSlotTime(proposed.time)) throw new SubmissionError('Choose a valid session date and time.');
       row.confirmed_session_date = proposed.date;
       row.confirmed_session_time = proposed.time;
     }
@@ -167,7 +167,7 @@ export class SignupReview {
       const sessionTime = renewal ? null : input.sessionTime ?? null;
       if (!renewal && !input.sessionConfirmed) throw new SubmissionError('Confirm the onboarding session.');
       if (!renewal && (!sessionDate || !validSessionDate(sessionDate) || !isSlotTime(sessionTime))) {
-        throw new SubmissionError('Choose a valid weekday session date and time.');
+        throw new SubmissionError('Choose a valid session date and time.');
       }
       // Match the framework registration lock, including JavaScript email normalization.
       const email = row.customer_email.trim().toLowerCase();
@@ -265,9 +265,4 @@ export class SignupReview {
       client.release();
     }
   }
-}
-function validSessionDate(value: string) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
-  const date = new Date(`${value}T00:00:00Z`);
-  return Number.isFinite(date.getTime()) && date.toISOString().slice(0,10) === value && ![0,6].includes(date.getUTCDay());
 }

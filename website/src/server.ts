@@ -47,6 +47,13 @@ function isH3SwallowedErrorBody(body: string): boolean {
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     try {
+      if (new URL(request.url).pathname === "/api/signup/dates") {
+        if (request.method !== "GET") return Response.json({error:"Method not allowed."},{status:405,headers:{Allow:"GET"}});
+        try {
+          const upstream = await fetch("https://chat.velovest.ai/api/domain/invage/academy-signup/dates", {cache:"no-store"});
+          return new Response(upstream.body,{status:upstream.status,headers:{"Content-Type":"application/json","Cache-Control":"no-store"}});
+        } catch { return Response.json({error:"Date availability is unavailable. Please retry."},{status:503,headers:{"Cache-Control":"no-store"}}); }
+      }
       if (new URL(request.url).pathname === "/api/signup/submissions") {
         if (request.method !== "POST") return Response.json({ error: "Method not allowed." }, { status: 405, headers: { Allow: "POST" } });
         try {

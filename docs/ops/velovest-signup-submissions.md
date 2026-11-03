@@ -6,7 +6,9 @@ PostgreSQL database. Pricing is computed server-side from `src/signup/catalog.ts
 An identical retry is idempotent; different evidence cannot overwrite a reference.
 Submission commits before the customer is redirected to the receipt page.
 The receipt says that review is pending; it does not claim an email was sent.
-Calendar selections are requests, not reservations. No synthetic booked slots or
+Calendar selections are requests, not reservations. All calendar dates, including
+weekends, are eligible by default; managers can disable dates in Management →
+Signup dates. Disabled dates are checked again on submission. No synthetic booked slots or
 assumed appointment-capacity rules are used.
 
 The S$228 yearly renewal is a Velovest system subscription only. It goes directly

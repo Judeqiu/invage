@@ -145,7 +145,12 @@ export function CompactCheckout({ initialPackage }: { initialPackage?: PackageId
   const navigate = useNavigate();
   const [step, setStep] = useState(initialPackage === "renewal" ? 2 : initialPackage ? 1 : 0);
   const [pkg, setPkg] = useState<PackageId | undefined>(initialPackage);
+  const [datePage, setDatePage] = useState(0);
   const [dates, setDates] = useState<string[]>([]);
+  const [disabledDates, setDisabledDates] = useState<string[]>([]);
+  const [datesReady, setDatesReady] = useState(false);
+  const [datesError, setDatesError] = useState<string>();
+  const [datesReload, setDatesReload] = useState(0);
   const [date, setDate] = useState<string>();
   const [time, setTime] = useState<SlotTime>();
   const [reference, setReference] = useState<string>();
@@ -156,7 +161,18 @@ export function CompactCheckout({ initialPackage }: { initialPackage?: PackageId
   const [processing, setProcessing] = useState(false);
   const [submissionError, setSubmissionError] = useState<string>();
 
-  useEffect(() => { setDates(bookableDates(new Date())); }, []);
+  useEffect(() => { setDates(bookableDates(new Date(), (datePage + 1) * 10).slice(datePage * 10)); }, [datePage]);
+  useEffect(() => {
+    let active = true;
+    setDatesReady(false);setDatesError(undefined);
+    fetch('/api/signup/dates', {cache:'no-store'}).then(async response => {
+      if (!response.ok) throw new Error('Date availability is unavailable. Please retry.');
+      const data = await response.json();
+      if (!Array.isArray(data.disabledDates) || !data.disabledDates.every((value: unknown) => typeof value === 'string')) throw new Error('Date availability is unavailable. Please retry.');
+      if (active) {setDisabledDates(data.disabledDates);setDatesReady(true);}
+    }).catch(() => {if(active)setDatesError('Date availability is unavailable. Please retry.');});
+    return () => {active=false;};
+  }, [datesReload]);
   useEffect(() => { window.scrollTo({ top: 0 }); if (step === 2) setReference(prev => prev ?? createReference()); }, [step]);
   useEffect(() => {
     if (!proof || !proof.type.startsWith("image/")) { setProofUrl(undefined); return; }
@@ -172,7 +188,7 @@ export function CompactCheckout({ initialPackage }: { initialPackage?: PackageId
     event.preventDefault();
     const found = validate(details, proof);
     setErrors(found);
-    if (Object.keys(found).length > 0 || !pkg || (pkg !== "renewal" && (!date || !time)) || !reference) return;
+    if (Object.keys(found).length > 0 || !pkg || (pkg !== "renewal" && (!date || !time || !datesReady || disabledDates.includes(date))) || !reference) return;
     if (!proof) return;
     setSubmissionError(undefined);
     setProcessing(true);
@@ -214,9 +230,14 @@ export function CompactCheckout({ initialPackage }: { initialPackage?: PackageId
       {step > 0 && pkg && <div className="mt-5 grid gap-4 lg:grid-cols-[1fr_320px] lg:items-start">
         {step === 1 && <div className="border border-border bg-card p-4 sm:p-5">
           <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="flex items-center gap-2 text-base font-semibold"><CalendarDays className="size-4 text-primary"/>Pick a date</h2><span className="border border-border px-2 py-0.5 text-[10px] font-bold uppercase text-muted-foreground">Singapore Time · SGT (UTC+8)</span></div>
-          <div className="mt-3 grid grid-cols-5 gap-1.5" role="group" aria-label="Available dates">{dates.map(d => { const p = dateParts(d); const active = d === date; return <button key={d} type="button" aria-pressed={active} aria-label={formatSessionDate(d)} onClick={() => { setDate(d); setTime(undefined); }} className={cn("border px-1 py-2 text-center transition-colors", active ? "border-primary bg-primary text-primary-foreground" : "border-border bg-elevated hover:border-primary/60")}>
+          <div className="mt-3 grid grid-cols-5 gap-1.5" role="group" aria-label="Available dates">{dates.map(d => { const p = dateParts(d); const active = d === date; return <button key={d} type="button" aria-pressed={active} aria-label={formatSessionDate(d)} disabled={!datesReady || disabledDates.includes(d)} onClick={() => { setDate(d); setTime(undefined); }} className={cn("border px-1 py-2 text-center transition-colors disabled:opacity-40 disabled:cursor-not-allowed", active ? "border-primary bg-primary text-primary-foreground" : "border-border bg-elevated hover:border-primary/60")}>
             <span className={cn("block text-[10px] font-bold uppercase", active ? "text-primary-foreground" : "text-muted-foreground")}>{p.weekdayShort}</span><span className="block text-lg font-semibold leading-tight">{p.day}</span><span className={cn("block text-[10px]", active ? "text-primary-foreground" : "text-muted-foreground")}>{p.monthShort}</span>
           </button>; })}</div>
+
+          <div className="mt-3 flex items-center justify-between gap-2"><Button variant="outline" disabled={datePage === 0} onClick={() => setDatePage(page => page - 1)}>Earlier dates</Button><Button variant="outline" onClick={() => setDatePage(page => page + 1)}>Later dates</Button></div>
+          <p className="mt-2 text-xs text-muted-foreground">Dates, including weekends, are enabled unless disabled by the manager. Unavailable dates cannot be selected.</p>
+          {!datesReady && <p role="status" className="mt-2 text-sm">{datesError ?? 'Loading date availability…'}</p>}
+          {datesError && <Button variant="outline" onClick={() => setDatesReload(value => value + 1)}>Retry date availability</Button>}
 
           <h2 className="mt-5 flex items-center gap-2 text-base font-semibold"><Clock className="size-4 text-primary"/>Pick a time {date && <span className="text-sm font-normal text-muted-foreground">· {formatSessionDate(date)}</span>}</h2>
           {date ? <div className="mt-3 grid grid-cols-2 gap-1.5 sm:grid-cols-3" role="group" aria-label="Available times">{SLOT_TIMES.map(t => { const active = t === time; return <button key={t} type="button" aria-pressed={active} onClick={() => setTime(t)} className={cn("border px-2 py-2.5 text-left text-sm transition-colors disabled:cursor-not-allowed", active ? "border-primary bg-primary text-primary-foreground" : "border-border bg-elevated hover:border-primary/60")}>
@@ -224,7 +245,7 @@ export function CompactCheckout({ initialPackage }: { initialPackage?: PackageId
           </button>; })}</div> : <p className="mt-2 border border-dashed border-border p-4 text-sm text-muted-foreground">Select a date to see available times.</p>}
 
           <p className="mt-4 text-xs leading-5 text-muted-foreground">Your selected time is a request. Our team will confirm it when reviewing your signup. {ACCESS_NOTE}</p>
-          <div className="mt-4 flex flex-col-reverse gap-2 border-t border-border pt-4 sm:flex-row sm:justify-between"><Button variant="outline" onClick={() => setStep(0)}><ArrowLeft/>Change package</Button><Button disabled={!date || !time} onClick={() => setStep(2)}>Continue to payment <ArrowRight/></Button></div>
+          <div className="mt-4 flex flex-col-reverse gap-2 border-t border-border pt-4 sm:flex-row sm:justify-between"><Button variant="outline" onClick={() => setStep(0)}><ArrowLeft/>Change package</Button><Button disabled={!date || !time || !datesReady || disabledDates.includes(date)} onClick={() => setStep(2)}>Continue to payment <ArrowRight/></Button></div>
         </div>}
 
         {step === 2 && <form noValidate onSubmit={submit} className="border border-border bg-card p-4 sm:p-5">

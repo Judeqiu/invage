@@ -5,6 +5,7 @@ import {resolve,extname} from 'node:path';
 import puppeteer from 'puppeteer-core';
 
 const ids={admin:'00000000-0000-4000-8000-000000000001',subscriber:'00000000-0000-4000-8000-000000000002',manager:'00000000-0000-4000-8000-000000000003'};
+const disabledDates=new Set();
 let mode='admin',assigned=false,patches=0,issued=0,releaseInvite;
 const heldInvite=new Promise(resolve=>{releaseInvite=resolve;});
 const subscriber={userId:ids.subscriber,displayName:'Subscriber <img src=x>',email:'subscriber@example.invalid',createdAt:'2026-11-02',reference:'REF-1',beta:false,admin:false,
@@ -30,6 +31,12 @@ const server=createServer(async(req,res)=>{
    const id=path.split('/').at(-1);if(mode!=='admin'){json(res,{error:'Admin access required'},403);return;}
    if(req.method==='PATCH'){let body='';for await(const chunk of req)body+=chunk;assigned=JSON.parse(body).enabled;patches++;}
    json(res,{role:'velovest_manager',enabled:id===ids.subscriber&&assigned,eligible:id!==ids.admin});return;
+  }
+  if(path==='/api/domain/invage/management/signup-dates'){json(res,{disabledDates:[...disabledDates]});return;}
+  if(path.startsWith('/api/domain/invage/management/signup-dates/')){
+   let body='';for await(const chunk of req)body+=chunk;
+   const date=path.split('/').at(-1);if(JSON.parse(body).enabled)disabledDates.delete(date);else disabledDates.add(date);
+   json(res,{date,enabled:!disabledDates.has(date)});return;
   }
   if(path==='/api/domain/invage/management/users'){json(res,{users:[subscriber],billingEnabled:false});return;}
   if(path==='/api/domain/invage/management/users/'+ids.subscriber){json(res,{user:subscriber,billingEnabled:false});return;}
@@ -72,11 +79,17 @@ try {
  mode='manager';await page.goto(origin+'/velovest-management',{waitUntil:'networkidle0'});
  const panel=await(await page.waitForSelector('iframe[src="/domain-assets/invage/management/index.html"]')).contentFrame();
  await panel.waitForSelector('#users button');
- assert.deepEqual(await panel.$$eval('nav button',buttons=>buttons.map(button=>button.textContent)),['Users','Access']);
+ assert.deepEqual(await panel.$$eval('nav button',buttons=>buttons.map(button=>button.textContent)),['Users','Access','Signup dates']);
  assert.doesNotMatch(await panel.$eval('#users',el=>el.innerText),/Full administrator|owner@example.invalid/);
  await panel.click('#users button');await panel.waitForSelector('#user-details:not([hidden])');
  assert.match(await panel.$eval('#details',el=>el.innerText),/Subscriber <img src=x>/);
  assert.equal(await panel.$('#details img'),null);
+ await panel.click('#dates-tab');await panel.waitForFunction(()=>document.getElementById('message').textContent.includes('All dates are enabled'));
+ await panel.$eval('#signup-date',input=>{input.value='2026-11-07';});await panel.click('#disable-date');
+ await panel.waitForSelector('#disabled-dates button');assert.ok(disabledDates.has('2026-11-07'));
+ await page.screenshot({path:'/tmp/velovest-manager-signup-dates.png',fullPage:true});
+ await panel.click('#disabled-dates button');await panel.waitForFunction(()=>document.getElementById('disabled-dates').children.length===0);
+ assert.ok(!disabledDates.has('2026-11-07'));
  await panel.click('#access-tab');await panel.waitForSelector('#invites tr');
  assert.match(await panel.$eval('#invites',el=>el.innerText),/customer@example.invalid/);
  assert.doesNotMatch(await panel.evaluate(()=>document.body.innerText),/Admin onboard codes|New admin code|ADM-/);
@@ -88,5 +101,5 @@ try {
   assert.doesNotMatch(await page.evaluate(()=>document.body.innerText),/Failed to load settings|prefs failed to load/);
  await page.setViewport({width:390,height:844});await page.screenshot({path:'/tmp/velovest-manager-access-mobile.png',fullPage:true});
  assert.deepEqual(errors,[]);
- console.log('PASS: role control renders in the real selected-user Admin drawer; assignment/revocation, admin exclusion, manager Users/Access tabs, XSS-safe details and duplicate invite prevention.');
+ console.log('PASS: role control renders in the real selected-user Admin drawer; assignment/revocation, admin exclusion, manager Users/Access/Signup dates tabs, date disable/enable, XSS-safe details and duplicate invite prevention.');
 }finally{releaseInvite();await browser.close();await new Promise(resolve=>server.close(resolve));}

@@ -80,10 +80,26 @@ describe('Signup submission persistence and Management access', () => {
   });
 
   it('rejects invalid consent, package, session and proof before writing', async () => {
-    for (const changed of [{consentAccepted:false},{packageId:'unknown'},{sessionDate:'2026-11-01'},{sessionTime:'13:17'},{proofBase64:'not base64'},{proofContentType:'text/html'}]) {
+    for (const changed of [{consentAccepted:false},{packageId:'unknown'},{sessionDate:'2026-02-30'},{sessionTime:'13:17'},{proofBase64:'not base64'},{proofContentType:'text/html'}]) {
       expect((await request(app).post('/api/signup/submissions').send({...payload('VV-TEST03'),...changed})).status).toBe(400);
     }
     expect((await pool.query('SELECT count(*)::int AS count FROM velovest_signup.submissions WHERE reference=$1',['VV-TEST03'])).rows[0].count).toBe(0);
+  });
+
+  it('defaults weekends to enabled, enforces disabling and preserves retries and saved evidence', async () => {
+    const weekend={...input('VV-DATE01'),sessionDate:'2026-11-07'};
+    await repository.save(weekend);
+    await repository.setDateEnabled(weekend.sessionDate,false,'test-manager');
+    expect(await repository.disabledDates()).toContain(weekend.sessionDate);
+    await expect(repository.save({...weekend,reference:'VV-DATE02'})).rejects.toMatchObject({status:409});
+    await expect(repository.save(weekend)).resolves.toEqual({reference:'VV-DATE01'});
+    const publicDates=await request(app).get('/api/signup/dates').expect(200);
+    expect(publicDates.body.disabledDates).toContain(weekend.sessionDate);
+    expect(publicDates.headers['cache-control']).toBe('no-store');
+    await repository.setDateEnabled(weekend.sessionDate,true,'test-manager');
+    await repository.save({...weekend,reference:'VV-DATE02'});
+    expect(await repository.disabledDates()).not.toContain(weekend.sessionDate);
+    await expect(repository.setDateEnabled('2026-02-30',false,'test-manager')).rejects.toMatchObject({status:400});
   });
 
   it('denies anonymous and ordinary-user access to both queries and proof downloads', async () => {

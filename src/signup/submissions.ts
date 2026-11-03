@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import pg from 'pg';
 import { readDatabaseConfig } from '../../node_modules/utarus/dist/database/config.js';
-import { isPackageId, isSlotTime, packageTotal, packages } from './catalog.js';
+import { isPackageId, isSlotTime, packageTotal, packages, validSessionDate } from './catalog.js';
 import { notifyNewSignup } from './notification.js';
 
 export class SubmissionError extends Error {
@@ -61,9 +61,8 @@ export function validateSubmission(input: SubmissionInput) {
   if (!isPackageId(input.packageId)) throw new SubmissionError('Choose a valid package.');
   const sessionDate = input.packageId === 'renewal' ? null : input.sessionDate;
   const sessionTime = input.packageId === 'renewal' ? null : input.sessionTime;
-  const date = new Date(`${sessionDate}T00:00:00Z`);
-  if (input.packageId !== 'renewal' && (typeof sessionDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(sessionDate) || !Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== sessionDate || [0, 6].includes(date.getUTCDay()))) {
-    throw new SubmissionError('Choose a valid weekday session date.');
+  if (input.packageId !== 'renewal' && !validSessionDate(sessionDate)) {
+    throw new SubmissionError('Choose a valid session date.');
   }
   if (input.packageId !== 'renewal' && !isSlotTime(sessionTime)) throw new SubmissionError('Choose a valid session time.');
   if (input.name.trim().length < 2) throw new SubmissionError('Enter your full name.');
@@ -86,6 +85,26 @@ export class SubmissionRepository {
   constructor(readonly pool: pg.Pool,
     private readonly notify: typeof notifyNewSignup = notifyNewSignup) {}
 
+  async disabledDates(): Promise<string[]> {
+    const result = await this.pool.query<{ date: string }>(`SELECT to_char(session_date, 'YYYY-MM-DD') AS date
+      FROM velovest_signup.disabled_dates ORDER BY session_date`);
+    return result.rows.map(row => row.date);
+  }
+
+  async setDateEnabled(date: string, enabled: boolean, actor: string) {
+    if (!validSessionDate(date)) throw new SubmissionError('Choose a valid calendar date.');
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('signup-date:' || $1, 0))", [date]);
+      if (enabled) await client.query('DELETE FROM velovest_signup.disabled_dates WHERE session_date=$1', [date]);
+      else await client.query(`INSERT INTO velovest_signup.disabled_dates(session_date,updated_by) VALUES ($1,$2)
+        ON CONFLICT(session_date) DO UPDATE SET updated_by=EXCLUDED.updated_by,updated_at=now()`, [date,actor]);
+      await client.query('COMMIT');
+    } catch (error) { await client.query('ROLLBACK'); throw error; }
+    finally { client.release(); }
+  }
+
   async save(raw: SubmissionInput): Promise<{ reference: string }> {
     const input = validateSubmission(raw);
     const proofHash = createHash('sha256').update(input.proof.data).digest('hex');
@@ -96,7 +115,19 @@ export class SubmissionRepository {
       consent: true, proof: { name: input.proof.filename, type: input.proof.contentType, sha256: proofHash },
     })).digest('hex');
     const newId = randomUUID();
-    const result = await this.pool.query<{ reference: string; id: string }>(`
+    const client = await this.pool.connect();
+    let saved: {reference: string; id: string};
+    try {
+      await client.query('BEGIN');
+      if (input.sessionDate) {
+        await client.query("SELECT pg_advisory_xact_lock(hashtextextended('signup-date:' || $1, 0))", [input.sessionDate]);
+        const disabled = await client.query('SELECT 1 FROM velovest_signup.disabled_dates WHERE session_date=$1', [input.sessionDate]);
+        if (disabled.rowCount) {
+          const retry = await client.query('SELECT 1 FROM velovest_signup.submissions WHERE reference=$1 AND submission_fingerprint=$2', [input.reference,fingerprint]);
+          if (!retry.rowCount) throw new SubmissionError('This date has been disabled by the manager. Please choose another date.', 409);
+        }
+      }
+      const result = await client.query<{ reference: string; id: string }>(`
       INSERT INTO velovest_signup.submissions
       (id, reference, package_id, package_name, amount_sgd, session_date, session_time,
        customer_name, customer_email, customer_phone, bank_transaction_id, consent_accepted,
@@ -108,17 +139,21 @@ export class SubmissionRepository {
       input.amountSgd, input.sessionDate, input.sessionTime, input.name, input.email,
       input.phone, input.bankTransactionId, input.proof.filename, input.proof.contentType,
       proofHash, input.proof.data, fingerprint]);
-    if (!result.rows[0]) throw new SubmissionError('This reference already belongs to a different submission. Your changes were not saved.', 409);
+      if (!result.rows[0]) throw new SubmissionError('This reference already belongs to a different submission. Your changes were not saved.', 409);
+      saved = result.rows[0];
+      await client.query('COMMIT');
+    } catch (error) { await client.query('ROLLBACK'); throw error; }
+    finally { client.release(); }
     // The retained ID identifies identical retries, including concurrent requests.
     // Mail runs after the INSERT commits; delivery failure cannot undo intake.
-    if (result.rows[0].id === newId) {
+    if (saved.id === newId) {
       try { await this.notify(input); }
       catch {
         // SMTP errors can include credentials, recipient details or message contents.
         console.error('[signup notification] Delivery not confirmed; signup remains saved.');
       }
     }
-    return { reference: result.rows[0].reference };
+    return { reference: saved.reference };
   }
 
   async list(search: string): Promise<SubmissionSummary[]> {
