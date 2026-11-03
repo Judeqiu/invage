@@ -251,6 +251,7 @@ export function createInvageWebUi(): DomainWebUiExtension {
         title: 'Brokers',
       },
     ] satisfies NonNullable<DomainWebUiExtension['routes']>).filter(route => route.path !== '/option-risk' || readDashboardConfig().showOptionRiskCalculator); },
+    ...(consultant ? {visibleSettingsSections: ['brokers']} : {}),
     settingsSections: [
       {id:'experience',title:'Your experience',description:'Choose the optional pages in your workspace',icon:'layout-dashboard',iframeSrc:'/domain-assets/invage/settings/experience/index.html',iframeHeightPx:460},
       {
