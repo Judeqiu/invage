@@ -1,5 +1,6 @@
 import { signupSubmissions, SubmissionError, type SubmissionRepository } from '../signup/submissions.js';
 import { Router, type Request, type RequestHandler } from 'express';
+import { randomUUID } from 'node:crypto';
 import { requireAuth, requireAdmin, sessionUser, issueInviteCode, listInviteCodes, isBillingEnabled } from 'utarus';
 import { inviteOnboardUrl, originFromRequest } from '../../node_modules/utarus/dist/onboarding/invite-url.js';
 import { MANAGER_ROLE, ManagementError, managementRepository, type ManagementRepository } from './repository.js';
@@ -78,13 +79,16 @@ export function createManagementRouter(getRepository: RepositorySource = managem
     res.json({codes});
   });
   router.post('/invites',async(req,res) => {
-    if (!req.body || typeof req.body!=='object' || Array.isArray(req.body) || Object.keys(req.body).some(key=>!['comment','recipientEmail'].includes(key)) ||
-      (req.body.comment!==undefined && typeof req.body.comment!=='string')) throw new ManagementError('Only an optional invite comment and recipientEmail are accepted.');
+    if (!req.body || typeof req.body!=='object' || Array.isArray(req.body) || Object.keys(req.body).some(key=>!['comment','recipientEmail','prefix'].includes(key)) ||
+      (req.body.comment!==undefined && typeof req.body.comment!=='string')) throw new ManagementError('Only an optional invite comment, recipientEmail and prefix are accepted.');
+    if (req.body.prefix !== undefined && (typeof req.body.prefix !== 'string' || req.body.prefix.includes('\u0000'))) throw new ManagementError('Enter a valid invitation code prefix.');
+    const prefix = req.body.prefix?.trim().toUpperCase();
     if (req.body.recipientEmail !== undefined && typeof req.body.recipientEmail !== 'string') throw new ManagementError('Enter a valid email address.');
     const recipientEmail=req.body.recipientEmail?.trim().toLowerCase() || undefined;
     if (recipientEmail !== undefined && (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipientEmail) || recipientEmail.includes('\u0000'))) throw new ManagementError('Enter a valid email address.');
     const issuerId=`${MANAGER_ROLE}:${sessionUser(req).userId}`;
-    const code=await issueInviteCode({isPlatformAdmin:true,issuerId,createdViaWeb:issuerId,comment:req.body.comment?.trim(),...(recipientEmail === undefined ? {} : {recipientEmail})});
+    const code=await issueInviteCode({isPlatformAdmin:true,issuerId,createdViaWeb:issuerId,comment:req.body.comment?.trim(),...(recipientEmail === undefined ? {} : {recipientEmail}),
+      ...(prefix ? {customCode:`${prefix}-${randomUUID().slice(0,8).toUpperCase()}`} : {})});
     res.json({code:code.code,createdAt:code.created_at,comment:code.comment??'',recipientEmail:code.recipient_email??'',onboardUrl:inviteOnboardUrl({origin:originFromRequest(req),code:code.code})});
   });
   // An explicit deny terminates all other manager paths and methods. It cannot

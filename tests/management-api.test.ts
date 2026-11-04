@@ -72,6 +72,29 @@ it('revokes existing-session access and navigation immediately without changing 
   const revoked=await request(app).get('/manifest').set('x-test-user','manager').expect(200);
   expect(revoked.body.nav).toEqual([{id:'dashboard'}]);
 });
+
+it('generates a random suffix for each manager-selected prefix without granting admin or org roles',async()=>{
+  actions.issue.mockImplementation(async params=>({code:params.customCode,created_at:'2026-11-04'}));
+  const codes=[];
+  for(let i=0;i<2;i++) {
+    const response=await mutate('post','/invites').send({prefix:' partner ',comment:'Partner signup'}).expect(200);
+    expect(response.body.code).toMatch(/^PARTNER-[A-F0-9]{8}$/);
+    expect(new URL(response.body.onboardUrl).searchParams.get('invite')).toBe(response.body.code);
+    codes.push(response.body.code);
+  }
+  expect(codes[0]).not.toBe(codes[1]);
+  for(const [params] of actions.issue.mock.calls) {
+    expect(params).not.toHaveProperty('role');expect(params).not.toHaveProperty('orgId');
+    expect(params.issuerId).toBe('velovest_manager:'+ids.manager);
+  }
+});
+
+it('retains default generation for blank prefixes and rejects non-text prefixes',async()=>{
+  await mutate('post','/invites').send({prefix:'   '}).expect(200);
+  expect(actions.issue.mock.calls[0][0]).not.toHaveProperty('customCode');
+  for(const prefix of [null,123,{},['PARTNER'],'BAD\u0000PREFIX']) await mutate('post','/invites').send({prefix}).expect(400);
+  expect(actions.issue).toHaveBeenCalledOnce();
+});
 it('fails closed on role lookup failure and rejects malformed user IDs',async()=>{
   await request(app).get('/api/management/users/not-a-uuid').set('x-test-user','manager').expect(400);
   repository.isManager.mockRejectedValueOnce(new Error('database unavailable'));

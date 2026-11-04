@@ -46,8 +46,8 @@ const server=createServer(async(req,res)=>{
   if(path==='/api/domain/invage/management/users/'+ids.subscriber){json(res,{user:subscriber,billingEnabled:false});return;}
   if(path==='/api/domain/invage/management/invites'){
    if(req.method==='POST'){
-    let body='';for await(const chunk of req)body+=chunk;assert.deepEqual(JSON.parse(body),{comment:'Customer signup',recipientEmail:'customer@example.invalid'});issued++;await heldInvite;
-    json(res,{code:'INV-MANAGER',createdAt:'2026-11-02',comment:'Customer signup',recipientEmail:'customer@example.invalid',onboardUrl:'http://127.0.0.1:'+server.address().port+'/login?invite=INV-MANAGER'});return;
+    let body='';for await(const chunk of req)body+=chunk;assert.deepEqual(JSON.parse(body),{comment:'Customer signup',recipientEmail:'customer@example.invalid',prefix:'PARTNER'});issued++;await heldInvite;
+    json(res,{code:'PARTNER-1234ABCD',createdAt:'2026-11-02',comment:'Customer signup',recipientEmail:'customer@example.invalid',onboardUrl:'http://127.0.0.1:'+server.address().port+'/login?invite=PARTNER-1234ABCD'});return;
    }
    invitesRead++;json(res,{codes:[{code:'INV-CUSTOMER',createdAt:'2026-11-02',comment:'Normal signup',recipientEmail:'customer@example.invalid',usedAt:null}]});return;
   }
@@ -149,15 +149,19 @@ try {
  await panel.click('#access-tab');await panel.waitForSelector('#invites tr');
  assert.match(await panel.$eval('#invites',el=>el.innerText),/customer@example.invalid/);
  assert.doesNotMatch(await panel.evaluate(()=>document.body.innerText),/Admin onboard codes|New admin code|ADM-/);
- await panel.type('#recipient-email','customer@example.invalid');await panel.type('#comment','Customer signup');await panel.click('#create-invite');
+ assert.equal(await panel.$eval('#invite-prefix',el=>el.placeholder),'INV');
+ await panel.type('#invite-prefix','PARTNER');await panel.type('#recipient-email','customer@example.invalid');await panel.type('#comment','Customer signup');await panel.click('#create-invite');
  await panel.waitForFunction(()=>document.getElementById('create-invite').disabled);
  await panel.$eval('#create-invite',button=>button.click());assert.equal(issued,1);
  const inviteReadsBefore=invitesRead;releaseInvite();await panel.waitForSelector('#new-invite:not([hidden])');
  assert.equal(invitesRead,inviteReadsBefore,'Invite creation must not issue a follow-up GET');
- assert.match(await panel.$eval('#invites',el=>el.innerText),/INV-MANAGER/);
- assert.match(await panel.$eval('#invite-link',link=>link.href),/login\?invite=INV-MANAGER/);
+ assert.match(await panel.$eval('#invites',el=>el.innerText),/PARTNER-1234ABCD/);
+ assert.match(await panel.$eval('#invite-link',link=>link.href),/login\?invite=PARTNER-1234ABCD/);
   assert.doesNotMatch(await page.evaluate(()=>document.body.innerText),/Failed to load settings|prefs failed to load/);
- await page.setViewport({width:390,height:844});await page.screenshot({path:'/tmp/velovest-manager-access-mobile.png',fullPage:true});
+ await page.screenshot({path:'/tmp/velovest-manager-access-desktop.png',fullPage:true});
+ await page.setViewport({width:390,height:844});
+ assert.equal(await panel.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'Invitation prefix form must fit a mobile viewport');
+ await page.screenshot({path:'/tmp/velovest-manager-access-mobile.png',fullPage:true});
  denyManager=true;await panel.click('#refresh-invites');await panel.waitForSelector('#message:not([hidden])');
  assert.equal(await panel.$$eval('section:not([hidden])',sections=>sections.length),0);
  assert.equal(await panel.$eval('#users',el=>el.children.length),0);assert.equal(await panel.$eval('#new-invite',el=>el.hidden),true);
