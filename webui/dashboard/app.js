@@ -3041,7 +3041,7 @@ async function fetchDashboardWithProgress(signal, force = false, onSnapshot) {
   const cached = force ? null : memory.read();
   const headers = { Accept: 'text/event-stream' };
   if (cached?.etag) headers['If-None-Match'] = cached.etag;
-  const response = await fetch(`${API}?progress=1${force ? '&refresh=1' : '&preview=1'}`, { credentials: 'include', signal, headers });
+  const response = await fetch(`${API}?wire=1&progress=1${force ? '&refresh=1' : '&preview=1'}`, { credentials: 'include', signal, headers });
   if (response.status === 304 && cached) return cached.payload;
   const remember = body => {
     const etag = response.headers.get('etag');
@@ -3055,7 +3055,7 @@ async function fetchDashboardWithProgress(signal, force = false, onSnapshot) {
   }
   // Older hosts and fixtures can still return the existing JSON response.
   if (!(response.headers.get('content-type') || '').includes('text/event-stream')) {
-    try { return remember(await response.json()); } catch { throw new Error('The dashboard response was interrupted. Please retry.'); }
+    try { return remember(globalThis.PortfolioWire.decode(await response.json())); } catch { throw new Error('The dashboard response was interrupted. Please retry.'); }
   }
   if (!response.body) throw new Error('No dashboard data was received. Please retry.');
   const reader = response.body.getReader();
@@ -3065,9 +3065,9 @@ async function fetchDashboardWithProgress(signal, force = false, onSnapshot) {
     if (!line.startsWith('data:')) return;
     let event;
     try { event = JSON.parse(line.slice(5)); } catch { throw new Error('The dashboard response was interrupted. Please retry.'); }
-    if (event.type === 'snapshot' && !force && onSnapshot) onSnapshot(event.payload);
+    if (event.type === 'snapshot' && !force && onSnapshot) onSnapshot(globalThis.PortfolioWire.decode(event.payload));
     else if (event.type === 'progress') updateLoading(event.completedStages, event);
-    else if (event.type === 'result') result = event.payload;
+    else if (event.type === 'result') result = globalThis.PortfolioWire.decode(event.payload);
     else if (event.type === 'error') throw new Error(event.message || 'The dashboard could not finish loading. Please retry.');
   };
   const consumeChunk = text => {

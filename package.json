@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "NODE_OPTIONS=--no-deprecation npx tsx src/index.ts",
     "webapp": "NODE_OPTIONS=--no-deprecation npx tsx src/webapp/server.ts",
-    "build": "tsc && cp src/futubull/opend_bridge.py dist/futubull/opend_bridge.py && mkdir -p dist/risk && cp src/risk/schema.sql dist/risk/schema.sql",
+    "build": "tsc && cp src/state/dashboard-wire-worker.mjs dist/state/dashboard-wire-worker.mjs && cp src/futubull/opend_bridge.py dist/futubull/opend_bridge.py && mkdir -p dist/risk && cp src/risk/schema.sql dist/risk/schema.sql",
     "start": "node dist/index.js",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -37,7 +37,7 @@
     "pg": "^8.23.0",
     "saxes": "^6.0.0",
     "tsx": "^4.22.4",
-    "utarus": "github:Judeqiu/utarus#3393667a6a60775e8d8de2b7585b782c8a726987",
+    "utarus": "github:Judeqiu/utarus#ed33fb199f6db79c9ea448f2c8040174f6ad0755",
     "yahoo-finance2": "^3.15.3",
     "yaml": "^2.9.0"
   },

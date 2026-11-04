@@ -13,6 +13,7 @@ import { loadInvestor } from '../src/state/investor-store.js';
 import { parseRelationshipArchive } from '../src/brokers/option-relationships.js';
 
 vi.mock('../src/state/investor-store.js', () => ({ loadInvestor: vi.fn(), saveInvestor: vi.fn() }));
+vi.mock('../src/state/read-model-state.js',async()=>({loadInvestorForRead:(await import('../src/state/investor-store.js')).loadInvestor}));
 const owner = '00000000-0000-4000-8000-000000000071';
 const other = '00000000-0000-4000-8000-000000000072';
 let root: string, state: InvestorState;

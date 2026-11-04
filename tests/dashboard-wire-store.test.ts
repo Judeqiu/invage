@@ -1,0 +1,26 @@
+import {beforeEach,afterEach,expect,it} from 'vitest';
+import {mkdtempSync,rmSync} from 'node:fs';
+import {join} from 'node:path';
+import {tmpdir} from 'node:os';
+import type {InvestorState} from '../src/state/portfolio-state.js';
+import {persistPortfolioFixture} from './helpers/portfolio-projection.js';
+import {readPortfolioProjection,writePortfolioProjection} from '../src/state/projection-store.js';
+import {preparedDashboardWire} from '../src/state/dashboard-wire-store.js';
+import {portfolioWire} from '../src/webapp/portfolio-wire.js';
+let root:string;
+beforeEach(()=>{root=mkdtempSync(join(tmpdir(),'dashboard-wire-store-'));process.env.UTARUS_DATA_ROOT=root;});
+afterEach(()=>rmSync(root,{recursive:true,force:true}));
+it('prepares a complete generation in a worker and rejects mixing replaced generations',async()=>{
+  const state:InvestorState={user:{id:'00000000-0000-4000-8000-000000000072',created_at:'2026-01-01'},profile:{display_name:'Owner',contact_email:'owner@example.invalid'},log:[]};
+  await persistPortfolioFixture(state);
+  const saved=readPortfolioProjection(state)!;
+  const wire=await preparedDashboardWire(saved);
+  expect(JSON.stringify(portfolioWire.decode(JSON.parse(wire)))).toBe(JSON.stringify({...saved.dashboard,brokerAggregates:saved.brokers}));
+  expect(Object.isFrozen(saved.dashboard)).toBe(true);
+  const next=structuredClone(saved);next.calculatedAt='2026-11-04T13:00:00Z';next.dashboard.generatedAt=next.calculatedAt;
+  writePortfolioProjection(next);
+  await expect(preparedDashboardWire(saved)).rejects.toThrow('generation changed');
+  const fresh=readPortfolioProjection(state)!;
+  const freshWire=await preparedDashboardWire(fresh);
+  expect((portfolioWire.decode(JSON.parse(freshWire)) as any).generatedAt).toBe(next.calculatedAt);
+});

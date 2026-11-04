@@ -10,8 +10,10 @@ import type { InvestorState } from '../src/state/portfolio-state.js';
 import { persistPortfolioFixture } from './helpers/portfolio-projection.js';
 const mocks = vi.hoisted(() => ({ calculate: vi.fn(), investor: vi.fn() }));
 vi.mock('../src/state/investor-store.js', () => ({ loadInvestor: mocks.investor }));
+vi.mock('../src/state/read-model-state.js',async()=>({loadInvestorForRead:(await import('../src/state/investor-store.js')).loadInvestor}));
 vi.mock('../src/webapp/dashboard-data.js', () => ({ loadDashboardForSlug: mocks.calculate }));
 import { createDashboardApiRouter } from '../src/webapp/dashboard-api.js';
+import { portfolioWire } from '../src/webapp/portfolio-wire.js';
 const owner = '00000000-0000-4000-8000-000000000011';
 let root: string, state: InvestorState;
 function app(auth = true, userId = owner) {
@@ -28,6 +30,21 @@ beforeEach(() => {
   mocks.investor.mockImplementation(async userId => ({ state: userId === owner ? structuredClone(state) : { ...state, user: { ...state.user, id: userId } }, revision: 1 }));
 });
 afterEach(() => { vi.clearAllMocks(); rmSync(root, { recursive: true, force: true }); });
+
+it('returns losslessly encoded complete saved data with private revalidation and unchanged financial rows', async () => {
+  await persistPortfolioFixture(state);
+  const server=app();
+  const plain=await request(server).get('/dashboard').expect(200);
+  const wire=await request(server).get('/dashboard?wire=1').expect(200);
+  expect(JSON.stringify(portfolioWire.decode(wire.body))).toBe(JSON.stringify(plain.body));
+  expect(wire.headers.etag).not.toBe(plain.headers.etag);
+  await request(server).get('/dashboard?wire=1').set('If-None-Match',wire.headers.etag).expect(304);
+  const cached=await request(server).get('/dashboard-cache?wire=1').expect(200);
+  expect(JSON.stringify(portfolioWire.decode(cached.body))).toBe(JSON.stringify(plain.body));
+  const stream=await request(server).get('/dashboard?wire=1&progress=1').expect(200);
+  const result=JSON.parse(stream.text.split('\n').find(line=>line.startsWith('data:'))!.slice(5));
+  expect(JSON.stringify(portfolioWire.decode(result.payload))).toBe(JSON.stringify(plain.body));
+});
 
 it('serves only persisted generations, including explicit refresh and streaming requests', async () => {
   await persistPortfolioFixture(state);

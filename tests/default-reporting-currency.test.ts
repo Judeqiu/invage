@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../src/state/investor-store.js', () => ({
   loadInvestor: mocks.loadInvestor, saveInvestor: mocks.saveInvestor,
 }));
+vi.mock('../src/state/read-model-state.js',async()=>({loadInvestorForRead:(await import('../src/state/investor-store.js')).loadInvestor}));
 vi.mock('utarus', async importOriginal => ({
   ...await importOriginal<typeof import('utarus')>(),
   loadSessionState: mocks.loadSessionState,

@@ -5,8 +5,9 @@ import request from 'supertest';
 import { tradesFixture } from './helpers/trades-fixture.js';
 const mocks = vi.hoisted(() => ({ load:vi.fn(), save:vi.fn(), history:vi.fn(), relationships:vi.fn() }));
 vi.mock('../src/state/investor-store.js',() => ({loadInvestor:mocks.load,saveInvestor:mocks.save,saveOptionJournalMetadata:mocks.save}));
+vi.mock('../src/state/read-model-state.js',async()=>({loadInvestorForRead:(await import('../src/state/investor-store.js')).loadInvestor}));
 vi.mock('../src/webapp/option-history-data.js',() => ({optionHistoryForState:mocks.history}));
-vi.mock('../src/webapp/option-relationships-data.js',() => ({optionRelationshipsForState:mocks.relationships}));
+vi.mock('../src/webapp/option-relationships-data.js',() => ({optionRelationshipsForState:mocks.relationships,prepareOptionRelationships:mocks.relationships}));
 import { createDashboardApiRouter } from '../src/webapp/dashboard-api.js';
 
 it('requires authentication, isolates cached journals by owner/revision, and keeps GETs read-only', async () => {

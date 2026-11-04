@@ -2,6 +2,7 @@
 import { Router, type RequestHandler } from 'express';
 import { loadSessionState, saveState, type AuthUser } from 'utarus';
 import type { InvestorState } from '../state/portfolio-state.js';
+import { loadInvestorForRead } from '../state/read-model-state.js';
 
 export function riskPageEnabled(state: Pick<InvestorState, 'experience_settings'>): boolean {
   return state.experience_settings?.account_risk === true;
@@ -14,7 +15,10 @@ export function dailyChangesEnabled(state: Pick<InvestorState, 'experience_setti
 /** Keep framework manifest/auth/session-key handling; filter only this optional destination. */
 export const personalRiskManifest: RequestHandler = async (req, res, next) => {
   let enabled = false;
-  try { enabled = riskPageEnabled((await loadSessionState(req)).state as InvestorState); }
+  try {
+    const user=(req as typeof req & {user?:AuthUser}).user;
+    if(user?.userId)enabled=riskPageEnabled((await loadInvestorForRead(user.userId)).state);
+  }
   catch { /* A missing preference or unavailable state must never enable the page. */ }
   res.setHeader('Cache-Control', 'private, no-store');
   const json = res.json.bind(res);

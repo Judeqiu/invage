@@ -3,6 +3,7 @@ import express from 'express';
 import request from 'supertest';
 const mocks=vi.hoisted(()=>({load:vi.fn(),save:vi.fn(),projection:vi.fn()}));
 vi.mock('utarus',async importOriginal=>({...await importOriginal<typeof import('utarus')>(),loadSessionState:mocks.load,saveState:mocks.save}));
+vi.mock('../src/state/read-model-state.js',()=>({loadInvestorForRead:(userId:string)=>mocks.load({user:{userId}})}));
 vi.mock('../src/state/projection-store.js',async importOriginal=>({...await importOriginal<typeof import('../src/state/projection-store.js')>(),requirePortfolioProjection:mocks.projection}));
 import {createExperienceSettingsRouter,personalRiskManifest} from '../src/webapp/experience-settings.js';
 import {createDashboardApiRouter} from '../src/webapp/dashboard-api.js';

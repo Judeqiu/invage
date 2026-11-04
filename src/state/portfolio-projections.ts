@@ -1,7 +1,7 @@
 import { attachDailyChanges } from '../report/daily-changes.js';
 import { buildBrokerProjections } from '../report/broker-projections.js';
 import { listUserIds } from 'utarus';
-import { loadInvestor } from './investor-store.js';
+import { loadInvestorForRead } from './read-model-state.js';
 import { portfolioRefreshDeferred, registerPortfolioRefresher } from './projection-events.js';
 import { portfolioFingerprint, readDailyAggregateHistory, readPriorQuoteDashboard, PROJECTION_VERSION, readPortfolioProjection, writePortfolioProjection, type PortfolioProjection } from './projection-store.js';
 import { retainProbabilityQuotes } from '../market/retain-probability-quotes.js';
@@ -11,8 +11,10 @@ import { tradesOpenBook, tradesHistory } from '../webapp/trades-v2-data.js';
 import { optionHistoryForState } from '../webapp/option-history-data.js';
 import { prepareOptionRelationships } from '../webapp/option-relationships-data.js';
 import { buildPageProjections, buildTradeProjections } from '../report/page-projections.js';
+import { prepareDashboardWireFile } from './dashboard-wire-store.js';
+import { projectionLocation } from './projection-files.js';
 
-const runtime = { loadInvestor, loadDashboardForSlug, buildExecutionJournal, tradesOpenBook, tradesHistory,
+const runtime = { loadInvestor:loadInvestorForRead, loadDashboardForSlug, buildExecutionJournal, tradesOpenBook, tradesHistory,
   optionHistoryForState, prepareOptionRelationships, buildPageProjections, buildTradeProjections, buildBrokerProjections };
 
 /** Serial per-user writes; recheck the source before publishing an atomic generation. */
@@ -51,6 +53,7 @@ export function createPortfolioProjectionRefresher(overrides: Partial<typeof run
         if (portfolioFingerprint(latest.state) !== fingerprint) continue;
         attachDailyChanges(entry, readDailyAggregateHistory(userId));
         writePortfolioProjection(entry);
+        await prepareDashboardWireFile(projectionLocation(userId).file);
         return;
       }
       throw new Error('Portfolio changed repeatedly during calculation; background refresh will retry.');

@@ -121,7 +121,7 @@ async function readJson(res) {
     const message = body && typeof body.message === 'string' ? body.message : text;
     throw new Error(message || `HTTP ${res.status}`);
   }
-  return body;
+  return globalThis.PortfolioWire ? globalThis.PortfolioWire.decode(body) : body;
 }
 
 function positionSymbol(ticker) {
@@ -129,7 +129,7 @@ function positionSymbol(ticker) {
 }
 
 async function cachedDashboard() {
-  const res = await fetch('/api/domain/invage/dashboard-cache', { credentials: 'include' });
+  const res = await fetch('/api/domain/invage/dashboard-cache?wire=1', { credentials: 'include' });
   if (res.status === 404) return null;
   return readJson(res);
 }
@@ -137,7 +137,7 @@ async function cachedDashboard() {
 async function loadDashboard() {
   const cached = await cachedDashboard();
   if (cached) return cached;
-  const res = await fetch(DASHBOARD_API, { credentials: 'include' });
+  const res = await fetch(DASHBOARD_API + '?wire=1', { credentials: 'include' });
   return readJson(res);
 }
 

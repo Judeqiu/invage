@@ -1,4 +1,6 @@
 import type { BrokerProjection } from '../report/broker-projections.js';
+import { freezeReadModel } from './freeze-read-model.js';
+import {projectionLocation as location,projectionFileSignature} from './projection-files.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -49,29 +51,38 @@ export function portfolioFingerprint(state: InvestorState): string {
     connections, state.broker_history, state.option_executions, state.option_events,
     state.option_observations, state.option_identities, state.broker_statement_evidence, snapshots])).digest('hex');
 }
-function location(userId: string) {
-  const directory = join(resolveDataRoot(), 'derived', 'portfolio');
-  const key = createHash('sha256').update(userId).digest('hex');
-  return { directory, file: join(directory, key + '.json') };
+const projectionFiles = new Map<string, { signature: string; entry: PortfolioProjection }>();
+const projectionSignatures = new WeakMap<PortfolioProjection,string>();
+export const portfolioProjectionSignature = (entry:PortfolioProjection) => projectionSignatures.get(entry);
+function readProjectionFile(userId: string): PortfolioProjection {
+  const file = location(userId).file;
+  const signature = () => projectionFileSignature(file);
+  const before = signature(), cached = projectionFiles.get(file);
+  if (cached?.signature === before) return cached.entry;
+  const entry = freezeReadModel(JSON.parse(readFileSync(file, 'utf8')) as PortfolioProjection);
+  if (before !== signature()) throw new Error('Saved generation changed while reading');
+  projectionSignatures.set(entry,before);
+  projectionFiles.set(file, { signature: before, entry });
+  return entry;
 }
 /** Read prior daily checkpoints even when source inputs have changed. Never used to serve page data. */
 export function readDailyAggregateHistory(userId: string) {
   try {
-    const entry = JSON.parse(readFileSync(location(userId).file, 'utf8')) as PortfolioProjection;
-    return entry.userId === userId && entry.version === PROJECTION_VERSION ? entry.dailyAggregateHistory ?? {} : {};
+    const entry = readProjectionFile(userId);
+    return entry.userId === userId && entry.version === PROJECTION_VERSION ? structuredClone(entry.dailyAggregateHistory ?? {}) : {};
   } catch { return {}; }
 }
 /** Prior quote evidence only; this unchecked generation must never serve page data. */
 export function readPriorQuoteDashboard(userId: string): DashboardPayload | undefined {
   try {
-    const entry = JSON.parse(readFileSync(location(userId).file, 'utf8')) as PortfolioProjection;
+    const entry = readProjectionFile(userId);
     return entry.userId === userId && entry.version === PROJECTION_VERSION ? entry.dashboard : undefined;
   } catch { return undefined; }
 }
 /** Durable private read model: no TTL, eviction, market calls or calculation on reads. */
 export function readPortfolioProjection(state: InvestorState): PortfolioProjection | null {
   try {
-    const entry = JSON.parse(readFileSync(location(state.user.id).file, 'utf8')) as PortfolioProjection;
+    const entry = readProjectionFile(state.user.id);
     return entry && entry.brokers && entry.dashboard && entry.journal && entry.openTrades && entry.tradeHistory && entry.optionHistory && entry.relationships &&
       typeof entry.calculatedAt === 'string' && entry.version === PROJECTION_VERSION && entry.userId === state.user.id && entry.fingerprint === portfolioFingerprint(state)
       ? entry : null;
@@ -84,6 +95,7 @@ export function writePortfolioProjection(entry: PortfolioProjection): void {
   try {
     writeFileSync(temporary, JSON.stringify(entry), { mode: 0o600, flag: 'wx' });
     renameSync(temporary, file);
+    projectionFiles.delete(file);
   } finally { try { unlinkSync(temporary); } catch { /* Atomic rename consumed it. */ } }
 }
 export class PortfolioProjectionUnavailable extends Error {

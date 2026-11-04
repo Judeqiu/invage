@@ -17,6 +17,8 @@ import { loadSessionState, targetUserId, type AuthUser } from 'utarus';
 import { requirePortfolioProjection, readPortfolioProjection, PortfolioProjectionUnavailable, type PortfolioProjection } from '../state/projection-store.js';
 import { loadWatchlistForSlug } from './watchlist-data.js';
 import { loadInvestor } from '../state/investor-store.js';
+import { loadInvestorForRead } from '../state/read-model-state.js';
+import { preparedDashboardWire } from '../state/dashboard-wire-store.js';
 import { validDate } from '../brokers/option-executions.js';
 import { readBrokerAccountModel } from '../brokers/accounts.js';
 import { latestSuccessfulBrokerSyncRun } from '../brokers/sync-history.js';
@@ -35,6 +37,7 @@ function matchesDashboardSelection(projection: PortfolioProjection, selection: s
   if (!selection) return true;
   return selection.startsWith('broker:') ? projection.brokers[selection.slice(7)]?.channels.includes(channel) === true : selection === channel;
 }
+
 
 export function createDashboardApiRouter(): Router {
   const router = Router();
@@ -86,7 +89,7 @@ export function createDashboardApiRouter(): Router {
     try {
       const user = (req as Request & { user?: AuthUser }).user;
       if (!user?.userId) { res.status(401).json({ error:'unauthorized' }); return; }
-      const snapshot = await loadInvestor(await targetUserId(req,user));
+      const snapshot = await loadInvestorForRead(await targetUserId(req,user));
       const history = req.path.endsWith('/history');
       const saved = requirePortfolioProjection(snapshot.state);
       const journal = history ? saved.tradeHistory : saved.openTrades;
@@ -106,14 +109,22 @@ export function createDashboardApiRouter(): Router {
       dashboardConfig: { ...readDashboardConfig(), showOptionRiskModelView: riskEnabled(), showDailyChanges: dailyChangesEnabled(snapshot.state) },
       analysisContextId: riskEnabled() ? analysisContext(snapshot) : null };
   }
+  async function encodedDashboard(saved: PortfolioProjection, body: ReturnType<typeof dashboardBody>) {
+    const base = await preparedDashboardWire(saved);
+    const overrides = {productProfile:body.productProfile,productName:body.productName,displayName:body.displayName,
+      dashboardConfig:body.dashboardConfig,analysisContextId:body.analysisContextId};
+    return {json:base.slice(0,-1)+',"overrides":'+JSON.stringify(overrides)+'}'};
+  }
   router.get('/dashboard-cache', async (req: Request, res: Response) => {
     res.setHeader('Cache-Control', 'private, no-store');
     try {
       const user = (req as Request & { user?: AuthUser }).user;
       if (!user?.userId) { res.status(401).json({ error: 'unauthorized' }); return; }
-      const snapshot = await loadInvestor(await targetUserId(req, user));
+      const snapshot = await loadInvestorForRead(await targetUserId(req, user));
       const saved = readPortfolioProjection(snapshot.state);
-      res.json(saved ? dashboardBody(snapshot, saved) : null);
+      const body = saved ? dashboardBody(snapshot,saved) : null;
+      if (req.query.wire === '1' && saved && body) res.type('json').send((await encodedDashboard(saved,body)).json);
+      else res.json(body);
     } catch { res.status(500).json({ error: 'dashboard_failed', message: 'Could not read saved portfolio totals.' }); }
   });
   router.get('/portfolio-indices', async (req: Request, res: Response) => {
@@ -121,7 +132,7 @@ export function createDashboardApiRouter(): Router {
     try {
       const user = (req as Request & { user?: AuthUser }).user;
       if (!user?.userId) { res.status(401).json({ error: 'unauthorized' }); return; }
-      const snapshot = await loadInvestor(await targetUserId(req, user));
+      const snapshot = await loadInvestorForRead(await targetUserId(req, user));
       const saved = requirePortfolioProjection(snapshot.state);
       res.json({ calculatedAt: saved.calculatedAt, totals: saved.dashboard.model?.live ?? null,
         scopes: saved.dashboard.aggregatedViews, pages: saved.dashboard.pageProjections, brokers: saved.brokers });
@@ -192,7 +203,7 @@ export function createDashboardApiRouter(): Router {
         res.status(400).json({ error: 'invalid_filter', message: 'Invalid Book filter or page.' });
         return;
       }
-      const snapshot = await loadInvestor(await targetUserId(req, user));
+      const snapshot = await loadInvestorForRead(await targetUserId(req, user));
       const payload = await loadBookPage(snapshot.state.user.id, {
         offset, limit,
         ...(channel !== undefined ? { channel: channel as string } : {}),
@@ -212,7 +223,7 @@ export function createDashboardApiRouter(): Router {
     try {
       const user = (req as Request & { user?: AuthUser }).user;
       if (!user?.userId) { res.status(401).json({ error: 'unauthorized', message: 'No session user.' }); return; }
-      const snapshot = await loadInvestor(await targetUserId(req, user));
+      const snapshot = await loadInvestorForRead(await targetUserId(req, user));
       res.json(requirePortfolioProjection(snapshot.state).journal);
     } catch (e) {
       console.error('Execution journal failed:', e);
@@ -228,7 +239,7 @@ export function createDashboardApiRouter(): Router {
       if (typeof key !== 'string' || !key || key.length > 200) {
         res.status(400).json({ error: 'invalid_position', message: 'Choose an open option position.' }); return;
       }
-      const snapshot = await loadInvestor(await targetUserId(req, user));
+      const snapshot = await loadInvestorForRead(await targetUserId(req, user));
       const portfolio = getPortfolio(snapshot.state);
       const holding = portfolio[key];
       if (!holding?.option) { res.status(404).json({ error: 'not_found', message: 'Open option position not found.' }); return; }
@@ -263,7 +274,7 @@ export function createDashboardApiRouter(): Router {
       res.status(400).json({ error: 'invalid_filter', message: 'Invalid relationship date or evidence filter.' }); return;
     }
     try {
-      const snapshot = await loadInvestor(await targetUserId(req, user));
+      const snapshot = await loadInvestorForRead(await targetUserId(req, user));
       const projection = requirePortfolioProjection(snapshot.state);
       const saved = projection.relationships;
       const matches = (row: { channel: string }) => matchesDashboardSelection(projection, channel, row.channel);
@@ -296,7 +307,7 @@ export function createDashboardApiRouter(): Router {
       if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
         res.status(400).json({ error: 'invalid_page', message: 'Invalid history pagination.' }); return;
       }
-      const snapshot = await loadInvestor(await targetUserId(req, user));
+      const snapshot = await loadInvestorForRead(await targetUserId(req, user));
       const state = snapshot.state;
       const projection = requirePortfolioProjection(state);
       const { episodes, observations, gaps } = projection.optionHistory;
@@ -380,7 +391,7 @@ export function createDashboardApiRouter(): Router {
     try {
       const user = (req as Request & { user?: AuthUser }).user;
       if (!user?.userId) { res.status(401).json({ error: 'unauthorized', message: 'No session user.' }); return; }
-      const snapshot = await loadInvestor(await targetUserId(req, user));
+      const snapshot = await loadInvestorForRead(await targetUserId(req, user));
       // Even refresh=1 only rereads the persisted generation. Refresh work runs after sync.
       const saved = requirePortfolioProjection(snapshot.state);
       const body = dashboardBody(snapshot, saved);
@@ -388,18 +399,20 @@ export function createDashboardApiRouter(): Router {
       // dashboard held only in the parent tab's memory. Never cache it on disk.
       const etag = '"' + createHash('sha256').update(JSON.stringify([
         snapshot.state.user.id, snapshot.revision, saved.fingerprint, saved.calculatedAt,
-        body.displayName, body.productProfile, body.productName, body.dashboardConfig, body.analysisContextId,
+        body.displayName, body.productProfile, body.productName, body.dashboardConfig, body.analysisContextId, req.query.wire === '1' ? 'json-table-v1' : 'json',
       ])).digest('hex') + '"';
       res.setHeader('ETag', etag);
       if (req.query.refresh !== '1' && req.get('If-None-Match') === etag) {
         res.status(304).end();
         return;
       }
+      const wire = req.query.wire === '1' ? await encodedDashboard(saved,body) : undefined;
       if (streaming) {
         res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
         res.setHeader('X-Accel-Buffering', 'no');
-        res.end(`data: ${JSON.stringify({ type: 'result', payload: body })}\n\n`);
-      } else res.json(body);
+        res.end(wire ? `data: {"type":"result","payload":${wire.json}}\n\n` : `data: ${JSON.stringify({ type: 'result', payload: body })}\n\n`);
+      } else if (wire) res.type('json').send(wire.json);
+      else res.json(body);
     } catch (error) {
       const message = error instanceof PortfolioProjectionUnavailable ? error.message : 'Saved portfolio data could not be loaded. Please retry.';
       if (streaming) {
