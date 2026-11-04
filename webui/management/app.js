@@ -261,7 +261,7 @@
     $('create-invite').disabled = true;$('create-invite').textContent = 'Creating…';status('access','Creating signup invite…');
     inviteRevision++;
     try {
-      const data = await api('/invites',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({comment:$('comment').value,recipientEmail:$('recipient-email').value,prefix:$('invite-prefix').value})});
+      const data = await api('/invites',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({comment:$('comment').value,recipientEmail:$('recipient-email').value})});
       inviteRevision++;inviteLink = data.onboardUrl;$('new-code').textContent = data.code;$('invite-link').href = inviteLink;$('new-invite').hidden = false;
       inviteCodes = [data,...inviteCodes.filter(code => code.code !== data.code)];renderInvites();status('access','Signup invite created. Copy the link to share it.','success');
     } catch (error) { status('access',error.message + ' Refresh the invite list before retrying if the result is uncertain.','error'); }

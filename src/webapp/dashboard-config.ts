@@ -5,6 +5,9 @@ export const dashboardConfig: AgentConfigDefinition = {
   title: 'Portfolio dashboard & automatic sync',
   description: 'Automatic broker syncing, dashboard metrics, option positions view and standalone calculator visibility.',
   fields: [{
+    id: 'invitation_code_prefix', type: 'text', label: 'Invitation code prefix', default: 'IC',
+    description: 'Prefix for new invitations created from admin or Velovest management. Blank uses IC. Prefixes use uppercase and are followed by a hyphen and a random suffix. Existing codes remain valid. Changes apply without restarting.',
+  }, {
     id: 'signup_notification_email', type: 'text', label: 'Signup notification email', default: '',
     description: 'Send a summary of each new signup to these email addresses, separated by commas (for example, one@example.com, two@example.com). Leave blank to disable notifications. Sender credentials are configured on the server. Changes apply to new signups without restarting.',
   }, {

@@ -25,6 +25,7 @@ import { personalRiskManifest } from './experience-settings.js';
 import { mountPublicSignupApi } from '../signup/api.js';
 import { readProductProfile } from '../agents/roster.js';
 import { managerManifest } from '../management/api.js';
+import { createAdminInvitationsRouter } from '../management/admin-invitations.js';
 import { readBridgeRuntimeConfig } from '../../node_modules/utarus/dist/webapp/bridge-config.js';
 import { createTransport } from '../../node_modules/utarus/dist/lifecycle/transport.js';
 import type { Framework } from 'utarus';
@@ -61,6 +62,7 @@ export function buildInvageApp(framework: Framework): Express {
   const app = express();
   if (framework.extension.webUi?.shell?.variant === 'trading') app.use(tradingShellFirstPaint);
   app.use(cookieParser());
+  if (readProductProfile() === 'consultant') app.use('/api/admin', createAdminInvitationsRouter());
   if (readProductProfile() === 'consultant') mountPublicSignupApi(app);
   app.get('/api/webui/manifest', requireAuth, personalRiskManifest,
     ...(readProductProfile() === 'consultant' ? [managerManifest()] : []));

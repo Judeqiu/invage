@@ -79,8 +79,8 @@ it('revokes a manager in an existing session and removes their navigation on ref
 
 it('uses the manager-entered email when the invitation creates an ordinary account',async()=>{
   const created=await request(app).post('/api/management/invites').set('Cookie',cookies.manager)
-    .set('Host','management.test').set('Origin','https://management.test').send({recipientEmail:' Customer@Example.com ',prefix:'partner'}).expect(200);
-  expect(created.body.code).toMatch(/^PARTNER-[A-F0-9]{8}$/);
+    .set('Host','management.test').set('Origin','https://management.test').send({recipientEmail:' Customer@Example.com '}).expect(200);
+  expect(created.body.code).toMatch(/^IC-[A-F0-9]{8}$/);
   expect(created.body.recipientEmail).toBe('customer@example.com');
   const account=await redeemInviteInstantly({code:created.body.code,displayName:'Customer',web:true,language:'en'});
   expect(account.state.profile.contact_email).toBe('customer@example.com');

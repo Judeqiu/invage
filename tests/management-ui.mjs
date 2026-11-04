@@ -3,8 +3,11 @@ import {createServer} from 'node:http';
 import {readFileSync,existsSync} from 'node:fs';
 import {resolve,extname} from 'node:path';
 import puppeteer from 'puppeteer-core';
+import {dashboardConfig} from '../src/webapp/dashboard-config.ts';
 
 const ids={admin:'00000000-0000-4000-8000-000000000001',subscriber:'00000000-0000-4000-8000-000000000002',manager:'00000000-0000-4000-8000-000000000003'};
+let configValues=Object.fromEntries(dashboardConfig.fields.map(field=>[field.id,field.default]));
+let configSaves=0;
 const disabledDates=new Set();
 let dateReads=0,dateWrites=0,dateDelay=0,failDate=false,userDelay=0,dateReadDelay=0,invitesRead=0,denyManager=false;
 let mode='admin',assigned=false,patches=0,issued=0,releaseInvite;
@@ -27,6 +30,8 @@ const server=createServer(async(req,res)=>{
       ...(manager?[{path:'/velovest-management',pageKind:'iframe',iframeSrc:'/domain-assets/invage/management/index.html',title:'Management'}]:[])],
     settingsSections:[],managementSections:[],managementUserSections:[{id:'velovest-manager-role',title:'Velovest manager',iframeSrc:'/domain-assets/invage/management/role.html',iframeHeightPx:230}],widgets:[],brand:{}});return;
   }
+  if(path==='/api/admin/agent-config'){json(res,{configurations:[{definition:dashboardConfig,values:configValues}]});return;}
+  if(path==='/api/admin/agent-config/'+dashboardConfig.id){let body='';for await(const chunk of req)body+=chunk;configValues=JSON.parse(body);configSaves++;json(res,{values:configValues});return;}
   if(path==='/api/admin/users'){json(res,{users:[subscriber,admin],billingEnabled:false,sharedAccounts:false,nextCursor:null,summary:{total:2,admins:1,beta:0,withRef:1,paid:0,comped:0,references:[]}});return;}
   if(path.startsWith('/api/domain/invage/management/roles/')){
    const id=path.split('/').at(-1);if(mode!=='admin'){json(res,{error:'Admin access required'},403);return;}
@@ -46,7 +51,7 @@ const server=createServer(async(req,res)=>{
   if(path==='/api/domain/invage/management/users/'+ids.subscriber){json(res,{user:subscriber,billingEnabled:false});return;}
   if(path==='/api/domain/invage/management/invites'){
    if(req.method==='POST'){
-    let body='';for await(const chunk of req)body+=chunk;assert.deepEqual(JSON.parse(body),{comment:'Customer signup',recipientEmail:'customer@example.invalid',prefix:'PARTNER'});issued++;await heldInvite;
+    let body='';for await(const chunk of req)body+=chunk;assert.deepEqual(JSON.parse(body),{comment:'Customer signup',recipientEmail:'customer@example.invalid'});issued++;await heldInvite;
     json(res,{code:'PARTNER-1234ABCD',createdAt:'2026-11-02',comment:'Customer signup',recipientEmail:'customer@example.invalid',onboardUrl:'http://127.0.0.1:'+server.address().port+'/login?invite=PARTNER-1234ABCD'});return;
    }
    invitesRead++;json(res,{codes:[{code:'INV-CUSTOMER',createdAt:'2026-11-02',comment:'Normal signup',recipientEmail:'customer@example.invalid',usedAt:null}]});return;
@@ -80,6 +85,16 @@ try {
  const adminFrame=await(await page.waitForSelector('aside iframe')).contentFrame();
  await adminFrame.waitForFunction(()=>document.getElementById('role-status').textContent.includes('non-admin'));
  assert.equal(await adminFrame.$eval('#toggle-role',button=>button.disabled),true);
+ await page.click('aside button[aria-label="Close"]');
+ await page.evaluate(()=>[...document.querySelectorAll('button')].find(button=>button.textContent.trim()==='Agent configuration').click());
+ const prefixInput='#agent-config-invage-dashboard-invitation_code_prefix';
+ await page.waitForSelector(prefixInput);
+ assert.equal(await page.$eval(prefixInput,input=>input.value),'IC');
+ await page.$eval(prefixInput,input=>input.select());await page.type(prefixInput,'PARTNER');
+ await page.$eval(prefixInput,input=>input.closest('form').querySelector('button[type="submit"]').click());
+ await page.waitForFunction(()=>document.body.innerText.includes('Configuration saved.'));
+ assert.equal(configSaves,1);assert.equal(configValues.invitation_code_prefix,'PARTNER');
+ await page.screenshot({path:'/tmp/velovest-admin-invitation-prefix.png',fullPage:true});
  mode='manager';await page.goto(origin+'/velovest-management',{waitUntil:'networkidle0'});
  const panel=await(await page.waitForSelector('iframe[src="/domain-assets/invage/management/index.html"]')).contentFrame();
  await panel.waitForSelector('#users button');
@@ -149,8 +164,8 @@ try {
  await panel.click('#access-tab');await panel.waitForSelector('#invites tr');
  assert.match(await panel.$eval('#invites',el=>el.innerText),/customer@example.invalid/);
  assert.doesNotMatch(await panel.evaluate(()=>document.body.innerText),/Admin onboard codes|New admin code|ADM-/);
- assert.equal(await panel.$eval('#invite-prefix',el=>el.placeholder),'INV');
- await panel.type('#invite-prefix','PARTNER');await panel.type('#recipient-email','customer@example.invalid');await panel.type('#comment','Customer signup');await panel.click('#create-invite');
+ assert.equal(await panel.$('#invite-prefix'),null,'Managers must not configure the invitation prefix');
+ await panel.type('#recipient-email','customer@example.invalid');await panel.type('#comment','Customer signup');await panel.click('#create-invite');
  await panel.waitForFunction(()=>document.getElementById('create-invite').disabled);
  await panel.$eval('#create-invite',button=>button.click());assert.equal(issued,1);
  const inviteReadsBefore=invitesRead;releaseInvite();await panel.waitForSelector('#new-invite:not([hidden])');

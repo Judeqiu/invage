@@ -1,16 +1,17 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
+import { createAdminInvitationsRouter } from '../src/management/admin-invitations.js';
 import { createManagementRouter, managerManifest } from '../src/management/api.js';
 import type { SubmissionRepository } from '../src/signup/submissions.js';
 import type { ManagementRepository } from '../src/management/repository.js';
 
-const actions=vi.hoisted(()=>({issue:vi.fn(),invites:vi.fn()}));
+const actions=vi.hoisted(()=>({issue:vi.fn(),invites:vi.fn(),config:vi.fn()}));
 vi.mock('utarus',()=>({
   requireAuth:(req:any,res:any,next:any)=>req.user?next():res.status(401).json({error:'Unauthorized'}),
   requireAdmin:(req:any,res:any,next:any)=>req.user?.type==='admin'?next():res.status(403).json({error:'Admin access required'}),
   sessionUser:(req:any)=>req.user,
-  issueInviteCode:actions.issue,listInviteCodes:actions.invites,isBillingEnabled:()=>false,
+  readAgentConfig:actions.config,issueInviteCode:actions.issue,listInviteCodes:actions.invites,isBillingEnabled:()=>false,
 }));
 const ids={admin:'00000000-0000-4000-8000-000000000001',manager:'00000000-0000-4000-8000-000000000002',user:'00000000-0000-4000-8000-000000000003'};
 let assigned=true;
@@ -23,9 +24,10 @@ const app=express().use(express.json());
 app.use((req:any,_res,next)=>{const key=req.get('x-test-user') as keyof typeof ids;if(ids[key])req.user={type:key==='admin'?'admin':'user',userId:ids[key],displayName:key};next();});
 app.get('/manifest',managerManifest(()=>repository as unknown as ManagementRepository),(_req,res)=>res.json({nav:[{id:'dashboard'}],routes:[{path:'/dashboard'}]}));
 app.use('/api/management',createManagementRouter(()=>repository as unknown as ManagementRepository,()=>signup as unknown as SubmissionRepository));
+app.use('/api/admin',createAdminInvitationsRouter());
 const mutate=(method:'post'|'patch',path:string,user='manager')=>request(app)[method]('/api/management'+path).set('x-test-user',user).set('Host','management.test').set('Origin','https://management.test');
 beforeEach(()=>{
-  assigned=true;vi.clearAllMocks();
+  assigned=true;vi.clearAllMocks();actions.config.mockReturnValue({invitation_code_prefix:'IC'});
   actions.issue.mockResolvedValue({code:'INV-TEST',created_at:'2026-11-02'});
   actions.invites.mockResolvedValue([{code:'INV-ORDINARY',created_at:'2026-11-02'}, {code:'INV-ORGADMIN',org_id:'org',role:'admin',created_at:'2026-11-02'}]);
 });
@@ -57,8 +59,8 @@ it('only full admins can read or change a role, with same-origin JSON and strict
 it('issues only normal signup invites and rejects administrator, org and custom-code fields',async()=>{
   const response=await mutate('post','/invites').send({comment:'Customer signup'}).expect(200);
   expect(response.body.code).toBe('INV-TEST');
-  expect(actions.issue).toHaveBeenCalledWith({isPlatformAdmin:true,issuerId:'velovest_manager:'+ids.manager,createdViaWeb:'velovest_manager:'+ids.manager,comment:'Customer signup'});
-  for(const body of [{role:'admin'},{org_id:'some-org'},{customCode:'ADM-ESCALATE'},{admin:true}])await mutate('post','/invites').send(body).expect(400);
+  expect(actions.issue).toHaveBeenCalledWith({isPlatformAdmin:true,issuerId:'velovest_manager:'+ids.manager,createdViaWeb:'velovest_manager:'+ids.manager,comment:'Customer signup',customCode:expect.stringMatching(/^IC-[A-F0-9]{8}$/)});
+  for(const body of [{role:'admin'},{org_id:'some-org'},{customCode:'ADM-ESCALATE'},{admin:true},{prefix:'OVERRIDE'}])await mutate('post','/invites').send(body).expect(400);
   expect(actions.issue).toHaveBeenCalledOnce();
   const codes=await request(app).get('/api/management/invites').set('x-test-user','manager').expect(200);
   expect(codes.body.codes.map((code:any)=>code.code)).toEqual(['INV-ORDINARY']);
@@ -73,11 +75,12 @@ it('revokes existing-session access and navigation immediately without changing 
   expect(revoked.body.nav).toEqual([{id:'dashboard'}]);
 });
 
-it('generates a random suffix for each manager-selected prefix without granting admin or org roles',async()=>{
+it('generates a random suffix for the administrator-configured prefix without granting admin or org roles',async()=>{
   actions.issue.mockImplementation(async params=>({code:params.customCode,created_at:'2026-11-04'}));
+  actions.config.mockReturnValue({invitation_code_prefix:' partner '});
   const codes=[];
   for(let i=0;i<2;i++) {
-    const response=await mutate('post','/invites').send({prefix:' partner ',comment:'Partner signup'}).expect(200);
+    const response=await mutate('post','/invites').send({comment:'Partner signup'}).expect(200);
     expect(response.body.code).toMatch(/^PARTNER-[A-F0-9]{8}$/);
     expect(new URL(response.body.onboardUrl).searchParams.get('invite')).toBe(response.body.code);
     codes.push(response.body.code);
@@ -89,11 +92,25 @@ it('generates a random suffix for each manager-selected prefix without granting 
   }
 });
 
-it('retains default generation for blank prefixes and rejects non-text prefixes',async()=>{
-  await mutate('post','/invites').send({prefix:'   '}).expect(200);
-  expect(actions.issue.mock.calls[0][0]).not.toHaveProperty('customCode');
-  for(const prefix of [null,123,{},['PARTNER'],'BAD\u0000PREFIX']) await mutate('post','/invites').send({prefix}).expect(400);
+it('uses IC for blank admin settings and rejects manager prefix overrides',async()=>{
+  actions.config.mockReturnValue({invitation_code_prefix:'   '});
+  await mutate('post','/invites').send({}).expect(200);
+  expect(actions.issue.mock.calls[0][0].customCode).toMatch(/^IC-[A-F0-9]{8}$/);
+  for(const prefix of ['PARTNER',null,123,{},['PARTNER']]) await mutate('post','/invites').send({prefix}).expect(400);
   expect(actions.issue).toHaveBeenCalledOnce();
+});
+it('uses the shared prefix for admin invitations while retaining org and role semantics',async()=>{
+  actions.config.mockReturnValue({invitation_code_prefix:'TEAM'});
+  actions.issue.mockImplementation(async params=>({code:params.customCode,created_at:'2026-11-04',org_id:params.orgId,role:params.role}));
+  const create=(body:unknown,user='admin')=>request(app).post('/api/admin/invites').set('x-test-user',user).send(body);
+  const response=await create({comment:'Admin invite'}).expect(200);
+  expect(response.body.code).toMatch(/^TEAM-[A-F0-9]{8}$/);
+  expect(new URL(response.body.onboard_url).searchParams.get('invite')).toBe(response.body.code);
+  await create({org_id:'org-example',role:'member'}).expect(200);
+  expect(actions.issue).toHaveBeenLastCalledWith(expect.objectContaining({orgId:'org-example',role:'member',issuerId:'admin',customCode:expect.stringMatching(/^TEAM-/)}));
+  await request(app).post('/api/admin/invites').send({}).expect(401);
+  for(const user of ['manager','user']) await create({},user).expect(403);
+  expect(actions.issue).toHaveBeenCalledTimes(2);
 });
 it('fails closed on role lookup failure and rejects malformed user IDs',async()=>{
   await request(app).get('/api/management/users/not-a-uuid').set('x-test-user','manager').expect(400);
