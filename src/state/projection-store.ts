@@ -1,5 +1,5 @@
 import type { BrokerProjection } from '../report/broker-projections.js';
-import { freezeReadModel } from './freeze-read-model.js';
+import { freezeReadModel,isFrozenReadModel } from './freeze-read-model.js';
 import {projectionLocation as location,projectionFileSignature} from './projection-files.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
@@ -30,11 +30,8 @@ export interface PortfolioProjection {
   relationships: ReturnType<typeof optionRelationshipsForState>;
 }
 /** Excludes scheduler claims, logs and journal notes; these do not alter financial aggregates. */
+const frozenFingerprints=new WeakMap<InvestorState,{snapshots:string;fingerprint:string}>();
 export function portfolioFingerprint(state: InvestorState): string {
-  const connections = Object.fromEntries(Object.entries(state.broker_connections ?? {}).map(([id, conn]) => {
-    const { sync_schedule, ...rest } = conn as import('./portfolio-state.js').BrokerAccountConnection;
-    return [id, rest];
-  }));
   let snapshots: unknown = null;
   try {
     const directory = join(resolveDataRoot(), 'drive', state.user.id);
@@ -46,10 +43,19 @@ export function portfolioFingerprint(state: InvestorState): string {
       return [file, stat.size.toString(), stat.mtimeNs.toString(), stat.ctimeNs.toString()];
     }) : null];
   } catch { /* Missing or corrupt snapshot history is reported by the calculation pipeline. */ }
-  return createHash('sha256').update(JSON.stringify([PROJECTION_VERSION, CALCULATION_VERSION, state.user.id, state.profile.display_name,
+  const frozen=isFrozenReadModel(state),snapshotKey=JSON.stringify(snapshots);
+  const prior=frozen?frozenFingerprints.get(state):undefined;
+  if(prior?.snapshots===snapshotKey)return prior.fingerprint;
+  const connections = Object.fromEntries(Object.entries(state.broker_connections ?? {}).map(([id, conn]) => {
+    const { sync_schedule, ...rest } = conn as import('./portfolio-state.js').BrokerAccountConnection;
+    return [id, rest];
+  }));
+  const fingerprint=createHash('sha256').update(JSON.stringify([PROJECTION_VERSION, CALCULATION_VERSION, state.user.id, state.profile.display_name,
     state.portfolio, state.cash, state.deposits, (state as unknown as { treasury: unknown }).treasury,
     connections, state.broker_history, state.option_executions, state.option_events,
     state.option_observations, state.option_identities, state.broker_statement_evidence, snapshots])).digest('hex');
+  if(frozen)frozenFingerprints.set(state,{snapshots:snapshotKey,fingerprint});
+  return fingerprint;
 }
 const projectionFiles = new Map<string, { signature: string; entry: PortfolioProjection }>();
 const projectionSignatures = new WeakMap<PortfolioProjection,string>();

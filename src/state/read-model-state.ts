@@ -29,7 +29,8 @@ export function createReadModelStateLoader(runtime: ReadRuntime) {
     const work = runtime.load(userId).then(snapshot => {
       if (snapshot.state.user.id !== userId) throw new Error('Investor account mismatch');
       if (snapshot.revision < identity.revision) throw new Error('Investor revision changed during read');
-      freezeReadModel(snapshot);
+      freezeReadModel(snapshot.state);
+      Object.freeze(snapshot);
       cached.set(key,snapshot);
       return snapshot;
     });

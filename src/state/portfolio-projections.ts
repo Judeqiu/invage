@@ -1,6 +1,6 @@
 import { attachDailyChanges } from '../report/daily-changes.js';
 import { buildBrokerProjections } from '../report/broker-projections.js';
-import { listUserIds } from 'utarus';
+import { getAccountAuthority } from '../../node_modules/utarus/dist/database/binding.js';
 import { loadInvestorForRead } from './read-model-state.js';
 import { portfolioRefreshDeferred, registerPortfolioRefresher } from './projection-events.js';
 import { portfolioFingerprint, readDailyAggregateHistory, readPriorQuoteDashboard, PROJECTION_VERSION, readPortfolioProjection, writePortfolioProjection, type PortfolioProjection } from './projection-store.js';
@@ -74,7 +74,7 @@ export function startPortfolioProjectionWorker() {
   const tick = () => {
     if (stopped || active) return;
     active = (async () => {
-      for (const userId of await listUserIds()) {
+      for (const userId of await getAccountAuthority().users.listIds('active')) {
         if (stopped) break;
         if (portfolioRefreshDeferred(userId)) continue;
         try { await refresh(userId); } catch (error) { console.error('[portfolio/projection] refresh', userId, error); }
