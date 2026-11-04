@@ -5,12 +5,13 @@ import type { validateSubmission } from './submissions.js';
 
 type Signup = ReturnType<typeof validateSubmission>;
 
-/** Separate from customer access emails: this mailbox receives intake summaries. */
+/** Separate from customer access emails: these mailboxes receive intake summaries. */
 export async function notifyNewSignup(input: Signup): Promise<void> {
-  const to = String(readAgentConfig(dashboardConfig).signup_notification_email).trim();
-  if (!to) return;
+  const recipients = String(readAgentConfig(dashboardConfig).signup_notification_email).trim();
+  if (!recipients) return;
+  const to = recipients.split(',').map(address => address.trim());
   const email = /^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+$/;
-  if (!email.test(to)) throw new Error('Invalid signup notification recipient');
+  if (to.some(address => !email.test(address))) throw new Error('Invalid signup notification recipient');
   const host = process.env.INVAGE_SIGNUP_SMTP_HOST?.trim();
   const user = process.env.INVAGE_SIGNUP_SMTP_USER?.trim();
   const pass = process.env.INVAGE_SIGNUP_SMTP_PASSWORD;

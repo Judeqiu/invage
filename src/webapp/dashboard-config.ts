@@ -6,7 +6,7 @@ export const dashboardConfig: AgentConfigDefinition = {
   description: 'Automatic broker syncing, dashboard metrics, option positions view and standalone calculator visibility.',
   fields: [{
     id: 'signup_notification_email', type: 'text', label: 'Signup notification email', default: '',
-    description: 'Send a summary of each new signup to this email address. Leave blank to disable notifications. Sender credentials are configured on the server. Changes apply to new signups without restarting.',
+    description: 'Send a summary of each new signup to these email addresses, separated by commas (for example, one@example.com, two@example.com). Leave blank to disable notifications. Sender credentials are configured on the server. Changes apply to new signups without restarting.',
   }, {
     id: 'automatic_broker_sync_enabled', type: 'boolean', label: 'Enable automatic broker syncing', default: true,
     description: 'Sync all enabled broker accounts for all users daily, then save aggregates and a dated snapshot. Turning this off pauses automatic runs and retries; Sync brokers remains available.',

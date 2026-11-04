@@ -42,7 +42,7 @@ it('uses a saved recipient immediately, preserves other settings and defaults to
   await notifyNewSignup(validateSubmission(input));
   recipient('another@example.invalid');
   await notifyNewSignup(validateSubmission(input));
-  expect(smtp.send.mock.calls.map(([mail]) => mail.to)).toEqual(['operator@example.invalid', 'another@example.invalid']);
+  expect(smtp.send.mock.calls.map(([mail]) => mail.to)).toEqual([['operator@example.invalid'], ['another@example.invalid']]);
   expect(readAgentConfig(dashboardConfig).automatic_broker_sync_enabled).toBe(true);
   recipient('');
   await notifyNewSignup(validateSubmission(input));
@@ -77,10 +77,33 @@ it('accepts a renewal without a booking and keeps it out of both notification an
   expect(validateSubmission({...input,packageId:'renewal'})).toMatchObject({sessionDate:null,sessionTime:null});
 });
 
-it('rejects multiple recipients, missing sender credentials and SMTP rejection without pretending delivery succeeded', async () => {
-  recipient('one@example.invalid,two@example.invalid');
+it('sends to every comma-separated recipient and trims surrounding whitespace', async () => {
+  recipient('  one@example.invalid, two@example.invalid ,three@example.invalid  ');
+  smtp.send.mockResolvedValueOnce({ accepted: ['one@example.invalid', 'two@example.invalid', 'three@example.invalid'], rejected: [] });
+  await notifyNewSignup(validateSubmission(input));
+  expect(smtp.send).toHaveBeenCalledOnce();
+  expect(smtp.send.mock.calls[0][0].to).toEqual(['one@example.invalid', 'two@example.invalid', 'three@example.invalid']);
+  expect(smtp.close).toHaveBeenCalledOnce();
+});
+
+it.each([
+  'one@example.invalid,invalid', 'one@example.invalid,', ',one@example.invalid',
+  'one@example.invalid, ,two@example.invalid', 'one@example.invalid;two@example.invalid',
+  'one@example.invalid, two@example.invalid\r\nBcc: hidden@example.invalid',
+])('rejects an invalid recipient list before sending: %s', async addresses => {
+  recipient(addresses);
   await expect(notifyNewSignup(validateSubmission(input))).rejects.toThrow('Invalid signup notification recipient');
   expect(smtp.create).not.toHaveBeenCalled();
+});
+
+it('rejects partial SMTP acceptance without pretending every recipient succeeded', async () => {
+  recipient('one@example.invalid,two@example.invalid');
+  smtp.send.mockResolvedValueOnce({ accepted: ['one@example.invalid'], rejected: ['two@example.invalid'] });
+  await expect(notifyNewSignup(validateSubmission(input))).rejects.toThrow('not accepted');
+  expect(smtp.close).toHaveBeenCalledOnce();
+});
+
+it('rejects missing sender credentials and SMTP rejection without pretending delivery succeeded', async () => {
   recipient('operator@example.invalid');
   vi.stubEnv('INVAGE_SIGNUP_SMTP_PASSWORD', '');
   await expect(notifyNewSignup(validateSubmission(input))).rejects.toThrow('setup is incomplete');
