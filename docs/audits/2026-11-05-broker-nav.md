@@ -14,7 +14,7 @@ Agent tools:
 
 - `inspect_portfolio_calculation`: exact generation, scope, contributing/omitted rows, failures, broker fields, FX and saved-input replay. Historical snapshots are read separately; current data are never substituted silently.
 - `read_calculation_source`: the running release's named valuation, mapper and presentation calculation implementations.
-- `restore_broker_reported_values` (Bookkeeper): preview/apply new valuation fields from the latest successful, version-pinned account archive. Requires unchanged account/date/holdings/terms/cost/marks and state revision. Preserves cash, quantities, costs, archives and history, and verifies persisted readback.
+- `restore_broker_reported_values` (Bookkeeper): preview/apply new valuation fields from the latest successful, version-pinned account archive. Requires unchanged account/date and exact matching broker-row quantities/terms/cost/marks plus state revision. Additional local holdings are explicitly listed and preserved. Preserves cash, quantities, costs, archives and history, and verifies persisted readback.
 - `correct_holding` (Bookkeeper): evidence-backed preview/apply for signed cost, quantity, currency or mark corrections. Preserves cash and unspecified fields, uses normal books reconciliation and optimistic state persistence, and returns readback plus calculation status.
 - `rebuild_portfolio_calculations` (Bookkeeper): production rebuild with explicit pending/failed/success status and saved before/after evidence.
 

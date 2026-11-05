@@ -30,3 +30,10 @@ it('rejects wrong accounts, stale dates, changed holdings, changed terms and con
  expect(()=>prepareBrokerValueRestore(state,id,changed)).toThrow(/economics differ/);
  expect(()=>prepareBrokerValueRestore(state,id,{...statement,metrics:{as_of:'2026-11-05',currency:'USD',broker_net_assets:21}})).toThrow(/conflicts/);
 });
+
+it('preserves and explicitly lists additional locally recorded holdings during broker metadata recovery',()=>{
+ const {state,id,statement}=fixture();const channel=Object.values(state.portfolio!)[0].channel;
+ state.portfolio!['LOCAL@'+channel]={units:1,avg_price:674.9,currency:'USD',channel,instrument:'fund',fund:{quote_source:'manual',mark:674.9}};
+ const p=prepareBrokerValueRestore(state,id,statement);
+ expect(p.unmatchedCurrentKeys).toEqual(['LOCAL@'+channel]);expect(p.portfolio['LOCAL@'+channel]).toEqual(state.portfolio!['LOCAL@'+channel]);expect(p.updated).toBe(1);
+});

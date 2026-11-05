@@ -20,7 +20,8 @@ export function prepareBrokerValueRestore(state: InvestorState, connectionId: st
   const portfolio = structuredClone(getPortfolio(state));
   const keys = Object.keys(portfolio).filter(key => portfolio[key].channel === conn.channel).sort();
   const sourceKeys = statement.lots.map(lot => buildHoldingKey(lot.ticker,conn.channel)).sort();
-  if (!isDeepStrictEqual(keys,sourceKeys)) throw new Error('Current account holdings differ from archived snapshot; sync current data instead');
+  if ((keys.length && !sourceKeys.length) || sourceKeys.some(key=>!keys.includes(key))) throw new Error('Current account holdings differ from archived snapshot; sync current data instead');
+  const unmatchedCurrentKeys=keys.filter(key=>!sourceKeys.includes(key));
   let updated = 0;
   for (const lot of statement.lots) {
     const key = buildHoldingKey(lot.ticker,conn.channel), current = portfolio[key], source = lot.holding;
@@ -31,12 +32,12 @@ export function prepareBrokerValueRestore(state: InvestorState, connectionId: st
   const metrics = statement.metrics ? {...conn.metrics,...statement.metrics} : conn.metrics ? structuredClone(conn.metrics) : undefined;
   // New parser fields may enrich old metrics; existing reported money must not change.
   for (const [key,value] of Object.entries(conn.metrics ?? {})) if (typeof value === 'number' && (metrics as unknown as Record<string,unknown>)[key] !== value) throw new Error(`Archive conflicts with retained metric ${key}`);
-  return {portfolio,metrics,updated,metricsChanged:!isDeepStrictEqual(conn.metrics,metrics)};
+  return {portfolio,metrics,updated,unmatchedCurrentKeys,metricsChanged:!isDeepStrictEqual(conn.metrics,metrics)};
 }
 export function createRestoreBrokerValuesTool(): AgentTool {
   return {
     name:'restore_broker_reported_values',label:'Restore Broker Reported Values',
-    description:'Preview/apply previously unprojected broker valuation fields from the latest successful account-bound archived snapshot through the production adapter. Verifies file version, account, date, exact current holdings/terms/cost/marks, current revision and preview token; preserves cash, quantities, costs, archives and execution history. Enriches broker market values/P&L/account metrics then rebuilds derived views. Use sync_broker if current holdings differ. This can repair missing broker projections after a parser upgrade, not arbitrary history or code.',
+    description:'Preview/apply previously unprojected broker valuation fields from the latest successful account-bound archived snapshot through the production adapter. Verifies file version, account, date, exact matching broker holdings/terms/cost/marks; lists and preserves additional local holdings, current revision and preview token; preserves cash, quantities, costs, archives and execution history. Enriches broker market values/P&L/account metrics then rebuilds derived views. Use sync_broker if current holdings differ. This can repair missing broker projections after a parser upgrade, not arbitrary history or code.',
     parameters:Type.Object({...channelIdParams,mode:Type.Union([Type.Literal('preview'),Type.Literal('apply')]),connection_id:Type.String(),expected_revision:Type.Integer(),file_id:Type.String(),version:Type.String(),reason:Type.String(),preview_token:Type.Optional(Type.String())}),
     async execute(_id,raw) {
       const result=(details:unknown)=>({content:[{type:'text' as const,text:JSON.stringify(details)}],details});
@@ -57,7 +58,7 @@ export function createRestoreBrokerValuesTool(): AgentTool {
         const statement=getBrokerAdapter(conn.broker_id).parseToStatement({kind:p.file_id.endsWith('.xml')?'xml':'json',body},conn.channel,false);
         const prepared=prepareBrokerValueRestore(snapshot.state,p.connection_id,statement);
         const preview_token=createHash('sha256').update(JSON.stringify([snapshot.state.user.id,snapshot.revision,p.connection_id,p.file_id,p.version,sha256,p.reason,prepared])).digest('hex');
-        const receipt={preview_token,revision:snapshot.revision,file_id:p.file_id,version:p.version,sha256,updated_holdings:prepared.updated,metrics_changed:prepared.metricsChanged,metrics:prepared.metrics,cash_changed:false,history_changed:false};
+        const receipt={preview_token,revision:snapshot.revision,file_id:p.file_id,version:p.version,sha256,updated_holdings:prepared.updated,preserved_additional_keys:prepared.unmatchedCurrentKeys,metrics_changed:prepared.metricsChanged,metrics:prepared.metrics,cash_changed:false,history_changed:false};
         if(p.mode==='preview')return result(receipt);
         if(p.preview_token!==preview_token)throw new Error('Source or repair changed since preview');
         if(!prepared.updated && !prepared.metricsChanged)return result({...receipt,applied:false,reason:'Already restored'});
