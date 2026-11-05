@@ -1,3 +1,4 @@
+import { SCRIPT_CALCULATION_RULE } from '../tools/financial_script.js';
 /**
  * Maps the product roster to createFramework() agent entries.
  * Host (`invage`) is always first — defaultAgentId.
@@ -6,6 +7,7 @@
 import type { DomainExtension } from 'utarus';
 import { createBoundBinDriveTools } from '../tools/bindrive.js';
 import { createRawDataTools } from '../tools/raw_data.js';
+import { CALCULATION_GUIDE } from '../tools/portfolio_diagnostics.js';
 import { createDataQueryTools, DATA_QUERY_GUIDE } from '../tools/data_query.js';
 import { bindDomainToolsToUser } from '../tools/bound-identity.js';
 import { invageExtension } from '../extension.js';
@@ -59,14 +61,14 @@ export function buildFrameworkAgentList(
     ...entry,
     extension: {
       ...entry.extension,
-      purpose: entry.extension.purpose + DATA_QUERY_GUIDE,
+      purpose: entry.extension.purpose + DATA_QUERY_GUIDE + CALCULATION_GUIDE + SCRIPT_CALCULATION_RULE,
       tools: async (userSlug, isAdmin, incognito) => {
         const original = entry.extension.tools;
         const tools = typeof original === 'function'
           ? await original(userSlug, isAdmin, incognito) : original;
         const restrictedQueries = incognito === true ? createDataQueryTools({ allowDrive: false }) : [];
         return [
-          ...bindDomainToolsToUser(tools.map(tool => restrictedQueries.find(replacement => replacement.name === tool.name) ?? tool), userSlug),
+          ...bindDomainToolsToUser(tools.filter(tool => !incognito || !['inspect_portfolio_calculation','rebuild_portfolio_calculations','correct_holding','restore_broker_reported_values','run_financial_calculation'].includes(tool.name)).map(tool => restrictedQueries.find(replacement => replacement.name === tool.name) ?? tool), userSlug),
           ...createBoundBinDriveTools(userSlug, incognito),
           ...(incognito === true ? [] : createRawDataTools(userSlug)),
         ];

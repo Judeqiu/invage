@@ -46,3 +46,8 @@ describe('Futubull OpenD snapshot', () => {
       label: 'Duplicate', config: {} })).toThrow(/Duplicate broker account/);
   });
 });
+
+it('retains OpenD reported NAV with its explicit currency including zero and negative totals', () => {
+ for(const total_assets of [0,-100,29644.0691])expect(mapFutubullSnapshot({...snapshot,funds:[{us_cash:0,currency:'USD',total_assets,cash:-10}]},'futu').metrics).toMatchObject({broker_net_assets:total_assets,broker_cash:-10,currency:'USD'});
+ expect(mapFutubullSnapshot({...snapshot,funds:[{us_cash:0,total_assets:100}]},'futu').metrics).toBeUndefined();
+});

@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from 'node:util';
 /**
  * Position valuation for equities and option contracts.
  *
@@ -92,6 +93,7 @@ export function attachHoldingCustody(target: Holding, source: Holding): Holding 
   if (source.currency != null) target.currency = source.currency;
   if (source.encumbrance != null) target.encumbrance = source.encumbrance;
   if (source.broker_ref != null) target.broker_ref = source.broker_ref;
+  if (source.broker_values != null && target.units === source.units && target.avg_price === source.avg_price && isDeepStrictEqual(target.option,source.option) && isDeepStrictEqual(target.fund,source.fund)) target.broker_values = source.broker_values;
   return target;
 }
 
@@ -591,11 +593,19 @@ export function assertHolding(key: string, h: Holding): void {
       throw new Error(`Holding ${key}: fund fields present but instrument is not "fund".`);
     }
   }
+  if (h.broker_values != null) {
+    const b = h.broker_values;
+    if (typeof b.source !== 'string' || !b.source || typeof b.as_of !== 'string' || !Number.isFinite(Date.parse(b.as_of)) ||
+        typeof b.currency !== 'string' || !/^[A-Z]{3,4}$/.test(b.currency)) throw new Error(`Holding ${key}: invalid broker valuation provenance`);
+    for (const field of ['units','avg_price','mark','market_value','position_pl','position_pl_pct','unrealized_pl','realized_pl'] as const) {
+      if ((field === 'units' || field === 'avg_price' || b[field] !== undefined) && !Number.isFinite(b[field])) throw new Error(`Holding ${key}: nonfinite broker ${field}`);
+    }
+  }
   if (h.encumbrance != null) {
-    h.encumbrance = assertHoldingEncumbrance(key, h.units, h.encumbrance);
+    assertHoldingEncumbrance(key, h.units, h.encumbrance);
   }
   if (h.broker_ref != null) {
-    h.broker_ref = assertHoldingBrokerRef(key, h.broker_ref);
+    assertHoldingBrokerRef(key, h.broker_ref);
   }
 }
 
@@ -603,7 +613,7 @@ export function assertHolding(key: string, h: Holding): void {
  * Value one position.
  * @param marketPrice Required for equity and yahoo-priced funds. Ignored for options and manual funds.
  */
-export function valuePosition(
+function valuePositionCalculated(
   key: string,
   h: Holding,
   marketPrice?: number,
@@ -718,6 +728,26 @@ export function valuePosition(
   };
 }
 
+/** Read broker values only for the original exact quantity/cost/currency. */
+export function holdingBrokerValues(h: Holding) {
+  const b = h.broker_values;
+  const contract = b?.option_contract;
+  const sameContract = h.option ? contract && (['underlying','right','side','strike','expiry','multiplier','settlement','settlement_class'] as const).every(key => h.option![key] === contract[key]) : !contract;
+  return b && sameContract && b.units === h.units && b.avg_price === h.avg_price && (!h.currency || b.currency === h.currency) ? b : undefined;
+}
+export function valuePosition(key: string, h: Holding, marketPrice?: number): PositionEconomics {
+  const b = holdingBrokerValues(h);
+  const marked = h.option && b?.mark !== undefined ? { ...h, option: { ...h.option, mark: b.mark } } : h;
+  const e = valuePositionCalculated(key, marked, b?.mark ?? marketPrice);
+  if (!b) return e;
+  if (b?.mark !== undefined) e.price = b.mark;
+  if (b?.market_value !== undefined) e.value = b.market_value;
+  // Position P/L and unrealized P/L can differ under diluted cost; preserve both.
+  e.pl = b?.unrealized_pl ?? (e.value - e.cost);
+  e.plPct = e.cost !== 0 ? e.pl / Math.abs(e.cost) * 100 : 0;
+  return e;
+}
+
 /**
  * Value full portfolio.
  * `prices` keyed by Yahoo symbols (bare tickers) for equities and yahoo-priced funds.
@@ -793,7 +823,7 @@ export function valuePortfolioLenient(
         continue;
       }
       const quoteSym = equityQuoteSymbol(key);
-      const marketPrice = prices[quoteSym];
+      const marketPrice = holdingBrokerValues(h)?.mark ?? prices[quoteSym];
       if (marketPrice == null || !Number.isFinite(marketPrice)) {
         // Book-cost MTM — not a market invent. P/L forced to 0 at cost.
         const e = valuePosition(key, h, h.avg_price);

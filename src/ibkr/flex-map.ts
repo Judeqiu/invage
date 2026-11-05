@@ -1,3 +1,4 @@
+import { retainBrokerPositionValues } from '../brokers/position-values.js';
 import type { Holding, HoldingBrokerRef } from '../market/types.js';
 import {
   assertHolding,
@@ -86,6 +87,15 @@ export function brokerSkipFromFlex(skip: FlexSkip): BrokerSkip {
 
 export function mapFlexDocToStatement(doc: FlexStatementDoc, channel: string): BrokerStatement {
   const { lots, skipped: mapSkipped } = holdingsFromOpenPositions(doc.openPositions, channel);
+  for (const lot of lots) {
+    const pos = doc.openPositions.find(p => p.currency === lot.currency && (p.conid ? p.conid === lot.holding.broker_ref?.native_id : p.symbol === lot.mapKey.split('@')[0]));
+    if (!pos) continue;
+    const unrealized=pos.raw.fifoPnlUnrealized?.trim() ? Number(pos.raw.fifoPnlUnrealized) : undefined;
+    retainBrokerPositionValues(lot.holding,lot.currency,'ibkr.OpenPosition',doc.toDate,{
+      mark:pos.markPrice === undefined ? undefined : lot.holding.option ? pos.markPrice * lot.holding.option.multiplier : pos.markPrice,
+      market_value:pos.positionValue,...(unrealized !== undefined && Number.isFinite(unrealized) ? {unrealized_pl:unrealized} : {}),
+    });
+  }
   const optionExecutions = doc.optionExecutions?.map((row) => {
     if (row.channel !== IBKR_CHANNEL || row.account_id !== doc.accountId) {
       throw new Error('IBKR option execution source differs from the Flex account.');
@@ -103,6 +113,7 @@ export function mapFlexDocToStatement(doc: FlexStatementDoc, channel: string): B
     amount: row.endingCash,
   }));
   return {
+    ...(doc.metrics ? {metrics:doc.metrics} : {}),
     account_id: doc.accountId,
     as_of: doc.toDate,
     from_date: doc.fromDate,

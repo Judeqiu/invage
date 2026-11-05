@@ -1,3 +1,4 @@
+import { applyBrokerNav } from '../report/broker-nav.js';
 import { isSyntheticDemo, syntheticDashboard } from '../demo/showcase.js';
 /**
  * Sync-time calculation pipeline for the persisted portfolio read model.
@@ -321,6 +322,7 @@ export async function loadDashboardForSlug(
     ...new Set(
       [
         ...Object.values(portfolio).map((holding) => holding.currency?.trim().toUpperCase()),
+        ...Object.values(state.broker_connections ?? {}).map(c => c.metrics?.currency),
         ...cashes.filter((c) => c.amount !== 0).map((c) => c.currency.trim().toUpperCase()),
         ...deposits.filter((d) => d.amount !== 0).map((d) => d.currency.trim().toUpperCase()),
       ].filter((currency): currency is string => !!currency),
@@ -388,6 +390,10 @@ export async function loadDashboardForSlug(
     );
     for (const position of live.positions) {
       const stored = portfolio[position.ticker];
+      if (position.brokerValues) {
+        position.markSource = 'broker';
+        position.markNote = `${position.brokerValues.source} as of ${position.brokerValues.as_of}`;
+      }
       if (position.instrument === 'option' && stored?.option) {
         position.brokerMark = stored.option.mark;
         try {
@@ -488,6 +494,8 @@ export async function loadDashboardForSlug(
       severity: 'warning',
     });
   }
+
+  applyBrokerNav(live, connectionMetrics ?? {});
 
   const tradeInput = [state.option_executions, state.option_events];
   const { journal, analytics } = cachedDashboardCalculation('trade-results', state.user.id, tradeInput, () => ({

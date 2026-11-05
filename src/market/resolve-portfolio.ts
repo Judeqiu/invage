@@ -4,6 +4,7 @@
  */
 
 import type { Holding } from './types.js';
+import { holdingBrokerValues } from './position-value.js';
 import { portfolioQuoteSymbols } from './portfolio-quote-symbols.js';
 import { fetchPrices } from './fetch-prices.js';
 import {
@@ -30,9 +31,18 @@ export async function resolvePortfolioMarket(
       : Promise.resolve({} as Record<string, number>),
     fetchOptionMarks(portfolio),
   ]);
+  const valued = applyOptionMarks(portfolio, optionMarks);
+  for (const [key, h] of Object.entries(portfolio)) {
+    const b = holdingBrokerValues(h);
+    if (b?.mark === undefined) continue;
+    if (h.option) {
+      valued[key] = { ...h, option: { ...h.option, mark: b.mark } };
+      optionMarks[key] = { ...optionMarks[key], mark: b.mark, source: 'broker', note: `${b.source} as of ${b.as_of}` };
+    }
+  }
   return {
     equityPrices,
     optionMarks,
-    portfolio: applyOptionMarks(portfolio, optionMarks),
+    portfolio: valued,
   };
 }

@@ -1,3 +1,5 @@
+import { retainBrokerPositionValues } from '../brokers/position-values.js';
+import type { BrokerConnectionMetrics } from '../state/portfolio-state.js';
 import { mapFutubullHistory } from './futubull-history.js';
 import { BrokerParseError } from '../brokers/errors.js';
 import { looksLikeOptionCode } from '../brokers/option-symbol.js';
@@ -65,8 +67,18 @@ export function mapFutubullSnapshot(raw: unknown, channel: string, includeHistor
     seen.add(key);
     const holding = { instrument: 'equity' as const, units: row.position_side === 'SHORT' && qty > 0 ? -qty : qty, avg_price: average, channel,
       broker_ref: { listing_exchange: market, native_id: code } };
+    retainBrokerPositionValues(holding,currency,'futubull.OpenD.positions',bundle.fetched_at as string,{
+      mark:number(row.nominal_price),market_value:number(row.market_val),unrealized_pl:number(row.unrealized_pl),realized_pl:number(row.realized_pl),
+      ...(row.pl_val_valid === false ? {} : {position_pl:number(row.pl_val)}),...(row.pl_ratio_valid === false ? {} : {position_pl_pct:number(row.pl_ratio)}),
+    });
     assertHolding(key, holding);
     lots.push({ ticker, currency, holding });
   }
-  return { account_id: bundle.acc_id, as_of, cash, lots, skipped,history:includeHistory && !bundle.history_error ? mapFutubullHistory(bundle,channel) : undefined };
+  const currency = String(funds.currency ?? '').trim().toUpperCase();
+  let metrics: BrokerConnectionMetrics | undefined;
+  if (/^[A-Z]{3,4}$/.test(currency)) for (const [native,key] of [ ['total_assets','broker_net_assets'], ['cash','broker_cash'], ['funds_assets','fund_assets'], ['market_val','broker_market_value'] ] as const) {
+    const value = number(funds[native]); if (value === undefined) continue;
+    metrics ??= {as_of,currency,source_as_of:bundle.fetched_at as string}; metrics[key] = value;
+  }
+  return { account_id: bundle.acc_id, as_of, cash, lots, skipped, ...(metrics ? {metrics} : {}),history:includeHistory && !bundle.history_error ? mapFutubullHistory(bundle,channel) : undefined };
 }

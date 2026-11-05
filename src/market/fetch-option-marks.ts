@@ -11,7 +11,7 @@ import type { Holding, OptionQuoteSource, OptionRight, OptionSpec } from './type
 import { isOptionHolding } from './position-value.js';
 import { canonicalOptionUnderlying } from '../brokers/option-symbol.js';
 
-export type OptionMarkSource = 'manual' | 'yahoo';
+export type OptionMarkSource = 'manual' | 'yahoo' | 'broker';
 
 export interface OptionProbabilityQuote {
   mark: number;

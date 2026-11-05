@@ -1,8 +1,11 @@
+import { createFinancialScriptTool } from './financial_script.js';
+import { createRestoreBrokerValuesTool } from './restore_broker_values.js';
 import { createOptionRiskReportTool } from './option_risk_report.js';
 import { createOptionRiskResultTool } from './option_risk_result.js';
 import { createOptionRiskIndexTool } from './option_risk_index.js';
 import { createOptionIndexReportTool } from './option_index_report.js';
 import { createOptionQuotesTool } from './option_quotes.js';
+import { createCalculationTools } from './portfolio_diagnostics.js';
 import { createDataQueryTools } from './data_query.js';
 import type { AgentTool } from '@earendil-works/pi-agent-core';
 import {
@@ -72,6 +75,8 @@ export function createInvageTools(): AgentTool[] {
     createQuoteTool(),
     createOptionQuotesTool(),
     ...createDataQueryTools(),
+    createFinancialScriptTool(),
+    ...createCalculationTools(),
     createListBrokerAccountsTool(),
     ...createPlaybookTools(),
     ...createHouseholdReadTools(),
@@ -86,6 +91,9 @@ export function createInvageTools(): AgentTool[] {
 export function createBookkeeperTools(): AgentTool[] {
   return [
     ...createDataQueryTools(),
+    createFinancialScriptTool(),
+    ...createCalculationTools(true),
+    createRestoreBrokerValuesTool(),
     ...createPortfolioTools(),
     ...createHouseholdTools(),
     ...createProjectionTools(),
@@ -112,6 +120,8 @@ export function createBookkeeperTools(): AgentTool[] {
 export function createFinancialPlannerTools(): AgentTool[] {
   return [
     ...createDataQueryTools(),
+    createFinancialScriptTool(),
+    ...createCalculationTools(),
     ...createPortfolioReadTools(),
     ...createHouseholdReadTools(),
     ...createProjectionReadTools(),
@@ -130,6 +140,8 @@ export function createFinancialPlannerTools(): AgentTool[] {
 export function createInvestmentAdvisorTools(): AgentTool[] {
   return [
     ...createDataQueryTools(),
+    createFinancialScriptTool(),
+    ...createCalculationTools(),
     createGetPortfolioTool(),
     createListOptionTradesTool(),
     createGetPlaybookTool(),
@@ -149,6 +161,8 @@ export function createOptionsExpertTools(): AgentTool[] {
     createOptionRiskResultTool(),
     createOptionRiskReportTool(),
     ...createDataQueryTools(),
+    createFinancialScriptTool(),
+    ...createCalculationTools(),
     createGetPortfolioTool(),
     createListOptionTradesTool(),
     createGetPlaybookTool(),
@@ -166,6 +180,8 @@ export function createOptionsExpertTools(): AgentTool[] {
 export function createRealEstateExpertTools(): AgentTool[] {
   return [
     ...createDataQueryTools(),
+    createFinancialScriptTool(),
+    ...createCalculationTools(),
     createPropertyIntelTool(),
     createUraCarparkTool(),
     ...createHouseholdReadTools(),
@@ -181,6 +197,8 @@ export function createRealEstateExpertTools(): AgentTool[] {
 export function createAidealTools(): AgentTool[] {
   return [
     ...createDataQueryTools(),
+    createFinancialScriptTool(),
+    ...createCalculationTools(),
     createListAidealSleevesTool(),
     createComputeSleeveIndexTool(),
     createSaveAidealNewsletterTool(),
@@ -199,6 +217,8 @@ export function createAidealTools(): AgentTool[] {
 export function createFactcheckerTools(): AgentTool[] {
   return [
     ...createDataQueryTools(),
+    createFinancialScriptTool(),
+    ...createCalculationTools(),
     createGetPortfolioTool(),
     createListOptionTradesTool(),
     createListJournalEntriesTool(),

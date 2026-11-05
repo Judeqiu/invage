@@ -1,6 +1,7 @@
 import type { FundSpec, Holding, InstrumentKind, OptionSpec } from '../market/types.js';
 import type { OptionLiveMark } from '../market/fetch-option-marks.js';
 import {
+  holdingBrokerValues,
   valuePortfolio,
   valuePortfolioLenient,
   type LenientPositionEconomics,
@@ -38,6 +39,7 @@ export function resolveDashboardChannel(raw: string | null | undefined): string 
 }
 
 export interface LivePosition {
+  brokerValues?: import('../market/types.js').BrokerPositionValues;
   ticker: string;
   /** Holding currency; omitted for older or manually entered positions. */
   currency?: string;
@@ -68,7 +70,7 @@ export interface LivePosition {
    */
   channel: string;
   /** Option / fund: where the mark came from. */
-  markSource?: 'manual' | 'yahoo' | 'cost';
+  markSource?: 'manual' | 'yahoo' | 'cost' | 'broker';
   markNote?: string;
   contractSymbol?: string;
   /**
@@ -116,6 +118,9 @@ export interface ChannelTotals {
   cashWeightPct: number | null;
   /** False when recorded money or position currencies cannot be included safely. */
   navComplete?: boolean;
+  /** Diagnostic itemized subtotal before broker account NAV substitution. */
+  itemizedTotalValue?: number;
+  navSources?: import('./broker-nav.js').NavSource[];
   equityValue: number;
   equityCost: number;
   optionsPremiumCollected: number;
@@ -125,6 +130,9 @@ export interface ChannelTotals {
 }
 
 export interface HistoryRow {
+  navSources?: import('./broker-nav.js').NavSource[];
+  itemizedTotalValue?: number;
+  byChannel?: ChannelTotals[];
   date: string;
   reportingCurrency?: string;
   fxRates?: Record<string, number>;
@@ -188,6 +196,9 @@ export interface LiveDashboardSlice {
   cashWeightPct: number | null;
   /** False means totalValue is only a partial subtotal and must not be displayed as NAV. */
   navComplete?: boolean;
+  /** Diagnostic itemized subtotal before broker account NAV substitution. */
+  itemizedTotalValue?: number;
+  navSources?: import('./broker-nav.js').NavSource[];
   /** Fixed deposits in this slice (principal in NAV). */
   deposits: DepositRow[];
   depositsAmount: number;
@@ -539,7 +550,7 @@ export function buildChannelTotals(
     }
   }
 
-  const totalPL = positionsValue - totalCost;
+  const totalPL = positions.reduce((sum, p) => sum + p.pl, 0);
   const cashAmount = includeCash && cash != null ? cash.amount : null;
   const cashCurrency = includeCash && cash != null ? cash.currency : null;
   const depSum = depositsPrincipalSum(deposits, fx, resilient, issues);
@@ -620,7 +631,7 @@ export function filterLiveByChannel(
       : null;
 
   // Prefer precomputed channel totals when FX was applied (cash/deposits already converted).
-  if (live.fxApplied && chRow != null) {
+  if ((live.fxApplied || chRow?.navSources?.length) && chRow != null) {
     const positions = withRecalculatedWeights(
       filtered,
       chRow.cashAmount,
@@ -649,6 +660,8 @@ export function filterLiveByChannel(
       positionsValue: chRow.positionsValue,
       cashWeightPct: chRow.cashWeightPct,
       navComplete: chRow.navComplete,
+      itemizedTotalValue: chRow.itemizedTotalValue,
+      navSources: chRow.navSources,
       deposits,
       depositsAmount: chRow.depositsAmount,
       depositsCurrency: chRow.depositsCurrency,
@@ -792,6 +805,8 @@ export function buildLivePositions(
   const cashes = normalizeDashboardCashes(cash ?? null);
   const nativePositions = economics.map((e) => {
     const position = economicsToLive(e, 0, optionMarks?.[e.key]);
+    const b = portfolio[e.key] ? holdingBrokerValues(portfolio[e.key]) : undefined;
+    if (b && b.units === position.units && b.avg_price === position.avgCost) position.brokerValues = b;
     const currency = portfolio[e.key]?.currency;
     if (currency) position.currency = currency.trim().toUpperCase();
     return position;
@@ -968,7 +983,7 @@ export function buildLivePositions(
     channels,
     byChannel,
     reportingCurrency,
-    fxRates: fxApplied ? { ...fx!.fxRates } : undefined,
+    fxRates: fx ? { ...fx.fxRates } : undefined,
     fxApplied: fxApplied || false,
     issues: dedupedIssues,
   };
@@ -1017,6 +1032,9 @@ export function buildDashboardModel(
       channel: resolveDashboardChannel(p.channel),
     }));
     const base: Omit<HistoryRow, 'deltaValue' | 'deltaPct'> = {
+      navSources: snap.navSources,
+      itemizedTotalValue: snap.itemizedTotalValue,
+      byChannel: snap.byChannel,
       date: snap.date,
       reportingCurrency: snap.reportingCurrency,
       fxRates: snap.fxRates,

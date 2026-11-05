@@ -1222,7 +1222,8 @@ function renderOverview(view) {
   const fundAssets = view.isLive ? brokerFundAssets(payload, view.channelView) : [];
   const hasUnitemizedFunds = fundAssets.some(row => row.amount > 0);
   const navLabel = document.getElementById('navLabel');
-  if (navLabel) navLabel.textContent = hasUnitemizedFunds ? 'Itemized net asset value (NAV)' : 'Net asset value (NAV)';
+  const brokerNav = (view.navSources || []).filter(source => source.basis === 'broker');
+  if (navLabel) navLabel.textContent = brokerNav.length ? 'Net asset value (NAV)' : hasUnitemizedFunds ? 'Itemized net asset value (NAV)' : 'Net asset value (NAV)';
   const channels = Array.isArray(view.channels) ? view.channels : [];
   const asOf = view.isLive
     ? (payload.generatedAt || '').slice(0, 10) || new Date().toISOString().slice(0, 10)
@@ -1272,6 +1273,7 @@ function renderOverview(view) {
   }
   if (el.navValue) el.navValue.textContent = view.navComplete === false
     ? '—' : fmtPrettyMoney(view.totalValue, repCcy, 2);
+  el.navDelta?.classList.toggle('broker-nav-source',brokerNav.length > 0);
   if (el.navDelta) {
     if (view.navComplete === false) {
       el.navDelta.className = 'metric-sub down';
@@ -1279,8 +1281,8 @@ function renderOverview(view) {
     } else {
     const change = dailyChangeText('totalValue', view);
     const delta = change ? savedDashboardScope(view).dailyChanges?.metrics?.totalValue?.delta : null;
-    el.navDelta.className = 'metric-sub' + (change ? ' daily-change ' : ' ') + (delta > 0 ? 'up' : delta < 0 ? 'down' : '');
-    el.navDelta.textContent = change || (view.isLive ? 'Live marks' : `Archived ${optionDateLabel(view.label)} · original currency and FX`);
+    el.navDelta.className = 'metric-sub' + (brokerNav.length ? ' broker-nav-source' : '') + (change ? ' daily-change ' : ' ') + (delta > 0 ? 'up' : delta < 0 ? 'down' : '');
+    el.navDelta.textContent = brokerNav.length ? brokerNav.map(source => `Broker NAV · ${source.channel} · ${source.asOf || 'date unavailable'}`).join(' · ') : change || (view.isLive ? 'Live marks' : `Archived ${optionDateLabel(view.label)} · original currency and FX`);
     if (unverifiedOptionChannels(view).length) {
       el.navDelta.textContent += ' · option positions unverified';
     }
@@ -1336,6 +1338,7 @@ function renderOverview(view) {
   }
 
   const navCard = el.navValue?.closest('.metric-card');
+  navCard?.querySelector('.help-dot')?.setAttribute('data-help', brokerNav.length ? 'Account net assets reported directly by the broker at the stated time. Broker cash, stocks, options and fund assets are already included according to the broker account scope; they are not added again. Combined accounts are converted once into the reporting currency. Itemized positions remain available for reconciliation.' : 'An estimate of what your recorded portfolio is worth: signed position market values plus cash and fixed-deposit principal. Broker-reported values take precedence when supplied for the same figure.');
   navCard?.querySelector('.daily-aggregate-changes')?.remove();
   const metrics = payload.dashboardConfig?.showDailyChanges === true && view.isLive ? savedDashboardScope(view).dailyChanges?.metrics ?? {} : null;
   if (navCard && metrics) {
@@ -1388,7 +1391,7 @@ function renderV2Overview() {
     clone.removeAttribute('id');
     clone.querySelectorAll('[data-card-explain]').forEach(item => item.remove());
     clone.dataset.calculationNotes = [...clone.querySelectorAll('.metric-sub')].map(n => n.textContent).join(' · ');
-    clone.querySelectorAll('.metric-sub:not(.daily-change):not(.cash-debit-note)').forEach(item => {
+    clone.querySelectorAll('.metric-sub:not(.daily-change):not(.cash-debit-note):not(.broker-nav-source)').forEach(item => {
       if (!item.closest('.daily-aggregate-changes')) item.remove();
     });
     return clone.outerHTML;
@@ -1399,7 +1402,7 @@ function renderV2Overview() {
     const clone = node.cloneNode(true);
     clone.querySelectorAll('[data-card-explain]').forEach(item => item.remove());
     clone.dataset.calculationNotes = [...clone.querySelectorAll('.metric-sub')].map(n => n.textContent).join(' · ');
-    clone.querySelectorAll('.metric-sub:not(.daily-change):not(.cash-debit-note)').forEach(item => {
+    clone.querySelectorAll('.metric-sub:not(.daily-change):not(.cash-debit-note):not(.broker-nav-source)').forEach(item => {
       if (!item.closest('.daily-aggregate-changes')) item.remove();
     });
     clone.removeAttribute('id');
@@ -1522,6 +1525,7 @@ function prepareCardExplanation(button, selectedFigure) {
       : cardExplanationTargets(card).length > 1 || !cardExplanationTargets(card).length && !card.querySelector('.metric-value')
         ? 'This section contains multiple numbers. FIRST ask me which specific number or labeled figure I want explained, and wait for my answer before explaining or reconciling any figures.' : '',
     `Selected dashboard: ${context}. Reporting currency: ${payload?.model ? reportingCcyCode(buildView(selectedDate, selectedChannel)) : 'unavailable'}.`,
+    `Saved calculation identity: ${JSON.stringify({calculated_at: portfolioPayload?.generatedAt || payload?.generatedAt, ...(selectedDate === 'live' ? {} : {snapshot_date:selectedDate}), broker_id:selectedBroker()?.brokerId, channel:selectedBroker()?MERGED_CHANNEL_VIEW:selectedChannel})}. Use inspect_portfolio_calculation before explaining the amount; use run_financial_calculation for any additional arithmetic.`,
     `Broker snapshot dates: ${JSON.stringify(selectedDate === 'live' ? payload?.brokerAsOf || {} : payload?.model?.history?.find(row => row.date === selectedDate)?.brokerAsOf || {})}.`,
     notes ? `Calculation notes: ${notes}` : '',
     'Explain what the displayed amount means, how it is calculated, and which recorded components contribute to it. Use my portfolio records to reconcile the number where possible. Explain missing data, currency conversion, fees, and date ranges where relevant. If a value is unavailable or cannot be reconciled, say why without inventing figures. Treat the displayed value as the selected snapshot, which may differ from current data.',

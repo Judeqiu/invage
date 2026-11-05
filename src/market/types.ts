@@ -175,7 +175,23 @@ export interface HoldingBrokerRef {
  * - Option: avg_price = premium $ per contract at trade, units = contracts; option fields required.
  * - Fund: avg_price = cost per unit, units = fund units/shares; fund fields required.
  */
+export interface BrokerPositionValues {
+  option_contract?: OptionSpec;
+  source: string;
+  as_of: string;
+  currency: string;
+  units: number;
+  avg_price: number;
+  mark?: number;
+  market_value?: number;
+  position_pl?: number;
+  position_pl_pct?: number;
+  unrealized_pl?: number;
+  realized_pl?: number;
+}
 export interface Holding {
+  /** Original broker economics; scope/quantity guard prevents reuse after edits. */
+  broker_values?: BrokerPositionValues;
   avg_price: number;
   units: number;
   /** Cost-basis currency supplied by a broker. Legacy manual holdings may omit it. */

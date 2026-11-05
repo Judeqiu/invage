@@ -312,10 +312,11 @@ function applyChannelFilter(base, channelKey) {
     }
   }
 
-  const totalPL = positionsValue - totalCost;
+  const totalPL = filtered.reduce((sum, p) => sum + p.pl, 0);
   let totalValue = positionsValue;
   if (cashAmount != null) totalValue += cashAmount;
   totalValue += depositsAmount;
+  if (chRow?.navSources?.length) totalValue = chRow.totalValue;
   const cashWeightPct =
     cashAmount != null && totalValue !== 0
       ? (cashAmount / totalValue) * 100
@@ -346,6 +347,8 @@ function applyChannelFilter(base, channelKey) {
     cashChannel: cashAmount != null ? channelKey : null,
     positionsValue,
     cashWeightPct,
+    navSources: chRow?.navSources,
+    itemizedTotalValue: chRow?.itemizedTotalValue,
     navComplete: chRow?.navComplete ?? base.navComplete,
     deposits,
     depositsAmount,
@@ -368,6 +371,8 @@ function buildView(dateKey, channelKey = selectedChannel) {
       label: 'Live',
       positions: live.positions,
       totalValue: live.totalValue,
+      navSources: live.navSources,
+      itemizedTotalValue: live.itemizedTotalValue,
       totalCost: live.totalCost,
       totalPL: live.totalPL,
       totalPLPct: live.totalPLPct,
@@ -420,6 +425,9 @@ function buildView(dateKey, channelKey = selectedChannel) {
     label: row.date,
     positions: rawPositions,
     totalValue: row.totalValue,
+    navSources: row.navSources,
+    itemizedTotalValue: row.itemizedTotalValue,
+    byChannel: row.byChannel,
     totalCost: row.totalCost,
     totalPL: row.totalPL,
     totalPLPct: row.totalPLPct,
@@ -447,8 +455,8 @@ function buildView(dateKey, channelKey = selectedChannel) {
     deposits: row.deposits || [],
     depositsAmount: row.depositsAmount || 0,
     depositsCurrency: row.depositsCurrency || null,
-    channels: null,
-    byChannel: null,
+    channels: row.byChannel?.map(c => c.channel) ?? null,
+    byChannel: row.byChannel ?? null,
   };
   const filtered = applyChannelFilter(viewBase, channelKey);
   const fIdx = portfolioFundIndex(filtered);
@@ -624,7 +632,7 @@ function channelRowsForView(view) {
       cashAmount = view.cashAmount ?? null;
       cashCurrency = view.cashCurrency ?? null;
     }
-    const totalPL = positionsValue - totalCost;
+    const totalPL = pos.reduce((sum,p) => sum + p.pl,0);
     let totalValue = positionsValue;
     if (cashAmount != null) totalValue += cashAmount;
     totalValue += depositsAmount;

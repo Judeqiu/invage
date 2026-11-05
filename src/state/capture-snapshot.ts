@@ -1,3 +1,4 @@
+import { applyBrokerNav } from '../report/broker-nav.js';
 import { refreshPortfolioAfterSync } from './projection-events.js';
 import { writeFileSync, mkdirSync, existsSync, readFileSync } from 'fs';
 import { join } from 'path';
@@ -34,6 +35,7 @@ export async function capturePortfolioSnapshot(state: InvestorState, date = new 
   const deposits = getDeposits(state);
   const rep = getReportingCurrency(state as HouseholdInvestorState);
   const currencies = [...new Set([
+    ...Object.values(state.broker_connections ?? {}).map(c => c.metrics?.currency).filter((c): c is string => !!c),
     ...Object.values(valued).map((holding) => holding.currency).filter((c): c is string => !!c),
     ...cashes.filter((c) => c.amount !== 0).map((c) => c.currency),
     ...deposits.filter((d) => d.amount !== 0).map((d) => d.currency),
@@ -45,9 +47,11 @@ export async function capturePortfolioSnapshot(state: InvestorState, date = new 
   const live = buildLivePositions(valued, equityPrices, optionMarks,
     cashes.map((c) => ({ amount: c.amount, currency: c.currency, channel: c.channel })),
     deposits, undefined, fx, { reportingCurrency: rep, allowEmpty: true });
+  applyBrokerNav(live, Object.fromEntries(Object.values(readBrokerAccountModel(state).connections).filter(c => c.metrics).map(c => [c.channel, c.metrics!])));
   if (live.navComplete === false) throw new Error('Snapshot NAV incomplete: provide all holding currencies.');
   const positions: SnapshotPosition[] = live.positions.map((e) => ({
     ticker: e.ticker,
+    ...(e.brokerValues ? {brokerValues:e.brokerValues} : {}),
     ...(e.currency ? { currency: e.currency } : {}),
     avgCost: e.avgCost,
     units: e.units,
@@ -86,7 +90,7 @@ export async function capturePortfolioSnapshot(state: InvestorState, date = new 
   const cash = live.cashAmount == null ? null : { amount: live.cashAmount, currency: live.cashCurrency! };
   const totalValue = live.totalValue;
   // P/L is on invested positions only; cash is dry powder, not a P/L line.
-  const totalPL = positionsValue - totalCost;
+  const totalPL = live.totalPL;
 
   let equityValue = 0;
   let equityCost = 0;
@@ -124,6 +128,7 @@ export async function capturePortfolioSnapshot(state: InvestorState, date = new 
     ...(live.fxRates && Object.keys(live.fxRates).length > 0
       ? { fxRates: live.fxRates, fxCapturedAt: new Date().toISOString() } : {}),
     totalValue,
+    ...(live.navSources ? {navSources: live.navSources, itemizedTotalValue: live.itemizedTotalValue, byChannel: live.byChannel} : {}),
     totalCost,
     totalPL,
     totalPLPct: totalCost !== 0 ? (totalPL / Math.abs(totalCost)) * 100 : 0,

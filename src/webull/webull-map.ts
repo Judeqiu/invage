@@ -1,3 +1,4 @@
+import { retainBrokerPositionValues } from '../brokers/position-values.js';
 import { mapWebullOptionHistory } from './webull-executions.js';
 import { mapWebullHistory } from './webull-history.js';
 import { BrokerParseError } from '../brokers/errors.js';
@@ -90,6 +91,16 @@ function mapCash(balances: unknown, asOf: string, skipped: BrokerSkip[]): {
   let metrics: BrokerConnectionMetrics | undefined;
   if (buyingPower != null) {
     metrics = { as_of: asOf, currency: metricsCurrency, buying_power: buyingPower };
+  }
+  const reportedCurrency = String(rec.total_asset_currency ?? '').trim().toUpperCase();
+  if (/^[A-Z]{3,4}$/.test(reportedCurrency)) {
+    for (const [native, key] of [ ['total_net_liquidation_value','broker_net_assets'], ['total_cash_balance','broker_cash'],
+      ['total_market_value','broker_market_value'], ['total_unrealized_profit_loss','broker_unrealized_pl'] ] as const) {
+      const value = parseNum(rec[native]); if (value == null) continue;
+      // Keep every total in its reported currency; buying power can have a different sleeve currency.
+      if (metrics && metrics.currency !== reportedCurrency) metrics = undefined;
+      metrics ??= {as_of:asOf,currency:reportedCurrency}; metrics[key] = value;
+    }
   }
   return { cash, metrics };
 }
@@ -237,7 +248,14 @@ export function mapWebullBundleToStatement(bundle: WebullRawBundle, channel: str
   const lots: BrokerStatement['lots'] = [];
   for (const row of positionRows(bundle.positions)) {
     const mapped = mapPosition(row, channel, bundle.region, seen);
-    if (mapped.lot) lots.push(mapped.lot);
+    if (mapped.lot) {
+      const h=mapped.lot.holding,price=parseNum(row.last_price);
+      retainBrokerPositionValues(h,mapped.lot.currency,'webull.positions',bundle.fetched_at,{
+        mark:price == null ? undefined : h.option ? price*h.option.multiplier : price,
+        market_value:parseNum(row.market_value),unrealized_pl:parseNum(row.unrealized_profit_loss),
+      });
+      lots.push(mapped.lot);
+    }
     if (mapped.skip) skipped.push(mapped.skip);
   }
   const stmt: BrokerStatement = {
@@ -247,10 +265,11 @@ export function mapWebullBundleToStatement(bundle: WebullRawBundle, channel: str
     lots,
     skipped,
   };
+  if (metrics) stmt.metrics = { ...metrics, source_as_of: bundle.fetched_at };
   if (!includeHistory || bundle.history_error) return stmt;
   stmt.history=mapWebullHistory(bundle,channel);
   const executions = mapWebullOptionHistory(bundle, lots, channel);
   if (executions) stmt.option_executions = executions;
-  if (metrics) stmt.metrics = metrics;
+
   return stmt;
 }

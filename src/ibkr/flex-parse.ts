@@ -60,6 +60,7 @@ export function formatFlexSkip(skip: FlexSkip): string {
 }
 
 export interface FlexStatementDoc {
+  metrics?: import('../state/portfolio-state.js').BrokerConnectionMetrics;
   optionExecutions?: import('../brokers/option-executions.js').OptionExecution[];
   optionEvents?: import('../brokers/option-events.js').OptionLifecycleEvent[];
   accountId: string;
@@ -365,6 +366,15 @@ export function parseFlexQueryXml(xml: string | Buffer, includeHistory = true): 
     cash,
     skipped,
   };
+  const navRows = xmlSelfClosingTags(extractSectionInner(text, 'EquitySummaryInBase') ?? '', 'EquitySummaryByReportDateInBase')
+    .filter(row => row.accountId === accountId && row.reportDate && reportDateMatches(row.reportDate, toDate) && row.total?.trim());
+  if (navRows.length > 1) throw new Error('IBKR Flex has multiple NAV totals for this account and report date');
+  if (navRows.length === 1) {
+    const row = navRows[0], currency = row.currency?.trim().toUpperCase(), total = Number(row.total);
+    if (!currency || !/^[A-Z]{3,4}$/.test(currency) || !Number.isFinite(total)) throw new Error('IBKR Flex reported NAV has invalid currency or total');
+    doc.metrics = {as_of:toDate,currency,broker_net_assets:total};
+    if (row.cash?.trim() && Number.isFinite(Number(row.cash))) doc.metrics.broker_cash = Number(row.cash);
+  }
   if (stAttrs.whenGenerated) doc.whenGenerated = stAttrs.whenGenerated;
   if (stAttrs.period) doc.period = stAttrs.period;
   const executions = includeHistory ? parseFlexOptionExecutions(text) : undefined;

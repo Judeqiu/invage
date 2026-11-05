@@ -137,6 +137,15 @@ function bundle(over: Partial<TigerRawBundle> = {}): TigerRawBundle {
   };
 }
 
+it('uses directly reported account NAV and does not substitute a securities segment for a whole account', () => {
+ const prime = structuredClone(PRIME);
+ prime.data.currency='USD';prime.data.netLiquidation=0;prime.data.cashBalance=-5;
+ expect(mapTigerBundleToStatement(bundle({assets:{method:'prime_assets',envelope:prime}}),'tiger').metrics).toMatchObject({broker_net_assets:0,broker_cash:-5});
+ expect(mapTigerBundleToStatement(bundle(),'tiger').metrics?.broker_net_assets).toBeUndefined();
+ const global={code:0,data:[{account:'1234567',summary:{currency:'USD',netLiquidation:-100},marketValues:{USD:{currency:'USD',cashBalance:2}}}]};
+ expect(mapTigerBundleToStatement(bundle({assets:{method:'assets',envelope:global}}),'tiger').metrics?.broker_net_assets).toBe(-100);
+});
+
 describe('Tiger position mapping', () => {
   it('preserves negative excess liquidity from Prime and Global broker snapshots', () => {
     const prime = structuredClone(PRIME);

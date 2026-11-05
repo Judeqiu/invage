@@ -14,7 +14,7 @@ import type { optionRelationshipsForState } from '../webapp/option-relationships
 
 export const PROJECTION_VERSION = 8;
 // Rebuild saved calculations when their rules change, retaining daily history.
-const CALCULATION_VERSION = 9;
+const CALCULATION_VERSION = 10;
 export interface PortfolioProjection {
   version: typeof PROJECTION_VERSION;
   userId: string;
@@ -111,4 +111,11 @@ export function requirePortfolioProjection(state: InvestorState): PortfolioProje
   const result = readPortfolioProjection(state);
   if (!result) throw new PortfolioProjectionUnavailable();
   return result;
+}
+
+/** Diagnostic read retains the exact saved generation even when its inputs changed. */
+export function inspectPortfolioProjection(state: InvestorState) {
+  const entry = readProjectionFile(state.user.id);
+  if (entry.userId !== state.user.id || entry.version !== PROJECTION_VERSION) throw new PortfolioProjectionUnavailable();
+  return { entry, sourceMatches: entry.fingerprint === portfolioFingerprint(state) };
 }

@@ -1,3 +1,4 @@
+import { retainBrokerPositionValues } from '../brokers/position-values.js';
 import type { BrokerCashSleeve, BrokerSkip, BrokerStatement } from '../brokers/statement.js';
 import { tigerYahooSymbol } from './tiger-markets.js';
 import { canonicalOptionUnderlying } from '../brokers/option-symbol.js';
@@ -193,7 +194,7 @@ function mapOnePosition(
   return { lot: { ticker: holdingBaseKey(mapKey), currency, holding } };
 }
 
-function mapPositionsSleeve(env: TigerGatewayEnvelope, channel: string, seen: Set<string>): {
+function mapPositionsSleeve(env: TigerGatewayEnvelope, channel: string, seen: Set<string>, fetchedAt: string): {
   lots: BrokerStatement['lots'];
   skipped: BrokerSkip[];
 } {
@@ -209,7 +210,14 @@ function mapPositionsSleeve(env: TigerGatewayEnvelope, channel: string, seen: Se
   for (const item of items) {
     const got = mapOnePosition(item, channel, seen);
     if (got.skip) skipped.push(got.skip);
-    else if (got.lot) lots.push(got.lot);
+    else if (got.lot) {
+      const h = got.lot.holding, price = parseNum(item.latestPrice ?? item.latest_price);
+      retainBrokerPositionValues(h,got.lot.currency,'tiger.positions',fetchedAt,{
+        mark:price == null ? undefined : h.option ? price*h.option.multiplier : price,
+        market_value:parseNum(item.marketValue ?? item.market_value),unrealized_pl:parseNum(item.unrealizedPnl ?? item.unrealized_pnl),realized_pl:parseNum(item.realizedPnl ?? item.realized_pnl),
+      });
+      lots.push(got.lot);
+    }
   }
   return { lots, skipped };
 }
@@ -285,6 +293,13 @@ function mapPrimeAssets(data: unknown, account: string, asOf: string, skipped: B
       if (maintenance_margin != null) metrics.maintenance_margin = maintenance_margin;
     }
   }
+  // Prefer the account-level total; a securities segment is not the whole account.
+  const accountCurrency = String(root?.currency ?? '').trim().toUpperCase();
+  const net = parseNum(root?.netLiquidation ?? root?.net_liquidation);
+  if (net != null && /^[A-Z]{3,4}$/.test(accountCurrency) && (!metrics || metrics.currency === accountCurrency)) {
+    metrics ??= {as_of:asOf,currency:accountCurrency}; metrics.broker_net_assets = net;
+    const balance = parseNum(root?.cashBalance ?? root?.cash_balance); if (balance != null) metrics.broker_cash = balance;
+  }
   return { cash, metrics };
 }
 
@@ -307,7 +322,7 @@ function mapGlobalAssets(data: unknown, account: string, asOf: string, skipped: 
     ),
     skipped,
   );
-  const summary = asRecord(rec.summary) ?? {};
+  const summary = asRecord(rec.summary) ?? rec;
   const currency = String(summary.currency ?? '').trim().toUpperCase();
   const buying_power = parseNum(summary.buyingPower ?? summary.buying_power);
   const excess_liquidity = parseNum(summary.excessLiquidity ?? summary.excess_liquidity);
@@ -321,6 +336,11 @@ function mapGlobalAssets(data: unknown, account: string, asOf: string, skipped: 
     if (excess_liquidity != null) metrics.excess_liquidity = excess_liquidity;
     if (maintenance_margin != null) metrics.maintenance_margin = maintenance_margin;
   }
+  const net = parseNum(summary.netLiquidation ?? summary.net_liquidation);
+  if (net != null && /^[A-Z]{3,4}$/.test(currency)) {
+    metrics ??= {as_of:asOf,currency}; metrics.broker_net_assets = net;
+    const balance = parseNum(summary.cashBalance ?? summary.cash_balance); if (balance != null) metrics.broker_cash = balance;
+  }
   return { cash, metrics };
 }
 
@@ -331,9 +351,9 @@ export function mapTigerBundleToStatement(bundle: TigerRawBundle, channel: strin
   const as_of = bundle.fetched_at.slice(0, 10);
   const skipped: BrokerSkip[] = [];
   const seen = new Set<string>();
-  const stk = mapPositionsSleeve(bundle.positions.STK, channel, seen);
-  const opt = mapPositionsSleeve(bundle.positions.OPT, channel, seen);
-  const fund = mapPositionsSleeve(bundle.positions.FUND, channel, seen);
+  const stk = mapPositionsSleeve(bundle.positions.STK, channel, seen, bundle.fetched_at);
+  const opt = mapPositionsSleeve(bundle.positions.OPT, channel, seen, bundle.fetched_at);
+  const fund = mapPositionsSleeve(bundle.positions.FUND, channel, seen, bundle.fetched_at);
   skipped.push(...stk.skipped, ...opt.skipped, ...fund.skipped);
   const lots = [...stk.lots, ...opt.lots, ...fund.lots];
   const assetsData = bundle.assets.envelope.data;

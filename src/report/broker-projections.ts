@@ -37,19 +37,21 @@ function brokerLive(live: LiveDashboardSlice, channels: string[]): LiveDashboard
   const cashAmount = cashKnown && cashCompatible ? cashRows.reduce((total, row) => total + row.cashAmount!, 0) : null;
   const depositsCompatible = rows.every(row => row.depositsAmount === 0 || row.depositsCurrency === reportingCurrency);
   const positionsValue = sum('positionsValue'), totalCost = sum('totalCost'), depositsAmount = sum('depositsAmount');
-  const totalValue = positionsValue + (cashAmount ?? 0) + depositsAmount;
-  const totalPL = positionsValue - totalCost;
+  const totalValue = rows.reduce((sum, row) => sum + row.totalValue, 0);
+  const totalPL = rows.reduce((sum, row) => sum + row.totalPL, 0);
   const navComplete = channels.every(channel => rows.some(row => row.channel === channel)) &&
     rows.every(row => row.navComplete !== false) && cashCompatible && depositsCompatible &&
     (cashRows.length === 0 || cashKnown);
   const denominator = positions.reduce((total, row) => total + Math.abs(row.value), 0) + (cashAmount ?? 0) + depositsAmount;
-  const issues = live.issues.filter(issue => !issue.key || selected.has(issue.key) || positions.some(row => row.ticker === issue.key));
+  const issues = live.issues.filter(issue => !issue.key || selected.has(issue.key) || positions.some(row => row.ticker === issue.key) || channels.some(channel => issue.key?.endsWith('@' + channel)));
   if (!navComplete) issues.push({ code: 'broker_nav_incomplete', severity: 'warning',
     message: 'Broker NAV is incomplete: an account total, cash balance or reporting-currency conversion is unavailable.' });
   return {
     ...live, positions: positions.map(row => ({ ...row, weightPct: denominator > 0 ? Math.abs(row.value) / denominator * 100 : 0 })),
     channels, byChannel: rows, deposits, issues, positionCount: positions.length,
     positionsValue, totalCost, totalPL, totalPLPct: totalCost !== 0 ? totalPL / Math.abs(totalCost) * 100 : 0,
+    itemizedTotalValue: rows.reduce((sum, row) => sum + (row.itemizedTotalValue ?? row.totalValue), 0),
+    navSources: rows.flatMap(row => row.navSources ?? []),
     totalValue, cashAmount, cashCurrency: cashAmount !== null ? reportingCurrency ?? null : null,
     cashChannel: cashAmount !== null && channels.length === 1 ? channels[0] : null,
     cashWeightPct: cashAmount !== null ? totalValue !== 0 ? cashAmount / totalValue * 100 : 0 : null,

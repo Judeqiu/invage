@@ -12,6 +12,7 @@ import { resolveDataRoot } from 'utarus';
 import type { DepositRow } from '../report/dashboard-model.js';
 
 export interface SnapshotPosition {
+  brokerValues?: import('../market/types.js').BrokerPositionValues;
   ticker: string;
   /** Original holding currency. Prices and option contract fields remain native. */
   currency?: string;
@@ -30,7 +31,7 @@ export interface SnapshotPosition {
   premiumAbsolute?: number;
   contingentCashObligation?: number;
   contingentShareObligation?: number;
-  markSource?: 'manual' | 'yahoo';
+  markSource?: 'manual' | 'yahoo' | 'broker';
   contractSymbol?: string;
   option?: {
     right: 'call' | 'put';
@@ -52,6 +53,9 @@ export interface SnapshotPosition {
 }
 
 export interface Snapshot {
+  navSources?: import('../report/broker-nav.js').NavSource[];
+  itemizedTotalValue?: number;
+  byChannel?: import('../report/dashboard-model.js').ChannelTotals[];
   date: string;
   /** Currency and FX rates fixed at capture; older snapshots omit these. */
   reportingCurrency?: string;

@@ -67,7 +67,7 @@ describe('MooMoo mapping', () => {
       expect(metrics.excess_liquidity).toBeCloseTo(expected,8);
       expect(metrics.excess_liquidity_basis).toBe('broker_net_assets_minus_maintenance');
       const statement=mapMooMooBundleToStatement(bundle({funds:{s:'ok',d:{currency:'USD',total_assets,maintenance_margin,us_cash:'1'}}}),'moomoo');
-      expect(assertBrokerStatement(statement).metrics).toEqual({...metrics,as_of:'2026-09-17'});
+      expect(assertBrokerStatement(statement).metrics).toEqual({...metrics,as_of:'2026-09-17',source_as_of:bundle().fetched_at});
     });
   it.each([
     {total_assets:'100',maintenance_margin:'10'},
@@ -96,7 +96,7 @@ describe('MooMoo mapping', () => {
       funds: { s: 'ok', d: { funds_assets: '1600', currency: 'SGD', sg_cash: '0' } },
       positions: { s: 'ok', d: [] },
     }), 'moomoo'));
-    expect(stmt.metrics).toEqual({ as_of: '2026-09-17', currency: 'SGD', fund_assets: 1600 });
+    expect(stmt.metrics).toEqual({ as_of: '2026-09-17', source_as_of: bundle().fetched_at, currency: 'SGD', fund_assets: 1600 });
     expect(stmt.lots).toEqual([]);
     expect(stmt.cash).toEqual([{ currency: 'SGD', amount: 0 }]);
   });

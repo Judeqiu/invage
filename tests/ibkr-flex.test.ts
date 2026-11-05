@@ -545,3 +545,8 @@ describe('fetchFlexStatement', () => {
     ).rejects.toMatchObject({ name: 'FlexHttpError', code: '1018' });
   });
 });
+
+it('uses only account-bound NAV total for the exact statement end date', () => {
+ const xml = `<FlexQueryResponse><FlexStatements><FlexStatement accountId="U1" fromDate="20261101" toDate="20261105"><OpenPositions/><CashReport><CashReportCurrency currency="USD" endingCash="5"/></CashReport><EquitySummaryInBase><EquitySummaryByReportDateInBase accountId="U1" reportDate="20261104" currency="USD" total="1"/><EquitySummaryByReportDateInBase accountId="U2" reportDate="20261105" currency="USD" total="999"/><EquitySummaryByReportDateInBase accountId="U1" reportDate="20261105" currency="USD" total="29644.0691" cash="5"/></EquitySummaryInBase></FlexStatement></FlexStatements></FlexQueryResponse>`;
+ expect(parseFlexQueryXml(Buffer.from(xml)).metrics).toEqual({as_of:'2026-11-05',currency:'USD',broker_net_assets:29644.0691,broker_cash:5});
+});

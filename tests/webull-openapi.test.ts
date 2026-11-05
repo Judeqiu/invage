@@ -67,6 +67,12 @@ function bundle(over: Partial<WebullRawBundle> = {}): WebullRawBundle {
   };
 }
 
+it('retains directly reported account NAV/cash/market value and never derives absent NAV from other totals', () => {
+  const balances = { ...(BALANCES as object), total_net_liquidation_value:'29644.0691', total_cash_balance:'4812.51' };
+  expect(mapWebullBundleToStatement(bundle({balances}), 'webull').metrics).toMatchObject({broker_net_assets:29644.0691,broker_cash:4812.51,currency:'USD'});
+  expect(mapWebullBundleToStatement(bundle(), 'webull').metrics?.broker_net_assets).toBeUndefined();
+});
+
 describe('Webull mapping', () => {
   it('books per-ISO cash (preserve debit balances and zeros) and long equities', () => {
     const stmt = mapWebullBundleToStatement(bundle(), 'webull');

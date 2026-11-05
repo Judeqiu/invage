@@ -43,7 +43,8 @@
       const shares = sum(lines.map(p => p.units));
       const cost = sum(lines.map(p => comparable(p) ? p.cost : null));
       const value = sum(lines.map(p => valued(p) ? p.value : null));
-      const pnl = cost != null && value != null ? value - cost : null;
+      const pnl = sum(lines.map(p => valued(p) && finite(p.pl) ? p.pl : null));
+      const pricedValue = sum(lines.map(p => { const price = convert(p.price,p.currency); return price == null ? null : price*p.units; }));
       const calls = (shortGroups.get(ticker) || []).filter(p => p.option.right === 'call');
       // Coverage is local to a broker channel (the bound custody account), then summed.
       // A call at one broker cannot consume shares held at another broker.
@@ -56,7 +57,7 @@
         covered += Math.min(owned, delivery);
       }
       return { ticker, shares, avgCost: cost != null && shares > 0 ? cost / shares : null,
-        cost, last: value != null && shares > 0 ? value / shares : null, value, pnl,
+        cost, last: pricedValue != null && shares > 0 ? pricedValue / shares : null, value, pnl,
         returnPct: pnl != null && cost > 0 ? pnl / cost * 100 : null,
         navPct: nav != null && value != null ? value / nav * 100 : null,
         covered, callShares: isFund ? null : callDelivery(calls), idle: covered != null ? shares - covered : null,
@@ -93,7 +94,7 @@
         stale: lines.some(p => !fresh(p)), nonPhysical: lines.some(p => p.option.settlement !== 'physical') };
     }).sort((a, b) => (a.cashIfAssigned == null) - (b.cashIfAssigned == null) || (b.cashIfAssigned || 0) - (a.cashIfAssigned || 0) || a.ticker.localeCompare(b.ticker));
     const totalCost = sum(stocks.map(p => p.cost)), totalValue = sum(stocks.map(p => p.value));
-    const totalPnl = totalCost != null && totalValue != null ? totalValue - totalCost : null;
+    const totalPnl = sum(stocks.map(p => p.pnl));
     const totalShares = sum(stocks.map(p => p.shares)), totalCovered = sum(stocks.map(p => p.covered));
     return { ccy, channels, stocks, funds: fundRows, obligations,
       dates: Object.entries(payload?.brokerAsOf || {}).filter(([ch]) => all || ch === channel),

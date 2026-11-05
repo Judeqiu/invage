@@ -1,0 +1,23 @@
+# Broker-first NAV and calculation evidence
+
+The reported incident was reproduced from the exact saved dashboard generation. Five equity valuations were omitted because `assertHolding` assigned validated custody metadata back onto frozen holdings. Cash plus short-option values then appeared as a negative NAV. Validation now leaves source holdings unchanged. A broker-reported negative diluted cost was valid source evidence and was not the cause.
+
+For connected accounts, a supplied account NAV replaces that account's component sum. Manual accounts retain calculated NAV; merged accounts convert each account once. A broker NAV already includes its reported assets, so cash, positions and aggregate fund assets are never added again. Native values and converted contributions retain their currencies, dates and source. The itemized subtotal remains available for reconciliation. Broker cash totals and native currency sleeves remain distinct.
+
+Supported reported NAV inputs are Moomoo/Futubull Cloud `total_assets`, native OpenD `total_assets`, Webull `total_net_liquidation_value`, explicit Tiger account-level `netLiquidation`, and an IBKR `EquitySummaryByReportDateInBase.total` matching the account and statement end date. A securities segment is not silently substituted for an account total. Missing fields remain unavailable; zero and negative reported values are retained.
+
+Position valuation retains broker market value directly, rather than reconstructing it from rounded prices. Broker unrealized P/L, position P/L, diluted cost, realized P/L and opening execution cash are separate data. Option prices are converted from native per-underlying prices using the verified contract multiplier. Retained broker values are bound to the original quantity, cost, currency and option terms; explicit holding corrections invalidate that valuation metadata.
+
+All agents receive a mandatory no-mental-arithmetic rule. Numerical results must come from broker fields, saved calculations, query aggregates or executed scripts. `run_financial_calculation` runs an authored Python script in Bubblewrap namespaces with a separate network, filesystem, environment and process namespace. It can use the standard library and explicitly supplied inputs, without application files or credentials. Exact financial arithmetic should use `fractions.Fraction` on decimal strings; rounding must be explicit. Scripts, inputs, execution output and checksum receipts are saved in the authenticated user's Drive. No automatic time or output cutoff was introduced; user cancellation terminates the subprocess. Bubblewrap and `/usr/bin/python3` must be installed; there is no unsandboxed fallback.
+
+Agent tools:
+
+- `inspect_portfolio_calculation`: exact generation, scope, contributing/omitted rows, failures, broker fields, FX and saved-input replay. Historical snapshots are read separately; current data are never substituted silently.
+- `read_calculation_source`: the running release's named valuation, mapper and presentation calculation implementations.
+- `restore_broker_reported_values` (Bookkeeper): preview/apply new valuation fields from the latest successful, version-pinned account archive. Requires unchanged account/date/holdings/terms/cost/marks and state revision. Preserves cash, quantities, costs, archives and history, and verifies persisted readback.
+- `correct_holding` (Bookkeeper): evidence-backed preview/apply for signed cost, quantity, currency or mark corrections. Preserves cash and unspecified fields, uses normal books reconciliation and optimistic state persistence, and returns readback plus calculation status.
+- `rebuild_portfolio_calculations` (Bookkeeper): production rebuild with explicit pending/failed/success status and saved before/after evidence.
+
+`rebuild-broker-nav-views.mjs` stages replacements while services run, using retained quote timestamps and FX. Publication rechecks source fingerprints, retains newer valid generations and keeps daily checkpoints. Incident reconciliation receipts are placed in the user's Drive so future explanations can inspect the exact old figure after the active generation changes.
+
+References: [Moomoo funds](https://open.moomoo.com/api/trading/account/get-funds), [Moomoo positions](https://open.moomoo.com/api/trading/account/get-positions), [OpenD funds](https://openapi.futunn.com/futu-api-doc/en/trade/get-funds.html), [Webull balances](https://developer.webull.com/apis/docs/reference/account-balance/), [Tiger assets](https://docs-en.itigerup.com/docs/accounts-cpp), [IBKR NAV](https://www.ibkrguides.com/reportingreference/reportguide/net%20asset%20value%20%28nav%29%20summary%20in%20base.htm).

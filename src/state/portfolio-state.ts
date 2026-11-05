@@ -267,6 +267,12 @@ export interface BrokerConnectionMetrics {
   excess_liquidity?: number;
   /** Same-currency net assets returned by the broker, not reconstructed portfolio NAV. */
   broker_net_assets?: number;
+  source_as_of?: string;
+  broker_cash?: number;
+  broker_securities_assets?: number;
+  broker_market_value?: number;
+  broker_unrealized_pl?: number;
+  broker_realized_pl?: number;
   /** Omitted for a directly reported excess-liquidity value. */
   excess_liquidity_basis?: 'broker_net_assets_minus_maintenance';
   maintenance_margin?: number;
@@ -434,7 +440,7 @@ export function assertCashBalance(raw: unknown): CashBalance {
   return result;
 }
 
-const METRICS_NUMBER_KEYS = ['buying_power', 'excess_liquidity', 'maintenance_margin', 'fund_assets', 'broker_net_assets'] as const;
+const METRICS_NUMBER_KEYS = ['buying_power', 'excess_liquidity', 'maintenance_margin', 'fund_assets', 'broker_net_assets', 'broker_cash', 'broker_securities_assets', 'broker_market_value', 'broker_unrealized_pl', 'broker_realized_pl'] as const;
 
 /** Fail-fast validation for optional broker margin snapshot. */
 export function assertBrokerConnectionMetrics(
@@ -445,7 +451,7 @@ export function assertBrokerConnectionMetrics(
     throw new Error(`${ctx} must be an object.`);
   }
   const o = raw as Record<string, unknown>;
-  const allowed = new Set(['as_of', 'currency', 'excess_liquidity_basis', ...METRICS_NUMBER_KEYS]);
+  const allowed = new Set(['as_of', 'currency', 'source_as_of', 'excess_liquidity_basis', ...METRICS_NUMBER_KEYS]);
   for (const k of Object.keys(o)) {
     if (!allowed.has(k)) {
       throw new Error(`${ctx}: unknown field "${k}".`);
@@ -462,6 +468,10 @@ export function assertBrokerConnectionMetrics(
     throw new Error(`${ctx}.currency must be a 3–4 letter code (got "${o.currency}").`);
   }
   const result: BrokerConnectionMetrics = { as_of: o.as_of, currency };
+  if (o.source_as_of !== undefined) {
+    if (typeof o.source_as_of !== 'string' || !Number.isFinite(Date.parse(o.source_as_of))) throw new Error(`${ctx}.source_as_of must be a timestamp`);
+    result.source_as_of = o.source_as_of;
+  }
   for (const key of METRICS_NUMBER_KEYS) {
     const v = o[key];
     if (v == null) continue;

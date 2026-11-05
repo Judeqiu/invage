@@ -161,6 +161,10 @@ export function mapMooMooMarginMetrics(d: unknown, asOf: string): BrokerConnecti
   const reportedCurrency = String(rec.currency ?? '').trim().toUpperCase();
   const hasCurrency = /^[A-Z]{3,4}$/.test(reportedCurrency);
   const metrics: BrokerConnectionMetrics = {as_of:asOf,currency:hasCurrency ? reportedCurrency : 'USD'};
+  if (hasCurrency) for (const [native, key] of [
+    ['cash','broker_cash'], ['securities_assets','broker_securities_assets'], ['market_val','broker_market_value'],
+    ['unrealized_pl','broker_unrealized_pl'], ['realized_pl','broker_realized_pl'],
+  ] as const) { const value = parseNum(rec[native]); if (value != null) metrics[key] = value; }
   if (power != null) metrics.buying_power = power;
   if (maintenance != null) metrics.maintenance_margin = maintenance;
   const netAssets = parseNum(rec.total_assets);
@@ -295,6 +299,21 @@ export function mapMooMooBundleToStatement(bundle: MooMooRawBundle, channel: str
       stock_owner: ownerOf(item) ?? info.owner,
     } : item;
     const got = mapPosition(enriched, channel, seen);
+    if (got.lot) {
+      const h = got.lot.holding;
+      const b: NonNullable<Holding['broker_values']> = { source: 'moomoo.positions', as_of: bundle.fetched_at,
+        currency: got.lot.currency, units: h.units, avg_price: h.avg_price, ...(h.option ? {option_contract:structuredClone(h.option)} : {}) };
+      const mark = parseNum(enriched.nominal_price);
+      if (mark != null) b.mark = h.option ? mark * h.option.multiplier : mark;
+      for (const [field, key, valid] of [
+        ['market_val','market_value',undefined], ['pl_val','position_pl','pl_val_valid'],
+        ['pl_ratio','position_pl_pct','pl_ratio_valid'], ['unrealized_pl','unrealized_pl',undefined], ['realized_pl','realized_pl',undefined],
+      ] as const) {
+        const value = parseNum(enriched[field]);
+        if (value != null && (!valid || enriched[valid] !== false)) b[key] = value;
+      }
+      h.broker_values = b;
+    }
     if (got.skip?.reason === 'option missing multiplier') throw new BrokerParseError('MooMoo current option contract metadata unavailable; snapshot was not applied.');
     if (got.skip) skipped.push(got.skip);
     else if (got.lot) lots.push(got.lot);
@@ -307,7 +326,7 @@ export function mapMooMooBundleToStatement(bundle: MooMooRawBundle, channel: str
     lots,
     skipped,
   };
-  if (metrics) statement.metrics = metrics;
+  if (metrics) statement.metrics = { ...metrics, source_as_of: bundle.fetched_at };
   if (!includeHistory || bundle.history_error) return statement;
   const history = mapMooMooHistory(bundle, lots, channel);
   if (history) {
