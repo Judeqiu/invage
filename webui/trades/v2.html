@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Trades · Open options journal</title>
+  <title>Trades · Option transactions</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
@@ -16,8 +16,8 @@
   <main class="page">
     <header class="journal-header"><div class="label-eyebrow">Trades / All imported activity</div><button id="refresh" type="button" class="chip-btn">Refresh journal</button></header>
     <div class="journal-hero">
-      <div><div class="journal-tabs" role="group" aria-label="Journal view"><button id="openTab" type="button" class="chip-btn on" aria-pressed="true">Open book</button><button id="historyTab" type="button" class="chip-btn" aria-pressed="false">History</button></div>
-        <h1 id="journalTitle">Every open contract, journaled.</h1><p id="description">Your recorded option book, across every broker. Open a row to inspect its system ID, source fills and broker facts.</p>
+      <div><div class="journal-tabs" role="group" aria-label="Journal view"><button id="transactionsTab" type="button" class="chip-btn on" aria-pressed="true">All transactions</button><button id="openTab" type="button" class="chip-btn" aria-pressed="false">Open book</button><button id="historyTab" type="button" class="chip-btn" aria-pressed="false">History</button></div>
+        <h1 id="journalTitle">Every opening and closing fill.</h1><p id="description">Individual imported option transactions across your brokers, ordered by trade date.</p>
       </div>
       <div class="hero-filters"><div id="strategyFilters" class="pill-row" role="group" aria-label="Strategy filter"></div><div id="brokerFilters" class="pill-row" role="group" aria-label="Broker filter"></div></div>
     </div>

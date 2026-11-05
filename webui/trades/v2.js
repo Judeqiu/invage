@@ -1,6 +1,6 @@
 (() => {
   const $ = id => document.getElementById(id), M = globalThis.TradesV2;
-  const state = { open:null, history:null, view:'open', busy:false, channel:channelFromQuery(), strategy:'all', status:'all', collapsedMonths:new Set() };
+  const state = { open:null, history:null, transactions:null, view:'transactions', action:'all', busy:false, channel:channelFromQuery(), strategy:'all', status:'all', collapsedMonths:new Set() };
   if (state.channel === 'merged') state.channel = 'all';
   const name = ch => ({ all:'All platforms', ibkr:'IBKR', moomoo:'moomoo', tiger:'Tiger', webull:'Webull', default:'Unassigned' })[ch] || ch;
   const num = v => v == null || !Number.isFinite(Number(v)) ? '—' : Number(v).toLocaleString('en-US',{ maximumFractionDigits:4 });
@@ -12,14 +12,14 @@
   const dateId = date => date ? `${date.slice(8,10)}${date.slice(5,7)}${date.slice(2,4)}` : 'unknown';
   const labelId = r => `${r.underlying}-${r.right === 'put' ? 'P' : 'C'}${num(r.strike)}-${dateId(r.entryDate)}/${dateId(r.expiry)}-${({ibkr:'IB',moomoo:'MM',tiger:'TB',webull:'WB'})[r.channel] || name(r.channel)}`;
   const rowDate = r => formatReportDate(r.entryDate);
-  const dataRows = () => state.view === 'open' ? state.open?.rows || [] : (state.history?.rows || []).filter(r => !M.isOpen(r));
+  const dataRows = () => state.view === 'transactions' ? state.transactions?.rows || [] : state.view === 'open' ? state.open?.rows || [] : (state.history?.rows || []).filter(r => !M.isOpen(r));
   function selectOptions(id, values, title) {
     const value = $(id).value;
     $(id).innerHTML = `<option value="all">${esc(title)}</option>${values.map(v => `<option value="${esc(v)}">${esc(v === 'unknown' ? 'Unknown currency' : v)}</option>`).join('')}`;
     $(id).value = values.includes(value) ? value : 'all';
   }
   function filters() {
-    return { channel:state.channel, strategy:state.view === 'open' ? state.strategy : 'all', status:state.view === 'history' ? state.status : 'all',
+    return { channel:state.channel, action:state.action, strategy:state.view === 'open' ? state.strategy : 'all', status:state.view === 'history' ? state.status : 'all',
       ...Object.fromEntries(['ticker','right','year','month','currency'].map(id => [id,$(id).value])) };
   }
   function controls() {
@@ -29,20 +29,22 @@
     selectOptions('currency', [...new Set(rows.map(r => r.currency || 'unknown'))].sort(), 'All currencies');
     const months = Array.from({length:12},(_,i) => String(i+1).padStart(2,'0'));
     selectOptions('month', months, 'All months');
-    const channels = [...new Set([...(state.open?.rows || []), ...(state.history?.rows || [])].map(r => r.channel))].sort();
-    if (state.channel !== 'all' && !channels.includes(state.channel)) state.channel = 'all';
+    const channels = [...new Set([...(state.open?.rows || []), ...(state.history?.rows || []), ...(state.transactions?.rows || [])].map(r => r.channel))].sort();
+    if (state[state.view] && state.channel !== 'all' && !channels.includes(state.channel)) state.channel = 'all';
     $('brokerFilters').innerHTML = ['all',...channels].map(ch => `<button type="button" class="chip-btn${ch === state.channel ? ' on' : ''}" aria-pressed="${ch === state.channel}" data-channel="${esc(ch)}">${esc(name(ch))}</button>`).join('');
-    const options = state.view === 'open' ? ['all',...new Set(rows.map(M.strategies))] : ['all','Rolled','Closed','Partially closed','Expired / assigned','Needs review'];
+    const options = state.view === 'transactions' ? ['all',...new Set(rows.map(r => r.action))] : state.view === 'open' ? ['all',...new Set(rows.map(M.strategies))] : ['all','Rolled','Closed','Partially closed','Expired / assigned','Needs review'];
+    if (state.view === 'transactions' && state.transactions && !options.includes(state.action)) state.action = 'all';
     if (state.view === 'open' && !options.includes(state.strategy)) state.strategy = 'all';
-    const selected = state.view === 'open' ? state.strategy : state.status;
-    $('strategyFilters').setAttribute('aria-label', state.view === 'open' ? 'Strategy filter' : 'History status filter');
+    const selected = state.view === 'transactions' ? state.action : state.view === 'open' ? state.strategy : state.status;
+    $('strategyFilters').setAttribute('aria-label', state.view === 'transactions' ? 'Transaction action filter' : state.view === 'open' ? 'Strategy filter' : 'History status filter');
     $('strategyFilters').innerHTML = options.map(v => `<button type="button" class="chip-btn${v === selected ? ' on' : ''}" aria-pressed="${v === selected}" data-choice="${esc(v)}">${esc(v === 'all' ? 'All' : v)}</button>`).join('');
     $('openTab').textContent = `Open book${state.open ? ' · ' + state.open.rows.length : ''}`;
     $('historyTab').textContent = `History${state.history ? ' · ' + state.history.rows.filter(r => !M.isOpen(r)).length : ''}`;
-    for (const view of ['open','history']) { $(view+'Tab').classList.toggle('on',state.view === view); $(view+'Tab').setAttribute('aria-pressed',String(state.view === view)); }
-    $('journalTitle').textContent = state.view === 'open' ? 'Every open contract, journaled.' : 'Every outcome, with evidence.';
-    $('description').textContent = state.view === 'open' ? 'Open option contracts across your brokers. Select a row for fills, broker facts and your thesis.' : 'Completed contracts and unresolved history, built from imported executions and explicit broker events. A disappearing position does not prove assignment.';
-    $('basis').textContent = state.view === 'open'
+    $('transactionsTab').textContent = `All transactions${state.transactions ? ' · ' + state.transactions.rows.length : ''}`;
+    for (const view of ['transactions','open','history']) { $(view+'Tab').classList.toggle('on',state.view === view); $(view+'Tab').setAttribute('aria-pressed',String(state.view === view)); }
+    $('journalTitle').textContent = state.view === 'transactions' ? 'Every opening and closing fill.' : state.view === 'open' ? 'Every open contract, journaled.' : 'Every outcome, with evidence.';
+    $('description').textContent = state.view === 'transactions' ? 'Individual imported option transactions across your brokers, ordered by trade date. Closing fills remain visible after a position is closed or partially closed.' : state.view === 'open' ? 'Open option contracts across your brokers. Select a row for fills, broker facts and your thesis.' : 'Completed contracts and unresolved history, built from imported executions and explicit broker events. A disappearing position does not prove assignment.';
+    $('basis').textContent = state.view === 'transactions' ? 'Dates and times use the broker report’s clock; date-only records keep their original precision. Cash and signed fees or rebates are shown in each fill’s native currency. Net cash is gross cash plus signed fees, unavailable when fees are unknown. Transaction cash is not realised P&L. Unknown or mixed opening/closing intent is retained as reported.' : state.view === 'open'
       ? 'Premium is reconciled opening cash for the remaining open contracts, before fees. Returns % = premium ÷ strike notional; it is not annualized or a return on collateral. Entry dates are confirmed from fills; missing evidence remains unavailable.'
       : 'Realised P&L is shown only for complete matching fills or supported settlement evidence. “Before fees” identifies missing commissions. Assignment may move premium into stock basis. Rolls require verified broker order or execution links. Native currencies are never combined.';
   }
@@ -52,20 +54,25 @@
   function historyRow(r) {
     return `<tr data-row="${esc(r.id)}"><td><button type="button" class="row-link" data-detail="${esc(r.id)}">${esc(`${r.underlying} ${formatReportDate(r.expiry)} ${num(r.strike)} ${r.right.toUpperCase()}`)}</button><small>${esc(M.strategies(r))}</small></td><td>${badge(r.rolled ? 'Rolled' : r.status, /review|Incomplete|Unverified|conflict|observed/i.test(r.status) ? 'warning' : '')}</td><td>${esc(rowDate(r))}${!r.entryDate && r.observedSince ? `<small>First seen ${esc(formatReportDate(r.observedSince))}</small>` : ''}</td><td>${esc(formatReportDate(r.lastTrade))}</td><td>${esc(num(r.contracts))}</td><td class="${tone(r.premium)}">${esc(amt(r.premium,r.currency))}</td><td>${esc(amt(r.paidToClose,r.currency))}</td><td class="${tone(r.realizedPnl)}">${esc(amt(r.realizedPnl,r.currency))}${r.realizedPnl !== null ? `<small>${r.feeBasis === 'broker' ? 'Broker reported · fee basis unspecified' : r.feeBasis === 'gross' ? 'Before fees · incomplete commissions' : 'After reported fees'}</small>` : ''}</td><td>${esc(name(r.channel))}</td></tr>`;
   }
+  const exact = (value, currency = '') => value == null ? 'Unknown' : `${value}${currency ? ' ' + currency : ''}`;
+  function transactionRow(r) {
+    const e = r.execution;
+    return `<tr data-row="${esc(r.id)}"><td>${esc(e.executed_at.replace('T',' '))}</td><td><button type="button" class="row-link" data-detail="${esc(r.id)}">${esc(e.underlying+' '+e.expiry+' '+e.strike+' '+e.right.toUpperCase())}</button><small>${esc(e.execution_id)}</small></td><td>${badge(r.action,['unknown','mixed'].includes(e.effect) ? 'warning' : '')}</td><td>${esc(e.contracts)}</td><td class="${tone(e.gross_premium)}">${esc(exact(e.gross_premium))}</td><td>${esc(exact(e.commission))}</td><td>${esc(exact(e.net_premium))}</td><td>${esc(e.currency)}</td><td>${esc(name(e.channel))}<small>${esc(e.account_id)}</small></td></tr>`;
+  }
   function render() {
     controls();
-    const selected = filters(), rows = M.filter(dataRows(),selected);
+    const selected = filters(), rows = state.view === 'transactions' ? M.filterTransactions(dataRows(),selected) : M.filter(dataRows(),selected);
     // Calendar filters only change visibility; keep earlier opening cash in the running balance.
-    const balanceRows = M.filter(dataRows(),{...selected,year:'all',month:'all'});
-    const currencies = [...new Set(balanceRows.map(r => r.currency))];
+    const balanceRows = state.view === 'open' ? M.filter(dataRows(),{...selected,year:'all',month:'all'}) : [];
     const balances = M.cashBalances(balanceRows,0);
-    const columns = state.view === 'open' ? M.openColumns : M.historyColumns;
+    const columns = state.view === 'transactions' ? M.transactionColumns : state.view === 'open' ? M.openColumns : M.historyColumns;
     const tips = { ID:'Application-owned option-book ID, scoped to broker channel, account and contract terms. It stays the same across partial fills and repeated trades. Each execution has its own immutable system ID in details.',
       'Returns %':'Opening premium before fees divided by strike × remaining contracts × contract multiplier, for short options. Not annualized, collateral return, or realized P&L. Opening premium matches Portfolio. Dashboard Premium / Roll may also include the closing leg of the latest verified roll. Opening premium and position cost basis can differ; neither is substituted for the other.',
-      'Net cash':'Cumulative dated opening premiums starting at zero in the selected broker, strategy, ticker, right and currency scope, before fees. Year/month filters and collapsed months retain earlier cash carry. A single native currency is required. Same-day rows use stable ID order, not execution time. Missing cash or multiple opening dates make subsequent balances unavailable.',
+      'Net cash':state.view === 'transactions' ? 'This fill’s gross cash plus its signed fees or rebates, in the reported currency. Unknown fees leave net cash unavailable. This is transaction cash flow, not realised profit.' : 'Cumulative dated opening premiums starting at zero in the selected broker, strategy, ticker, right and currency scope, before fees. Year/month filters and collapsed months retain earlier cash carry. A single native currency is required. Same-day rows use stable ID order, not execution time. Missing cash or multiple opening dates make subsequent balances unavailable.',
       'Premium in':'Signed opening option cash before fees. Long option purchases are negative. Snapshot cost is never substituted for missing fills.' };
     let body = '';
-    if (state.view === 'history') body = `<tbody>${rows.map(historyRow).join('')}</tbody>`;
+    if (state.view === 'transactions') body = `<tbody>${rows.map(transactionRow).join('')}</tbody>`;
+    else if (state.view === 'history') body = `<tbody>${rows.map(historyRow).join('')}</tbody>`;
     else for (const year of M.groups(rows)) {
       const count = n => `${n} ${n === 1 ? 'entry' : 'entries'}`;
       body += `<tbody class="year-group"><tr class="group"><th colspan="11" scope="rowgroup"><span>${esc(year.year === 'Unknown' ? 'Entry date unavailable' : year.year)} <span class="group-count">· ${count(year.count)}</span></span></th></tr></tbody>`;
@@ -82,14 +89,14 @@
         body += `<tbody id="${bodyId}" data-month-entries="${esc(group.month)}" aria-label="${esc(title)} entries"${expanded ? '' : ' hidden'}>${group.entries.map(r => openRow(r,balances)).join('')}</tbody>`;
       }
     }
-    const loaded = state.view === 'open' ? state.open : state.history;
-    if (!rows.length) body = `<tbody><tr><td class="empty" colspan="${columns.length}">${!loaded ? 'Loading journal records…' : dataRows().length ? 'No entries match these filters.' : state.view === 'open' ? 'No open options on the books.' : 'No completed contracts or unresolved history recorded yet.'}</td></tr></tbody>`;
-    $('journalTable').innerHTML = `<table class="journal-table"><caption class="sr-only">${state.view === 'open' ? 'Open option book grouped by opening year and month' : 'Option history'} in each broker’s native currency</caption><thead><tr>${columns.map(c => `<th scope="col"><span class="col-label">${esc(c)}</span>${tips[c] ? help(c,tips[c]) : ''}</th>`).join('')}</tr></thead>${body}</table>`;
+    const loaded = state[state.view];
+    if (!rows.length) body = `<tbody><tr><td class="empty" colspan="${columns.length}">${!loaded ? 'Loading journal records…' : dataRows().length ? 'No entries match these filters.' : state.view === 'transactions' ? 'No imported option transactions recorded yet.' : state.view === 'open' ? 'No open options on the books.' : 'No completed contracts or unresolved history recorded yet.'}</td></tr></tbody>`;
+    $('journalTable').innerHTML = `<table class="journal-table"><caption class="sr-only">${state.view === 'transactions' ? 'Individual opening and closing option transactions' : state.view === 'open' ? 'Open option book grouped by opening year and month' : 'Option history'} in each broker’s native currency</caption><thead><tr>${columns.map(c => `<th scope="col"><span class="col-label">${esc(c)}</span>${tips[c] ? help(c,tips[c]) : ''}</th>`).join('')}</tr></thead>${body}</table>`;
     $('journalTable').setAttribute('aria-busy',String(!loaded));
     markSelection();
     $('entryCount').textContent = `${rows.length} ${rows.length === 1 ? 'entry' : 'entries'}`;
     const useSavedTotals = [selected.year, selected.month, selected.ticker, selected.right, selected.currency, selected.strategy, selected.status].every(value => !value || value === 'all');
-    const summary = useSavedTotals ? loaded?.aggregates?.[state.channel]?.totals : M.totals(rows);
+    const summary = state.view === 'transactions' ? [] : useSavedTotals ? loaded?.aggregates?.[state.channel]?.totals : M.totals(rows);
     $('totals').innerHTML = (summary || []).map(t => `<div><span class="label-eyebrow">${esc(t.currency)}</span><br>Contracts <strong>${num(t.contracts)}</strong> · Opening premium <strong>${esc(t.missing || t.currency === 'unknown' ? '—' : amt(t.premium,t.currency))}</strong>${t.missing ? `<br>${t.missing} rows lack opening cash; known subtotal ${esc(amt(t.premium,t.currency === 'unknown' ? '' : t.currency))}` : ''}${state.view === 'history' ? `<br>Realised P&L <strong>${esc(t.missingPnl || t.mixedBasis || t.currency === 'unknown' ? '—' : amt(t.pnl,t.currency))}</strong>${t.mixedBasis ? `<br>After-fee subtotal ${esc(amt(t.netSubtotal,t.currency))}<br>Before-fee subtotal ${esc(amt(t.grossSubtotal,t.currency))}${t.brokerPnl ? '<br>Broker-reported subtotal ' + esc(amt(t.brokerSubtotal,t.currency)) : ''}` : t.grossPnl ? ' · Before fees' : t.brokerPnl ? ' · Broker reported' : ''}${t.missingPnl ? `<br>${t.missingPnl} unresolved${t.mixedBasis ? '' : '; known subtotal ' + esc(amt(t.pnl,t.currency === 'unknown' ? '' : t.currency))}` : ''}` : ''}</div>`).join('');
     const gaps = state.history?.gaps || [];
     $('availability').hidden = !gaps.length;
@@ -122,7 +129,26 @@
     $('maximizeDetail').setAttribute('aria-label',maximized ? 'Restore side panel' : 'Maximize trade details');
     $('maximizeDetail').title = maximized ? 'Restore side panel' : 'Maximize';
   }
+  function showTransactionDetail(r, trigger) {
+    rememberDraft(); selectedRowId = r.id; opener = trigger; detailOptionId = detailRevision = null;
+    const e = r.execution;
+    $('detailTitle').textContent = `${e.underlying} · ${r.action}`;
+    $('detailSubtitle').textContent = `${e.expiry} · ${name(e.channel)} · ${e.currency}`;
+    const manual = e.spreadsheet_source;
+    const facts = [[manual ? 'Trade date (worksheet)' : 'Trade date / time (broker)',e.executed_at.replace('T',' ')],['Action',r.action],
+      ['Right',e.right],['Strike',e.strike],['Contracts',e.contracts],['Multiplier',e.multiplier],
+      ['Gross cash',exact(e.gross_premium,e.currency)],['Signed fees / rebate',exact(e.commission,e.currency)],
+      ['Net cash',exact(e.net_premium,e.currency)],['Broker account',e.account_id],
+      [manual ? 'Manual execution ID' : 'Broker execution ID',e.execution_id],['Contract ID',e.contract_id],
+      ...(manual ? [['Source worksheet',`${manual.sheet} · row ${manual.row}`],['Source SHA256',manual.sha256]] : [])];
+    $('detailBody').innerHTML = `<dl class="detail-facts">${facts.map(([k,v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl><p>Original imported execution. Cash is not realised P&amp;L. Unknown or mixed position effect is not inferred from buy/sell direction.</p>`;
+    if (!$('tradeDetail').open) $('tradeDetail').show();
+    panelMode($('tradeDetail').dataset.mode === 'maximized' ? 'maximized' : 'side');
+    markSelection(); $('detailBody').scrollTop = 0; $('tradeDetail').focus({preventScroll:true});
+  }
   function showDetail(id, trigger) {
+    const transaction = state.transactions?.rows.find(r => r.id === id);
+    if (transaction && state.view === 'transactions') { showTransactionDetail(transaction,trigger); return; }
     const r = [...(state.open?.rows || []),...(state.history?.rows || [])].find(r => r.id === id); if (!r) return;
     rememberDraft();
     selectedRowId = id;
@@ -189,12 +215,12 @@
   });
   $('strategyFilters').addEventListener('click',event => {
     const b = event.target.closest('[data-choice]'); if (!b) return;
-    state[state.view === 'open' ? 'strategy' : 'status'] = b.dataset.choice; render();
+    state[state.view === 'transactions' ? 'action' : state.view === 'open' ? 'strategy' : 'status'] = b.dataset.choice; render();
     $('strategyFilters').querySelector(`[data-choice="${CSS.escape(b.dataset.choice)}"]`)?.focus();
   });
   for (const id of ['ticker','right','year','month','currency']) $(id).addEventListener('change',render);
   $('clear').addEventListener('click',() => {
-    state.channel = state.strategy = state.status = 'all'; writeChannelQuery('all');
+    state.channel = state.strategy = state.status = state.action = 'all'; writeChannelQuery('all');
     for (const id of ['ticker','right','year','month','currency']) $(id).value = 'all';
     render();
   });
@@ -206,24 +232,32 @@
   async function load(refresh = false) {
     if (state.busy) return;
     state.busy = true; $('refresh').disabled = true; $('retry').disabled = true; $('historyFile').disabled = true; $('error').hidden = true;
-    $('status').textContent = state.view === 'history' ? 'Checking imported fills and retained broker evidence…' : 'Reading your option book…';
+    $('status').textContent = state.view === 'transactions' ? 'Reading opening and closing transactions…' : state.view === 'history' ? 'Checking imported fills and retained broker evidence…' : 'Reading your option book…';
     try {
-      if (!state.open || refresh) { state.open = await get('trades-v2' + (refresh ? '?refresh=1' : '')); render(); }
-      if (state.view === 'history' && (!state.history || refresh)) { state.history = await get('trades-v2/history' + (refresh ? '?refresh=1' : '')); render(); }
-      else if (refresh) state.history = null;
+      if (refresh) {
+        for (const view of ['transactions','open','history']) if (view !== state.view) state[view] = null;
+      }
+      if (!state[state.view] || refresh) {
+        const path = state.view === 'transactions' ? 'trades' : state.view === 'history' ? 'trades-v2/history' : 'trades-v2';
+        const data = await get(path + (refresh ? '?refresh=1' : ''));
+        state[state.view] = state.view === 'transactions' ? {...data,rows:M.transactionRows(data)} : data;
+      }
       render();
-      $('status').textContent = `Recorded journal · ${state.open.rows.length} open positions · Broker dates shown on each row · Refreshed ${new Date().toLocaleTimeString()}`;
+      $('status').textContent = state.view === 'transactions'
+        ? `Recorded journal · ${state.transactions.rows.length} imported transactions · Broker dates shown on each row · Refreshed ${new Date().toLocaleTimeString()}`
+        : `Recorded journal · ${state[state.view].rows.length} ${state.view === 'open' ? 'open positions' : 'history records'} · Broker dates shown on each row · Refreshed ${new Date().toLocaleTimeString()}`;
     } catch(error) {
       $('error').hidden = false; $('error').querySelector('p').textContent = error.name === 'AbortError' ? 'Journal loading timed out. Please retry.' : error.message || 'Could not load the journal.';
-      $('status').textContent = (state.view === 'open' ? state.open : state.history) ? 'Update failed · Showing the last loaded journal.' : 'Journal unavailable · Retry loading.';
-      if (!(state.view === 'open' ? state.open : state.history)) { $('journalTable').innerHTML = '<p class="empty">Journal records are unavailable. Use Retry loading above.</p>'; $('journalTable').setAttribute('aria-busy','false'); }
+      $('status').textContent = state[state.view] ? 'Update failed · Showing the last loaded journal.' : 'Journal unavailable · Retry loading.';
+      if (!state[state.view]) { $('journalTable').innerHTML = '<p class="empty">Journal records are unavailable. Use Retry loading above.</p>'; $('journalTable').setAttribute('aria-busy','false'); }
     } finally { state.busy = false; $('refresh').disabled = false; $('retry').disabled = false; $('historyFile').disabled = false; }
   }
   async function setView(view) {
     if (state.busy) return;
     state.view = view; render();
-    if (view === 'history' && !state.history) await load();
+    await load();
   }
+  $('transactionsTab').addEventListener('click',() => void setView('transactions'));
   $('openTab').addEventListener('click',() => void setView('open'));
   $('historyTab').addEventListener('click',() => void setView('history'));
   $('refresh').addEventListener('click',() => void load(true));
@@ -235,7 +269,7 @@
     try {
       const result = await readJson(await fetch('/api/domain/invage/trades/import',{ method:'POST',headers:{'Content-Type':'application/xml'},body:await file.text(),credentials:'same-origin' }));
       $('importStatus').textContent = result.message || 'Execution history imported. Updating journal…';
-      state.history = null; await load(true);
+      await load(true);
     } catch(error) { $('importStatus').textContent = error.message || 'Import failed. Existing records are retained.'; }
     finally { $('historyFile').disabled = false; $('historyFile').value = ''; }
   });

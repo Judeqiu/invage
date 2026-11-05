@@ -1,6 +1,17 @@
 (() => {
   const openColumns = ['Entry date','ID','Ticker','Strategy','Strike','Expiry','Contracts','Premium','Returns %','Net cash','Broker'];
   const historyColumns = ['Contract','Status','Opened','Last trade','Contracts','Premium in','Paid to close','Realised P&L','Broker'];
+  const transactionColumns = ['Trade date / time','Contract','Action','Contracts','Gross cash','Fees / rebate','Net cash','Currency','Broker / account'];
+  function transactionRows(journal) {
+    return (journal?.executions || []).map(e => ({
+      id:JSON.stringify([e.channel,e.account_id,e.execution_id]), underlying:e.underlying, right:e.right,
+      channel:e.channel, currency:e.currency, entryDate:e.executed_at.slice(0,10),
+      action:`${e.side} to ${e.effect}`, execution:e,
+    })).sort((a,b) => b.execution.executed_at.localeCompare(a.execution.executed_at) || a.id.localeCompare(b.id));
+  }
+  function filterTransactions(rows, f) {
+    return filter(rows,{...f,strategy:'all',status:'all'}).filter(r => f.action === 'all' || r.action === f.action);
+  }
   const strategies = row => row.side === 'unknown' ? 'Unknown side' : `${row.side === 'short' ? 'Short' : 'Long'} ${row.right}`;
   const isOpen = row => ['Open in recorded fills','Observed open'].includes(row.status);
   function filter(rows, f) {
@@ -58,5 +69,5 @@
     }
     return [...byCurrency.values()].map(t => ({ ...t, mixedBasis:[t.grossPnl,t.netPnl,t.brokerPnl].filter(Boolean).length > 1, returnsPct:!t.missing && t.shortOnly && t.denominator > 0 ? t.premium / t.denominator * 100 : null }));
   }
-  globalThis.TradesV2 = { openColumns, historyColumns, strategies, isOpen, filter, cashBalances, groups, monthTotals, totals };
+  globalThis.TradesV2 = { openColumns, historyColumns, transactionColumns, transactionRows, filterTransactions, strategies, isOpen, filter, cashBalances, groups, monthTotals, totals };
 })();

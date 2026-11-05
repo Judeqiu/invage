@@ -1,3 +1,4 @@
+import { buildExecutionJournal } from '../src/brokers/option-executions.js';
 import { buildTradeProjections } from '../src/report/page-projections.js';
 import { expect, it } from 'vitest';
 import { createServer } from 'node:http';
@@ -25,7 +26,7 @@ it('switches Trades independently and preserves Dashboard, Positions and all V1 
   } finally { rmSync(file,{force:true}); }
 });
 const executablePath = process.env.CHROME_BINARY || '/usr/bin/chromium';
-it.skipIf(!existsSync(executablePath))('renders both exact column sets, lazy history, filters, IDs, cash and accessible mobile details', async () => {
+it.skipIf(!existsSync(executablePath))('renders all transactions by default, both existing column sets, lazy history, filters, IDs, cash and accessible mobile details', async () => {
   const root = resolve('webui'), state = tradesFixture();
   const open = {...tradesOpenBook(state),revision:1};
   open.rows[0].orderFees = [{orderId:'parent-1',currency:'USD',total:'3.88',items:[{type:'Platform Fee <img src=x onerror=alert(1)>',amount:'3.88'}]}];
@@ -34,6 +35,14 @@ it.skipIf(!existsSync(executablePath))('renders both exact column sets, lazy his
   open.rows.push({...open.rows[0],id:'august',underlying:'NVDA',entryDate:'2026-08-20',entryThrough:'2026-08-20',premium:'200'});
   open.rows.push({...open.rows[0],id:'previous-year',underlying:'NVDA',entryDate:'2025-12-31',entryThrough:'2025-12-31',premium:'100'});
   state.option_executions!.push(optionFill({execution_id:'close-2',executed_at:'2026-10-02T10:00:00',contracts:'1',side:'buy',effect:'close',gross_premium:'-49.99'}));
+  const journal = buildExecutionJournal([...state.option_executions!,
+    optionFill({execution_id:'long-open',side:'buy',effect:'open',right:'call',gross_premium:'-123.456789',commission:'0',executed_at:'2026-08-01T10:00:00'}),
+    optionFill({execution_id:'long-close',side:'sell',effect:'close',right:'call',gross_premium:'150.50',commission:'0.25',executed_at:'2026-10-03T10:00:00'}),
+    optionFill({execution_id:'unknown',effect:'unknown',commission:null,executed_at:'2026-10-04T10:00:00'}),
+    optionFill({execution_id:'mixed',effect:'mixed',executed_at:'2026-10-05T10:00:00'}),
+    optionFill({execution_id:'manual:spreadsheet:'+ 'a'.repeat(64) + ':1',effect:'unknown',executed_at:'2025-08-01',
+      spreadsheet_source:{sha256:'a'.repeat(64),file_id:'worksheet',sheet:'Trades',row:1,date_precision:'day',multiplier_basis:'user_approved'}}),
+    optionFill({execution_id:'close-1',channel:'tiger',account_id:'T1',currency:'HKD',gross_premium:'0',commission:'0',side:'buy',effect:'close'})]);
   const history = {...tradesHistory(state),revision:1,gaps:[{channel:'tiger',reason:'Incomplete archive <img src=x onerror=alert(1)>'}]};
   history.rows.push({...history.rows[0],id:'retained-fill',optionId:'retained-option',underlying:'OLD',status:'Incomplete history',
     entryDate:null,entryThrough:null,lastTrade:'2026-07-18',expiry:'2026-07-17',strike:'100',channel:'moomoo',accountId:'A1',multiplier:null,premium:null,netCash:null,paidToClose:null,realizedPnl:null,executions:[],
@@ -46,6 +55,11 @@ it.skipIf(!existsSync(executablePath))('renders both exact column sets, lazy his
       res.setHeader('Content-Type','application/json');
       if (noteFail) {res.statusCode = 409;return res.end(JSON.stringify({message:'Journal changed. Your draft is still shown.'}));}
       const note = JSON.parse(body);return res.end(JSON.stringify({text:note.text,revision:note.revision+1,updatedAt:'2026-10-20T10:00:00Z'}));
+    }
+    if (url.pathname === '/api/domain/invage/trades') {
+      res.setHeader('Content-Type','application/json');
+      if (fail) {res.statusCode = 503;return res.end(JSON.stringify({message:'Temporary transaction failure'}));}
+      return res.end(JSON.stringify(journal));
     }
     if (url.pathname.endsWith('/trades-v2') || url.pathname.endsWith('/trades-v2/history')) {
       res.setHeader('Content-Type','application/json');
@@ -66,6 +80,46 @@ it.skipIf(!existsSync(executablePath))('renders both exact column sets, lazy his
     await page.setRequestInterception(true); page.on('request',r => r.url().startsWith(origin) ? r.continue() : r.abort());
     await page.setViewport({width:1440,height:1000});
     await page.goto(origin+'/trades/v2.html'); await page.waitForSelector('#refresh:enabled');
+    expect(openRequests).toBe(0); expect(historyRequests).toBe(0);
+    expect(await page.$eval('#transactionsTab',n => n.getAttribute('aria-pressed'))).toBe('true');
+    expect(await page.$$('[data-row]')).toHaveLength(journal.executions.length);
+    const transactionText = await page.$eval('#journalTable',n => n.textContent);
+    for (const action of ['sell to open','buy to close','buy to open','sell to close','sell to unknown','sell to mixed']) expect(transactionText).toContain(action);
+    expect(transactionText).toContain('-123.456789');
+    await page.select('#year','2026'); await page.select('#month','10');
+    await page.click('[data-choice="buy to close"]');
+    expect(await page.$$('[data-row]')).toHaveLength(2);
+    // Opening in September must not hide either October closing fill.
+    expect(await page.$eval('#journalTable',n => n.textContent)).toContain('2026-10-01 10:00:00');
+    await page.click('[data-detail]');await page.waitForSelector('#tradeDetail[open]');
+    expect(await page.$eval('#detailBody',n => n.textContent)).toContain('buy to close');
+    expect(await page.$('#saveNote')).toBeNull();await page.click('#closeDetail');
+    await page.click('#clear');await page.select('#year','2025');
+    expect(await page.$$('[data-row]')).toHaveLength(1);
+    expect(await page.$eval('[data-row] td',n => n.textContent)).toBe('2025-08-01');
+    await page.click('[data-detail]');
+    expect(await page.$eval('#detailBody',n => n.textContent)).toContain('Source worksheetTrades · row 1');
+    expect(await page.$eval('#detailBody',n => n.textContent)).toContain('Trade date (worksheet)');
+    await page.click('#closeDetail');
+    await page.click('#clear');await page.click('[data-channel="tiger"]');
+    expect(await page.$$('[data-row]')).toHaveLength(1);
+    expect(await page.$$eval('[data-row] td',ns => ns.slice(4,7).map(n => n.textContent))).toEqual(['0','0','0']);
+    await page.click('#clear');await page.click('[data-choice="sell to unknown"]');
+    expect(await page.$$eval('[data-row] td',ns => ns.slice(5,7).map(n => n.textContent))).toEqual(['Unknown','Unknown']);
+    await page.click('#clear');
+    for (const width of [1440,390]) {
+      await page.setViewport({width,height:900});
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await page.click('[data-detail]');await page.waitForSelector('#tradeDetail[open]');
+      expect(await page.$eval('#detailBody',n => n.textContent)).toContain('Broker execution ID');
+      await page.screenshot({path:`/tmp/invage-trades-transactions-${width}.png`,fullPage:true});
+      await page.click('#closeDetail');
+    }
+    fail = true;await page.click('#refresh');await page.waitForSelector('#error:not([hidden])');
+    expect(await page.$$('[data-row]')).toHaveLength(journal.executions.length);
+    fail = false;await page.click('#retry');await page.waitForSelector('#refresh:enabled');
+    await page.setViewport({width:1440,height:1000});
+    await page.click('#openTab');await page.waitForSelector('#refresh:enabled');
     expect(openRequests).toBe(1); expect(historyRequests).toBe(0);
     const columns = () => page.$$eval('.journal-table thead .col-label',nodes => nodes.map(n => n.textContent));
     expect(await columns()).toEqual(['Entry date','ID','Ticker','Strategy','Strike','Expiry','Contracts','Premium','Returns %','Net cash','Broker']);
@@ -187,4 +241,4 @@ it.skipIf(!existsSync(executablePath))('renders both exact column sets, lazy his
     expect(await page.$eval('[data-month-toggle="2026-08"]',n => n.getAttribute('aria-expanded'))).toBe('false');
     expect(errors).toEqual([]);
   } finally {await browser.close();server.closeAllConnections();await new Promise<void>(r => server.close(() => r()));}
-},30000);
+},60000);

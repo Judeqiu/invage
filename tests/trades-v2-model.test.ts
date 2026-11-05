@@ -1,8 +1,31 @@
 import { expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
+import { buildExecutionJournal } from '../src/brokers/option-executions.js';
+import { optionFill } from './helpers/trades-fixture.js';
 const context: any = {};runInNewContext(readFileSync('webui/trades/model.js','utf8'),context);const model = context.TradesV2;
 const row = (patch: any = {}) => ({id:'1',entryDate:'2026-10-01',entryThrough:'2026-10-01',currency:'USD',premium:'200',contracts:'1',side:'short',strike:'100',multiplier:'100',realizedPnl:null,feeBasis:'unknown',...patch});
+it('preserves every opening and closing transaction, account identity, original cash and trade dates', () => {
+  const journal = buildExecutionJournal([optionFill(),
+    optionFill({execution_id:'close',effect:'close',side:'buy',executed_at:'2026-10-01T10:00:00',gross_premium:'-12.345678',commission:'0.25'}),
+    optionFill({execution_id:'close',channel:'tiger',account_id:'T1',effect:'close',side:'sell',right:'call',currency:'HKD',commission:null}),
+    optionFill({execution_id:'unknown',effect:'unknown'}),optionFill({execution_id:'mixed',effect:'mixed'}),
+    optionFill({execution_id:'manual:spreadsheet:'+ 'a'.repeat(64) + ':1',effect:'unknown',executed_at:'2026-08-01',
+      spreadsheet_source:{sha256:'a'.repeat(64),file_id:'worksheet',sheet:'Trades',row:1,date_precision:'day',multiplier_basis:'user_approved'}})]);
+  const before = JSON.stringify(journal), rows = model.transactionRows(journal);
+  expect(rows).toHaveLength(journal.executions.length);
+  expect(new Set(rows.map((r: any) => r.id)).size).toBe(rows.length);
+  expect(JSON.stringify(journal)).toBe(before);
+  expect(rows.map((r: any) => r.execution)).toEqual(expect.arrayContaining(journal.executions));
+  const f = {channel:'all',ticker:'all',right:'all',currency:'all',year:'2026',month:'10',action:'buy to close'};
+  const closing = model.filterTransactions(rows,f);
+  expect(closing).toHaveLength(1);
+  expect(closing[0].execution).toMatchObject({gross_premium:'-12.345678',commission:'0.25',net_premium:'-12.095678',executed_at:'2026-10-01T10:00:00'});
+  expect(model.filterTransactions(rows,{...f,month:'09',action:'sell to close',channel:'tiger',right:'call',currency:'HKD'})[0].execution.commission).toBeNull();
+  expect(rows.some((r: any) => r.action === 'sell to unknown')).toBe(true);
+  expect(rows.some((r: any) => r.action === 'sell to mixed')).toBe(true);
+  expect(rows.find((r: any) => r.execution.spreadsheet_source).execution.executed_at).toBe('2026-08-01');
+});
 it('calculates chronological cash only with a seed and one native currency, and stops at gaps', () => {
   const rows = [row({id:'2',entryDate:'2026-10-02',entryThrough:'2026-10-02',premium:'300'}),row()];
   expect(model.cashBalances(rows,1000).get('2')).toBe(1500);
