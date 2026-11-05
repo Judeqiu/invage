@@ -13,7 +13,7 @@ import type { InvestorState } from '../src/state/portfolio-state.js';
 await useTestDatabase({books:true});
 beforeAll(async()=>{const {migrateBooks}=await import('../src/books/index.js');await migrateBooks();});
 it('persists a signed holding correction with a framework-valid audited date and unchanged cash',async()=>{
- const user=randomUUID();await createInvestorFixture({user:{id:user,created_at:'2026-11-05',auth_token:randomUUID()},profile:{display_name:'Repair',contact_email:''},log:[],portfolio:{'AAA@manual':{instrument:'equity' as const,units:1,avg_price:-7,currency:'USD',channel:'manual'}},cash:[{currency:'USD',amount:5,channel:'manual',updated_at:'2026-11-05'}]});
+ const user=randomUUID();await createInvestorFixture({user:{id:user,created_at:'2026-11-05',auth_token:randomUUID()},profile:{display_name:'Repair',contact_email:`repair-${user}@test.local`},log:[],portfolio:{'AAA@manual':{instrument:'equity' as const,units:1,avg_price:-7,currency:'USD',channel:'manual'}},cash:[{currency:'USD',amount:5,channel:'manual',updated_at:'2026-11-05'}]});
  const before=await loadInvestor(user),tool=createCalculationTools(true).find(t=>t.name==='correct_holding')!;
  const args={user_id:user,mode:'preview',key:'AAA@manual',expected_revision:before.revision,patch:{avg_price:-9},evidence:'User supplied statement shows signed diluted cost -9',reason:'Approved cost correction preserving source sign'};
  const preview=(await tool.execute('preview',args)).details as any;expect(preview.error).toBeUndefined();
@@ -22,7 +22,7 @@ it('persists a signed holding correction with a framework-valid audited date and
  const persisted=await loadInvestor(user);expect(persisted.state.cash).toEqual(before.state.cash);expect(persisted.state.log.at(-1)).toMatchObject({ts:new Date().toISOString().slice(0,10),action:'holding_corrected'});
 });
 it('persists version-pinned broker-value recovery without replacing local holdings, cash, costs or history',async()=>{
- const user=randomUUID(),state:InvestorState={user:{id:user,created_at:'2026-11-05',auth_token:randomUUID()},profile:{display_name:'Archive repair',contact_email:''},log:[]};
+ const user=randomUUID(),state:InvestorState={user:{id:user,created_at:'2026-11-05',auth_token:randomUUID()},profile:{display_name:'Archive repair',contact_email:`archive-${user}@test.local`},log:[]};
  const source=addBrokerSource(state,'ibkr',{token:'fixture'}),id=addBrokerAccount(state,{source_id:source,account_id:'U1',label:'Test',config:{activity_query_id:'123'}});
  const model=readBrokerAccountModel(state),conn=model.connections[id],channel=conn.channel;
  conn.last_sync={at:'2026-11-05T11:00:00Z',ok:true,as_of:'2026-11-05'};conn.metrics={as_of:'2026-11-05',currency:'USD',broker_net_assets:20};persistBrokerAccountModel(state,model);
