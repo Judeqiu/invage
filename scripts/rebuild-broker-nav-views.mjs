@@ -6,7 +6,7 @@ import {resolve,join,isAbsolute} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {createHash} from 'node:crypto';
 import {openDatabaseRuntime,bindDatabaseRuntime} from 'utarus/database';
-import {buildLivePositions,buildDashboardModel} from '../src/report/dashboard-model.ts';
+import {buildLivePositions} from '../src/report/dashboard-model.ts';
 import {applyBrokerNav} from '../src/report/broker-nav.ts';
 import {buildPageProjections} from '../src/report/page-projections.ts';
 import {buildBrokerProjections} from '../src/report/broker-projections.ts';
@@ -16,6 +16,7 @@ import {projectionLocation} from '../src/state/projection-files.ts';
 import {readBrokerAccountModel} from '../src/brokers/accounts.ts';
 import {getPortfolio} from '../src/state/portfolio-state.ts';
 import {attachDailyChanges} from '../src/report/daily-changes.ts';
+async function main(){
 const [phase,runtimeRoot,stage,selected]=process.argv.slice(2);
 if(!['stage','publish'].includes(phase)||![runtimeRoot,stage,process.env.UTARUS_DATA_ROOT].every(p=>p&&isAbsolute(p)))throw Error('Explicit phase, runtime, private staging directory and data root required');
 process.env.UTARUS_LOADED_BY_HOST='1';
@@ -75,3 +76,6 @@ try{
   console.log(JSON.stringify({published,retainedNewer:retained,sourceChanged:changed}));
  }
 }finally{release();await db.close();}
+
+}
+await main().catch(error=>{console.error(error instanceof Error ? error.message : String(error));process.exitCode=1;});
