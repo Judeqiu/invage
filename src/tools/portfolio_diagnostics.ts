@@ -132,7 +132,7 @@ export function createCalculationTools(write = false): AgentTool[] {
       if (p.mode === 'preview') return result({ preview_token, revision: snapshot.revision, before, after: next, cash_changed: false });
       if (p.preview_token !== preview_token) throw new Error('Correction differs from preview; preview again');
       snapshot.state.portfolio = { ...getPortfolio(snapshot.state), [p.key]: next };
-      snapshot.state.log.push({ ts: new Date().toISOString(), action: 'holding_corrected', ticker: p.key, before: structuredClone(before), after: structuredClone(next), evidence: p.evidence, reason: p.reason });
+      snapshot.state.log.push({ ts: new Date().toISOString().slice(0,10), recorded_at: new Date().toISOString(), action: 'holding_corrected', ticker: p.key, before: structuredClone(before), after: structuredClone(next), evidence: p.evidence, reason: p.reason });
       await saveInvestor(snapshot);
       const persisted = await loadInvestor(snapshot.state.user.id);
       if (!isDeepStrictEqual(getPortfolio(persisted.state)[p.key], next)) throw new Error('Correction saved but persisted readback differs; investigate before retrying');

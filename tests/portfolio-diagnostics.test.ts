@@ -51,6 +51,7 @@ describe('calculation diagnostics and guarded repairs', () => {
     expect(applied).toMatchObject({applied:true,cash_changed:false,after:{units:0,avg_price:-9},calculation_status:'ready'});
     expect(saveInvestor).toHaveBeenCalledOnce();
     expect(snapshot.state.log[0]).toMatchObject({action:'holding_corrected',evidence:args.evidence});
+    expect(snapshot.state.log[0].ts).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
   it('rejects stale repairs and exposes writes only to Bookkeeper', async () => {
     expect(createCalculationTools().map(t=>t.name)).toEqual(['inspect_portfolio_calculation','read_calculation_source']);

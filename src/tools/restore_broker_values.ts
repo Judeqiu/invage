@@ -65,7 +65,7 @@ export function createRestoreBrokerValuesTool(): AgentTool {
         snapshot.state.portfolio=prepared.portfolio;
         if (prepared.metrics) conn.metrics=prepared.metrics; else delete conn.metrics;
         persistBrokerAccountModel(snapshot.state,model);
-        snapshot.state.log.push({ts:new Date().toISOString(),action:'broker_values_restored',connection_id:p.connection_id,archive_id:p.file_id,sha256,reason:p.reason,updated_holdings:prepared.updated});
+        snapshot.state.log.push({ts:new Date().toISOString().slice(0,10),recorded_at:new Date().toISOString(),action:'broker_values_restored',connection_id:p.connection_id,archive_id:p.file_id,sha256,reason:p.reason,updated_holdings:prepared.updated});
         await saveInvestor(snapshot);
         const after=await loadInvestor(snapshot.state.user.id);
         const verify=prepareBrokerValueRestore(after.state,p.connection_id,statement);
