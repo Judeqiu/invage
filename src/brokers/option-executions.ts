@@ -23,6 +23,25 @@ export interface OptionExecution {
   commission: string | null;
   /** Manual journal provenance. Date-only records never claim a broker timestamp. */
   spreadsheet_source?: { sha256: string; file_id: string; sheet: string; row: number; date_precision: 'day'; multiplier_basis: 'user_approved' };
+  /** Independent broker evidence that established a previously unknown position effect. */
+  effect_evidence?: ExecutionEffectEvidence[];
+}
+export interface ExecutionEffectEvidence {
+  kind: 'broker_statement' | 'broker_positions' | 'broker_order';
+  source_sha256: string; source_file_id: string; reference: string;
+}
+function effectEvidence(raw: unknown): ExecutionEffectEvidence[] | undefined {
+  if (raw === undefined) return;
+  if (!Array.isArray(raw) || !raw.length) throw new Error('Execution effect evidence must be nonempty');
+  const records = raw.map((e: ExecutionEffectEvidence) => {
+    if (!e || Object.keys(e).sort().join(',') !== 'kind,reference,source_file_id,source_sha256' ||
+      !['broker_statement','broker_positions','broker_order'].includes(e.kind) || !/^[a-f0-9]{64}$/.test(e.source_sha256) ||
+      typeof e.source_file_id !== 'string' || !e.source_file_id || e.source_file_id.startsWith('/') ||
+      e.source_file_id.includes('\\') || e.source_file_id.split('/').some(p => !p || p === '.' || p === '..') ||
+      typeof e.reference !== 'string' || !e.reference.trim()) throw new Error('Invalid execution effect evidence');
+    return {kind:e.kind,source_sha256:e.source_sha256,source_file_id:e.source_file_id,reference:e.reference};
+  });
+  return [...new Map(records.map(e => [JSON.stringify(e),e])).values()].sort((a,b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
 }
 
 export function decimal(value: unknown): string {
@@ -60,9 +79,10 @@ export function assertOptionExecution(raw: unknown): OptionExecution {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Option execution must be an object');
   const r = raw as Record<string, unknown>;
   const fields = ['channel', 'account_id', 'execution_id', 'contract_id', 'executed_at', 'underlying', 'right', 'expiry', 'strike', 'multiplier', 'contracts', 'side', 'effect', 'currency', 'gross_premium', 'commission'];
-  for (const key of Object.keys(r)) if (!fields.includes(key) && key !== 'spreadsheet_source') throw new Error(`Unknown execution field: ${key}`);
+  for (const key of Object.keys(r)) if (!fields.includes(key) && key !== 'spreadsheet_source' && key !== 'effect_evidence') throw new Error(`Unknown execution field: ${key}`);
   for (const key of fields) if (!(key === 'commission' && r[key] === null) && (typeof r[key] !== 'string' || !r[key].trim())) throw new Error(`Execution ${key} is required`);
   const e = r as unknown as OptionExecution;
+  const evidence = effectEvidence(e.effect_evidence);
   if (!['call', 'put'].includes(e.right) || !['buy', 'sell'].includes(e.side) || !['open', 'close', 'mixed', 'unknown'].includes(e.effect)) throw new Error('Invalid execution action or right');
   if (!/^[A-Z]{3,4}$/.test(e.currency)) throw new Error('Invalid execution currency');
   if (e.spreadsheet_source !== undefined) {
@@ -70,7 +90,8 @@ export function assertOptionExecution(raw: unknown): OptionExecution {
     if (!s || Object.keys(s).sort().join(',') !== 'date_precision,file_id,multiplier_basis,row,sha256,sheet' ||
       !/^[a-f0-9]{64}$/.test(s.sha256) || !s.file_id?.trim() || !s.sheet?.trim() ||
       !Number.isSafeInteger(s.row) || s.row < 1 || s.date_precision !== 'day' || s.multiplier_basis !== 'user_approved' ||
-      !e.execution_id.startsWith(`manual:spreadsheet:${s.sha256}:`) || !validDate(e.executed_at) || e.effect !== 'unknown') {
+      !e.execution_id.startsWith(`manual:spreadsheet:${s.sha256}:`) || !validDate(e.executed_at) ||
+      e.effect !== 'unknown' && !evidence?.some(item => item.kind === 'broker_statement')) {
       throw new Error('Invalid manual spreadsheet provenance or date');
     }
   }
@@ -86,7 +107,8 @@ export function assertOptionExecution(raw: unknown): OptionExecution {
   const source = e.spreadsheet_source;
   return { ...Object.fromEntries(fields.map(key => [key, key === 'underlying' ? underlying : r[key]])),
     ...(source ? { spreadsheet_source: { sha256:source.sha256, file_id:source.file_id, sheet:source.sheet,
-      row:source.row, date_precision:source.date_precision, multiplier_basis:source.multiplier_basis } } : {}) } as unknown as OptionExecution;
+      row:source.row, date_precision:source.date_precision, multiplier_basis:source.multiplier_basis } } : {}),
+    ...(evidence ? {effect_evidence:evidence} : {}) } as unknown as OptionExecution;
 }
 
 export function mergeOptionExecutions(existing: unknown, incoming: unknown): OptionExecution[] {
@@ -107,9 +129,11 @@ export function mergeOptionExecutions(existing: unknown, incoming: unknown): Opt
       // An unreported fee may become available after settlement. Keep known
       // fees when an overlapping source still omits them; never revise money.
       const effect = mergeExecutionEffect(prior.effect, row.effect);
-      if (JSON.stringify(normalized({ ...prior,commission:null,effect })) === JSON.stringify(normalized({ ...row,commission:null,effect })) &&
-          (prior.commission === null || row.commission === null || JSON.stringify(normalized({...prior,effect})) === JSON.stringify(normalized({...row,effect})))) {
-        byId.set(key, { ...prior, effect, commission: prior.commission ?? row.commission });
+      const {effect_evidence:oldEvidence,...oldFields} = prior, {effect_evidence:newEvidence,...newFields} = row;
+      if (JSON.stringify(normalized({ ...oldFields,commission:null,effect })) === JSON.stringify(normalized({ ...newFields,commission:null,effect })) &&
+          (prior.commission === null || row.commission === null || JSON.stringify(normalized({...oldFields,effect})) === JSON.stringify(normalized({...newFields,effect})))) {
+        const evidence = effectEvidence([...(oldEvidence ?? []),...(newEvidence ?? [])].length ? [...(oldEvidence ?? []),...(newEvidence ?? [])] : undefined);
+        byId.set(key, { ...prior, effect, commission: prior.commission ?? row.commission, ...(evidence ? {effect_evidence:evidence} : {}) });
         continue;
       }
       throw new Error(`Execution conflict: ${key}`);

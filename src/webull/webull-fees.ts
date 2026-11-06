@@ -27,6 +27,14 @@ export function webullOrderWithDetails(bundle: WebullRawBundle, row: Row): Row {
           row.client_order_id != null && detail.client_order_id != null && row.client_order_id !== detail.client_order_id) throw new Error('Webull fee order/account mismatch');
       const result = {...row};
       for (const field of ['commission','actual_commission','fees','currency']) if (detail[field] != null) result[field] = detail[field];
+      if (detail.position_intent != null) {
+        const intent = detail.position_intent;
+        if (!['BUY_TO_OPEN','BUY_TO_CLOSE','SELL_TO_OPEN','SELL_TO_CLOSE'].includes(intent) ||
+          !intent.startsWith(String(row.side)+'_') || row.position_intent != null && row.position_intent !== intent) {
+          throw new Error('Webull detail position intent conflicts with historical order');
+        }
+        result.position_intent = intent;
+      }
       return result;
     }
   }

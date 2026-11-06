@@ -14,6 +14,13 @@ const bundle = (orders: unknown[]): WebullRawBundle => ({ schema: 'invage.webull
   region: 'us', host: 'api.webull.com', account_id: 'account', accounts: fixture('accounts'), balances: fixture('balances'),
   positions: fixture('positions'), option_history: [{ orders }] });
 describe('Webull historical option orders', () => {
+  it('recovers explicit intent from the exact child detail and rejects contradictions',()=>{
+    const raw=bundle([order({position_intent:undefined})]);
+    raw.order_details=[{orders:[order({position_intent:'BUY_TO_CLOSE'})]}];
+    expect(mapWebullBundleToStatement(raw,'webull').option_executions![0].effect).toBe('close');
+    (raw.order_details[0] as any).orders[0].position_intent='SELL_TO_CLOSE';
+    expect(()=>mapWebullBundleToStatement(raw,'webull')).toThrow(/intent conflicts/);
+  });
   it('reconciles order gross premium with native position IDs and retains unknown fees', () => {
     const s = mapWebullBundleToStatement(bundle([order()]), 'webull');
     expect(s.option_executions?.[0]).toMatchObject({ executed_at: '2026-09-16T10:00:00', gross_premium: '-225.000', commission: null, contracts: '2' });
