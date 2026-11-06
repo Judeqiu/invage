@@ -109,3 +109,41 @@ button:focus-visible,select:focus-visible,input:focus-visible,[tabindex]:focus-v
 .journal-badge { padding:0 4px; line-height:20px; }
 .broker-date { display:inline-block; margin-left:5px; border:0; font-size:.65rem; }
 .journal-note { line-height:1.4; margin:.5rem 0; }
+
+/* Transaction inspector: exact values remain readable at every panel size. */
+#tradeDetail .detail-header { padding:1.1rem 1.25rem; }
+#tradeDetail h2 { font:600 1.35rem/1.35 var(--font-sans); margin:.8rem 0 .35rem; letter-spacing:-.02em; }
+#tradeDetail #detailSubtitle { margin:0; line-height:1.7; }
+#tradeDetail .detail-actions .chip-btn { border-radius:.5rem; }
+#tradeDetail #detailBody { padding:1.25rem; }
+#detailBody .detail-section { margin:1.5rem 0 0; padding-top:1.25rem; border-top:1px solid var(--border); }
+#detailBody .detail-section:first-child { margin-top:0; padding-top:0; border-top:0; }
+#detailBody .detail-section h3,#detailBody .detail-result h3 { margin:0 0 .85rem; font:600 .8rem/1.5 var(--font-sans); }
+#detailBody .detail-facts { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1rem 1.25rem; margin:0; }
+#detailBody .detail-facts > div { min-width:0; }
+#detailBody .detail-facts dt { font:.68rem/1.5 var(--font-sans); color:var(--muted-foreground); margin:0 0 .3rem; }
+#detailBody .detail-facts dd { margin:0; font:500 .82rem/1.6 var(--font-sans); font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+#detailBody .detail-result { border:1px solid var(--border); border-radius:.65rem; background:var(--card); padding:1.1rem; }
+#detailBody .detail-result h3 { color:var(--muted-foreground); margin-bottom:.4rem; }
+#detailBody .detail-result-value { font:600 1.75rem/1.35 var(--font-sans); letter-spacing:-.025em; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+#detailBody .detail-result p { margin:.5rem 0 0; }
+#detailBody .detail-allocation { margin-top:1rem; padding-top:1rem; border-top:1px solid var(--border); }
+#detailBody .detail-allocation > div:first-child { grid-column:1 / -1; }
+#detailBody .detail-cash { grid-template-columns:1fr; gap:.7rem; }
+#detailBody .detail-cash > div { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:1rem; align-items:baseline; }
+#detailBody .detail-cash dd { text-align:right; }
+#detailBody .detail-cash > div:last-child { border-top:1px solid var(--border); padding-top:.7rem; }
+#detailBody .detail-section p { margin:.85rem 0 0; font-size:.72rem; line-height:1.7; }
+#detailBody .detail-count { margin-left:.35rem; color:var(--muted-foreground); font-weight:400; }
+#detailBody .detail-fills { display:grid; gap:.75rem; }
+#detailBody .detail-fill { padding:1rem; border:1px solid var(--border); border-radius:.5rem; background:var(--card); min-width:0; }
+#detailBody .detail-fill-heading { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:.5rem; margin-bottom:1rem; font-size:.75rem; font-variant-numeric:tabular-nums; }
+#detailBody .detail-fill .journal-badge { padding:.15rem .4rem; line-height:1.5; }
+#detailBody .detail-wide,#detailBody .detail-source .detail-facts > div { grid-column:1 / -1; }
+#detailBody .detail-source dd { font-size:.75rem; }
+#detailBody .detail-notice { border-left:2px solid var(--warning); padding:.5rem .85rem; margin:0; background:var(--card); }
+@media(max-width:600px) {
+  #tradeDetail .detail-header,#tradeDetail #detailBody { padding:1rem; }
+  #detailBody .detail-facts { grid-template-columns:1fr; gap:.85rem; }
+  #detailBody .detail-result-value { font-size:1.5rem; }
+}
