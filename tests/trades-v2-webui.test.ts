@@ -41,7 +41,7 @@ it.skipIf(!existsSync(executablePath))('renders all transactions by default, bot
     optionFill({execution_id:'long-close',side:'sell',effect:'close',right:'call',gross_premium:'150.50',commission:'0.25',executed_at:'2026-10-03T10:00:00'}),
     optionFill({execution_id:'unknown',effect:'unknown',commission:null,executed_at:'2026-10-04T10:00:00'}),
     optionFill({execution_id:'mixed',effect:'mixed',executed_at:'2026-10-05T10:00:00'}),
-    optionFill({execution_id:'manual:spreadsheet:'+ 'a'.repeat(64) + ':1',effect:'unknown',executed_at:'2025-08-01',
+    optionFill({execution_id:'manual:spreadsheet:'+ 'a'.repeat(64) + ':1',effect:'unknown',executed_at:'2025-08-01',gross_premium:'-12345678901234567890.0012300',commission:'1234.0500',
       spreadsheet_source:{sha256:'a'.repeat(64),file_id:'worksheet',sheet:'Trades',row:1,date_precision:'day',multiplier_basis:'user_approved'}}),
     optionFill({execution_id:'close-1',channel:'tiger',account_id:'T1',currency:'HKD',gross_premium:'0',commission:'0',side:'buy',effect:'close'})]);
   const history = {...tradesHistory({...state,option_executions:journal.executions.map(({net_premium,...e})=>e)}),revision:1,gaps:[{channel:'tiger',reason:'Incomplete archive <img src=x onerror=alert(1)>'}]};
@@ -106,6 +106,10 @@ it.skipIf(!existsSync(executablePath))('renders all transactions by default, bot
     expect(await page.$$('.detail-fill')).toHaveLength(1);
     expect(await page.$('.detail-fill table')).toBeNull();
     expect(await page.$eval('.detail-source',n => n.textContent)).toContain('Broker execution ID');
+    const labels = await page.$$eval('#detailBody dt',ns => ns.map(n => n.textContent));
+    for (const label of ['Option type','Quantity (contracts)','Contract multiplier','Gross cash flow',
+      'Fees / rebates (signed)','Net cash flow','Closed quantity (FIFO)',
+      'Original quantity (contracts)','Original gross cash flow','Original fees / rebates (signed)']) expect(labels).toContain(label);
     const detailsFit = () => page.$eval('#detailBody',n => n.scrollWidth <= n.clientWidth);
     expect(await detailsFit()).toBe(true);
     await page.screenshot({path:'/tmp/invage-realized-pnl-desktop.png',fullPage:true});
@@ -125,6 +129,8 @@ it.skipIf(!existsSync(executablePath))('renders all transactions by default, bot
     await page.click('[data-detail]');
     expect(await page.$eval('#detailBody',n => n.textContent)).toContain('Source worksheetTrades · row 1');
     expect(await page.$eval('#detailBody',n => n.textContent)).toContain('Trade date (worksheet)');
+    expect(await page.$$eval('.detail-cash dd',ns => ns.map(n => n.textContent))).toEqual([
+      '-12,345,678,901,234,567,890.0012300 USD','1,234.0500 USD','-12,345,678,901,234,566,655.9512300 USD']);
     await page.click('#closeDetail');
     await page.click('#clear');await page.click('[data-channel="tiger"]');
     expect(await page.$$('[data-row]')).toHaveLength(1);

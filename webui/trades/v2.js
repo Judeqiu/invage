@@ -55,6 +55,13 @@
     return `<tr data-row="${esc(r.id)}"><td><button type="button" class="row-link" data-detail="${esc(r.id)}">${esc(`${r.underlying} ${formatReportDate(r.expiry)} ${num(r.strike)} ${r.right.toUpperCase()}`)}</button><small>${esc(M.strategies(r))}</small></td><td>${badge(r.rolled ? 'Rolled' : r.status, /review|Incomplete|Unverified|conflict|observed/i.test(r.status) ? 'warning' : '')}</td><td>${esc(rowDate(r))}${!r.entryDate && r.observedSince ? `<small>First seen ${esc(formatReportDate(r.observedSince))}</small>` : ''}</td><td>${esc(formatReportDate(r.lastTrade))}</td><td>${esc(num(r.contracts))}</td><td class="${tone(r.premium)}">${esc(amt(r.premium,r.currency))}</td><td>${esc(amt(r.paidToClose,r.currency))}</td><td class="${tone(r.realizedPnl)}">${esc(amt(r.realizedPnl,r.currency))}${r.realizedPnl !== null ? `<small>${r.feeBasis === 'broker' ? 'Broker reported · fee basis unspecified' : r.feeBasis === 'gross' ? 'Before fees · incomplete commissions' : 'After reported fees'}</small>` : ''}</td><td>${esc(name(r.channel))}</td></tr>`;
   }
   const exact = (value, currency = '') => value == null ? 'Unknown' : `${value}${currency ? ' ' + currency : ''}`;
+  // Group decimal strings directly; Number conversion would lose precision and trailing zeroes.
+  const detailMoney = (value, currency) => {
+    if (value == null) return 'Unknown';
+    const grouped = String(value).replace(/^([+-]?)(\d+)(\.\d+)?$/,(_,sign,integer,fraction = '') =>
+      sign + integer.replace(/\B(?=(\d{3})+(?!\d))/g,',') + fraction);
+    return exact(grouped,currency);
+  };
   function transactionRow(r) {
     const e = r.execution;
     const pnl = e.realization ? e.realization.net ?? e.realization.gross : null;
@@ -140,20 +147,20 @@
     const manual = e.spreadsheet_source;
     const fact = (label,value) => `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`;
     const facts = [[manual ? 'Trade date (worksheet)' : 'Trade date / time (broker)',e.executed_at.replace('T',' ')],['Action',r.action],
-      ['Right',e.right],['Strike',e.strike],['Contracts',e.contracts],['Multiplier',e.multiplier]];
+      ['Option type',e.right],['Strike',e.strike],['Quantity (contracts)',e.contracts],['Contract multiplier',e.multiplier]];
     const source = [['Broker account',e.account_id],[manual ? 'Manual execution ID' : 'Broker execution ID',e.execution_id],['Contract ID',e.contract_id],
       ...(manual ? [['Source worksheet',`${manual.sheet} · row ${manual.row}`],['Source SHA256',manual.sha256]] : [])];
     const realization = e.realization;
     const pnl = realization ? `<section class="detail-result" aria-label="Realised P&L">
-      <h3>Realised P&amp;L</h3><div class="detail-result-value ${tone(realization.net ?? realization.gross)}">${esc(exact(realization.net ?? realization.gross,e.currency))}</div>
+      <h3>Realised P&amp;L</h3><div class="detail-result-value ${tone(realization.net ?? realization.gross)}">${esc(detailMoney(realization.net ?? realization.gross,e.currency))}</div>
       <p>${realization.net === null ? 'Before fees · opening or closing fees are incomplete.' : 'After recorded opening and closing fees or rebates.'}</p>
-      <dl class="detail-facts detail-allocation">${fact('FIFO matched contracts',realization.contracts)}${fact('Matched opening cash',exact(realization.openingPremium,e.currency))}${fact('Allocated opening fees / rebate',exact(realization.openingFees,e.currency))}</dl>
+      <dl class="detail-facts detail-allocation">${fact('Closed quantity (FIFO)',realization.contracts)}${fact('Matched opening cash',detailMoney(realization.openingPremium,e.currency))}${fact('Allocated opening fees / rebate',detailMoney(realization.openingFees,e.currency))}</dl>
     </section>` : e.effect === 'close' ? '<p class="detail-notice">No complete opening match is available for this closing fill; realised P&amp;L is unavailable.</p>' : '';
     const openings = realization ? realization.openingExecutionIds.map(id => state.transactions.executions.find(open => open.channel === e.channel && open.account_id === e.account_id && open.execution_id === id)) : [];
     $('detailBody').innerHTML = `${pnl}
       <section class="detail-section" aria-label="Trade facts"><h3>Trade facts</h3><dl class="detail-facts">${facts.map(([k,v]) => fact(k,v)).join('')}</dl></section>
-      <section class="detail-section" aria-label="Execution cash"><h3>Execution cash</h3><dl class="detail-facts detail-cash">${fact('Gross cash',exact(e.gross_premium,e.currency))}${fact('Signed fees / rebate',exact(e.commission,e.currency))}${fact('Net cash',exact(e.net_premium,e.currency))}</dl><p>Original imported execution. Cash is not realised P&amp;L. Unknown or mixed position effect is not inferred from buy/sell direction.</p></section>
-      ${realization ? `<section class="detail-section" aria-label="Matched opening fills"><h3>Matched opening fills <span class="detail-count">${openings.length}</span></h3><div class="detail-fills">${openings.map(open => `<article class="detail-fill"><div class="detail-fill-heading"><span>${esc(open.executed_at.replace('T',' '))}</span>${badge(open.side+' to '+open.effect)}</div><dl class="detail-facts">${fact('Contracts',open.contracts)}${fact('Gross cash',exact(open.gross_premium,e.currency))}${fact('Fees / rebate',exact(open.commission,e.currency))}<div class="detail-wide"><dt>Execution ID</dt><dd>${esc(open.execution_id)}</dd></div></dl></article>`).join('')}</div><p>Source fills retain their full original quantities and cash. Only the portion matched to this closing fill enters its realised P&amp;L.</p></section>` : ''}
+      <section class="detail-section" aria-label="Execution cash"><h3>Execution cash</h3><dl class="detail-facts detail-cash">${fact('Gross cash flow',detailMoney(e.gross_premium,e.currency))}${fact('Fees / rebates (signed)',detailMoney(e.commission,e.currency))}${fact('Net cash flow',detailMoney(e.net_premium,e.currency))}</dl><p>Original imported execution. Cash is not realised P&amp;L. Unknown or mixed position effect is not inferred from buy/sell direction.</p></section>
+      ${realization ? `<section class="detail-section" aria-label="Matched opening fills"><h3>Matched opening fills <span class="detail-count">${openings.length}</span></h3><div class="detail-fills">${openings.map(open => `<article class="detail-fill"><div class="detail-fill-heading"><span>${esc(open.executed_at.replace('T',' '))}</span>${badge(open.side+' to '+open.effect)}</div><dl class="detail-facts">${fact('Original quantity (contracts)',open.contracts)}${fact('Original gross cash flow',detailMoney(open.gross_premium,e.currency))}${fact('Original fees / rebates (signed)',detailMoney(open.commission,e.currency))}<div class="detail-wide"><dt>Execution ID</dt><dd>${esc(open.execution_id)}</dd></div></dl></article>`).join('')}</div><p>Source fills retain their full original quantities and cash. Only the portion matched to this closing fill enters its realised P&amp;L.</p></section>` : ''}
       <section class="detail-section detail-source" aria-label="Source details"><h3>Source details</h3><dl class="detail-facts">${source.map(([k,v]) => fact(k,v)).join('')}</dl></section>`;
     if (!$('tradeDetail').open) $('tradeDetail').show();
     panelMode($('tradeDetail').dataset.mode === 'maximized' ? 'maximized' : 'side');
