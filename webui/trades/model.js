@@ -1,7 +1,7 @@
 (() => {
   const openColumns = ['Entry date','ID','Ticker','Strategy','Strike','Expiry','Contracts','Premium','Returns %','Net cash','Broker'];
   const historyColumns = ['Contract','Status','Opened','Last trade','Contracts','Premium in','Paid to close','Realised P&L','Broker'];
-  const transactionColumns = ['Trade date / time','Contract','Action','Contracts','Gross cash','Fees / rebate','Net cash','Currency','Broker / account'];
+  const transactionColumns = ['Trade date / time','Contract','Action','Contracts','Gross cash','Fees / rebate','Net cash','Realised P&L','Currency','Broker / account'];
   function transactionRows(journal) {
     return (journal?.executions || []).map(e => ({
       id:JSON.stringify([e.channel,e.account_id,e.execution_id]), underlying:e.underlying, right:e.right,

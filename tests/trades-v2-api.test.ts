@@ -27,6 +27,8 @@ it('requires authentication, isolates cached journals by owner/revision, and kee
   const first = await request(app).get('/trades-v2').set('x-owner',a.user.id).expect(200);
   expect(first.headers['cache-control']).toBe('private, no-store');
   expect(first.body.rows).toHaveLength(1);
+  const transactions=await request(app).get('/trades').set('x-owner',a.user.id).expect(200);
+  expect(transactions.body.executions.find((e:any)=>e.effect==='close').realization).toMatchObject({net:'247.95172839',openingExecutionIds:['open-1']});
   const second = await request(app).get('/trades-v2').set('x-owner',b.user.id).expect(200);
   expect(second.body.rows).toHaveLength(0);
   expect(mocks.history).not.toHaveBeenCalled();

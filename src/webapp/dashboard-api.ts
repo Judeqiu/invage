@@ -4,6 +4,7 @@
  */
 
 import { createHash } from 'node:crypto';
+import { executionJournalWithRealizations } from './execution-realizations.js';
 import { createExperienceSettingsRouter, riskPageEnabled, dailyChangesEnabled } from './experience-settings.js';
 import { buildAccountRisk } from './account-risk-data.js';
 import { readProductProfile } from '../agents/roster.js';
@@ -224,7 +225,8 @@ export function createDashboardApiRouter(): Router {
       const user = (req as Request & { user?: AuthUser }).user;
       if (!user?.userId) { res.status(401).json({ error: 'unauthorized', message: 'No session user.' }); return; }
       const snapshot = await loadInvestorForRead(await targetUserId(req, user));
-      res.json(requirePortfolioProjection(snapshot.state).journal);
+      const saved = requirePortfolioProjection(snapshot.state);
+      res.json(executionJournalWithRealizations(saved.journal,saved.tradeHistory));
     } catch (e) {
       console.error('Execution journal failed:', e);
       res.status(e instanceof PortfolioProjectionUnavailable ? 503 : 500).json({ error: 'journal_failed', message: e instanceof Error ? e.message : String(e) });

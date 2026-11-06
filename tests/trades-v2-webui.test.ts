@@ -1,4 +1,5 @@
 import { buildExecutionJournal } from '../src/brokers/option-executions.js';
+import { executionJournalWithRealizations } from '../src/webapp/execution-realizations.js';
 import { buildTradeProjections } from '../src/report/page-projections.js';
 import { expect, it } from 'vitest';
 import { createServer } from 'node:http';
@@ -36,14 +37,14 @@ it.skipIf(!existsSync(executablePath))('renders all transactions by default, bot
   open.rows.push({...open.rows[0],id:'previous-year',underlying:'NVDA',entryDate:'2025-12-31',entryThrough:'2025-12-31',premium:'100'});
   state.option_executions!.push(optionFill({execution_id:'close-2',executed_at:'2026-10-02T10:00:00',contracts:'1',side:'buy',effect:'close',gross_premium:'-49.99'}));
   const journal = buildExecutionJournal([...state.option_executions!,
-    optionFill({execution_id:'long-open',side:'buy',effect:'open',right:'call',gross_premium:'-123.456789',commission:'0',executed_at:'2026-08-01T10:00:00'}),
+    optionFill({execution_id:'long-open',side:'buy',effect:'open',right:'call',gross_premium:'-123.456789',commission:null,executed_at:'2026-08-01T10:00:00'}),
     optionFill({execution_id:'long-close',side:'sell',effect:'close',right:'call',gross_premium:'150.50',commission:'0.25',executed_at:'2026-10-03T10:00:00'}),
     optionFill({execution_id:'unknown',effect:'unknown',commission:null,executed_at:'2026-10-04T10:00:00'}),
     optionFill({execution_id:'mixed',effect:'mixed',executed_at:'2026-10-05T10:00:00'}),
     optionFill({execution_id:'manual:spreadsheet:'+ 'a'.repeat(64) + ':1',effect:'unknown',executed_at:'2025-08-01',
       spreadsheet_source:{sha256:'a'.repeat(64),file_id:'worksheet',sheet:'Trades',row:1,date_precision:'day',multiplier_basis:'user_approved'}}),
     optionFill({execution_id:'close-1',channel:'tiger',account_id:'T1',currency:'HKD',gross_premium:'0',commission:'0',side:'buy',effect:'close'})]);
-  const history = {...tradesHistory(state),revision:1,gaps:[{channel:'tiger',reason:'Incomplete archive <img src=x onerror=alert(1)>'}]};
+  const history = {...tradesHistory({...state,option_executions:journal.executions.map(({net_premium,...e})=>e)}),revision:1,gaps:[{channel:'tiger',reason:'Incomplete archive <img src=x onerror=alert(1)>'}]};
   history.rows.push({...history.rows[0],id:'retained-fill',optionId:'retained-option',underlying:'OLD',status:'Incomplete history',
     entryDate:null,entryThrough:null,lastTrade:'2026-07-18',expiry:'2026-07-17',strike:'100',channel:'moomoo',accountId:'A1',multiplier:null,premium:null,netCash:null,paidToClose:null,realizedPnl:null,executions:[],
     sourceExecutions:[{broker_id:'moomoo',channel:'moomoo',account_id:'A1',id:'fill-<unsafe>',order_id:null,native_symbol:'US.OLD260717P100000',symbol:'OLD',instrument:'option',side:'buy',effect:'close',executed_at:'2026-07-18T10:00:00',clock:'America/New_York',currency:'USD',quantity:'2',price:'-0.25',multiplier:null,gross_cash:null,fee_cash:null,option:{right:'put',expiry:'2026-07-17',strike:'100'}}]});
@@ -59,7 +60,7 @@ it.skipIf(!existsSync(executablePath))('renders all transactions by default, bot
     if (url.pathname === '/api/domain/invage/trades') {
       res.setHeader('Content-Type','application/json');
       if (fail) {res.statusCode = 503;return res.end(JSON.stringify({message:'Temporary transaction failure'}));}
-      return res.end(JSON.stringify(journal));
+      return res.end(JSON.stringify(executionJournalWithRealizations(journal,history)));
     }
     if (url.pathname.endsWith('/trades-v2') || url.pathname.endsWith('/trades-v2/history')) {
       res.setHeader('Content-Type','application/json');
@@ -86,13 +87,25 @@ it.skipIf(!existsSync(executablePath))('renders all transactions by default, bot
     const transactionText = await page.$eval('#journalTable',n => n.textContent);
     for (const action of ['sell to open','buy to close','buy to open','sell to close','sell to unknown','sell to mixed']) expect(transactionText).toContain(action);
     expect(transactionText).toContain('-123.456789');
+    expect(transactionText).toContain('Before fees · fees incomplete');
+    expect(transactionText).toContain('Opening match unavailable');
     await page.select('#year','2026'); await page.select('#month','10');
     await page.click('[data-choice="buy to close"]');
     expect(await page.$$('[data-row]')).toHaveLength(2);
     // Opening in September must not hide either October closing fill.
     expect(await page.$eval('#journalTable',n => n.textContent)).toContain('2026-10-01 10:00:00');
+    expect(await page.$eval('#journalTable',n => n.textContent)).toContain('$247.95');
+    expect(await page.$eval('#journalTable',n => n.textContent)).toContain('After recorded fees');
     await page.click('[data-detail]');await page.waitForSelector('#tradeDetail[open]');
     expect(await page.$eval('#detailBody',n => n.textContent)).toContain('buy to close');
+    expect(await page.$eval('#detailBody',n => n.textContent)).toContain('Matched opening fills');
+    expect(await page.$eval('#detailBody',n => n.textContent)).toContain('sell to open');
+    expect(await page.$eval('#detailBody',n => n.textContent)).toContain('open-1');
+    await page.screenshot({path:'/tmp/invage-realized-pnl-desktop.png',fullPage:true});
+    await page.setViewport({width:390,height:844});
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({path:'/tmp/invage-realized-pnl-mobile.png',fullPage:true});
+    await page.setViewport({width:1440,height:1000});
     expect(await page.$('#saveNote')).toBeNull();await page.click('#closeDetail');
     await page.click('#clear');await page.select('#year','2025');
     expect(await page.$$('[data-row]')).toHaveLength(1);
