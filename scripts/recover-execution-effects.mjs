@@ -36,7 +36,7 @@ try {
    const bytes=Buffer.from(JSON.stringify(data)),sha=evidenceHash(bytes),id='broker-effect-recovery/'+sha+'.json';
    artifacts.push({id,bytes});return {kind,source_sha256:sha,source_file_id:id,reference};
   };
-  const changes=[],report={statement:{},tiger:{},webull:{checked:0,recovered:0,missingIntent:0,failed:0}};
+  const changes=[],report={statement:{},tiger:{},webull:{checked:0,recovered:0,missingIntent:0,failed:0,rateLimitRetries:0,failureReasons:{}}};
   const ibkr=connections.filter(c=>c.broker_id==='ibkr');
   if(ibkr.length!==1)throw Error('Statement recovery requires one explicit IBKR account');
   const sources=readdirSync(sourceDir).filter(f=>f.endsWith('.csv')).sort().map(name=>{
@@ -85,12 +85,27 @@ try {
    const {webullGet}=await import('../src/webull/webull-client.ts');
    for(const e of unknown){
     const source=orders.get(e.execution_id.replace(/^order:/,''));if(!source){report.webull.failed++;continue;}
-    if(report.webull.checked)await new Promise(r=>setTimeout(r,1000));
+    // The documented order-detail window is 2 requests / 2 seconds per app key.
+    // Leave a full window between operator requests and honor server throttling.
+    if(report.webull.checked)await new Promise(r=>setTimeout(r,2100));
     report.webull.checked++;
     try{
      const {raw,group,order}=source,clientId=order.client_order_id??group.client_order_id;
      if(typeof clientId!=='string'||!clientId)throw Error('Original Webull client order ID unavailable');
-     const response=await webullGet({host:raw.host,path:'/trading/orders/get',query:{account_id:connection.account_id,order_id:String(order.order_id),client_order_id:clientId},credentials,fetchImpl:fetch,signal:AbortSignal.timeout(15000)});
+     let response;
+     for(;;){
+      let retryAfter=0;
+      try{
+       response=await webullGet({host:raw.host,path:'/trading/orders/get',query:{account_id:connection.account_id,order_id:String(order.order_id),client_order_id:clientId},credentials,signal:AbortSignal.timeout(15000),
+        fetchImpl:async(...args)=>{const result=await fetch(...args);const value=result.headers.get('retry-after');if(value)retryAfter=/^\d+(?:\.\d+)?$/.test(value)?Number(value)*1000:Math.max(0,Date.parse(value)-Date.now());return result;}});
+       break;
+      }catch(error){
+       if(error.vendorCode!=='TOO_MANY_REQUESTS'&&!/HTTP 429/.test(error.message))throw error;
+       report.webull.rateLimitRetries++;
+       console.error(JSON.stringify({progress:'Webull throttled; retaining this order for retry',checked:report.webull.checked}));
+       await new Promise(r=>setTimeout(r,Math.max(2100,Number.isFinite(retryAfter)?retryAfter:0)));
+      }
+     }
      const detail=response.data??response;
      if(detail.account_id!=null&&String(detail.account_id)!==connection.account_id||detail.client_order_id!==clientId||!Array.isArray(detail.orders))throw Error('Webull detail binding unavailable');
      const exact=detail.orders.filter(o=>String(o.order_id)===String(order.order_id));if(exact.length!==1)throw Error('Webull exact child order unavailable');
@@ -99,7 +114,8 @@ try {
      if(intent==null){report.webull.missingIntent++;continue;}
      if(!['BUY_TO_OPEN','BUY_TO_CLOSE','SELL_TO_OPEN','SELL_TO_CLOSE'].includes(intent)||!intent.startsWith(e.side.toUpperCase()+'_'))throw Error('Webull position intent contradicts recorded side');
      changes.push({channel:e.channel,account_id:e.account_id,execution_id:e.execution_id,effect:intent.endsWith('_OPEN')?'open':'close',evidence:[evidence]});report.webull.recovered++;
-    }catch(error){report.webull.failed++;if(String(error.code)==='401'||/HTTP 401/.test(error.message)){report.webull.authenticationUnavailable=true;break;}}
+    }catch(error){report.webull.failed++;const reason=error.vendorCode??error.message;report.webull.failureReasons[reason]=(report.webull.failureReasons[reason]??0)+1;if(String(error.vendorCode)==='401'||/HTTP 401/.test(error.message)){report.webull.authenticationUnavailable=true;break;}}
+    finally{if(report.webull.checked%10===0)console.error(JSON.stringify({progress:'Webull order evidence',...report.webull}));}
    }
   }
   const next=applyEffectRecovery(state,changes),byKey=new Map((state.option_executions??[]).map(e=>[executionScopeKey(e),e]));
