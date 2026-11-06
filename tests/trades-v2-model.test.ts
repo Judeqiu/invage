@@ -77,3 +77,17 @@ it('keeps verified partial closes visible as historical profit without labelling
   expect(model.filter([r],f)).toHaveLength(1);
   expect(model.filter([r],{...f,status:'Needs review'})).toHaveLength(0);
 });
+
+it('formats numeric displays to two decimals without changing source precision', () => {
+  const examples = [
+    ['-37.200000000000','-37.20'], ['-7117.200000000000','-7,117.20'],
+    ['12423.15378','12,423.15'], ['1.005','1.01'], ['-1.005','-1.01'],
+    ['999.999','1,000.00'], ['0','0.00'], ['-0','-0.00'], ['+1.2','+1.20'],
+    ['100','100.00'], ['0.0049','0.00'], ['-0.005','-0.01'],
+    ['12345678901234567890.999','12,345,678,901,234,567,891.00'],
+  ];
+  const before = JSON.stringify(examples);
+  for (const [value,expected] of examples) expect(model.formatDecimal(value)).toBe(expected);
+  expect(model.formatDecimal(null)).toBe('Unknown');
+  expect(JSON.stringify(examples)).toBe(before);
+});

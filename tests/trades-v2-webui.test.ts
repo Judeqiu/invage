@@ -86,7 +86,7 @@ it.skipIf(!existsSync(executablePath))('renders all transactions by default, bot
     expect(await page.$$('[data-row]')).toHaveLength(journal.executions.length);
     const transactionText = await page.$eval('#journalTable',n => n.textContent);
     for (const action of ['sell to open','buy to close','buy to open','sell to close','sell to unknown','sell to mixed']) expect(transactionText).toContain(action);
-    expect(transactionText).toContain('-123.456789');
+    expect(transactionText).toContain('-123.46');
     expect(transactionText).toContain('Before fees · fees incomplete');
     expect(transactionText).toContain('Opening match unavailable');
     await page.select('#year','2026'); await page.select('#month','10');
@@ -107,7 +107,7 @@ it.skipIf(!existsSync(executablePath))('renders all transactions by default, bot
     expect(await page.$eval('#detailBody',n => n.textContent)).toContain('Matched opening fills');
     expect(await page.$eval('#detailBody',n => n.textContent)).toContain('sell to open');
     expect(await page.$eval('#detailBody',n => n.textContent)).toContain('open-1');
-    expect(await page.$eval('.detail-result-value',n => n.textContent)).toBe('246.92172839 USD');
+    expect(await page.$eval('.detail-result-value',n => n.textContent)).toBe('246.92 USD');
     expect(await page.$eval('.detail-facts',n => getComputedStyle(n).display)).toBe('grid');
     expect(await page.$$('.detail-fill')).toHaveLength(1);
     expect(await page.$('.detail-fill table')).toBeNull();
@@ -136,11 +136,11 @@ it.skipIf(!existsSync(executablePath))('renders all transactions by default, bot
     expect(await page.$eval('#detailBody',n => n.textContent)).toContain('Source worksheetTrades · row 1');
     expect(await page.$eval('#detailBody',n => n.textContent)).toContain('Trade date (worksheet)');
     expect(await page.$$eval('.detail-cash dd',ns => ns.map(n => n.textContent))).toEqual([
-      '-12,345,678,901,234,567,890.0012300 USD','1,234.0500 USD','-12,345,678,901,234,566,655.9512300 USD']);
+      '-12,345,678,901,234,567,890.00 USD','1,234.05 USD','-12,345,678,901,234,566,655.95 USD']);
     await page.click('#closeDetail');
     await page.click('#clear');await page.click('[data-channel="tiger"]');
     expect(await page.$$('[data-row]')).toHaveLength(1);
-    expect(await page.$$eval('[data-row] td',ns => ns.slice(4,7).map(n => n.textContent))).toEqual(['0','0','0']);
+    expect(await page.$$eval('[data-row] td',ns => ns.slice(4,7).map(n => n.textContent))).toEqual(['0.00','0.00','0.00']);
     await page.click('#clear');await page.click('[data-choice="sell to unknown"]');
     expect(await page.$$eval('[data-row] td',ns => ns.slice(5,7).map(n => n.textContent))).toEqual(['Unknown','Unknown']);
     await page.click('#clear');
