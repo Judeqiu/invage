@@ -96,6 +96,12 @@ it.skipIf(!existsSync(executablePath))('renders all transactions by default, bot
     expect(await page.$eval('#journalTable',n => n.textContent)).toContain('2026-10-01 10:00:00');
     expect(await page.$eval('#journalTable',n => n.textContent)).toContain('$247.95');
     expect(await page.$eval('#journalTable',n => n.textContent)).toContain('After recorded fees');
+    await page.setViewport({width:1816,height:1000});
+    expect(await page.$eval('.transaction-table',n => n.getBoundingClientRect().width)).toBeLessThan(1300);
+    expect(await page.$eval('.transaction-table tbody td:nth-child(2)',n => n.getBoundingClientRect().width)).toBeLessThan(260);
+    expect(await page.$eval('.transaction-table tbody td:nth-child(4)',n => getComputedStyle(n).textAlign)).toBe('right');
+    await page.screenshot({path:'/tmp/invage-compact-transactions-desktop.png',fullPage:true});
+    await page.setViewport({width:1440,height:1000});
     await page.click('[data-detail]');await page.waitForSelector('#tradeDetail[open]');
     expect(await page.$eval('#detailBody',n => n.textContent)).toContain('buy to close');
     expect(await page.$eval('#detailBody',n => n.textContent)).toContain('Matched opening fills');

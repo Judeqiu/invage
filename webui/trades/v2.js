@@ -101,7 +101,7 @@
     }
     const loaded = state[state.view];
     if (!rows.length) body = `<tbody><tr><td class="empty" colspan="${columns.length}">${!loaded ? 'Loading journal records…' : dataRows().length ? 'No entries match these filters.' : state.view === 'transactions' ? 'No imported option transactions recorded yet.' : state.view === 'open' ? 'No open options on the books.' : 'No completed contracts or unresolved history recorded yet.'}</td></tr></tbody>`;
-    $('journalTable').innerHTML = `<table class="journal-table"><caption class="sr-only">${state.view === 'transactions' ? 'Individual opening and closing option transactions' : state.view === 'open' ? 'Open option book grouped by opening year and month' : 'Option history'} in each broker’s native currency</caption><thead><tr>${columns.map(c => `<th scope="col"><span class="col-label">${esc(c)}</span>${tips[c] ? help(c,tips[c]) : ''}</th>`).join('')}</tr></thead>${body}</table>`;
+    $('journalTable').innerHTML = `<table class="journal-table${state.view === 'transactions' ? ' transaction-table' : ''}"><caption class="sr-only">${state.view === 'transactions' ? 'Individual opening and closing option transactions' : state.view === 'open' ? 'Open option book grouped by opening year and month' : 'Option history'} in each broker’s native currency</caption><thead><tr>${columns.map(c => `<th scope="col"><span class="col-label">${esc(c)}</span>${tips[c] ? help(c,tips[c]) : ''}</th>`).join('')}</tr></thead>${body}</table>`;
     $('journalTable').setAttribute('aria-busy',String(!loaded));
     markSelection();
     $('entryCount').textContent = `${rows.length} ${rows.length === 1 ? 'entry' : 'entries'}`;

@@ -147,3 +147,13 @@ button:focus-visible,select:focus-visible,input:focus-visible,[tabindex]:focus-v
   #detailBody .detail-facts { grid-template-columns:1fr; gap:.85rem; }
   #detailBody .detail-result-value { font-size:1.5rem; }
 }
+
+/* Size transaction columns to their contents instead of stretching across the page. */
+.journal-table.transaction-table { width:max-content; min-width:0; }
+.transaction-table :is(th,td) { padding:3px 8px; }
+.transaction-table :is(th,td):nth-child(4) { text-align:right; }
+.transaction-table :is(th,td):nth-child(2) { width:14rem; }
+.transaction-table td:nth-child(2) :is(.row-link,small) { max-width:14rem; white-space:normal; overflow-wrap:anywhere; text-align:left; }
+.transaction-table td:nth-child(2) .row-link { display:block; }
+.transaction-table th { letter-spacing:.025em; }
+.journal-card:has(.transaction-table) { width:fit-content; max-width:100%; }
