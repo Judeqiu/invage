@@ -2,7 +2,7 @@
  * Remove this backport after upgrading to a framework pin containing that hook.
  * Patch source, runtime and declarations; verify every replacement before writing.
  */
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 
 const root = new URL('../node_modules/utarus/', import.meta.url);
 const changes = [];
@@ -18,6 +18,8 @@ for (const [path, indent] of [
   ['dist/billing/entitlements.js', '    '],
 ]) {
   const file = new URL(path, root);
+  // Canonical fast-deploy installs a slim runtime package without source.
+  if (path.startsWith('src/') && !existsSync(file)) continue;
   let source = readFileSync(file, 'utf8');
   source = replaceOnce(source,
     "import { freePlanId, getPlan, loadPlansCatalog } from './plans.js';",
@@ -29,6 +31,8 @@ for (const [path, indent] of [
 }
 for (const path of ['src/billing/types.ts', 'dist/billing/types.d.ts']) {
   const file = new URL(path, root);
+  // Canonical fast-deploy installs a slim runtime package without source.
+  if (path.startsWith('src/') && !existsSync(file)) continue;
   const source = replaceOnce(readFileSync(file, 'utf8'),
     'export interface DomainBillingConfig {',
     'export interface DomainBillingConfig {\n  /** Live credit-only exemption; usage tracking and admin permissions are unchanged. */\n  creditExempt?: (userId: string) => Promise<boolean>;', path);
