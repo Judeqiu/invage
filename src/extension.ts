@@ -17,6 +17,7 @@ import { createInvageTools } from './tools/index.js';
 import { DIRECT_ROUTING_POLICY, PUBLIC_FINANCIAL_DATA_POLICY } from './agents/routing-policy.js';
 import { registerInvageSkills } from './skills.js';
 import { INVAGE_CREDIT_RATES } from './credit-rates.js';
+import { managementRepository } from './management/repository.js';
 import { createGuidanceCommand } from './guidance.js';
 import { playbookAgentGuidance } from './playbook/index.js';
 import { handleBindCommand, handleBindWebCommand } from './onboard/bind-command.js';
@@ -186,6 +187,7 @@ export const invageExtension: DomainExtension = {
     creditRates: INVAGE_CREDIT_RATES,
     ...(readProductProfile() === 'consultant' ? {
       weeklyCreditLimit: {credits:1000,weekStartsOn:1,utcOffsetMinutes:480},
+      creditExempt: (userId: string) => managementRepository().isManager(userId),
     } : {}),
   },
 

@@ -5,6 +5,8 @@
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
+    "postinstall": "node scripts/patch-utarus-credit-exemption.mjs",
+    "prebuild": "node scripts/patch-utarus-credit-exemption.mjs",
     "dev": "NODE_OPTIONS=--no-deprecation npx tsx src/index.ts",
     "webapp": "NODE_OPTIONS=--no-deprecation npx tsx src/webapp/server.ts",
     "build": "tsc && cp src/state/dashboard-wire-worker.mjs dist/state/dashboard-wire-worker.mjs && cp src/futubull/opend_bridge.py dist/futubull/opend_bridge.py && mkdir -p dist/risk && cp src/risk/schema.sql dist/risk/schema.sql",

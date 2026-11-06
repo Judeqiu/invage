@@ -2,8 +2,10 @@
 
 `velovest_manager` is a restricted Velovest role, separate from `user.admin`.
 Only the consultant profile registers these APIs and the selected-user control.
-It grants no framework admin tools, cap bypass, billing changes or access to
-other administrative sections.
+Managers have unlimited AI credits while the role is active. Usage is still
+recorded, and the normal credit limit applies again when the role is revoked.
+The role grants no framework admin tools, billing changes or access to other
+administrative sections.
 
 Full administrators assign or revoke it in **Admin → Users → select a user →
 Velovest manager** in the selected user's side panel. There is no separate
@@ -33,6 +35,13 @@ state. Changes are transactionally audited in `role_events`. Role lookup checks
 the current account and grant on every API request; revocation applies to
 existing sessions immediately. Refresh the workspace to update navigation.
 All responses are private/no-store. Mutations require same-origin JSON.
+
+The credit exemption uses a live manager-role lookup at the shared effective-cap
+resolver, covering chat, tools and mid-turn enforcement. It does not change the
+user's administrator flag or billing subscription. The current framework pin is
+retained; `scripts/patch-utarus-credit-exemption.mjs` backports the framework hook
+at install/build time, including its runtime and TypeScript declarations. Remove
+the backport after upgrading to a pin that includes Utarus commit `d3cbab0ee`.
 
 ## Upgrade
 
