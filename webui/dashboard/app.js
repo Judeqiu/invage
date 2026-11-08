@@ -205,12 +205,14 @@ function reportingCcyCode(view) {
 }
 
 function fmtMoney0(n, ccy) {
+  if (n == null || !Number.isFinite(Number(n))) return '—';
   const abs = Number(n).toLocaleString('en-US', { maximumFractionDigits: 0 });
   if (ccy && ccy !== 'USD') return `${abs} ${ccy}`;
   return '$' + abs;
 }
 
 function fmtPrettyMoney(n, ccy, digits = 2) {
+  if (n == null || !Number.isFinite(Number(n))) return '—';
   const v = Number(n);
   const abs = Math.abs(v).toLocaleString('en-US', {
     minimumFractionDigits: digits,
@@ -1703,7 +1705,7 @@ function wheelRiskTable(rows, radar, view, asOf) {
       <td class="num muted">${estimate.iv == null ? '—' : (estimate.iv*100).toFixed(0)+'%'}</td>
       <td class="num">${Number.isFinite(exposure) ? fmtPrettyMoney(exposure,reportingCcyCode(view),0) : '—'}</td>
       <td title="${escapeHtml(probability == null ? estimate.reason : estimate.ivSource === 'yahoo' ? `Black–Scholes estimate using latest spot and Yahoo IV for this contract; r = 4%, q = 0, T = DTE/365. IV source timestamp unavailable; retrieved ${estimate.ivFetchedAt}. Option trade time ${estimate.optionAsOf || 'unavailable'} does not establish IV freshness.` : `Black–Scholes estimate using latest spot and IV calibrated from matched option/stock quotes at ${estimate.optionAsOf} / ${estimate.spotAsOf}; r = 4%, q = 0, T = DTE/365. IV is held until newer matching quotes are available.`)}">${riskPill(tone, probability == null ? label : `${(probability*100).toFixed(1)}% · ${label}`)}${probability == null ? `<small>${escapeHtml(estimate.reason)}</small>` : ''}</td>
-      <td class="num">${Number.isFinite(mark) && Number.isFinite(multiplier) && multiplier !== 0 ? (mark/multiplier).toFixed(2) : '—'}</td><td class="num">${Number.isFinite(multiplier) && multiplier !== 0 ? (Number(p.avgCost)/multiplier).toFixed(2) : '—'}</td>
+      <td class="num">${Number.isFinite(mark) && Number.isFinite(multiplier) && multiplier !== 0 ? (mark/multiplier).toFixed(2) : '—'}</td><td class="num">${Number.isFinite(p.avgCost) && Number.isFinite(multiplier) && multiplier !== 0 ? (p.avgCost/multiplier).toFixed(2) : '—'}</td>
       <td class="num">${money(value)}</td><td class="num ${plClass(pl)}">${money(pl)}${pct == null ? '' : ` (${pct.toFixed(1)}%)`}</td><td>${brokerLabel(p.channel)}</td>
     </tr>`;
   }).join('');
@@ -2136,7 +2138,7 @@ function renderOpenOptions(view) {
         return spreadSummary + `<tr class="option-ledger-row${highlightedUnderlying === o.underlying ? ' option-underlying-highlight' : ''}" data-option-underlying="${escapeHtml(o.underlying)}">
           <td class="option-instrument">${optionInstrumentButton(p,view,asOf)}${roll}</td><td class="num">${position}</td>
           <td class="num">${Number.isFinite(mark) && Number.isFinite(multiplier) && multiplier !== 0 ? (mark/multiplier).toFixed(2) : '—'}</td>
-          <td class="num">${openingPremiumHtml(trade)}</td><td class="num">${Number.isFinite(multiplier) && multiplier !== 0 ? (Number(p.avgCost)/multiplier).toFixed(2) : '—'}</td>
+          <td class="num">${openingPremiumHtml(trade)}</td><td class="num">${Number.isFinite(p.avgCost) && Number.isFinite(multiplier) && multiplier !== 0 ? (p.avgCost/multiplier).toFixed(2) : '—'}</td>
           <td class="num">${rowMoney(marketValue,0)}</td><td class="num ${plClass(pl)}">${rowMoney(pl,0)}${pct == null ? '' : ` (${pct.toFixed(1)}%)`}</td>
           <td class="num">${dte == null ? '—' : dte+'d'}</td><td class="option-opened">${opened}</td><td class="num">${Number.isFinite(spot) && spot > 0 ? Number(spot).toFixed(2) : '—'}</td>
           <td class="num">${entrySpotHtml(trade,p.currency || ccy)}</td><td class="num">${exposure ? rowMoney(exposure,0) : '—'}</td><td>${brokerLabel(p.channel)}</td>
@@ -2151,7 +2153,7 @@ function renderOpenOptions(view) {
         <td class="num">${exposure ? rowMoney(exposure, 0) : '—'}</td>
         <td class="num">${dte == null ? '—' : `${dte}d`}</td>
         <td class="num">${openingPremiumHtml(trade)}</td>
-        <td class="num">${rowMoney(Number(p.avgCost))}</td>
+        <td class="num">${rowMoney(p.avgCost)}</td>
         <td class="num">${rowMoney(mark)}</td>
         <td class="num">${rowMoney(marketValue)}</td>
         <td class="num ${plClass(pl)}">${rowMoney(pl)}</td>
