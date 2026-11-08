@@ -53,7 +53,8 @@ export function portfolioFingerprint(state: InvestorState): string {
   const fingerprint=createHash('sha256').update(JSON.stringify([PROJECTION_VERSION, CALCULATION_VERSION, state.user.id, state.profile.display_name,
     state.portfolio, state.cash, state.deposits, (state as unknown as { treasury: unknown }).treasury,
     connections, state.broker_history, state.option_executions, state.option_events,
-    state.option_observations, state.option_identities, state.broker_statement_evidence, snapshots])).digest('hex');
+    state.option_observations, state.option_identities, state.broker_statement_evidence, snapshots,
+    ...(state.demo_workbook ? [state.demo_workbook] : [])])).digest('hex');
   if(frozen)frozenFingerprints.set(state,{snapshots:snapshotKey,fingerprint});
   return fingerprint;
 }

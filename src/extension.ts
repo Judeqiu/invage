@@ -35,6 +35,7 @@ import {
   type HouseholdInvestorState,
 } from './state/household-state.js';
 import { dashboardConfig } from './webapp/dashboard-config.js';
+import { demoWorkbookForState } from './demo/workbook.js';
 import { createInvageWebUi, createInvageChromeCatalogs } from './webapp/invage-webui.js';
 import { helpFirstAndAsyncTasks } from './agents/help-first.js';
 import { productDisplayName, productHostLabel } from './product-name.js';
@@ -104,7 +105,7 @@ const INVAGE_PURPOSE = buildHostPurpose();
 function investorContextPrefix(investor: InvestorState, ctx: EnrichMessageContext): string {
   if (readProductProfile() === 'consultant') {
     const portfolio = getPortfolio(investor);
-    const optionLots = Object.values(portfolio).filter((holding) => holding.option != null).length;
+    const optionLots = demoWorkbookForState(investor)?.rows.length ?? Object.values(portfolio).filter((holding) => holding.option != null).length;
     const channelHint = ctx.telegramUserId != null
       ? `telegram_user_id=${ctx.telegramUserId}`
       : ctx.slackUserId

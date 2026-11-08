@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { createContext, Script } from 'node:vm';
 import type { DashboardPayload } from '../webapp/dashboard-data.js';
+import { applyWorkbookScopes } from '../demo/workbook.js';
 
 // Run trusted, pure application models in a private realm rather than duplicating
 // their accounting rules or exposing Node's global object to browser scripts.
@@ -15,7 +16,9 @@ export function buildPageProjections(payload: DashboardPayload) {
     positions[channel] = context.PositionsV2.build(payload, channel);
     insights[channel] = context.InsightsV2.build(payload, channel);
   }
-  return { positions, insights, dashboard: context.DashboardAggregates.build(payload) as Record<string, Record<string, unknown>> };
+  const dashboard = context.DashboardAggregates.build(payload) as Record<string, Record<string, unknown>>;
+  applyWorkbookScopes(payload, dashboard);
+  return { positions, insights, dashboard };
 }
 
 /** Native-currency totals never silently combine different fee or currency bases. */

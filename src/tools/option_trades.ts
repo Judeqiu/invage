@@ -2,6 +2,7 @@ import { Type } from 'typebox';
 import type { AgentTool } from '@earendil-works/pi-agent-core';
 import type { Holding } from '../market/types.js';
 import type { InvestorState } from '../state/portfolio-state.js';
+import { demoWorkbookForState } from '../demo/workbook.js';
 import { combinedCredentials, readBrokerAccountModel } from '../brokers/accounts.js';
 import { getBrokerConnector } from '../brokers/catalog.js';
 import { redactSecrets } from '../brokers/connections.js';
@@ -69,7 +70,14 @@ export function queryOptionTrades(state: InvestorState, portfolio: Record<string
     (!filter.channel || e.channel === filter.channel) && (!filter.right || e.right === filter.right) &&
     (!filter.effect || e.effect === filter.effect) && (!filter.start_date || e.executed_at.slice(0, 10) >= filter.start_date) &&
     (!filter.end_date || e.executed_at.slice(0, 10) <= filter.end_date));
+  const book=demoWorkbookForState(state);
+  const worksheet=book?.rows.filter(row=>(!underlying || row.underlying.toUpperCase()===underlying) &&
+    (!filter.channel || row.channel===filter.channel) && (!filter.right || filter.right==='put') &&
+    (!filter.effect || filter.effect==='unknown') && (!filter.start_date || row.entryDate>=filter.start_date) &&
+    (!filter.end_date || row.entryDate<=filter.end_date));
   return { available: journal.available, executions: rows.slice(offset, offset + limit), total: rows.length,
+    ...(book ? {worksheet_rows:worksheet,worksheet_source:book.source,worksheet_currency:book.currency,
+      worksheet_basis:'User-approved current short puts; worksheet dates and combined row cash, not separate execution fills.'} : {}),
     next_offset: offset + limit < rows.length ? offset + limit : null, ...optionTradeEvidence(state, portfolio) };
 }
 

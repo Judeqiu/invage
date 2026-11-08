@@ -6,6 +6,7 @@ import { buildExecutionJournal, mergeOptionExecutions } from '../brokers/option-
 import { buildDashboardModel, buildLivePositions } from '../report/dashboard-model.js';
 import { buildRecordedOptionAnalytics } from '../webapp/option-analytics.js';
 import { openOptionTradeDetails } from '../webapp/option-dashboard-data.js';
+import { demoWorkbookForState, workbookDashboard } from './workbook.js';
 
 export const DEMO_EMAIL = 'demo@velovest.ai';
 export const DEMO_NAME = 'Velovest Demo — Synthetic Data';
@@ -51,6 +52,7 @@ export function isSyntheticDemo(state: InvestorState): boolean {
 }
 export function syntheticDashboard(state: InvestorState): DashboardPayload {
   if (!isSyntheticDemo(state)) throw new Error('Not the synthetic demo account');
+  if (demoWorkbookForState(state)) return workbookDashboard(state);
   const cash = Array.isArray(state.cash) ? state.cash : state.cash ? [state.cash] : [];
   const live = buildLivePositions(state.portfolio ?? {}, prices, undefined, cash, null, '2026-11-03', undefined, { reportingCurrency: 'USD' });
   for (const position of live.positions) if (position.option) position.brokerMark = position.option.mark;

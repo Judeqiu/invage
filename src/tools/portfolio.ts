@@ -80,6 +80,7 @@ import {
   prepareNumericToolArgs,
 } from './coerce-tool-numbers.js';
 import { createListOptionTradesTool, optionTradeEvidence } from './option_trades.js';
+import { workbookPortfolioEvidence } from '../demo/workbook.js';
 
 function reportingCurrencyOf(state: unknown): string {
   return getReportingCurrency(state as HouseholdInvestorState);
@@ -2764,6 +2765,8 @@ export function createGetPortfolioTool(): AgentTool {
       try {
         const snapshot = await resolveInvestorFromChannel(p);
         const { state } = snapshot;
+        const workbook=workbookPortfolioEvidence(state);
+        if(workbook) return ok(JSON.stringify(workbook),workbook);
         const portfolio = getPortfolio(state);
         const cashes = getCashes(state);
         const deposits = getDeposits(state);

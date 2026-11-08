@@ -13,6 +13,7 @@ import { prepareOptionRelationships } from '../webapp/option-relationships-data.
 import { buildPageProjections, buildTradeProjections } from '../report/page-projections.js';
 import { prepareDashboardWireFile } from './dashboard-wire-store.js';
 import { projectionLocation } from './projection-files.js';
+import { demoWorkbookForState, workbookJournal } from '../demo/workbook.js';
 
 const runtime = { loadInvestor:loadInvestorForRead, loadDashboardForSlug, buildExecutionJournal, tradesOpenBook, tradesHistory,
   optionHistoryForState, prepareOptionRelationships, buildPageProjections, buildTradeProjections, buildBrokerProjections };
@@ -47,7 +48,7 @@ export function createPortfolioProjectionRefresher(overrides: Partial<typeof run
         const entry: PortfolioProjection = { version: PROJECTION_VERSION, userId, fingerprint,
           calculatedAt: dashboard.generatedAt, dashboard,
           brokers: deps.buildBrokerProjections(state, dashboard, openTrades.rows, tradeHistory.rows),
-          journal: deps.buildExecutionJournal(state.option_executions), openTrades: { ...openTrades, aggregates: deps.buildTradeProjections(openTrades.rows) },
+          journal: demoWorkbookForState(state) ? workbookJournal(state.demo_workbook!) : deps.buildExecutionJournal(state.option_executions), openTrades: { ...openTrades, aggregates: deps.buildTradeProjections(openTrades.rows) },
           tradeHistory: { ...tradeHistory, aggregates: deps.buildTradeProjections(tradeHistory.rows, true), gaps: [...optionHistory.gaps, ...relationships.historyGaps] }, optionHistory, relationships };
         const latest = await deps.loadInvestor(userId);
         if (portfolioFingerprint(latest.state) !== fingerprint) continue;

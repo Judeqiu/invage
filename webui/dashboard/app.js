@@ -1282,7 +1282,8 @@ function renderOverview(view) {
     const change = dailyChangeText('totalValue', view);
     const delta = change ? savedDashboardScope(view).dailyChanges?.metrics?.totalValue?.delta : null;
     el.navDelta.className = 'metric-sub' + (brokerNav.length ? ' broker-nav-source' : '') + (change ? ' daily-change ' : ' ') + (delta > 0 ? 'up' : delta < 0 ? 'down' : '');
-    el.navDelta.textContent = brokerNav.length ? brokerNav.map(source => `Broker NAV · ${source.channel} · ${source.asOf || 'date unavailable'}`).join(' · ') : change || (view.isLive ? 'Live marks' : `Archived ${optionDateLabel(view.label)} · original currency and FX`);
+    el.navDelta.textContent = payload.demoWorkbook && !selectedBroker() && view.channelView === MERGED_CHANNEL_VIEW ? 'User-approved workbook snapshot'
+      : brokerNav.length ? brokerNav.map(source => `Broker NAV · ${source.channel} · ${source.asOf || 'date unavailable'}`).join(' · ') : change || (view.isLive ? 'Live marks' : `Archived ${optionDateLabel(view.label)} · original currency and FX`);
     if (unverifiedOptionChannels(view).length) {
       el.navDelta.textContent += ' · option positions unverified';
     }
@@ -1295,7 +1296,7 @@ function renderOverview(view) {
   if (el.totalPremiumCard) {
     el.totalPremiumCard.classList.toggle('hidden', payload.dashboardConfig?.showTotalPremium === false);
     el.totalPremiumValue.textContent = premium.total == null ? '—' : fmtPrettyMoney(premium.total, repCcy, 2);
-    el.totalPremiumMeta.textContent = premium.total == null ? premium.totalReason
+    el.totalPremiumMeta.textContent = premium.total == null || premium.source === 'workbook_snapshot' ? premium.totalReason
       : `Before fees · buys + sells · ${premium.firstTrade ? optionDateLabel(premium.firstTrade) : 'Recorded history'} through ${premium.lastTrade ? optionDateLabel(premium.lastTrade) : optionDateLabel(premiumDate)}${premium.partial ? ' · Partial history' : ''}`;
   }
   if (el.realizedPnlCard) {
@@ -1357,9 +1358,10 @@ function renderOverview(view) {
 }
 
 function netRiskCapitalCard(view) {
-  const risk = window.NetRiskCapital.calculate(view);
+  const workbook = savedDashboardScope(view).workbookRiskCapital;
+  const risk = workbook || window.NetRiskCapital.calculate(view);
   return metricCardHtml('Net risk capital', risk.value == null ? '—' : fmtPrettyMoney(risk.value, reportingCcyCode(view), 0),
-    risk.value == null ? risk.reason : 'Estimated maximum loss across open options strategies', risk.reason);
+    risk.value == null || workbook ? risk.reason : 'Estimated maximum loss across open options strategies', risk.reason);
 }
 
 function explanationScope(button) {

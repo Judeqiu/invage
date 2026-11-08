@@ -5,6 +5,7 @@ import type { DashboardPayload } from '../webapp/dashboard-data.js';
 import type { TradeJournalRow } from '../webapp/trades-v2-data.js';
 import type { LiveDashboardSlice } from './dashboard-model.js';
 import { buildPageProjections, buildTradeProjections } from './page-projections.js';
+import { demoWorkbookForState, workbookJournal } from '../demo/workbook.js';
 
 export interface BrokerProjection {
   brokerId: string;
@@ -68,6 +69,10 @@ function brokerLive(live: LiveDashboardSlice, channels: string[]): LiveDashboard
 export function buildBrokerProjections(state: InvestorState, dashboard: DashboardPayload,
   openRows: TradeJournalRow[], historyRows: TradeJournalRow[]): Record<string, BrokerProjection> {
   const groups = new Map<string, Set<string>>();
+  for (const row of demoWorkbookForState(state)?.rows ?? []) {
+    if (!groups.has(row.brokerId)) groups.set(row.brokerId, new Set());
+    groups.get(row.brokerId)!.add(row.channel);
+  }
   for (const conn of Object.values(readBrokerAccountModel(state).connections)) {
     if (!groups.has(conn.broker_id)) groups.set(conn.broker_id, new Set());
     groups.get(conn.broker_id)!.add(conn.channel);
@@ -79,9 +84,15 @@ export function buildBrokerProjections(state: InvestorState, dashboard: Dashboar
     const keyed = <T>(values?: Record<string, T>) => values
       ? Object.fromEntries(Object.entries(values).filter(([channel]) => members.has(channel))) : undefined;
     const live = dashboard.model ? brokerLive(dashboard.model.live, channels) : null;
-    const journal = buildExecutionJournal(state.option_executions?.filter(owns));
+    const book = demoWorkbookForState(state);
+    if (book && live) {
+      // The workbook supplies only combined account NAV/cash, never a broker allocation.
+      for (const field of ['totalValue','positionsValue','totalCost','totalPL','totalPLPct','optionsPremiumCollected'] as const) live[field] = null as unknown as number;
+    }
+    const journal = book ? workbookJournal({...book, rows:book.rows.filter(owns)}) : buildExecutionJournal(state.option_executions?.filter(owns));
     const scoped: DashboardPayload = {
       ...dashboard, aggregatedViews: undefined, pageProjections: undefined,
+      ...(dashboard.demoWorkbook ? { demoWorkbookScope: 'broker' as const } : {}),
       // Historical account views remain in the full generation. Broker cash cannot
       // be inferred from older combined snapshots without account cash attribution.
       model: live ? { live, history: [], periodChange: null, lastSnapshot: null } : null,
@@ -89,7 +100,7 @@ export function buildBrokerProjections(state: InvestorState, dashboard: Dashboar
       connectionMetrics: keyed(dashboard.connectionMetrics), warnings: live?.issues,
       optionTradeDetails: dashboard.optionTradeDetails && Object.fromEntries(Object.entries(dashboard.optionTradeDetails)
         .filter(([ticker]) => live?.positions.some(row => row.ticker === ticker))),
-      premiumJournal: { available: journal.available, daily: journal.daily, channels: [...new Set(journal.executions.map(row => row.channel))] },
+      premiumJournal: { available: journal.available, daily: journal.daily, channels: [...new Set(journal.daily.map(row => row.channel))] },
       premiumSupportedChannels: dashboard.premiumSupportedChannels?.filter(channel => members.has(channel)),
       optionHistoryGaps: dashboard.optionHistoryGaps?.filter(owns),
       optionAnalytics: dashboard.optionAnalytics && { ...dashboard.optionAnalytics,

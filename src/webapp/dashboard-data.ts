@@ -62,6 +62,8 @@ export interface BenchmarkData {
 }
 
 export interface DashboardPayload {
+  demoWorkbook?: import('../demo/workbook.js').DemoWorkbook;
+  demoWorkbookScope?: 'broker';
   /** Sync-time projections for Positions, Insights and date/account dashboard scopes. */
   pageProjections?: { positions: Record<string, unknown>; insights: Record<string, unknown> };
   aggregatedViews?: Record<string, Record<string, unknown>>;
