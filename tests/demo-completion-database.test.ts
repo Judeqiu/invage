@@ -20,12 +20,14 @@ it('persists the completed demo through normal books and serves a stable forced-
   const normalBefore=await loadInvestor(normal.user.id);
   await getAccountAuthority().registration.register({state,mail:null,invitation:null});
   const snapshot=await loadInvestor(state.user.id);snapshot.state=prepareCompletedDemo(snapshot.state,market,plan);
+  const beforePersistence=await prepareDemoProjection(snapshot.state);
   await saveInvestor(snapshot);
   const actual=await loadInvestor(state.user.id);
   expect(actual.state.demo_workbook).toEqual(state.demo_workbook);
   expect(actual.state.option_executions).toEqual(snapshot.state.option_executions);
   const refresh=createPortfolioProjectionRefresher();await refresh(state.user.id,true);
   const first=readPortfolioProjection(actual.state)!;expect(first).not.toBeNull();
+  expect(first.dashboard.model).toEqual(beforePersistence.dashboard.model);
   expect(first.openTrades.rows).toHaveLength(state.demo_workbook!.rows.length);
   expect(first.openTrades.rows.every(r=>r.netCash!==null)).toBe(true);
   expect(Object.values(first.brokers).every(b=>b.nav!==null)).toBe(true);

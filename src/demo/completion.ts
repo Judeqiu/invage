@@ -221,7 +221,10 @@ export function demoRelationships(state:InvestorState,filters:{channel?:string;a
 }
 export function completedDemoDashboard(state:InvestorState):DashboardPayload {
   const c=completedDemo(state);if(!c)throw Error('No completed demo');
-  const live=buildLivePositions(state.portfolio??{},c.equityPrices,undefined,state.cash,null,c.asOf,undefined,{reportingCurrency:state.demo_workbook!.currency});
+  // JSONB mappings have no insertion order. Keep the generated valuation sum and
+  // allocation denominator identical before and after database persistence.
+  const portfolio=Object.fromEntries(Object.entries(state.portfolio??{}).sort(([a],[b])=>a.localeCompare(b)));
+  const live=buildLivePositions(portfolio,c.equityPrices,undefined,state.cash,null,c.asOf,undefined,{reportingCurrency:state.demo_workbook!.currency});
   for(const p of live.positions)if(c.quotes[p.ticker]){p.brokerMark=c.quotes[p.ticker].mark;p.demoProbability=c.quotes[p.ticker].probability;}
   const details=openOptionTradeDetails(state.portfolio??{},state.option_executions,c.accounts),relationships=demoRelationships(state);
   attachLatestRollPremium(state.portfolio??{},details,relationships.groups.flatMap(g=>g.relationships),c.accounts);
