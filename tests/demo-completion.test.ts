@@ -1,7 +1,7 @@
 import {expect,it,vi} from 'vitest';
 import {readFileSync} from 'node:fs';
 import {createContext,Script} from 'node:vm';
-import {prepareCompletedDemo,completedDemoDashboard,demoRelationships,completedDemo} from '../src/demo/completion.js';
+import {prepareCompletedDemo,completedDemoDashboard,demoRelationships,completedDemo,demoOptionModel} from '../src/demo/completion.js';
 import {demoCompletionFixture} from './helpers/demo-completion.js';
 import {buildPageProjections} from '../src/report/page-projections.js';
 import {buildBrokerProjections} from '../src/report/broker-projections.js';
@@ -70,4 +70,51 @@ it('ignores completion metadata on normal accounts and leaves their native calcu
   expect(optionAccounts(normal)).toEqual(optionAccounts(without));
   expect(tradesOpenBook(normal)).toEqual(tradesOpenBook(without));
   expect(tradesHistory(normal)).toEqual(tradesHistory(without));
+});
+
+it('funds approved stock lots and locally covered calls without changing source puts, cash or broker NAV',()=>{
+  const {state,book,market,plan}=demoCompletionFixture();
+  const base=prepareCompletedDemo(state,market,plan),baseDashboard=completedDemoDashboard(base);
+  const expandedPlan={...plan,positions:{kind:'covered_stock_book' as const,funding:'generated_reserves' as const}};
+  const next=prepareCompletedDemo(base,market,expandedPlan),dashboard=completedDemoDashboard(next),pages=buildPageProjections(dashboard);
+  expect(prepareCompletedDemo(base,market,expandedPlan)).toEqual(next);
+  expect(next.demo_workbook).toEqual(book);expect(next.cash).toEqual(base.cash);
+  for(const[key,h]of Object.entries(base.portfolio!))if(h.instrument==='option')expect(next.portfolio![key]).toEqual(h);
+  for(const fill of base.option_executions!)expect(next.option_executions!.find(e=>e.execution_id===fill.execution_id)).toEqual(fill);
+  const view=pages.positions.all as any;
+  expect(view.stocks).toHaveLength(new Set(book.rows.map(r=>r.underlying)).size);
+  expect(view.stocks.every((r:any)=>r.shares>0&&r.cost>0&&r.last>0&&r.covered>0&&r.callShares<=r.shares)).toBe(true);
+  expect(view.stocks.some((r:any)=>r.idle>0)).toBe(true);
+  expect(view.obligations.every((r:any)=>r.shares>0&&r.callContracts>0&&r.sharesIfCalled>0&&r.unscored===0)).toBe(true);
+  expect(dashboard.optionAnalytics!.gaps).toEqual([]);
+  expect(cents(dashboard.model!.live.totalValue)).toBe(cents(baseDashboard.model!.live.totalValue));
+  expect(dashboard.model!.live.byChannel.map(b=>[b.channel,cents(b.totalValue)])).toEqual(baseDashboard.model!.live.byChannel.map(b=>[b.channel,cents(b.totalValue)]));
+  const end=next.demo_completion!.snapshots.at(-1)!;
+  expect(cents(end.totalValue)).toBe(cents(Number(book.summary.nav)));
+  expect(cents(end.cashAmount!)).toBe(cents(Number(book.summary.cash)));
+  expect(end.positions.filter(p=>p.option?.right==='call')).toHaveLength(view.stocks.length);
+  expect(cents(end.positions.filter(p=>p.instrument==='equity').reduce((n,p)=>n+p.value,0))).toBe(cents(view.totals.value));
+  const journal=buildExecutionJournal(next.option_executions);
+  for(const[channel,initial]of Object.entries(next.demo_completion!.initialCash)){
+    const purchases=next.demo_completion!.equityLots!.filter(l=>l.channel===channel).map(l=>(l.units*l.entryPrice).toFixed(2));
+    const cash=addDecimals(initial,...journal.executions.filter(e=>e.channel===channel).map(e=>addDecimals(e.gross_premium,e.commission!)),...purchases.map(negateDecimal));
+    expect(cents(Number(cash))).toBe(cents(next.cash!.find(c=>c.channel===channel)!.amount));
+  }
+  const normal=structuredClone(next);normal.profile.contact_email='normal@example.com';
+  expect(()=>prepareCompletedDemo(normal,market,expandedPlan)).toThrow('isolated');
+});
+
+
+it('models calls with the correct right at expiry, zero volatility and positive volatility',()=>{
+  const {book}=demoCompletionFixture(),multiplier=Number(book.multiplier),strike=Number(book.rows[0].strike),spot=strike*2;
+  const expiry=book.rows[0].expiry;
+  const expired=demoOptionModel(spot,strike,expiry,expiry,0,multiplier,'call');
+  expect(expired).toEqual({mark:Number(((spot-strike)*multiplier).toFixed(2)),probability:1});
+  const put=demoOptionModel(spot,strike,expiry,book.asOf,0,multiplier,'put');
+  const call=demoOptionModel(spot,strike,expiry,book.asOf,0,multiplier,'call');
+  expect(put.mark).toBe(0);expect(call.mark).toBeGreaterThanOrEqual(expired.mark);
+  const volatileCall=demoOptionModel(strike,strike,expiry,book.asOf,.3,multiplier,'call');
+  const volatilePut=demoOptionModel(strike,strike,expiry,book.asOf,.3,multiplier,'put');
+  expect(volatileCall.mark).toBeGreaterThan(volatilePut.mark);
+  expect(volatileCall.probability+volatilePut.probability).toBeCloseTo(1);
 });

@@ -33,6 +33,11 @@
       { Premium:'Reconciled opening proceeds, before fees, for still-open short options, matching Trading. Unlike Dashboard Premium / Roll, this excludes the old-contract closing leg of a roll. Missing opening fills or FX leave the total unavailable; known subtotals are shown separately. Open P&L uses broker-snapshot marks and position cost, matching Section 01, converted to reporting currency. Equity values and NAV retain their portfolio market quotes.', 'High risk':'Number of open short-option rows with Prob. ITM above 60%, using the same broker mark, underlying spot and 4% rate as Dashboard Section 01. Missing broker marks or spot quotes are unscored, never assumed safe.', 'Cash if assigned':'Gross physical-delivery short-put strike obligation, in reporting currency. Does not subtract available cash, premium or long-option protection.' }, 'Gross short-option assignment obligations');
     $('positionsFunds').hidden = !view.funds.length;
     $('fundsTable').innerHTML = view.funds.length ? stocksTable(view.funds, view) : '';
+    if (payload.demoCompletion) {
+      $('positionsFreshness').textContent += ' · Generated demo holdings';
+      document.querySelector('.positions-note').textContent = payload.demoCompletion.note;
+      document.querySelector('footer').textContent = 'Historical demo snapshot · Sourced stock closes and generated holdings, costs and option trades · Not financial advice';
+    }
     $('positionsContent').setAttribute('aria-busy', 'false');
   }
   $('positionsFilters').addEventListener('click', event => {

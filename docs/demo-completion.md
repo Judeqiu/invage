@@ -52,3 +52,18 @@ keeps the previous state/view and market/plan inputs, uses an optimistic revisio
 preserves credentials/profile, and compares other active users' financial
 digests before and after. Identical source inputs are idempotent. Use a named
 ESM launcher, not Node `--input-type`, because wire preparation starts a worker.
+
+The optional typed `positions` plan (`covered_stock_book`, funded by
+`generated_reserves`) is used only after approval to expand the demo. It allocates
+broker reserve budgets to the workbook underlyings by put assignment notional,
+then buys whole multiplier-sized share blocks within those budgets. Fictional
+stock cost uses the earliest worksheet entry-day adjusted close. Each underlying
+gets a modeled short call using its nearest source put's expiry/strike and no
+more than that source quantity or its locally held share blocks. Remaining
+shares stay idle. Generated call fees scale the selected source row fee by contract
+quantity and preserve its sign. The model prices both option rights explicitly. Stock purchase
+cash, covered-call cash/fees and daily stock marks replay together. Residual
+reserves preserve both total and individual broker NAV and final cash. Original
+puts and source executions remain identical. Existing completed demos require
+`--previous-plan-sha256` matching the saved plan before expansion; repeated
+identical plans remain idempotent. Normal-account paths never activate this plan.

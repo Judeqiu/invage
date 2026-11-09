@@ -13,6 +13,7 @@ await useTestDatabase({books:true});
 const {migrateBooks}=await import('../src/books/index.js');beforeAll(migrateBooks);
 it('persists the completed demo through normal books and serves a stable forced-refresh generation',async()=>{
   const {state,market,plan}=demoCompletionFixture();
+  plan.positions={kind:"covered_stock_book",funding:"generated_reserves"};
   const normal=blankState({displayName:'Normal account fixture',contactEmail:'normal@example.com',language:'en'}) as InvestorState;
   normal.portfolio={NORMAL:{instrument:'equity',units:10,avg_price:25,currency:'USD'}};
   normal.cash=[{amount:2000,currency:'USD',updated_at:state.demo_workbook!.asOf}];
@@ -28,7 +29,7 @@ it('persists the completed demo through normal books and serves a stable forced-
   const refresh=createPortfolioProjectionRefresher();await refresh(state.user.id,true);
   const first=readPortfolioProjection(actual.state)!;expect(first).not.toBeNull();
   expect(first.dashboard.model).toEqual(beforePersistence.dashboard.model);
-  expect(first.openTrades.rows).toHaveLength(state.demo_workbook!.rows.length);
+  expect(first.openTrades.rows).toHaveLength(state.demo_workbook!.rows.length+snapshot.state.demo_completion!.equityLots!.length);
   expect(first.openTrades.rows.every(r=>r.netCash!==null)).toBe(true);
   expect(Object.values(first.brokers).every(b=>b.nav!==null)).toBe(true);
   expect(first.dashboard.optionAnalytics!.gaps).toEqual([]);

@@ -3,11 +3,13 @@
  */
 import {readFileSync,writeFileSync,mkdirSync} from 'node:fs';
 import {join,isAbsolute} from 'node:path';
+import {parseArgs} from 'node:util';
 import {createHash,randomUUID} from 'node:crypto';
 import {isDeepStrictEqual} from 'node:util';
 import {openDatabaseRuntime,bindDatabaseRuntime} from 'utarus/database';
-const [marketFile,planFile,...flags]=process.argv.slice(2);
-if(!marketFile||!planFile||flags.some(f=>f!=='--apply')||!isAbsolute(process.env.UTARUS_DATA_ROOT??''))throw Error('Explicit evidence, reviewed plan and absolute host data root required');
+const {values:flags,positionals}=parseArgs({allowPositionals:true,options:{apply:{type:'boolean'},'previous-plan-sha256':{type:'string'}}});
+const [marketFile,planFile]=positionals;
+if(positionals.length!==2||!marketFile||!planFile||!isAbsolute(process.env.UTARUS_DATA_ROOT??''))throw Error('Explicit evidence, reviewed plan and absolute host data root required');
 const hash=v=>createHash('sha256').update(v).digest('hex'),marketBytes=readFileSync(marketFile),planBytes=readFileSync(planFile);
 const market=JSON.parse(marketBytes),plan=JSON.parse(planBytes);
 const{readAccountConfiguration}=await import('../src/accounts.ts');
@@ -28,12 +30,17 @@ try{
  const source=join(root,'drive',before.state.user.id,before.state.demo_workbook.source.fileId);
  if(hash(readFileSync(source))!==before.state.demo_workbook.source.sha256)throw Error('Original workbook checksum differs');
  const digest=value=>hash(JSON.stringify(value));
- if(completedDemo(before.state)){
-  if(before.state.demo_completion.marketSha256!==digest(market)||before.state.demo_completion.planSha256!==digest(plan))throw Error('Different demo generation already exists; review before replacing');
+ const existing=completedDemo(before.state),identical=existing?.marketSha256===digest(market)&&existing?.planSha256===digest(plan);
+ if(existing&&!identical&&(existing.marketSha256!==digest(market)||flags['previous-plan-sha256']!==existing.planSha256||!plan.positions))throw Error('Replacement requires unchanged market evidence, an explicit prior plan fingerprint and approved typed positions');
+ if(existing&&identical){
   if(!readPortfolioProjection(before.state))throw Error('Completed demo needs projection recovery');
   console.log(JSON.stringify({status:'already_completed',userId:before.state.user.id,revision:before.revision}));
  }else{
   const candidate={...before,state:prepareCompletedDemo(before.state,market,plan)},prepared=await prepareDemoProjection(candidate.state),prior=readPortfolioProjection(before.state);
+  if(existing){
+   for(const[key,holding]of Object.entries(before.state.portfolio??{}))if(holding.instrument==='option'&&!isDeepStrictEqual(candidate.state.portfolio[key],holding))throw Error('Replacement would alter an existing option position');
+   for(const fill of before.state.option_executions??[])if(!isDeepStrictEqual(candidate.state.option_executions.find(e=>e.execution_id===fill.execution_id),fill))throw Error('Replacement would alter an existing execution');
+  }
   if(!prior)throw Error('Verified prior generation required before replacement');
   const accountDigests=async()=>{
    const result={};for(const id of await authority.users.listIds('active'))if(id!==before.state.user.id){
@@ -42,22 +49,22 @@ try{
    }return result;
   };
   const otherBefore=await accountDigests(),scope=prepared.dashboard.aggregatedViews.live.merged;
-  const receipt={status:flags.includes('--apply')?'completed':'dry_run',userId:before.state.user.id,asOf:market.asOf,
+  const receipt={status:flags.apply?'completed':'dry_run',userId:before.state.user.id,asOf:market.asOf,
    marketSha256:candidate.state.demo_completion.marketSha256,marketFileSha256:hash(marketBytes),planFileSha256:hash(planBytes),
    currentOptions:prepared.openTrades.rows.length,modeledQuotes:Object.keys(candidate.state.demo_completion.quotes).length,
    generatedExecutions:prepared.journal.executions.length,closedResults:prepared.dashboard.optionAnalytics.profits.length,
    historyDates:prepared.dashboard.model.history.length,rollGroups:prepared.relationships.groups.length,
    nav:scope.view.totalValue,cash:scope.view.cashAmount,assignment:scope.assignmentObligation,premium:scope.premium,
    realized:scope.realized,brokerNav:Object.fromEntries(Object.entries(prepared.brokers).map(([id,b])=>[id,b.nav])),
-   normalAccountsChecked:Object.keys(otherBefore).length};
-  if(flags.includes('--apply')){
+   stockHoldings:candidate.state.demo_completion.equityLots?.length??0,coveredCalls:Object.values(candidate.state.portfolio).filter(h=>h.option?.right==='call').length,normalAccountsChecked:Object.keys(otherBefore).length};
+  if(flags.apply){
    const latest=await loadInvestor(before.state.user.id);
    if(latest.revision!==before.revision||portfolioFingerprint(latest.state)!==portfolioFingerprint(before.state)||hash(readFileSync(marketFile))!==hash(marketBytes)||hash(readFileSync(planFile))!==hash(planBytes))throw Error('Source changed during staging');
    const directory=join(root,'repairs','demo-completion',randomUUID());mkdirSync(directory,{recursive:true,mode:0o700});
    for(const[name,value]of Object.entries({'before.json':before,'before-projection.json':prior,'prepared-projection.json':prepared,'normal-account-digests.json':otherBefore}))writeFileSync(join(directory,name),JSON.stringify(value),{mode:0o600,flag:'wx'});
    if(!isDeepStrictEqual(JSON.parse(readFileSync(join(directory,'before.json'))),before))throw Error('Before-state backup readback differs');
    writeFileSync(join(directory,'market.json'),marketBytes,{mode:0o600,flag:'wx'});writeFileSync(join(directory,'plan.json'),planBytes,{mode:0o600,flag:'wx'});
-   candidate.state.log.push({ts:new Date().toISOString().slice(0,10),action:'demo_completed',reason:'User approved coherent generated demo at workbook date; script-generated costs, roll details, history and reserves; normal accounts excluded.',market_sha256:receipt.marketSha256,source_sha256:candidate.state.demo_workbook.source.sha256});
+   candidate.state.log.push({ts:new Date().toISOString().slice(0,10),action:'demo_completed',reason:'User approved coherent generated demo at workbook date; script-generated costs, stock holdings, covered calls, roll details, history and reserves; normal accounts excluded.',market_sha256:receipt.marketSha256,source_sha256:candidate.state.demo_workbook.source.sha256});
    await saveInvestor(candidate);const actual=await loadInvestor(before.state.user.id);
    if(!isDeepStrictEqual(actual.state,candidate.state)||!isDeepStrictEqual(actual.state.user,before.state.user)||!isDeepStrictEqual(actual.state.profile,before.state.profile)||!isDeepStrictEqual(actual.state.demo_workbook,before.state.demo_workbook))throw Error('Demo readback differs; inspect retained recovery files before retry');
    prepared.fingerprint=portfolioFingerprint(actual.state);attachDailyChanges(prepared,prior.dailyAggregateHistory??{});
