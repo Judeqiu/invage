@@ -18,6 +18,8 @@ function normalCdf(x) {
 }
 
 function optionFinishItmProbability(position, spot, days) {
+  const modeled = demoEstimate(position, days);
+  if (modeled) return modeled;
   const o = position.option;
   const strike = Number(o?.strike);
   const multiplier = Number(o?.multiplier || 100);
@@ -110,6 +112,8 @@ function matchedCurrentSpotItmProbability(position, spot, days) {
 // The same-contract provider IV is a fallback, with its unavailable source time
 // explicit. Never replace a valid matched-price calibration with this estimate.
 function currentSpotItmProbability(position, spot, days) {
+  const modeled = demoEstimate(position, days);
+  if (modeled) return modeled;
   const matched = matchedCurrentSpotItmProbability(position, spot, days);
   if (matched.reason === 'Waiting for matching prices') matched.reason = 'No usable matched quotes or provider IV';
   if (matched.probability != null) return { ...matched, ivSource: 'matched_prices' };
@@ -127,6 +131,17 @@ function currentSpotItmProbability(position, spot, days) {
 
 function riskLevel(probability) {
   return probability == null ? 'warning' : probability > .6 ? 'danger' : probability >= .45 ? 'warning' : 'ok';
+}
+
+// A generated demonstration estimate must never masquerade as provider IV or
+// a timestamp-matched market trade. Its date must match the view's horizon.
+function demoEstimate(position, days) {
+  const e = position?.demoProbability;
+  if (e?.source !== 'demo_historical_volatility' || !Number.isFinite(e.iv) || e.iv < 0 ||
+      !Number.isFinite(e.probability) || e.probability < 0 || e.probability > 1 ||
+      daysToExpiry(position.option?.expiry, e.asOf) !== days) return null;
+  return { probability:e.probability, iv:e.iv, ivSource:'demo_model', ivAsOf:e.asOf,
+    reason:e.method, optionAsOf:null, spotAsOf:null };
 }
 
 globalThis.OptionProbability = Object.freeze({ riskLevel, finishItmProbability: optionFinishItmProbability, currentSpotItmProbability, daysToExpiry });

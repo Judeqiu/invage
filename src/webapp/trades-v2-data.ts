@@ -10,6 +10,7 @@ import type { OptionRelationship } from '../brokers/option-relationships.js';
 import { partialCloseSummary, type CloseRealization } from '../brokers/partial-close.js';
 import type { BrokerHistoryExecution, BrokerOrderFees } from '../brokers/history.js';
 import { demoWorkbookForState, workbookOpenTrades } from '../demo/workbook.js';
+import {completedDemo} from '../demo/completion.js';
 
 export interface TradeJournalRow {
   id: string; optionId: string; underlying: string; right: 'call' | 'put'; side: 'short' | 'long' | 'unknown';
@@ -51,7 +52,7 @@ function returns(row: TradeJournalRow): number | null {
   return pct !== null && Number.isFinite(pct) ? pct : null;
 }
 export function tradesOpenBook(rawState: InvestorState) {
-  if (demoWorkbookForState(rawState)) return workbookOpenTrades(rawState);
+  if (demoWorkbookForState(rawState) && !completedDemo(rawState)) return workbookOpenTrades(rawState);
   // Compatibility projection is read-only, with exactly the same IDs as the backfill.
   const state = { ...rawState, option_identities:buildOptionIdentityIndex(rawState) };
   const portfolio = getPortfolio(state), accounts = optionAccounts(state);

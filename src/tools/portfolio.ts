@@ -81,6 +81,7 @@ import {
 } from './coerce-tool-numbers.js';
 import { createListOptionTradesTool, optionTradeEvidence } from './option_trades.js';
 import { workbookPortfolioEvidence } from '../demo/workbook.js';
+import {completedDemo} from '../demo/completion.js';
 
 function reportingCurrencyOf(state: unknown): string {
   return getReportingCurrency(state as HouseholdInvestorState);
@@ -2786,6 +2787,7 @@ export function createGetPortfolioTool(): AgentTool {
         const tradeEvidence = optionTradeEvidence(state, portfolio);
         return ok(
           [formatPortfolio(portfolio, cashes, cashTargetPct, deposits, cashLive, depLive),
+            ...(completedDemo(state)?.methods ?? []),
             `Reporting currency: ${rep} (saved preference, or USD default).`,
             ...(cashError ? [`Cash total unavailable: ${cashError}. Native cash balances above remain available; do not assume zero cash.`] : []),
             ...(depositError ? [`Deposit total unavailable: ${depositError}. Native deposit principals above remain available.`] : []),
@@ -2799,6 +2801,8 @@ export function createGetPortfolioTool(): AgentTool {
           ].join('\n'),
           {
             portfolio,
+            ...(completedDemo(state) ? {demo_source:{as_of:state.demo_completion!.asOf,methods:state.demo_completion!.methods,
+              execution_sources:state.demo_completion!.executionSources,market_sha256:state.demo_completion!.marketSha256}} : {}),
             option_trade_evidence: tradeEvidence,
             cash: cashLive.total,
             cash_total_error: cashError,

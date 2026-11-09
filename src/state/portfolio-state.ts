@@ -331,6 +331,7 @@ export interface InvestorState extends UserState {
   /** Explicit opt-in for the user-approved fictional showcase account only. */
   synthetic_demo?: { version: 1 };
   demo_workbook?: import('../demo/workbook.js').DemoWorkbook;
+  demo_completion?: import('../demo/completion.js').DemoCompletion;
   portfolio?: Record<string, Holding>;
   /** Optional recorded cash; omit entirely when unknown. Single or multi-channel. */
   cash?: CashStorage;

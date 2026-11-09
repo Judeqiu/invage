@@ -4,6 +4,7 @@ import { getPortfolio } from '../state/portfolio-state.js';
 import { readBrokerAccountModel } from './accounts.js';
 import { canonicalOptionUnderlying } from './option-symbol.js';
 import { addDecimals, decimal, mergeOptionExecutions, type OptionExecution } from './option-executions.js';
+import {completedDemo} from '../demo/completion.js';
 
 /** Additive identity index. Broker evidence and books remain unchanged. Keys are versioned. */
 export interface OptionIdentityIndex {
@@ -46,8 +47,9 @@ export function executionId(state: InvestorState, e: OptionExecution): string {
   return state.option_identities?.executions[key]?.id ?? optionSystemId(state.user.id, 'execution', key);
 }
 export function optionAccounts(state: InvestorState): Record<string, string> {
-  return Object.fromEntries(Object.values(readBrokerAccountModel(state).connections)
-    .filter(c => c.account_id).map(c => [c.channel, c.account_id!]));
+  return { ...completedDemo(state)?.accounts,
+    ...Object.fromEntries(Object.values(readBrokerAccountModel(state).connections)
+    .filter(c => c.account_id).map(c => [c.channel, c.account_id!])) };
 }
 export function holdingIdentityTerms(state: InvestorState, key: string, accounts = optionAccounts(state)): OptionIdentityTerms {
   const h = getPortfolio(state)[key], o = h.option!;

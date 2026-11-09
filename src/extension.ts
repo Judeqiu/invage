@@ -36,6 +36,7 @@ import {
 } from './state/household-state.js';
 import { dashboardConfig } from './webapp/dashboard-config.js';
 import { demoWorkbookForState } from './demo/workbook.js';
+import {completedDemo} from './demo/completion.js';
 import { createInvageWebUi, createInvageChromeCatalogs } from './webapp/invage-webui.js';
 import { helpFirstAndAsyncTasks } from './agents/help-first.js';
 import { productDisplayName, productHostLabel } from './product-name.js';
@@ -113,7 +114,8 @@ function investorContextPrefix(investor: InvestorState, ctx: EnrichMessageContex
         : ctx.userId
           ? `user_id="${ctx.userId}"`
           : '';
-    return `[Options host context: user "${investor.user.id}" (${investor.profile.display_name}); option lots recorded: ${optionLots}. ${channelHint}. Routine option records and quotes: read tools directly, no specialist or Factchecker. Strategy/analysis: OptionsExpert. Writes, sync or unresolved reconciliation: Bookkeeper. Audit only disputed evidence or material analytical claims. Stay on options.]\n`;
+    const demo=completedDemo(investor) ? ` Fictional demo frozen at ${investor.demo_completion!.asOf}; historical stock closes are sourced, while option marks, predecessor fills and balances are modeled. Read the saved demo tools; do not present these as broker facts or mix current quotes into the frozen figures.` : '';
+    return `[Options host context: user "${investor.user.id}" (${investor.profile.display_name}); option lots recorded: ${optionLots}. ${channelHint}.${demo} Routine option records and quotes: read tools directly, no specialist or Factchecker. Strategy/analysis: OptionsExpert. Writes, sync or unresolved reconciliation: Bookkeeper. Audit only disputed evidence or material analytical claims. Stay on options.]\n`;
   }
   const portfolio = getPortfolio(investor);
   const n = Object.keys(portfolio).length;

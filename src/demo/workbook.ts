@@ -56,6 +56,7 @@ export function workbookJournal(book: DemoWorkbook) {
   return { available: true, executions: [], daily, cumulative };
 }
 export function workbookPortfolioEvidence(state: InvestorState) {
+  if(state.demo_completion) return undefined;
   const book=demoWorkbookForState(state);
   if(!book) return undefined;
   return { source:'user_approved_demo_workbook', as_of:book.asOf, currency:book.currency,

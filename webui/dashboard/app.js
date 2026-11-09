@@ -1220,6 +1220,15 @@ function renderDetailTables(view) {
  * Snapshot hero + KPI cards (Wheel Desk layout). Unknown broker metrics stay "—".
  */
 function renderOverview(view) {
+  const demoNote = document.getElementById('demoSourceNote');
+  if (demoNote) {
+    demoNote.classList.toggle('hidden', !payload.demoCompletion);
+    demoNote.textContent = payload.demoCompletion ? `Demo snapshot · ${optionDateLabel(payload.demoCompletion.asOf)}. ${payload.demoCompletion.note}` : '';
+  }
+  if (payload.demoCompletion) {
+    const footer=document.querySelector('footer');
+    if(footer)footer.textContent='Historical demo snapshot · Sourced stock closes and modeled demo valuations · Not financial advice';
+  }
   const repCcy = reportingCcyCode(view);
   const fundAssets = view.isLive ? brokerFundAssets(payload, view.channelView) : [];
   const hasUnitemizedFunds = fundAssets.some(row => row.amount > 0);
@@ -1284,7 +1293,8 @@ function renderOverview(view) {
     const change = dailyChangeText('totalValue', view);
     const delta = change ? savedDashboardScope(view).dailyChanges?.metrics?.totalValue?.delta : null;
     el.navDelta.className = 'metric-sub' + (brokerNav.length ? ' broker-nav-source' : '') + (change ? ' daily-change ' : ' ') + (delta > 0 ? 'up' : delta < 0 ? 'down' : '');
-    el.navDelta.textContent = payload.demoWorkbook && !selectedBroker() && view.channelView === MERGED_CHANNEL_VIEW ? 'User-approved workbook snapshot'
+    el.navDelta.textContent = payload.demoCompletion ? 'Generated demo portfolio · historical snapshot'
+      : payload.demoWorkbook && !selectedBroker() && view.channelView === MERGED_CHANNEL_VIEW ? 'User-approved workbook snapshot'
       : brokerNav.length ? brokerNav.map(source => `Broker NAV · ${source.channel} · ${source.asOf || 'date unavailable'}`).join(' · ') : change || (view.isLive ? 'Live marks' : `Archived ${optionDateLabel(view.label)} · original currency and FX`);
     if (unverifiedOptionChannels(view).length) {
       el.navDelta.textContent += ' · option positions unverified';
@@ -1355,6 +1365,7 @@ function renderOverview(view) {
   }
   if (debitNote) el.kpiRow?.children[3]?.querySelector('.metric-sub')?.classList.add('cash-debit-note');
   renderExpiryRisk(view, asOf);
+  if(payload.demoCompletion)document.querySelectorAll('.risk-method p').forEach(p=>{p.textContent=payload.demoCompletion.methods.join(' ');});
   renderChannelPills(view);
   installCardExplainButtons();
 }
@@ -1427,14 +1438,15 @@ function renderV2Overview() {
     const premiumData = view ? recordedPremiumForView(view, date) : null;
     const period = (label, from) => {
       const result = view ? recordedRealizedForView(view, date, from) : { value: null, reason: 'No recorded completed results' };
-      const html = metricCardHtml(label, result.value == null ? '—' : fmtPrettyMoney(result.value, reportingCcyCode(view), 0),
+      const html = metricCardHtml(label, result.value == null ? '—' : fmtPrettyMoney(result.value, reportingCcyCode(view), payload.demoCompletion ? 2 : 0),
         escapeHtml(`${from ? optionDateLabel(from) : ''} – ${date ? optionDateLabel(date) : ''} · ${result.reason}`), '', result.value > 0 ? 'up' : result.value < 0 ? 'down' : '');
       const node = document.createElement('div'); node.innerHTML = html;
       return stat(node.firstElementChild);
     };
     earnings = `<div class="metric-card v2-premium-card">${period('Earned premium · Daily', premiumData?.dailyFrom)}${period('Earned premium · MTD', date?.slice(0, 7) + '-01')}${stat(el.realizedPnlCard, 'Earned premium · Total')}</div>`;
   }
-  const funds = kpis.slice(5).map(copy).join('') || metricCardHtml('Fund assets · Broker', '—',
+  const funds = payload.demoCompletion ? metricCardHtml('Fund assets · Demo', fmtPrettyMoney(view.positions.filter(p => p.instrument === 'fund').reduce((sum,p) => sum+p.value,0), reportingCcyCode(view), 2), 'Generated reserve assets included in NAV; not broker-reported funds.')
+    : kpis.slice(5).map(copy).join('') || metricCardHtml('Fund assets · Broker', '—',
     'Not reported separately · Itemized funds remain included in NAV.',
     'This card shows a separately reported broker fund balance when available. An unavailable balance is not zero. Itemized fund holdings are already included in NAV; do not add them again.');
   summary.innerHTML = group('Premium & earnings', premium + earnings, 'v2-earnings') +
@@ -1683,7 +1695,7 @@ function wheelRiskTable(rows, radar, view, asOf) {
   ).sort((a,b) => (a.days ?? Infinity) - (b.days ?? Infinity) || (b.estimate.probability ?? -1) - (a.estimate.probability ?? -1));
   const right = ['all','put','call'].map(value => `<button type="button" class="chip-btn${riskRightFilter === value ? ' on' : ''}" data-risk-right="${value}" aria-pressed="${riskRightFilter === value}">${value === 'all' ? 'All' : value.toUpperCase()}</button>`).join('');
   const levels = [['all','All'],['danger','Act now >60%'],['warning','Caution'],['ok','Comfortable']].map(([value,label]) => `<button type="button" class="risk-filter risk-filter-${value}${riskLevelFilter === value ? ' on' : ''}" data-risk-level="${value}" aria-pressed="${riskLevelFilter === value}">${escapeHtml(label)}</button>`).join('');
-  const columns = ['FIN INSTRUMENT','Pos','Days','Spot','Strike','Moneyness %','IV','If Assigned','Prob. ITM','Last ($)','Avg Px','Market Value','Unrealized P&L (%)','Broker'];
+  const columns = ['FIN INSTRUMENT','Pos','Days','Spot','Strike','Moneyness %',payload.demoCompletion ? 'Model vol' : 'IV','If Assigned','Prob. ITM','Last ($)','Avg Px','Market Value','Unrealized P&L (%)','Broker'];
   const body = filtered.map(({p,spot,days,estimate,exposure}) => {
     const o = p.option, multiplier = Number(o.multiplier);
     const economics = globalThis.OptionPosition.valuation(p);
@@ -1704,7 +1716,7 @@ function wheelRiskTable(rows, radar, view, asOf) {
       <td class="num ${itm ? 'down' : 'muted'}">${moneyness == null ? '—' : fmtSigned(moneyness,1)+'%'}</td>
       <td class="num muted">${estimate.iv == null ? '—' : (estimate.iv*100).toFixed(0)+'%'}</td>
       <td class="num">${Number.isFinite(exposure) ? fmtPrettyMoney(exposure,reportingCcyCode(view),0) : '—'}</td>
-      <td title="${escapeHtml(probability == null ? estimate.reason : estimate.ivSource === 'yahoo' ? `Black–Scholes estimate using latest spot and Yahoo IV for this contract; r = 4%, q = 0, T = DTE/365. IV source timestamp unavailable; retrieved ${estimate.ivFetchedAt}. Option trade time ${estimate.optionAsOf || 'unavailable'} does not establish IV freshness.` : `Black–Scholes estimate using latest spot and IV calibrated from matched option/stock quotes at ${estimate.optionAsOf} / ${estimate.spotAsOf}; r = 4%, q = 0, T = DTE/365. IV is held until newer matching quotes are available.`)}">${riskPill(tone, probability == null ? label : `${(probability*100).toFixed(1)}% · ${label}`)}${probability == null ? `<small>${escapeHtml(estimate.reason)}</small>` : ''}</td>
+      <td title="${escapeHtml(probability == null ? estimate.reason : estimate.ivSource === 'demo_model' ? `Generated demo probability as of ${estimate.ivAsOf}. ${estimate.reason}` : estimate.ivSource === 'yahoo' ? `Black–Scholes estimate using latest spot and Yahoo IV for this contract; r = 4%, q = 0, T = DTE/365. IV source timestamp unavailable; retrieved ${estimate.ivFetchedAt}. Option trade time ${estimate.optionAsOf || 'unavailable'} does not establish IV freshness.` : `Black–Scholes estimate using latest spot and IV calibrated from matched option/stock quotes at ${estimate.optionAsOf} / ${estimate.spotAsOf}; r = 4%, q = 0, T = DTE/365. IV is held until newer matching quotes are available.`)}">${riskPill(tone, probability == null ? label : `${(probability*100).toFixed(1)}% · ${label}`)}${probability == null ? `<small>${escapeHtml(estimate.reason)}</small>` : ''}</td>
       <td class="num">${Number.isFinite(mark) && Number.isFinite(multiplier) && multiplier !== 0 ? (mark/multiplier).toFixed(2) : '—'}</td><td class="num">${Number.isFinite(p.avgCost) && Number.isFinite(multiplier) && multiplier !== 0 ? (p.avgCost/multiplier).toFixed(2) : '—'}</td>
       <td class="num">${money(value)}</td><td class="num ${plClass(pl)}">${money(pl)}${pct == null ? '' : ` (${pct.toFixed(1)}%)`}</td><td>${brokerLabel(p.channel)}</td>
     </tr>`;
@@ -2065,7 +2077,8 @@ function renderOpenOptions(view) {
   }
   const months = [...groups.keys()].sort();
   const ccy = reportingCcyCode(view);
-  const prices = view.isLive ? payload?.equityPrices || {} : {};
+  const prices = view.isLive ? payload?.equityPrices || {} : payload.demoCompletion
+    ? Object.fromEntries(view.positions.filter(p=>p.option).map(p=>[p.option.underlying,p.option.underlying_mark])) : {};
   const columns = isWheelDesk ? ['FIN INSTRUMENT','Pos','Last ($)','PREMIUM / ROLL','Avg Px','MKT Value','Unrealized P&L (%)','Days','Opened','Spot','Entry Spot','Assignment','Broker'] : ['Financial instrument', 'Pos', 'Opened', 'Entry\nSpot', 'Current\nSpot', 'Assignment\nexposure', 'DTE', 'Trade cash flow ·\nBefore Fees', 'Open cost /\ncontract', 'Mark /\ncontract', 'Market\nvalue', 'Unrealized\nP&L', '% of max', 'Broker'];
   const details = (p) => {
     const o = p.option;
@@ -2798,7 +2811,7 @@ function initDashboard(preserveSelection = false) {
   el.dateSelect.innerHTML = '';
   const liveOpt = document.createElement('option');
   liveOpt.value = 'live';
-  liveOpt.textContent = 'Live';
+  liveOpt.textContent = payload.demoCompletion ? 'Demo snapshot' : 'Live';
   el.dateSelect.appendChild(liveOpt);
   dates.forEach((d) => {
     const opt = document.createElement('option');

@@ -3,6 +3,7 @@ import type { AgentTool } from '@earendil-works/pi-agent-core';
 import type { Holding } from '../market/types.js';
 import type { InvestorState } from '../state/portfolio-state.js';
 import { demoWorkbookForState } from '../demo/workbook.js';
+import {optionAccounts} from '../brokers/option-identities.js';
 import { combinedCredentials, readBrokerAccountModel } from '../brokers/accounts.js';
 import { getBrokerConnector } from '../brokers/catalog.js';
 import { redactSecrets } from '../brokers/connections.js';
@@ -13,7 +14,7 @@ import { channelIdParams, resolveInvestorFromChannel, type ChannelIds } from './
 export function optionTradeEvidence(state: InvestorState, portfolio: Record<string, Holding>) {
   const model = readBrokerAccountModel(state);
   const journal = buildExecutionJournal(state.option_executions);
-  const accounts = Object.fromEntries(Object.values(model.connections).flatMap(c => c.account_id ? [[c.channel, c.account_id]] : []));
+  const accounts = optionAccounts(state);
   const matched = openOptionTradeDetails(portfolio, journal.executions, accounts, state.option_events);
   const positions = Object.fromEntries(Object.entries(portfolio).filter(([, h]) => h.option).map(([key]) => [key,
     matched[key] ? { status: 'matched' as const, ...matched[key], method: 'FIFO outstanding opening records reconciled to held quantity' }
@@ -77,6 +78,7 @@ export function queryOptionTrades(state: InvestorState, portfolio: Record<string
     (!filter.end_date || row.entryDate<=filter.end_date));
   return { available: journal.available, executions: rows.slice(offset, offset + limit), total: rows.length,
     ...(book ? {worksheet_rows:worksheet,worksheet_source:book.source,worksheet_currency:book.currency,
+      ...(state.demo_completion ? {demo_execution_sources:state.demo_completion.executionSources,demo_methods:state.demo_completion.methods} : {}),
       worksheet_basis:'User-approved current short puts; worksheet dates and combined row cash, not separate execution fills.'} : {}),
     next_offset: offset + limit < rows.length ? offset + limit : null, ...optionTradeEvidence(state, portfolio) };
 }

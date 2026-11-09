@@ -809,7 +809,7 @@ function legacySlice(live, channel) {
         const riskRows = {};
         // Closed broker rows remain in holdings/history, outside open assignment risk.
         for (const mode of ['wheel', 'matching']) riskRows[mode] = (view.positions || []).filter(p => p.instrument === 'option' && p.units !== 0 && p.option?.side === 'short').map(p => {
-          const o = p.option, spot = view.isLive ? payload.equityPrices?.[o.underlying] : undefined;
+          const o = p.option, spot = view.isLive ? payload.equityPrices?.[o.underlying] : payload.demoCompletion ? o.underlying_mark : undefined;
           const days = globalThis.OptionProbability.daysToExpiry(o.expiry, date);
           const estimate = view.isLive && days < 0 ? { probability: null, iv: null, reason: 'Past expiry; broker status unverified' }
             : mode === 'wheel' ? globalThis.OptionProbability.currentSpotItmProbability(p, spot, days) : globalThis.OptionProbability.finishItmProbability(p, spot, days);

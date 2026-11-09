@@ -62,6 +62,7 @@ export interface BenchmarkData {
 }
 
 export interface DashboardPayload {
+  demoCompletion?: {asOf:string;note:string;methods:string[];marketSha256:string};
   demoWorkbook?: import('../demo/workbook.js').DemoWorkbook;
   demoWorkbookScope?: 'broker';
   /** Sync-time projections for Positions, Insights and date/account dashboard scopes. */

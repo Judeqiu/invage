@@ -8,6 +8,7 @@ import type { InvestorState } from '../state/portfolio-state.js';
 import { addDecimals } from '../brokers/option-executions.js';
 import { assertBrokerHistory,verifiedHistoryMultipliers } from '../brokers/history.js';
 import { cachedDashboardCalculation, cacheFingerprint, readDashboardCache, writeDashboardCache } from './dashboard-cache.js';
+import { completedDemo, demoRelationships } from '../demo/completion.js';
 
 const cache = new Map<string, RollFill[]>();
 const MAX_ARCHIVES = 500;
@@ -42,6 +43,7 @@ function relationshipInputs(state: InvestorState, filters: RelationshipFilters, 
 
 /** Tenant-scoped, read-only archive backfill for bounded interactive queries. */
 export function optionRelationshipsForState(state: InvestorState, filters: RelationshipFilters = {}, options: { background?: boolean } = {}) {
+  if(completedDemo(state)) return demoRelationships(state,filters);
   const { files, connections, input, scope } = relationshipInputs(state, filters, options.background === true);
   return cachedDashboardCalculation('relationships', scope, input, () => {
     const scan = calculateRelationships(state, filters, files, connections, options.background === true);
@@ -53,6 +55,7 @@ export function optionRelationshipsForState(state: InvestorState, filters: Relat
 
 /** Full sync-time scan yields between archives so HTTP and sync progress remain responsive. */
 export async function prepareOptionRelationships(state: InvestorState) {
+  if(completedDemo(state)) return demoRelationships(state);
   const filters: RelationshipFilters = {};
   const { files, connections, input, scope } = relationshipInputs(state, filters, true);
   const fingerprint = cacheFingerprint(input);

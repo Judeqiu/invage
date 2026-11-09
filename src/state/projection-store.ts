@@ -6,6 +6,7 @@ import { mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSyn
 import { join } from 'node:path';
 import { resolveDataRoot } from 'utarus';
 import type { InvestorState } from './portfolio-state.js';
+import {completedDemo} from '../demo/completion.js';
 import type { DashboardPayload } from '../webapp/dashboard-data.js';
 import type { buildExecutionJournal } from '../brokers/option-executions.js';
 import type { tradesOpenBook, tradesHistory } from '../webapp/trades-v2-data.js';
@@ -54,7 +55,7 @@ export function portfolioFingerprint(state: InvestorState): string {
     state.portfolio, state.cash, state.deposits, (state as unknown as { treasury: unknown }).treasury,
     connections, state.broker_history, state.option_executions, state.option_events,
     state.option_observations, state.option_identities, state.broker_statement_evidence, snapshots,
-    ...(state.demo_workbook ? [state.demo_workbook] : [])])).digest('hex');
+    ...(state.demo_workbook ? [state.demo_workbook] : []), ...(completedDemo(state) ? [state.demo_completion] : [])])).digest('hex');
   if(frozen)frozenFingerprints.set(state,{snapshots:snapshotKey,fingerprint});
   return fingerprint;
 }

@@ -1,0 +1,45 @@
+import {beforeAll,expect,it} from 'vitest';
+import {getAccountAuthority} from 'utarus';
+import {blankState} from 'utarus';
+import type {InvestorState} from '../src/state/portfolio-state.js';
+import {useTestDatabase} from './helpers/database.js';
+import {demoCompletionFixture} from './helpers/demo-completion.js';
+import {prepareCompletedDemo} from '../src/demo/completion.js';
+import {loadInvestor,saveInvestor} from '../src/state/investor-store.js';
+import {createPortfolioProjectionRefresher} from '../src/state/portfolio-projections.js';
+import {readPortfolioProjection} from '../src/state/projection-store.js';
+import {prepareDemoProjection} from '../src/demo/prepare-projection.js';
+await useTestDatabase({books:true});
+const {migrateBooks}=await import('../src/books/index.js');beforeAll(migrateBooks);
+it('persists the completed demo through normal books and serves a stable forced-refresh generation',async()=>{
+  const {state,market,plan}=demoCompletionFixture();
+  const normal=blankState({displayName:'Normal account fixture',contactEmail:'normal@example.com',language:'en'}) as InvestorState;
+  normal.portfolio={NORMAL:{instrument:'equity',units:10,avg_price:25,currency:'USD'}};
+  normal.cash=[{amount:2000,currency:'USD',updated_at:state.demo_workbook!.asOf}];
+  await getAccountAuthority().registration.register({state:normal,mail:null,invitation:null});
+  const normalBefore=await loadInvestor(normal.user.id);
+  await getAccountAuthority().registration.register({state,mail:null,invitation:null});
+  const snapshot=await loadInvestor(state.user.id);snapshot.state=prepareCompletedDemo(snapshot.state,market,plan);
+  await saveInvestor(snapshot);
+  const actual=await loadInvestor(state.user.id);
+  expect(actual.state.demo_workbook).toEqual(state.demo_workbook);
+  expect(actual.state.option_executions).toEqual(snapshot.state.option_executions);
+  const refresh=createPortfolioProjectionRefresher();await refresh(state.user.id,true);
+  const first=readPortfolioProjection(actual.state)!;expect(first).not.toBeNull();
+  expect(first.openTrades.rows).toHaveLength(state.demo_workbook!.rows.length);
+  expect(first.openTrades.rows.every(r=>r.netCash!==null)).toBe(true);
+  expect(Object.values(first.brokers).every(b=>b.nav!==null)).toBe(true);
+  expect(first.dashboard.optionAnalytics!.gaps).toEqual([]);
+  const staged=await prepareDemoProjection(actual.state);
+  expect(staged.dashboard.model).toEqual(first.dashboard.model);
+  expect(staged.journal).toEqual(first.journal);
+  for(const [id,broker]of Object.entries(staged.brokers)){
+    expect(broker.nav).toBe(first.brokers[id].nav);
+    expect(broker.dashboard.model).toEqual(first.brokers[id].dashboard.model);
+  }
+  await expect(prepareDemoProjection(normalBefore.state)).rejects.toThrow('designated');
+  await refresh(state.user.id,true);const second=readPortfolioProjection((await loadInvestor(state.user.id)).state)!;
+  expect(second.dashboard.model).toEqual(first.dashboard.model);
+  expect(second.journal).toEqual(first.journal);
+  expect(await loadInvestor(normal.user.id)).toEqual(normalBefore);
+});

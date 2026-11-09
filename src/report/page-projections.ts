@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { createContext, Script } from 'node:vm';
 import type { DashboardPayload } from '../webapp/dashboard-data.js';
 import { applyWorkbookScopes } from '../demo/workbook.js';
+import { applyCompletedDemoScopes } from '../demo/completion.js';
 
 // Run trusted, pure application models in a private realm rather than duplicating
 // their accounting rules or exposing Node's global object to browser scripts.
@@ -18,6 +19,7 @@ export function buildPageProjections(payload: DashboardPayload) {
   }
   const dashboard = context.DashboardAggregates.build(payload) as Record<string, Record<string, unknown>>;
   applyWorkbookScopes(payload, dashboard);
+  applyCompletedDemoScopes(payload, dashboard);
   return { positions, insights, dashboard };
 }
 

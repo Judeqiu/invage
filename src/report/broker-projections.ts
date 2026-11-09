@@ -6,6 +6,8 @@ import type { TradeJournalRow } from '../webapp/trades-v2-data.js';
 import type { LiveDashboardSlice } from './dashboard-model.js';
 import { buildPageProjections, buildTradeProjections } from './page-projections.js';
 import { demoWorkbookForState, workbookJournal } from '../demo/workbook.js';
+import {buildDashboardModel} from './dashboard-model.js';
+import {completedDemo} from '../demo/completion.js';
 
 export interface BrokerProjection {
   brokerId: string;
@@ -85,17 +87,25 @@ export function buildBrokerProjections(state: InvestorState, dashboard: Dashboar
       ? Object.fromEntries(Object.entries(values).filter(([channel]) => members.has(channel))) : undefined;
     const live = dashboard.model ? brokerLive(dashboard.model.live, channels) : null;
     const book = demoWorkbookForState(state);
-    if (book && live) {
+    const completion=completedDemo(state);
+    if (book && !completion && live) {
       // The workbook supplies only combined account NAV/cash, never a broker allocation.
       for (const field of ['totalValue','positionsValue','totalCost','totalPL','totalPLPct','optionsPremiumCollected'] as const) live[field] = null as unknown as number;
     }
-    const journal = book ? workbookJournal({...book, rows:book.rows.filter(owns)}) : buildExecutionJournal(state.option_executions?.filter(owns));
+    const journal = book && !completion ? workbookJournal({...book, rows:book.rows.filter(owns)}) : buildExecutionJournal(state.option_executions?.filter(owns));
     const scoped: DashboardPayload = {
       ...dashboard, aggregatedViews: undefined, pageProjections: undefined,
       ...(dashboard.demoWorkbook ? { demoWorkbookScope: 'broker' as const } : {}),
       // Historical account views remain in the full generation. Broker cash cannot
       // be inferred from older combined snapshots without account cash attribution.
-      model: live ? { live, history: [], periodChange: null, lastSnapshot: null } : null,
+      model: live ? completion ? buildDashboardModel(live,completion.snapshots.map(snapshot=>{
+        // Completed demo snapshots were generated with full per-account cash/marks.
+        // Use the same account aggregation as the current broker view.
+        const scoped=brokerLive({...dashboard.model!.live,...snapshot,issues:[]},channels);
+        return {...snapshot,...scoped,positions:scoped.positions.map(p=>({...p,markSource:'manual' as const})),
+          cashAmount:scoped.cashAmount??undefined,cashCurrency:scoped.cashCurrency??undefined,cashChannel:scoped.cashChannel??undefined,
+          depositsCurrency:scoped.depositsCurrency??undefined,reportingCurrency:scoped.reportingCurrency??undefined};
+      })) : { live, history: [], periodChange: null, lastSnapshot: null } : null,
       brokerAsOf: keyed(dashboard.brokerAsOf), brokerChannels: keyed(dashboard.brokerChannels),
       connectionMetrics: keyed(dashboard.connectionMetrics), warnings: live?.issues,
       optionTradeDetails: dashboard.optionTradeDetails && Object.fromEntries(Object.entries(dashboard.optionTradeDetails)

@@ -39,6 +39,7 @@ export function resolveDashboardChannel(raw: string | null | undefined): string 
 }
 
 export interface LivePosition {
+  demoProbability?: import('../demo/completion.js').DemoProbability;
   brokerValues?: import('../market/types.js').BrokerPositionValues;
   ticker: string;
   /** Holding currency; omitted for older or manually entered positions. */
