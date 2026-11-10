@@ -49,10 +49,13 @@ it('uses only the latest verified roll before fees, preserving unknown candidate
     evidence: 'order', opened_quantity: '2', opening_fills: ['open'], through: '2026-10-01T10:30:00', gross_cash: '450' } as any;
   attachLatestRollPremium({ path: holding }, details, [relationship], { ibkr: 'U1' });
   expect(details.path.rollPremium).toBe(450);
+  expect(details.path.verifiedRollDate).toBe('2026-10-01');
   attachLatestRollPremium({ path: holding }, details, [{ ...relationship, evidence: 'possible' }], { ibkr: 'U1' });
   expect(details.path.rollPremium).toBeNull();
+  expect(details.path.verifiedRollDate).toBeUndefined();
   attachLatestRollPremium({ path: holding }, details, [{ ...relationship, opening_fills: ['another-order'] }], { ibkr: 'U1' });
   expect(details.path.rollPremium).toBeNull();
+  expect(details.path.verifiedRollDate).toBeUndefined();
 });
 
 it('attaches a vertical only to both reconciled lots from the exact opening fills', () => {

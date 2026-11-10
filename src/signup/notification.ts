@@ -5,13 +5,10 @@ import type { validateSubmission } from './submissions.js';
 
 type Signup = ReturnType<typeof validateSubmission>;
 
-/** Separate from customer access emails: these mailboxes receive intake summaries. */
-export async function notifyNewSignup(input: Signup): Promise<void> {
-  const recipients = String(readAgentConfig(dashboardConfig).signup_notification_email).trim();
-  if (!recipients) return;
-  const to = recipients.split(',').map(address => address.trim());
-  const email = /^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+$/;
-  if (to.some(address => !email.test(address))) throw new Error('Invalid signup notification recipient');
+const email = /^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+$/;
+
+/** Shared SMTP setup; customer receipts do not depend on the internal recipient setting. */
+export function signupSmtp() {
   const host = process.env.INVAGE_SIGNUP_SMTP_HOST?.trim();
   const user = process.env.INVAGE_SIGNUP_SMTP_USER?.trim();
   const pass = process.env.INVAGE_SIGNUP_SMTP_PASSWORD;
@@ -26,9 +23,19 @@ export async function notifyNewSignup(input: Signup): Promise<void> {
     auth: { user, pass }, tls: { minVersion: 'TLSv1.2' },
     disableFileAccess: true, disableUrlAccess: true,
   });
+  return { transport, from: { name: 'Velovest', address: from } };
+}
+
+/** Separate from customer access emails: these mailboxes receive intake summaries. */
+export async function notifyNewSignup(input: Signup): Promise<void> {
+  const recipients = String(readAgentConfig(dashboardConfig).signup_notification_email).trim();
+  if (!recipients) return;
+  const to = recipients.split(',').map(address => address.trim());
+  if (to.some(address => !email.test(address))) throw new Error('Invalid signup notification recipient');
+  const { transport, from } = signupSmtp();
   try {
     const result = await transport.sendMail({
-      from: { name: 'Velovest', address: from }, to,
+      from, to,
       subject: `New Velovest signup (${input.reference})`,
       text: [
         'A new signup has been saved and is awaiting review.', '',

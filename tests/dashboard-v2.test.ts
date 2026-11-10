@@ -191,6 +191,12 @@ it.skipIf(!existsSync(executablePath))('renders V2 with shared data, clarifies m
     expect(await frame.$$('#openPremiumExpiryCard .bar-row')).toHaveLength(7);
     expect(await frame.$eval('#openPremiumExpiryCard .premium-year', n => (n as HTMLDetailsElement).open)).toBe(true);
     expect(await frame.$eval('#openPremiumExpiryCard .premium-year > summary', n => n.textContent)).toContain('$700.00');
+    const monthlyMore = '#openPremiumExpiryCard .premium-year .bar-more';
+    expect(await frame.$eval(monthlyMore, n => (n as HTMLDetailsElement).open)).toBe(false);
+    expect(await frame.$$eval('#openPremiumExpiryCard .bar-row', nodes => nodes.filter(n => n.getBoundingClientRect().height > 0).length)).toBe(5);
+    await frame.click(monthlyMore + ' > summary');
+    await expect.poll(() => frame.$eval(monthlyMore, n => (n as HTMLDetailsElement).open)).toBe(true);
+    expect(await frame.$$eval('#openPremiumExpiryCard .bar-row', nodes => nodes.filter(n => n.getBoundingClientRect().height > 0).length)).toBe(7);
     const chartIds = ['premiumConcentrationCard', 'openPremiumUnderlyingCard', 'openPnlExpiryCard'];
     for (const id of chartIds) {
       const card = '#' + id;
@@ -208,6 +214,7 @@ it.skipIf(!existsSync(executablePath))('renders V2 with shared data, clarifies m
     await expect.poll(() => frame.$eval('#openPremiumExpiryCard .premium-year', n => (n as HTMLDetailsElement).open)).toBe(false);
     await frame.click('#channelPills [data-channel="ibkr"]');
     expect(await frame.$eval('#openPremiumExpiryCard .premium-year', n => (n as HTMLDetailsElement).open)).toBe(false);
+    expect(await frame.$eval(monthlyMore, n => (n as HTMLDetailsElement).open)).toBe(true);
     expect(await frame.$eval('#premiumConcentrationCard .bar-more', n => (n as HTMLDetailsElement).open)).toBe(true);
     await frame.click('#premiumConcentrationCard summary');
     expect(await frame.$$eval('#premiumConcentrationCard .bar-row', nodes => nodes.filter(n => n.getBoundingClientRect().height > 0).length)).toBe(5);

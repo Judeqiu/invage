@@ -34,6 +34,18 @@ it('totals the displayed before-fees cash flows only when all rows and currencie
   for (const rows of [[], [trade(), undefined], [trade(), trade({ rollPremium: null })], [trade(), { ...ordinary, currency: 'SGD' }]]) expect(total(rows)).toBeNull();
 });
 
+it('distinguishes remaining-lot opening dates from verified rolls without promoting candidate dates', () => {
+  const datesHelper = source.slice(source.indexOf('function openingDatesHtml('),source.indexOf('function unverifiedOptionChannels('));
+  const render = runInNewContext(`${datesHelper};openingDatesHtml`, {escapeHtml:(value:string)=>value,optionDateLabel:(value:string)=>value});
+  const lots={openedFrom:'2026-06-30',openedTo:'2026-09-09'};
+  expect(render(lots)).toContain('First opened: 2026-06-30');
+  expect(render(lots)).toContain('Last opened: 2026-09-09');
+  expect(render({...lots,rollDate:'2026-09-09'})).not.toContain('Latest roll:');
+  expect(render({...lots,verifiedRollDate:'2026-09-09'})).toContain('Latest roll: 2026-09-09');
+  expect(render({...lots,openedFrom:lots.openedTo})).not.toContain('Last opened:');
+  expect(render(undefined)).toBe('—');
+});
+
 function fixture() {
   const holdings: Record<string, Holding> = {}, executions: OptionExecution[] = [], relationships = [];
   const accounts = { 'moomoo-first': 'A', 'moomoo-second': 'B' };
@@ -74,7 +86,9 @@ it.skipIf(!existsSync(chrome)).each(['v2.html', 'index.html'])('renders roll-awa
     brokerAsOf: { 'moomoo-first': '2026-10-22', 'moomoo-second': '2026-10-22' },
     dashboardConfig: { dashboardVersion: version === 'v2.html' ? 'v2' : 'v1' },
     model: buildDashboardModel(buildLivePositions(f.holdings, { AVGO: 337.8, SOXL: 60 }), []), optionTradeDetails: f.details,
-    premiumJournal: { channels: Object.keys(f.accounts) }, optionAnalytics: { executions: [], profits: [], gaps: [] } };
+    premiumJournal: { available: true, channels: Object.keys(f.accounts), daily: f.executions.map(e => ({
+      channel:e.channel,account_id:e.account_id,date:e.executed_at.slice(0,10),currency:e.currency,gross_premium:e.gross_premium,
+    })) }, optionAnalytics: { executions: f.executions, profits: [], gaps: [] } };
   const server = createServer((req, res) => {
     const url = new URL(req.url!, 'http://localhost');
     const json = (value: unknown) => { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(withPageProjections(value))); };
@@ -103,6 +117,8 @@ it.skipIf(!existsSync(chrome)).each(['v2.html', 'index.html'])('renders roll-awa
     expect(await page.$eval('#openPremiumExpiryCard', n => n.textContent)).toContain('$1,040.00');
     expect(await page.$eval('#openPremiumUnderlyingCard', n => n.textContent)).toContain('$815.00');
     if (version === 'v2.html') {
+      expect(await page.$eval(avgo + ' .option-opened', n => n.textContent)).toContain('Opened: 07-Oct-2026');
+      expect(await page.$eval(avgo + ' .option-opened', n => n.textContent)).toContain('Latest roll: 07-Oct-2026');
       expect(await page.$eval(avgo + ' td:nth-child(5)', n => n.textContent)).toBe('19.50');
       expect(await page.$eval(avgo + ' td:nth-child(7)', n => n.textContent)).toContain('$1,320');
       expect(await page.$eval('.option-ledger thead', n => n.textContent)).toContain('PREMIUM / ROLL');

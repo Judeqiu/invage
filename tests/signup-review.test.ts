@@ -14,7 +14,7 @@ import { createSubmissionAdminRouter } from '../src/signup/api.js';
 
 const database = await useTestDatabase();
 const pool = new pg.Pool({ connectionString: database.databaseUrl });
-const repository = new SubmissionRepository(pool);
+const repository = new SubmissionRepository(pool, async () => {}, async () => ({outcome:'accepted',messageId:'fixture-receipt'}));
 const codec = createSecretCodec({keyId:'review-test',keyBase64:randomBytes(32).toString('base64')});
 let configured = false;
 let mailResult: Awaited<ReturnType<SignupMailer['send']>> = {outcome:'accepted',messageId:'test-provider-receipt'};

@@ -29,7 +29,7 @@ function AboutPage() {
     <section className="bg-elevated px-4 py-8 sm:px-6 sm:py-10 lg:px-8"><div className="mx-auto grid max-w-7xl gap-3 md:grid-cols-2">
       <article className="border border-border bg-card p-5 sm:p-6">
         <h2 className={h2}>Our Story</h2>
-        <p className={p}>Since graduating from his corporate JOB ("Just Over Broke") back in 2010, our founder, <span className={b}>Victor Lim</span>, has managed businesses and investments entirely on his own terms and schedule. A core principle guides everything we do: <em>Do not chase after money; let money chase after you. Do not trade your time for money.</em> Wealth is about ownership—we encourage individuals to acquire income-producing assets and take charge of their financial education because <span className={b}>no one cares about your money more than you do.</span> When you learn to manage money, you stop working for it, and it starts working for you.</p>
+        <p className={p}>Since graduating from his corporate JOB ("Just Over Broke") back in 2010, our founder, Victor Lim, has managed businesses and investments entirely on his own terms and schedule. A core principle guides everything we do: <em>Do not chase after money; let money chase after you. Do not trade your time for money.</em> Wealth is about ownership—we encourage individuals to acquire income-producing assets and take charge of their financial education because <span className={b}>no one cares about your money more than you do.</span> When you learn to manage money, you stop working for it, and it starts working for you.</p>
       </article>
       <article className="border border-border bg-card p-5 sm:p-6">
         <h2 className={h2}>Why the Options Business?</h2>

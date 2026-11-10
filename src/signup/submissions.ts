@@ -3,6 +3,7 @@ import pg from 'pg';
 import { readDatabaseConfig } from '../../node_modules/utarus/dist/database/config.js';
 import { isPackageId, isSlotTime, packageTotal, packages, validSessionDate } from './catalog.js';
 import { notifyNewSignup } from './notification.js';
+import { sendSignupReceipt } from './receipt.js';
 
 export class SubmissionError extends Error {
   constructor(message: string, public readonly status = 400) { super(message); }
@@ -47,6 +48,10 @@ export interface SubmissionSummary {
   email_accepted_at: Date | null;
   email_message_id: string | null;
   email_error: string | null;
+  receipt_status: string;
+  receipt_attempted_at: Date | null;
+  receipt_accepted_at: Date | null;
+  receipt_message_id: string | null;
 }
 
 export const summaryColumns = `id, reference, package_id, package_name, amount_sgd::text,
@@ -54,7 +59,8 @@ export const summaryColumns = `id, reference, package_id, package_name, amount_s
   customer_name, customer_email, customer_phone, bank_transaction_id,
   proof_filename, status, created_at, approved_at, approved_by, account_user_id, account_kind,
   to_char(confirmed_session_date, 'YYYY-MM-DD') AS confirmed_session_date,
-  confirmed_session_time, email_status, email_attempted_at, email_accepted_at, email_message_id, email_error`;
+  confirmed_session_time, email_status, email_attempted_at, email_accepted_at, email_message_id, email_error,
+  receipt_status, receipt_attempted_at, receipt_accepted_at, receipt_message_id`;
 
 export function validateSubmission(input: SubmissionInput) {
   if (!/^VV-[A-Z0-9]{6}$/.test(input.reference)) throw new SubmissionError('Invalid submission reference.');
@@ -83,7 +89,8 @@ export function validateSubmission(input: SubmissionInput) {
 
 export class SubmissionRepository {
   constructor(readonly pool: pg.Pool,
-    private readonly notify: typeof notifyNewSignup = notifyNewSignup) {}
+    private readonly notify: typeof notifyNewSignup = notifyNewSignup,
+    private readonly receipt: typeof sendSignupReceipt = sendSignupReceipt) {}
 
   async disabledDates(): Promise<string[]> {
     const result = await this.pool.query<{ date: string }>(`SELECT to_char(session_date, 'YYYY-MM-DD') AS date
@@ -131,8 +138,8 @@ export class SubmissionRepository {
       INSERT INTO velovest_signup.submissions
       (id, reference, package_id, package_name, amount_sgd, session_date, session_time,
        customer_name, customer_email, customer_phone, bank_transaction_id, consent_accepted,
-       proof_filename, proof_content_type, proof_sha256, proof_data, submission_fingerprint)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,true,$12,$13,$14,$15,$16)
+       proof_filename, proof_content_type, proof_sha256, proof_data, submission_fingerprint, receipt_status)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,true,$12,$13,$14,$15,$16,'pending')
       ON CONFLICT (reference) DO UPDATE SET reference = EXCLUDED.reference
         WHERE submissions.submission_fingerprint = EXCLUDED.submission_fingerprint
       RETURNING reference, id`, [newId, input.reference, input.packageId, input.packageName,
@@ -153,7 +160,22 @@ export class SubmissionRepository {
         console.error('[signup notification] Delivery not confirmed; signup remains saved.');
       }
     }
+    try { await this.sendReceipt(saved.id, input); }
+    catch { console.error('[signup receipt] Delivery not confirmed; signup remains saved.'); }
     return { reference: saved.reference };
+  }
+
+  private async sendReceipt(id: string, input: ReturnType<typeof validateSubmission>) {
+    // Claim atomically across identical/concurrent public retries. Unknown also covers a
+    // process exiting during send, preventing a duplicate after ambiguous acceptance.
+    const claim = await this.pool.query(`UPDATE velovest_signup.submissions
+      SET receipt_status='unknown',receipt_attempted_at=now()
+      WHERE id=$1::uuid AND receipt_status IN ('pending','rejected') RETURNING id`, [id]);
+    if (!claim.rows.length) return;
+    const result = await this.receipt(input);
+    await this.pool.query(`UPDATE velovest_signup.submissions SET receipt_status=$2,
+      receipt_message_id=$3,receipt_accepted_at=CASE WHEN $2='accepted' THEN now() ELSE NULL END
+      WHERE id=$1::uuid`, [id, result.outcome, result.outcome === 'accepted' ? result.messageId : null]);
   }
 
   async list(search: string): Promise<SubmissionSummary[]> {

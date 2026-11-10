@@ -46,6 +46,13 @@ ALTER TABLE velovest_signup.submissions
     ADD COLUMN IF NOT EXISTS email_error text,
     ADD COLUMN IF NOT EXISTS access_secret jsonb;
 
+-- Separate from approval/access email delivery. Historical submissions are not mailed retroactively.
+ALTER TABLE velovest_signup.submissions
+    ADD COLUMN IF NOT EXISTS receipt_status text NOT NULL DEFAULT 'not_queued',
+    ADD COLUMN IF NOT EXISTS receipt_attempted_at timestamptz,
+    ADD COLUMN IF NOT EXISTS receipt_accepted_at timestamptz,
+    ADD COLUMN IF NOT EXISTS receipt_message_id text;
+
 CREATE TABLE IF NOT EXISTS velovest_signup.review_events (
     id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     submission_id uuid NOT NULL REFERENCES velovest_signup.submissions(id),

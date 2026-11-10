@@ -7,6 +7,7 @@ import request from 'supertest';
 import { readAgentConfig, saveAgentConfig } from 'utarus';
 import { dashboardConfig } from '../src/webapp/dashboard-config.js';
 import { notifyNewSignup } from '../src/signup/notification.js';
+import { sendSignupReceipt, signupReceipt } from '../src/signup/receipt.js';
 import { SubmissionRepository, validateSubmission, type SubmissionInput } from '../src/signup/submissions.js';
 import { createSubmissionPublicRouter } from '../src/signup/api.js';
 
@@ -124,7 +125,7 @@ it('notifies only for an inserted ID, after save succeeds, and keeps the public 
   });
   const notify = vi.fn(async () => { expect(savedId).toBeDefined(); throw new Error('secret SMTP diagnostic'); });
   const log = vi.spyOn(console, 'error').mockImplementation(() => {});
-  const repository = new SubmissionRepository({ connect:async()=>({query,release:()=>{}}) } as unknown as pg.Pool, notify);
+  const repository = new SubmissionRepository({ query: async () => ({rows:[]}), connect:async()=>({query,release:()=>{}}) } as unknown as pg.Pool, notify);
   const app = express().use(express.json()).use(createSubmissionPublicRouter(() => repository));
   const { proof, ...body } = input;
   const payload = { ...body, proofFilename: proof.filename, proofContentType: proof.contentType, proofBase64: proof.data.toString('base64') };
@@ -138,4 +139,40 @@ it('notifies only for an inserted ID, after save succeeds, and keeps the public 
   conflict=true;
   await expect(repository.save(input)).rejects.toMatchObject({ status: 409 });
   expect(notify).toHaveBeenCalledOnce();
+});
+
+it('acknowledges the customer separately from internal notifications, preserving proof and approval timing', async () => {
+  const receipt = signupReceipt(validateSubmission(input));
+  expect(receipt.to).toEqual({name:input.name,address:input.email});
+  expect(receipt.replyTo).toBe('victor@viconium.com');
+  expect(receipt.subject).toContain(input.reference);
+  expect(receipt.text).toContain('Submitted Amount: 1080 SGD');
+  expect(receipt.text).toContain('Monday, 2 November 2026 at 10:00 AM');
+  expect(receipt.text).toContain('payment has not yet been verified');
+  expect(receipt.text).toContain('sign in after approval');
+  expect(receipt.text).not.toContain('calendar invite');
+  expect(receipt.text).not.toContain('meeting link');
+  expect(receipt.attachments[0].content).toEqual(input.proof.data);
+  smtp.send.mockResolvedValueOnce({accepted:[input.email],rejected:[],messageId:'receipt-id'});
+  await expect(sendSignupReceipt(validateSubmission(input))).resolves.toEqual({outcome:'accepted',messageId:'receipt-id'});
+  expect(smtp.send.mock.calls[0][0]).toMatchObject({to:receipt.to,replyTo:receipt.replyTo});
+  expect(smtp.close).toHaveBeenCalledOnce();
+});
+
+it('omits booking and onboarding promises from renewal receipts', () => {
+  const receipt = signupReceipt(validateSubmission({...input,packageId:'renewal',sessionDate:undefined,sessionTime:undefined}));
+  expect(receipt.text).toContain('Submitted Amount: 228 SGD');
+  expect(receipt.text).toContain('no onboarding appointment');
+  expect(receipt.text).not.toContain('Requested Onboarding Session:');
+  expect(receipt.text).not.toContain('confirmed onboarding session');
+});
+
+it('distinguishes receipt rejection, missing SMTP setup and ambiguous transport failures', async () => {
+  smtp.send.mockResolvedValueOnce({accepted:[],rejected:[input.email]});
+  await expect(sendSignupReceipt(validateSubmission(input))).resolves.toEqual({outcome:'rejected'});
+  smtp.send.mockRejectedValueOnce(new Error('private transport diagnostic'));
+  await expect(sendSignupReceipt(validateSubmission(input))).resolves.toEqual({outcome:'unknown'});
+  vi.stubEnv('INVAGE_SIGNUP_SMTP_PASSWORD','');
+  await expect(sendSignupReceipt(validateSubmission(input))).resolves.toEqual({outcome:'rejected'});
+  expect(smtp.send).toHaveBeenCalledTimes(2);
 });

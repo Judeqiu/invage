@@ -99,6 +99,22 @@ Database tests require an isolated `UTARUS_TEST_DATABASE_URL` naming
 `utarus_test_admin`; the test role creates and drops uniquely named test databases.
 Run `npm test` plus `UTARUS_LOADED_BY_HOST=1 node --test tests/migration/*.test.mjs`.
 
+Velovest signup receipts acknowledge retained payment evidence separately from the
+internal intake notification and approval/access email. They use the existing
+`INVAGE_SIGNUP_SMTP_*` configuration, attach the original proof and direct replies
+to the contact in the receipt. Renewals omit appointment details. Access remains
+available after approval; the receipt does not promise a calendar invite or
+meeting link.
+
+Before activating receipt code, apply `scripts/migration/signup-submissions.sql`
+with the verified application role. This adds receipt delivery fields and their
+column permissions. Old submissions remain `not_queued`; new submissions start
+`pending`. The authenticated submissions API exposes `receipt_status` and provider
+acceptance metadata independently of `email_status` for access mail. An identical
+submission retry can retry a definitively rejected receipt. Accepted or ambiguous
+delivery is never automatically resent; inspect provider evidence before manually
+requeueing an ambiguous attempt. SMTP acceptance does not establish inbox delivery.
+
 The Velovest dashboard uses recorded option trade cash flow for Daily (latest recorded trading day), MTD and total premium: STO proceeds minus BTC costs, consistently before brokerage fees. Reported option fees have a separate MTD card; unreported fees stay unknown. Section 02 includes historical option purchases and sales by trade month/underlying and recorded realized option P&L by closing/event month. FIFO matching and explicit broker lifecycle records establish realization; roll cash and position disappearance do not. Incomplete history and incompatible currency or fee bases remain visible gaps.
 
 Section 01 shows only short contracts with modeled ITM probability above 30%, with contract search and the latest verified roll credit. Section 03 provides Open, History and Rolls; retired Timeline preferences migrate to Open. Entry Spot currently uses the first opening-day adjusted close as a clearly labelled reference because imported executions do not carry an underlying execution-time quote. Manual Refresh reloads the saved calculation; broker sync updates its values. Date replays saved valuation snapshots. The consultant is branded Velovest, with Velovest AI chat; supporting reply text under `## Detailed explanation` uses the shared framework's expandable control.

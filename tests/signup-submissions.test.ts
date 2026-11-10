@@ -11,7 +11,7 @@ import { createSubmissionAdminRouter, createSubmissionPublicRouter, mountPublicS
 
 const database = await useTestDatabase();
 const pool = new pg.Pool({ connectionString: database.databaseUrl });
-const repository = new SubmissionRepository(pool);
+const repository = new SubmissionRepository(pool, async () => {}, async () => ({outcome:'accepted',messageId:'fixture-receipt'}));
 const app = express().use(cookieParser()).use(express.json({limit: Infinity}));
 app.use('/api/signup', createSubmissionPublicRouter(() => repository));
 app.use('/api/signup/admin', createSubmissionAdminRouter(() => repository));
@@ -42,6 +42,52 @@ beforeAll(async () => {
 afterAll(async () => { await pool.end(); });
 
 describe('Signup submission persistence and Management access', () => {
+  it('claims a customer receipt once across concurrent retries and keeps access delivery separate', async () => {
+    const sent: string[] = [];
+    let release!: () => void;
+    const held = new Promise<void>(resolve => {release=resolve;});
+    const receiptRepository = new SubmissionRepository(pool, async () => {}, async value => {
+      sent.push(value.reference); await held; return {outcome:'accepted',messageId:'accepted-receipt'};
+    });
+    const value=input('VV-REC001');
+    const first=receiptRepository.save(value);
+    try {
+      await expect.poll(() => sent.length).toBe(1);
+      await receiptRepository.save(value);
+      expect(sent).toEqual([value.reference]);
+    } finally { release(); }
+    await first;
+    await receiptRepository.save(value);
+    const row=(await receiptRepository.list(value.reference))[0];
+    expect(row).toMatchObject({status:'submitted',email_status:'not_queued',receipt_status:'accepted',receipt_message_id:'accepted-receipt'});
+    expect(row.receipt_accepted_at).toBeInstanceOf(Date);
+    expect(sent).toEqual([value.reference]);
+  });
+
+  it('retries a rejected receipt on identical resubmission but never automatically repeats ambiguous acceptance', async () => {
+    const outcomes=['rejected','unknown'] as const;
+    let attempted=0;
+    const receiptRepository = new SubmissionRepository(pool, async () => {}, async () => ({outcome:outcomes[attempted++]}));
+    const value=input('VV-REC002');
+    await receiptRepository.save(value);
+    expect((await receiptRepository.list(value.reference))[0].receipt_status).toBe('rejected');
+    await receiptRepository.save(value);
+    expect((await receiptRepository.list(value.reference))[0].receipt_status).toBe('unknown');
+    await receiptRepository.save(value);
+    expect(attempted).toBe(outcomes.length);
+    expect((await receiptRepository.list(value.reference))[0].status).toBe('submitted');
+  });
+
+  it('does not send receipts retroactively for historical submissions', async () => {
+    const value=input('VV-REC003');
+    await repository.save(value);
+    await pool.query("UPDATE velovest_signup.submissions SET receipt_status='not_queued' WHERE reference=$1",[value.reference]);
+    let sent=false;
+    const receiptRepository=new SubmissionRepository(pool,async()=>{},async()=>{sent=true;return {outcome:'accepted',messageId:'unexpected'};});
+    await receiptRepository.save(value);
+    expect(sent).toBe(false);
+  });
+
   it('stores a system renewal without invented booking dates and notifies once across retries', async () => {
     const notifications: unknown[] = [];
     const renewalRepository = new SubmissionRepository(pool, async value => { notifications.push(value); });

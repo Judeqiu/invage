@@ -438,7 +438,11 @@ function cssBarCard(title, rows, caption, options = {}) {
     const groups = [...years].map(([year, months]) => {
       const total = months.some(row => row.value == null) ? null : months.reduce((sum, row) => sum + row.value, 0);
       const display = total == null ? 'Unavailable' : fmtPrettyMoney(total, options.ccy, 2);
-      return `<details class="premium-year" data-year="${esc(year)}"${options.yearExpansion?.get(year) !== false ? ' open' : ''}><summary><span>${esc(year)}</span><span class="num${total < 0 ? ' down' : ''}">${esc(display)}</span></summary><div class="bar-list">${months.map(renderRow).join('')}</div></details>`;
+      const limit = options.limit || months.length;
+      const more = months.slice(limit);
+      const expansionKey = `${options.id}:${year}`;
+      const disclosure = more.length ? `<details class="bar-more" data-expansion-key="${esc(expansionKey)}"${options.rowExpansion?.get(expansionKey) === true ? ' open' : ''}><summary><span class="bar-expand-label">Show ${more.length} more</span><span class="bar-collapse-label">Show less</span></summary><div class="bar-list">${more.map(renderRow).join('')}</div></details>` : '';
+      return `<details class="premium-year" data-year="${esc(year)}"${options.yearExpansion?.get(year) !== false ? ' open' : ''}><summary><span>${esc(year)}</span><span class="num${total < 0 ? ' down' : ''}">${esc(display)}</span></summary><div class="bar-list">${months.slice(0, limit).map(renderRow).join('')}</div>${disclosure}</details>`;
     }).join('');
     return `<div class="metric-card" id="${esc(options.id)}"><div class="label-eyebrow">${esc(title)}</div>${groups}<div class="metric-sub bar-caption">${options.help ? `<button class="help-dot" type="button" aria-label="Explain ${esc(title)}" data-help="${esc(options.help)}">?</button> ` : ''}${esc(caption)}</div></div>`;
   }

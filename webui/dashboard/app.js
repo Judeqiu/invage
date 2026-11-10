@@ -114,7 +114,7 @@ el.premiumEngine?.addEventListener('toggle', event => {
     premiumYearExpansion.set(details.dataset.year, details.open);
   }
   if (details.matches?.('details.bar-more')) {
-    premiumChartExpansion.set(details.closest('.metric-card').id, details.open);
+    premiumChartExpansion.set(details.dataset.expansionKey || details.closest('.metric-card').id, details.open);
   }
 }, true);
 
@@ -288,6 +288,15 @@ function openingPremiumHtml(trade) {
     : `<span title="${rolled ? 'Latest roll: replacement opening proceeds plus closing-leg cash flow' : 'Reconciled opening cash flow'} · before fees">${fmtPrettyMoney(value, trade.currency, 2)}</span><small class="entry-basis${isWheelDesk ? ' visually-hidden' : ''}">${rolled ? 'Latest roll' : 'Opening'}</small>`;
 }
 
+function openingDatesHtml(trade) {
+  if (!trade?.openedFrom || !trade?.openedTo) return '—';
+  const first = escapeHtml(optionDateLabel(trade.openedFrom));
+  const opened = trade.openedFrom === trade.openedTo ? `Opened: ${first}`
+    : `First opened: ${first}<small class="entry-basis">Last opened: ${escapeHtml(optionDateLabel(trade.openedTo))}</small>`;
+  return `<span title="Opening dates of the lots still held, not the start of a roll chain">${opened}</span>` +
+    (trade.verifiedRollDate ? `<small class="entry-basis">Latest roll: ${escapeHtml(optionDateLabel(trade.verifiedRollDate))}</small>` : '');
+}
+
 function unverifiedOptionChannels(view) {
   if (!view.isLive) return [];
   const today = (payload.generatedAt || '').slice(0, 10);
@@ -306,7 +315,7 @@ function daysToExpiry(expiry, asOf) {
   return Math.round((e - a) / 86400000);
 }
 
-const brokerNames = { ibkr: 'IBKR', moomoo: 'moomoo', tiger: 'Tiger Brokers', webull: 'Webull', futubull: 'Futubull' };
+const brokerNames = { ibkr: 'IBKR', moomoo: 'moomoo', tiger: 'Tiger', webull: 'Webull', futubull: 'Futubull' };
 function brokerIdentity(channel) {
   const meta = (portfolioPayload || payload)?.brokerChannels?.[channel];
   const id = meta?.brokerId || /^(ibkr|moomoo|tiger|webull|futubull)(?:[-_:]|$)/i.exec(channel || '')?.[1].toLowerCase();
@@ -2020,7 +2029,7 @@ function renderPremiumEngine(view) {
     }) : [...values];
     const entries = ordered.map(([label, row]) => ({ label: options.monthly && /^\d{4}-\d{2}$/.test(label) ? monthLabel(label) : label, year: label.slice(0, 4), value: row,
       display: row == null ? '—' : options.percent ? row.toFixed(1) + '%' : fmtPrettyMoney(row, ccy, 2) }));
-    return cssBarCard(title, entries, caption, { ...options, limit: 5, expanded: premiumChartExpansion.get(options.id) === true, yearExpansion: premiumYearExpansion });
+    return cssBarCard(title, entries, caption, { ...options, limit: 5, expanded: premiumChartExpansion.get(options.id) === true, yearExpansion: premiumYearExpansion, rowExpansion: premiumChartExpansion });
   };
   const openCards = chart('Premium Collected by Month', data.byMonth, 'Before fees · recorded trades by trade month', { ...common, id: 'openPremiumExpiryCard', type: 'area', monthly: true, newestFirst: true, yearGroups: true, help: 'Money received from selling options, minus money paid to buy options, grouped by the month each trade occurred, newest first. Includes recorded opening, closing and protective option trades, before brokerage fees, in the selected account scope and reporting currency. This is cash flow, not profit; missing history can make it incomplete.' }) +
     chart('NAV concentration', book.concentration, 'Signed market value as % of NAV', { id: 'premiumConcentrationCard', percent: true, help: 'Signed market value divided by NAV, including option liabilities. Unavailable when NAV is incomplete or non-positive.' }) +
@@ -2138,7 +2147,7 @@ function renderOpenOptions(view) {
       const rowMoney = (n, digits = 2) => fmtPrettyMoney(n, p.currency || ccy, digits);
       const spot = prices[o.underlying];
       const label = `${optionUnderlyingLabel(o)} ${o.side === 'short' ? 'Short' : 'Long'} ${o.right === 'put' ? 'Put' : 'Call'} ${rowMoney(o.strike, Number.isInteger(o.strike) ? 0 : 2)} · ${optionDateLabel(o.expiry)} · ×${p.units}`;
-      const opened = trade ? `${optionDateLabel(trade.openedFrom)}${trade.openedTo !== trade.openedFrom ? ` to ${optionDateLabel(trade.openedTo)}` : ''}` : '—';
+      const opened = openingDatesHtml(trade);
       const spread = trade?.spread;
       const spreadRow = spread && !shownSpreads.has(spread.id)
         ? `<tr class="option-spread-summary"><td colspan="7">${escapeHtml(`${optionUnderlyingLabel(o)} ${spread.longStrike}/${spread.shortStrike} ${o.right} vertical spread · ${optionDateLabel(o.expiry)} · ×${spread.quantity}`)}</td><td class="num">${spread.grossPremium == null ? 'Unknown' : rowMoney(spread.grossPremium)}<small class="entry-basis">Combined opening ${spread.grossPremium < 0 ? 'debit' : 'credit'}</small></td><td colspan="6"></td></tr>` : '';

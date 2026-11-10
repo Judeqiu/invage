@@ -16,6 +16,8 @@ export interface OpenOptionTradeDetail {
   entrySpot?: { price: number; date: string; basis: 'execution' | 'adjusted_close' };
   rollPremium?: number | null;
   rollDate?: string;
+  /** Latest roll with broker links and replacement fills reconciled to this holding. */
+  verifiedRollDate?: string;
   openingGrossPremium?: number;
   spread?: { id: string; grossPremium: number | null; quantity: number; longStrike: number; shortStrike: number };
 }
@@ -131,6 +133,7 @@ export function attachOpenVerticalSpreads(portfolio: Record<string, Holding>, de
 /** Attach only reconciled latest replacement cash flow; never promote candidate links. */
 export function attachLatestRollPremium(portfolio: Record<string, Holding>, details: Record<string, OpenOptionTradeDetail>, relationships: OptionRelationship[], accounts: Record<string, string> = {}) {
   for (const [key, detail] of Object.entries(details)) {
+    delete detail.verifiedRollDate;
     const holding = portfolio[key];
     if (holding.option?.side !== 'short') continue;
     const matches = relationships.filter(r => r.channel === holding.channel && r.side === 'short' &&
@@ -139,9 +142,10 @@ export function attachLatestRollPremium(portfolio: Record<string, Holding>, deta
     const latest = matches.sort((a, b) => b.through.localeCompare(a.through))[0];
     if (!latest) continue;
     detail.rollDate = latest.through.slice(0, 10);
-    detail.rollPremium = ['order', 'execution'].includes(latest.evidence) &&
+    const verified = ['order', 'execution'].includes(latest.evidence) &&
       Number(latest.opened_quantity) === holding.units && detail.openedFrom === detail.openedTo
-      && JSON.stringify([...detail.openingExecutionIds].sort()) === JSON.stringify([...(latest.opening_fills ?? [])].sort())
-      ? latest.gross_cash == null ? null : Number(latest.gross_cash) : null;
+      && JSON.stringify([...detail.openingExecutionIds].sort()) === JSON.stringify([...(latest.opening_fills ?? [])].sort());
+    if (verified) detail.verifiedRollDate = latest.through.slice(0, 10);
+    detail.rollPremium = verified ? latest.gross_cash == null ? null : Number(latest.gross_cash) : null;
   }
 }
