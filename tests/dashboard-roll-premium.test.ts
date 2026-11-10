@@ -41,6 +41,8 @@ it('distinguishes remaining-lot opening dates from verified rolls without promot
   expect(render(lots)).toContain('First opened: 2026-06-30');
   expect(render(lots)).toContain('Last opened: 2026-09-09');
   expect(render({...lots,rollDate:'2026-09-09'})).not.toContain('Latest roll:');
+  for (const rollPremium of [0,-50,815]) expect(render({...lots,rollDate:'2026-09-09',rollPremium})).toContain('Latest roll: 2026-09-09');
+  for (const rollPremium of [null,undefined,NaN,'815']) expect(render({...lots,rollDate:'2026-09-09',rollPremium})).not.toContain('Latest roll:');
   expect(render({...lots,verifiedRollDate:'2026-09-09'})).toContain('Latest roll: 2026-09-09');
   expect(render({...lots,openedFrom:lots.openedTo})).not.toContain('Last opened:');
   expect(render(undefined)).toBe('—');

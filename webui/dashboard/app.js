@@ -293,8 +293,12 @@ function openingDatesHtml(trade) {
   const first = escapeHtml(optionDateLabel(trade.openedFrom));
   const opened = trade.openedFrom === trade.openedTo ? `Opened: ${first}`
     : `First opened: ${first}<small class="entry-basis">Last opened: ${escapeHtml(optionDateLabel(trade.openedTo))}</small>`;
+  // Older saved views predate verifiedRollDate. Their numeric rollPremium was
+  // published only after the same broker-link and replacement-fill checks.
+  const verifiedRollDate = trade.verifiedRollDate ||
+    (typeof trade.rollPremium === 'number' && Number.isFinite(trade.rollPremium) ? trade.rollDate : undefined);
   return `<span title="Opening dates of the lots still held, not the start of a roll chain">${opened}</span>` +
-    (trade.verifiedRollDate ? `<small class="entry-basis">Latest roll: ${escapeHtml(optionDateLabel(trade.verifiedRollDate))}</small>` : '');
+    (verifiedRollDate ? `<small class="entry-basis">Latest roll: ${escapeHtml(optionDateLabel(verifiedRollDate))}</small>` : '');
 }
 
 function unverifiedOptionChannels(view) {
