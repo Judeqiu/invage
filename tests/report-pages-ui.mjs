@@ -871,12 +871,16 @@ try {
   await page.click('#filters [data-channel="ibkr"]');
   await page.waitForFunction(() => /ibkr/i.test(document.getElementById('summary')?.textContent || ''));
 
-  // Account fund totals have no fabricated lot count, units, cost or FX conversion.
+  // Account fund totals use saved FX without fabricating lots, units or cost.
   const originalMetrics = structuredClone(payload.connectionMetrics);
   const originalWarnings = payload.warnings;
   const originalIssues = payload.model.live.issues;
   const originalRiskCash = payload.model.live.cashAmount;
   const originalRiskObligation = payload.model.live.contingentCashObligation;
+  const originalReportingCurrency = payload.model.live.reportingCurrency;
+  const originalFxRates = payload.model.live.fxRates;
+  payload.model.live.reportingCurrency = 'USD';
+  payload.model.live.fxRates = { SGD: 0.75 };
   payload.model.live.cashAmount = 0;
   payload.model.live.contingentCashObligation = 134250;
   const coverageWarning = { code: 'broker_fund_details_unavailable', key: 'moomoo',
@@ -887,14 +891,15 @@ try {
   payload.connectionMetrics.moomoo = { as_of: '2026-10-15', currency: 'USD', fund_assets: 1198.16 };
   payload.connectionMetrics.ibkr = { as_of: '2026-10-14', currency: 'SGD', fund_assets: 2000 };
   await page.goto(`http://127.0.0.1:${port}/insights/`);
-  await page.waitForFunction(() => document.getElementById('metrics')?.textContent.includes('1,198.16'));
+  const combinedFundValue = payload.connectionMetrics.moomoo.fund_assets + payload.connectionMetrics.ibkr.fund_assets * payload.model.live.fxRates.SGD;
+  await page.waitForFunction(value => document.getElementById('metrics')?.textContent.includes(value), {}, combinedFundValue.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}));
   assert(await page.$eval('#edge', el => !el.textContent.includes('Fund lots')), 'aggregate fund summary does not display an unknown fund-lot card');
   assert.equal(await page.$eval('#edge', el => [...el.querySelectorAll('.metric-card')]
     .find(card => card.querySelector('.label-eyebrow')?.textContent === 'Equity lots')
     ?.querySelector('.metric-value')?.textContent), String(payload.model.live.equityCount),
   'verified equity lot count remains visible alongside the fund summary');
   const fundCards = await page.$eval('#metrics', el => el.textContent);
-  assert(fundCards.includes('2,000.00 SGD') && fundCards.includes('2026-10-15'), 'fund values retain each account currency and date');
+  assert(fundCards.includes(combinedFundValue.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})), 'fund values combine once in the reporting currency');
   assert(!/unavailable|excluded from|coverage/i.test(fundCards), 'fund summary has no coverage notes');
   const insightBody = await page.evaluate(() => document.body.innerText);
   assert(!insightBody.includes(coverageWarning.message) && !insightBody.includes(coverageWarning.code) &&
@@ -911,7 +916,7 @@ try {
   await page.screenshot({ path: '/tmp/velovest-insights-no-coverage-mobile.png', fullPage: true });
   await page.setViewport({ width: 1440, height: 1000 });
   await page.goto(`http://127.0.0.1:${port}/dashboard/`);
-  await page.waitForFunction(() => document.getElementById('kpiRow')?.textContent.includes('1,198.16'));
+  await page.waitForFunction(value => document.getElementById('kpiRow')?.textContent.includes(value), {}, combinedFundValue.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}));
   assert.equal(await page.$('#warningsBanner'), null, 'dashboard has no data-note banner');
   assert(!await page.$eval('#heroLead', el => el.textContent.includes('0 fund')), 'aggregate fund assets are not described as zero funds');
   assert(!await page.evaluate(() => document.body.innerText.includes('Internal data diagnostic') ||
@@ -927,6 +932,8 @@ try {
   payload.model.live.issues = originalIssues;
   payload.model.live.cashAmount = originalRiskCash;
   payload.model.live.contingentCashObligation = originalRiskObligation;
+  payload.model.live.reportingCurrency = originalReportingCurrency;
+  payload.model.live.fxRates = originalFxRates;
 
   cachedSnapshot = structuredClone(payload);
   const beforeNavigation = dashboardRequests;

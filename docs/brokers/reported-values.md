@@ -8,6 +8,21 @@ data is not replaced with an invented number. Conflicting source records remain
 explicit conflicts rather than silently choosing one interpretation. Raw source
 documents preserve every returned field independently of these projections.
 
+The Fund assets card uses the selected account's reported aggregate fund value
+when available, otherwise the saved market values of its normalized fund holdings.
+All accounts shows the sum of those account contributions in the dashboard's
+reporting currency, using that saved view's exchange rates. A reported aggregate
+replaces the same account's itemized funds rather than adding to them. Holding
+values already converted by the saved valuation are not converted again. The
+card excludes cash, equity and option positions; it does not modify NAV, cost
+basis, fees or P/L. Historical views use their saved holdings, never current
+account totals.
+
+Signed fund amounts and reported zeroes are preserved. Missing amounts or required
+exchange rates remain unavailable. A combined available subtotal explicitly notes
+when some accounts are unavailable; no available contributions produces a dash.
+The same fund summary is used on Dashboard and Insights for every broker channel.
+
 Current snapshots retain signed and zero costs, marks, share quantities, buying
 power, maintenance margin, aggregate fund assets, cash and accrued interest.
 Broker cost-validity flags remain in the source evidence; a supplied numeric cost

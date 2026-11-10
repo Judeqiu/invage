@@ -1347,7 +1347,7 @@ function renderOverview(view) {
       metricCardHtml('Max assignment obligation', assignmentObligation == null ? '—' : fmtPrettyMoney(assignmentObligation, cashCcy, 0),
         assignmentObligation == null ? (stalePuts ? 'Put positions need a fresh broker sync' : 'Put terms, currency or FX unavailable') : 'Net put settlement at expiry · Before premiums and fees',
         'Maximum net cash outflow at expiry from recorded put positions. Matching long puts offset short puts only within the same account, underlying, expiry, settlement terms and currency. Cash-settled spreads contribute their bounded settlement debit, not the full short strike notional. An uncovered $100 put covering 100 shares contributes $10,000. Strategy maxima are added conservatively and converted to the reporting currency. Excludes premiums, fees, cash collateral and shares. Physical assignment can require funding before protective exercise proceeds arrive; this is not a broker margin or early-assignment funding estimate.'),
-    ].join('') + (view.isLive ? brokerFundAssetsCards(payload, view.channelView) : '');
+    ].join('') + brokerFundAssetsCards(payload, view.channelView, view);
   }
 
   const navCard = el.navValue?.closest('.metric-card');
@@ -1445,10 +1445,11 @@ function renderV2Overview() {
     };
     earnings = `<div class="metric-card v2-premium-card">${period('Earned premium · Daily', premiumData?.dailyFrom)}${period('Earned premium · MTD', date?.slice(0, 7) + '-01')}${stat(el.realizedPnlCard, 'Earned premium · Total')}</div>`;
   }
+  const fundSummary = fundAssetsSummary(payload, view, view.channelView, view.isLive);
   const funds = payload.demoCompletion ? metricCardHtml('Fund assets · Demo', fmtPrettyMoney(view.positions.filter(p => p.instrument === 'fund').reduce((sum,p) => sum+p.value,0), reportingCcyCode(view), 2), 'Generated reserve assets included in NAV; not broker-reported funds.')
-    : kpis.slice(5).map(copy).join('') || metricCardHtml('Fund assets · Broker', '—',
-    'Not reported separately · Itemized funds remain included in NAV.',
-    'This card shows a separately reported broker fund balance when available. An unavailable balance is not zero. Itemized fund holdings are already included in NAV; do not add them again.');
+    : metricCardHtml('Fund assets', fundSummary.amount == null ? '—' : money(fundSummary.amount, fundSummary.currency),
+    fundAssetsNote(fundSummary),
+    'Fund value for the selected accounts, in the dashboard reporting currency using the saved exchange rates. Uses the broker fund total when available, otherwise the value of recorded fund holdings. Each account is counted once. Cash, shares and options are excluded. Unavailable fund values are not zero and are excluded from the available total. This card does not add anything to NAV.');
   summary.innerHTML = group('Premium & earnings', premium + earnings, 'v2-earnings') +
     group('Account value', copy(el.navValue.closest('.metric-card')) + funds) +
     group('Cash & exposure', copy(kpis[3]) + copy(kpis[4]).replace('Max assignment obligation', 'Net assignment obligations') + netRiskCapitalCard(view));

@@ -269,9 +269,49 @@ function brokerFundAssets(dash, channel) {
     .map(([ch, m]) => ({ channel: ch, amount: m.fund_assets, currency: m.currency, asOf: m.as_of }));
 }
 
-function brokerFundAssetsCards(dash, channel) {
-  return brokerFundAssets(dash, channel).map(row => metricCard('Fund assets · broker',
-    money(row.amount, row.currency), `${channelLabel(row.channel)} · ${row.asOf}`)).join('');
+/** Values are in the saved view's reporting currency. An account total replaces
+ * that account's fund lots; it is never added to those lots a second time. */
+function fundAssetsSummary(dash, view, channel = 'all', includeAccountTotals = true) {
+  const selected = ch => !channel || channel === 'all' || channel === 'merged' || ch === channel;
+  const positions = (view?.positions || []).filter(p => selected(p.channel));
+  const metrics = includeAccountTotals ? dash?.connectionMetrics || {} : {};
+  const channels = [...new Set([
+    ...(view?.channels || []), ...positions.map(p => p.channel), ...Object.keys(metrics),
+  ])].filter(selected);
+  const currencies = [...new Set(positions.map(p => p.currency).filter(Boolean))];
+  const currency = view?.reportingCurrency || view?.cashCurrency || (currencies.length === 1 ? currencies[0] : null);
+  const rows = [], unavailable = [];
+  for (const ch of channels) {
+    const metric = metrics[ch];
+    if (Number.isFinite(metric?.fund_assets)) {
+      const rate = metric.currency === currency ? 1 : view?.fxRates?.[metric.currency];
+      const amount = metric.fund_assets * rate;
+      if (currency && Number.isFinite(rate) && rate > 0 && Number.isFinite(amount)) {
+        rows.push({ channel: ch, amount, basis: 'broker', asOf: metric.source_as_of || metric.as_of });
+      } else unavailable.push(ch);
+      continue;
+    }
+    const funds = positions.filter(p => p.channel === ch && p.instrument === 'fund');
+    const valued = p => Number.isFinite(p.value) && currency &&
+      (p.currency === currency || Number.isFinite(view?.fxRates?.[p.currency]) && view.fxRates[p.currency] > 0);
+    if (funds.length && funds.every(valued)) {
+      const amount = funds.reduce((sum, p) => sum + p.value, 0);
+      if (Number.isFinite(amount)) rows.push({ channel: ch, amount, basis: 'holdings', asOf: dash?.brokerAsOf?.[ch] });
+      else unavailable.push(ch);
+    } else unavailable.push(ch);
+  }
+  const amount = rows.length ? rows.reduce((sum, row) => sum + row.amount, 0) : null;
+  return { amount: Number.isFinite(amount) ? amount : null, currency, rows, unavailable };
+}
+
+function fundAssetsNote(summary) {
+  if (summary.amount == null) return 'Fund value unavailable';
+  return summary.unavailable.length ? 'Available fund values only · Some accounts unavailable' : 'Fund value across selected accounts';
+}
+
+function brokerFundAssetsCards(dash, channel, view = sliceLive(dash?.model?.live, channel)) {
+  const summary = fundAssetsSummary(dash, view, channel, view?.isLive !== false);
+  return metricCard('Fund assets', summary.amount == null ? '—' : money(summary.amount, summary.currency), fundAssetsNote(summary));
 }
 
 function channelFromQuery() {
