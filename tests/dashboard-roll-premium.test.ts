@@ -38,13 +38,14 @@ it('distinguishes remaining-lot opening dates from verified rolls without promot
   const datesHelper = source.slice(source.indexOf('function openingDatesHtml('),source.indexOf('function unverifiedOptionChannels('));
   const render = runInNewContext(`${datesHelper};openingDatesHtml`, {escapeHtml:(value:string)=>value,optionDateLabel:(value:string)=>value});
   const lots={openedFrom:'2026-06-30',openedTo:'2026-09-09'};
-  expect(render(lots)).toContain('First opened: 2026-06-30');
-  expect(render(lots)).toContain('Last opened: 2026-09-09');
-  expect(render({...lots,rollDate:'2026-09-09'})).not.toContain('Latest roll:');
-  for (const rollPremium of [0,-50,815]) expect(render({...lots,rollDate:'2026-09-09',rollPremium})).toContain('Latest roll: 2026-09-09');
-  for (const rollPremium of [null,undefined,NaN,'815']) expect(render({...lots,rollDate:'2026-09-09',rollPremium})).not.toContain('Latest roll:');
-  expect(render({...lots,verifiedRollDate:'2026-09-09'})).toContain('Latest roll: 2026-09-09');
-  expect(render({...lots,openedFrom:lots.openedTo})).not.toContain('Last opened:');
+  expect(render(lots)).toContain('2026-06-30');
+  expect(render(lots)).toContain('– 2026-09-09');
+  expect(render({...lots,rollDate:'2026-09-09'})).not.toContain('R:');
+  for (const rollPremium of [0,-50,815]) expect(render({...lots,rollDate:'2026-09-09',rollPremium})).toContain('R: 2026-09-09');
+  for (const rollPremium of [null,undefined,NaN,'815']) expect(render({...lots,rollDate:'2026-09-09',rollPremium})).not.toContain('R:');
+  expect(render({...lots,verifiedRollDate:'2026-09-09'})).toContain('R: 2026-09-09');
+  expect(render({...lots,openedFrom:lots.openedTo})).not.toContain('– ');
+  expect(render({...lots,openedFrom:lots.openedTo})).toBe('<span title="Opening dates of the lots still held, not the start of a roll chain">2026-09-09</span>');
   expect(render(undefined)).toBe('—');
 });
 
@@ -119,8 +120,8 @@ it.skipIf(!existsSync(chrome)).each(['v2.html', 'index.html'])('renders roll-awa
     expect(await page.$eval('#openPremiumExpiryCard', n => n.textContent)).toContain('$1,040.00');
     expect(await page.$eval('#openPremiumUnderlyingCard', n => n.textContent)).toContain('$815.00');
     if (version === 'v2.html') {
-      expect(await page.$eval(avgo + ' .option-opened', n => n.textContent)).toContain('Opened: 07-Oct-2026');
-      expect(await page.$eval(avgo + ' .option-opened', n => n.textContent)).toContain('Latest roll: 07-Oct-2026');
+      expect(await page.$eval(avgo + ' .option-opened', n => n.textContent)).toBe('07-Oct-2026R: 07-Oct-2026');
+      expect(await page.$eval('#openOptions .option-ledger-row[data-option-underlying="SOXL"] .option-opened', n => n.textContent)).toBe('07-Oct-2026');
       expect(await page.$eval(avgo + ' td:nth-child(5)', n => n.textContent)).toBe('19.50');
       expect(await page.$eval(avgo + ' td:nth-child(7)', n => n.textContent)).toContain('$1,320');
       expect(await page.$eval('.option-ledger thead', n => n.textContent)).toContain('PREMIUM / ROLL');
