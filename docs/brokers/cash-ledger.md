@@ -82,3 +82,67 @@ do not record requested segments remain queryable with an explicit coverage gap.
 The dedicated Tiger funding-history query remains separate read-only verification
 evidence; this change does not import it as a second set of cash movements.
 No UI, production backfill or deployment is included in this change.
+
+## MooMoo and Futu Cloud account cash logs
+
+Both Cloud adapters independently fetch
+`GET /api/v1.0/accounts/{acc_id}/cash_logs` after authorized-account binding.
+The request has neither a security `code` nor a `direction` filter. It starts at
+the earliest positive microsecond timestamp accepted by the broker and follows
+cursors until the broker returns `completed: true`. The documented page size is
+a transport parameter, never a result cap. Every sync revisits the full range;
+a failed optional request does not advance a separate ledger cursor and strand
+older missing rows behind execution-history progress. The cutoff is captured
+before pagination. API completion is not proof of independently reconciled
+account-lifetime history or of other accounts/currencies outside the response.
+
+`account_cash_logs` in the immutable raw archive retains each HTTP response body,
+query, status, all returned rows, retrieval time, cutoff, completeness and gaps.
+It is independent of the existing contract-filtered `cash_logs` used for option
+fee/multiplier recovery. An empty fee-evidence collection says nothing about
+account deposits. HTTP rejection, transport failure or malformed pagination
+retains available evidence and marks ledger coverage incomplete; cash, positions
+and execution-history synchronization continue. A later failure never removes
+previously recorded ledger rows. A mismatched source account still fails binding.
+
+The normalized ledger uses the existing optional `broker_cash_ledgers` state
+collection, persisted in the application's PostgreSQL JSON state and exposed by
+the existing ledger datasets. No SQL schema migration is required. Optional
+record fields preserve `identity_basis`, `reported_time`, `reported_balance`,
+`native_symbol` and `currency_source`; old native-ID ledger records remain valid
+and keep their existing batch identities. State/books readback tests verify
+that historical deposits create no additional financial journal entries and do
+not change current cash balances. The normal raw archive reference is attached
+by the shared statement-apply path.
+
+Cloud rows do not supply native transaction IDs. `content_occurrence` identifies
+canonical source-row content plus its occurrence within the full returned list.
+It preserves multiple identical rows and matches unchanged observations across
+repeat syncs without relying on object key order. It is not an invented broker
+transaction ID. Changed content cannot be linked as a correction of an earlier
+row without further broker evidence; current-row aggregation cannot establish
+economic uniqueness in that situation. Audit versions remain available. These
+limitations are stated in the query dictionary.
+
+Amounts preserve exact signed decimal source strings, including grouped digits,
+zeroes and rebates. `reported_type` retains every native transaction label;
+there is no product-name or transaction-name classification. A bank-deposit
+label remains distinct from a transfer label. Currency is recorded only from the
+explicit ISO currency suffix in the native balance text, with
+`currency_source: balance_suffix`. An omitted currency stays null and marks
+normalization incomplete; account display currency never supplies a fallback.
+Raw balance text is evidence, not an additional cash flow. No FX conversion is
+performed, and sums require currency grouping.
+
+`reported_time` preserves the broker's original display text. The API does not
+establish a timezone or a separate business-date definition here, so
+`business_date` remains null. Do not apply a UTC conversion or order these
+localized display strings as if they were ISO timestamps. Use source evidence
+when a date interpretation is required. Older archives without account-wide
+cash evidence remain readable and do not establish empty ledger coverage.
+
+Official Cloud references:
+[Futu cash logs](https://open.futunn.com/api/trading/account/get-cash-logs),
+[MooMoo cash logs](https://open.moomoo.com/api/trading/account/get-cash-logs).
+Legacy Futu OpenD is a separate unchanged transport; these checks do not establish
+OpenD account-ledger coverage.

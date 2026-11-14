@@ -18,6 +18,8 @@ export interface CloudFundPositionsEvidence {
 export interface MooMooRawBundle {
   /** Fund identity/quantity/value evidence; no inferred currency or product class. */
   fund_positions?: CloudFundPositionsEvidence;
+  /** Account-wide cash activity, independent of option fee evidence. */
+  account_cash_logs?: CloudCashLedgerEvidence;
   history_error?: string;
   schema: 'invage.moomoo.raw.v1' | 'invage.futubull.cloud.raw.v1';
   fetched_at: string;
@@ -44,4 +46,14 @@ export interface MooMooRawBundle {
 
 export function envelopeOk(env: MooMooEnvelope): boolean {
   return env.s === 'ok';
+}
+
+export interface CloudCashLedgerEvidence {
+  begin_time: string;
+  end_time: string;
+  observed_at: string;
+  complete: boolean;
+  gaps: string[];
+  rows: Record<string, unknown>[];
+  requests: Array<{query:string;http_status:number;response_body:string}>;
 }

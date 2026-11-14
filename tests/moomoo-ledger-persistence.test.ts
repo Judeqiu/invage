@@ -1,0 +1,52 @@
+import {randomUUID} from 'node:crypto';
+import {readFileSync} from 'node:fs';
+import {expect,it,vi} from 'vitest';
+import {useTestDatabase,createInvestorFixture} from './helpers/database.js';
+import {ledgerRow} from './helpers/moomoo-ledger.js';
+import {getCashes} from '../src/state/portfolio-state.js';
+import {runQuery} from '../src/data-query/engine.js';
+import {loadQueryCatalog} from '../src/data-query/sources.js';
+vi.mock('../src/brokers/sync-notification.js',async original=>({...await original<object>(),publishBrokerSyncSuccess:vi.fn(),publishBrokerSyncFailure:vi.fn()}));
+await useTestDatabase({books:true});
+const {migrateBooks}=await import('../src/books/index.js');
+const {withHouseholdTx}=await import('../src/books/db.js');
+const {loadInvestor,saveInvestor}=await import('../src/state/investor-store.js');
+const {addBrokerSource,addBrokerAccount,syncBrokerAccount}=await import('../src/brokers/accounts.js');
+
+it.each(['moomoo','futubull'])('%s sync archives, persists and queries account-wide deposits without posting them to cash',async broker=>{
+ await migrateBooks();const user=randomUUID(),other=randomUUID();
+ for(const id of [user,other])await createInvestorFixture({user:{id,created_at:'2026-01-01',auth_token:randomUUID()},profile:{display_name:'Synthetic ledger account',contact_email:`${id}@test.local`},log:[]});
+ let snap=await loadInvestor(user);
+ const source=addBrokerSource(snap.state,broker,{app_key:'synthetic',private_key:readFileSync('tests/fixtures/moomoo/ed25519-private.pem','utf8'),sign_alg:'Ed25519'});
+ const id=addBrokerAccount(snap.state,{source_id:source,account_id:'A',label:'Synthetic account',config:{}});const channel=snap.state.broker_connections![id].channel;await saveInvestor(snap);
+ let reject=false,calls=0;
+ const transport={kind:'http' as const,fetch:async(url:Parameters<typeof fetch>[0])=>{
+  const u=new URL(String(url)),path=u.pathname;
+  if(path.endsWith('/authorized_trd_accs'))return Response.json({s:'ok',d:{accounts:[{account_id:'A'}]}});
+  if(path.endsWith('/funds'))return Response.json({s:'ok',d:{us_cash:'7',currency:'USD',funds_assets:'0'}});
+  if(path.endsWith('/positions'))return Response.json({s:'ok',d:[]});
+  if(path.endsWith('/fund_positions'))return Response.json({s:'error',errcode:485210001},{status:400});
+  if(path.endsWith('/cash_logs')){calls++;expect(u.searchParams.has('code')).toBe(false);return reject?Response.json({s:'error',errcode:485210001},{status:400}):Response.json({s:'ok',d:{cash_logs:[ledgerRow,{...ledgerRow,transaction_name:'Money Transfers',cash_change:'-2.00',balance:'Balance: 5.00 USD'}],completed:true}});}
+  if(path.endsWith('/fills_history'))return Response.json({s:'ok',d:{order_fills:[],completed:true}});
+  if(path.endsWith('/orders_history'))return Response.json({s:'ok',d:{orders:[],completed:true}});
+  throw Error('Unexpected endpoint');
+ }};
+ await syncBrokerAccount(await loadInvestor(user),id,transport,'manual',true);snap=await loadInvestor(user);
+ const query={from:'broker_cash_ledger',select:['channel','amount','currency','reported_type','identity_basis','reported_time','reported_balance','source_ref']};
+ const rows=runQuery(snap,query).rows;expect(rows).toHaveLength(2);expect(rows[0]).toMatchObject({channel,amount:'1234.123456789012345678',currency:'SGD',reported_type:'Bank Transfer Deposits',identity_basis:'content_occurrence',reported_time:ledgerRow.created_time,reported_balance:ledgerRow.balance,source_ref:expect.any(String)});
+ expect(getCashes(snap.state)).toContainEqual(expect.objectContaining({channel,currency:'USD',amount:7}));
+ const filesQuery={from:'raw_files'};const files=runQuery(snap,filesQuery,await loadQueryCatalog(snap,filesQuery)).rows;
+ const file=files.find(f=>f.id===rows[0].source_ref)!;expect(file).toBeTruthy();
+ const sourceQuery={from:'source_records',source:{file_id:String(file.id),version:String(file.version)}};
+ const catalog=await loadQueryCatalog(snap,sourceQuery);const archived=catalog.source_records.rows(snap.state);
+ expect(archived.some(r=>r.path==='/account_cash_logs/rows/0/cash_change'&&r.text_value===ledgerRow.cash_change)).toBe(true);
+ const journals=await withHouseholdTx(user,async c=>(await c.query('SELECT id FROM journal_entries WHERE household_id=$1 ORDER BY id',[user])).rows);
+ await syncBrokerAccount(snap,id,transport,'manual',true);snap=await loadInvestor(user);
+ expect(runQuery(snap,{from:'broker_cash_ledger'}).rows).toHaveLength(2);
+ reject=true;await syncBrokerAccount(snap,id,transport,'manual',true);snap=await loadInvestor(user);
+ expect(calls).toBe(3);expect(runQuery(snap,{from:'broker_cash_ledger'}).rows).toHaveLength(2);
+ expect(runQuery(snap,{from:'broker_cash_ledger_coverage'}).rows.some(r=>r.complete===false)).toBe(true);
+ expect(getCashes(snap.state)).toContainEqual(expect.objectContaining({channel,currency:'USD',amount:7}));
+ expect(await withHouseholdTx(user,async c=>(await c.query('SELECT id FROM journal_entries WHERE household_id=$1 ORDER BY id',[user])).rows)).toEqual(journals);
+ expect(runQuery(await loadInvestor(other),{from:'broker_cash_ledger'}).available).toBe(false);
+});

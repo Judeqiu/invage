@@ -3,7 +3,7 @@ import { brokerRequestSignal } from '../brokers/network.js';
 import { BrokerHttpError, BrokerParseError } from '../brokers/errors.js';
 import { moomooNonce, moomooSignContent, parseSignAlg, signMooMooRequest, type MooMooSignAlg } from './moomoo-sign.js';
 import { looksLikeOptionCode } from '../brokers/option-symbol.js';
-import { envelopeOk, type MooMooEnvelope, type MooMooRawBundle, type CloudFundPositionsEvidence } from './moomoo-types.js';
+import { envelopeOk, type MooMooEnvelope, type MooMooRawBundle, type CloudFundPositionsEvidence, type CloudCashLedgerEvidence } from './moomoo-types.js';
 import type { BrokerHistory, BrokerHistorySyncPlan } from '../brokers/history.js';
 import { parseMooMooOrderFees } from './moomoo-fees.js';
 import { moomooContractMetadata } from './moomoo-history.js';
@@ -478,6 +478,47 @@ export async function fetchMooMooFundPositions(
   }
 }
 
+/** Full account cash evidence: no contract or direction filter. Every sync
+ * revisits the entire API-returned range so failed/corrected older observations
+ * are not stranded behind the independently advancing execution-history cursor.
+ */
+export async function fetchMooMooAccountCashLedger(
+  credentials: MooMooCredentials & {acc_id:string},
+  opts?: {fetchImpl?:typeof fetch; through?:Date},
+): Promise<CloudCashLedgerEvidence> {
+  const through = opts?.through ?? new Date();
+  const evidence: CloudCashLedgerEvidence = {begin_time:'1',end_time:String(BigInt(through.getTime())*1000n),
+    observed_at:through.toISOString(),complete:false,gaps:[],rows:[],requests:[]};
+  const path = `/api/v1.0/accounts/${encodeURIComponent(credentials.acc_id)}/cash_logs`;
+  const fetchImpl = opts?.fetchImpl ?? fetch;
+  const capture:typeof fetch = async(url,init) => {
+    const res = await fetchImpl(url,init);
+    const parsed = new URL(String(url));
+    if(parsed.pathname === path) evidence.requests.push({query:parsed.search.slice(1),http_status:res.status,response_body:await res.clone().text()});
+    return res;
+  };
+  let cursor = '';const seen = new Set<string>();
+  try {
+    for (;;) {
+      const query = new URLSearchParams({begin_time:evidence.begin_time,end_time:evidence.end_time,page_size:'20',...(cursor?{page_flag:cursor}:{})}).toString();
+      const response = await getWithSkewRetry({path,query,credentials,fetchImpl:capture});
+      failIfError(response,'account cash_logs');
+      const d = response.d as {cash_logs?:unknown;completed?:unknown;page_flag?:unknown} | undefined;
+      if(!d || !Array.isArray(d.cash_logs) || typeof d.completed !== 'boolean' || d.cash_logs.some(r => !r || typeof r !== 'object' || Array.isArray(r))) throw Error('Incomplete account cash-log page');
+      evidence.rows.push(...d.cash_logs);
+      if(d.completed){evidence.complete=true;break;}
+      if(typeof d.page_flag !== 'string' || !d.page_flag || seen.has(d.page_flag)) throw Error('Account cash-log cursor did not advance');
+      cursor=d.page_flag;seen.add(cursor);
+      // Documented page size and IP entry quota; this is pacing, not a row cap.
+      await new Promise(resolve => setTimeout(resolve,650));
+    }
+  } catch {
+    evidence.gaps.push('Account-wide cash logs unavailable or incomplete; retained returned pages and retry the full range on the next sync.');
+  }
+  evidence.observed_at=new Date().toISOString();
+  return evidence;
+}
+
 export async function fetchMooMooRawBundle(
   credentials: MooMooCredentials,
   opts?: { fetchImpl?: typeof fetch; history?: BrokerHistorySyncPlan; retainedHistory?:BrokerHistory },
@@ -491,9 +532,10 @@ export async function fetchMooMooRawBundle(
   });
   failIfError(positions, 'positions');
   const fund_positions = await fetchMooMooFundPositions({...credentials, acc_id}, {fetchImpl});
+  const account_cash_logs = await fetchMooMooAccountCashLedger({...credentials,acc_id},{fetchImpl});
   const snapshot: MooMooRawBundle = {
     schema: credentials.broker === 'futubull' ? 'invage.futubull.cloud.raw.v1' : 'invage.moomoo.raw.v1',
-    fetched_at: new Date().toISOString(), acc_id, authorized, funds, positions, fund_positions,
+    fetched_at: new Date().toISOString(), acc_id, authorized, funds, positions, fund_positions, account_cash_logs,
   };
   try {
   const plan = opts?.history ?? { mode:'full', from:'2000-01-01T00:00:00.000Z', through:new Date().toISOString() };

@@ -1,3 +1,4 @@
+import {mapMooMooCashLedger} from './moomoo-ledger.js';
 import { BrokerParseError } from '../brokers/errors.js';
 import {
   looksLikeOptionCode,
@@ -326,6 +327,8 @@ export function mapMooMooBundleToStatement(bundle: MooMooRawBundle, channel: str
     lots,
     skipped,
   };
+  const ledger=mapMooMooCashLedger(bundle,channel);
+  if(ledger)statement.cash_ledger=ledger;
   if (metrics) statement.metrics = { ...metrics, source_as_of: bundle.fetched_at };
   if (!includeHistory || bundle.history_error) return statement;
   const history = mapMooMooHistory(bundle, lots, channel);

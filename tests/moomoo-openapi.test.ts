@@ -379,6 +379,7 @@ describe('MooMoo fetchRaw', () => {
       `https://webapi.moomoo.com/api/v1.0/accounts/${id}/funds?currency=USD`,
       `https://webapi.moomoo.com/api/v1.0/accounts/${id}/positions`,
       `https://webapi.moomoo.com/api/v1.0/accounts/${id}/fund_positions`,
+      expect.stringMatching(new RegExp(`^https://webapi[.]moomoo[.]com/api/v1[.]0/accounts/${id}/cash_logs[?]begin_time=1&end_time=[0-9]+&page_size=20$`)),
       `https://webapi.moomoo.com/api/v1.0/accounts/${id}/funds?currency=USD`,
     ]);
     expect(raw.funds).toEqual(FUNDS);

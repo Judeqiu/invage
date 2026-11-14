@@ -62,6 +62,7 @@ describe.each(['moomoo','futubull'] as const)('%s Cloud cash-log fees',broker=>{
     if(u.pathname.endsWith('/fees'))return Response.json({s:'ok',d:raw.orders_fees![0]});
     if(u.pathname.endsWith('/stock-basicinfo'))return Response.json({ret_code:-7});
     if(u.pathname.endsWith('/cash_logs')){
+     if(!u.searchParams.has('code'))return Response.json({s:'ok',d:{cash_logs:[],completed:true}});
      const group=raw.cash_logs!.find(g=>g.code===u.searchParams.get('code'))!;
      if(u.searchParams.has('page_flag')&&partial)return new Response('',{status:403});
      return Response.json({s:'ok',d:{completed:u.searchParams.has('page_flag'),page_flag:'next',cash_logs:[group.rows[u.searchParams.has('page_flag')?1:0]]}});
@@ -71,7 +72,8 @@ describe.each(['moomoo','futubull'] as const)('%s Cloud cash-log fees',broker=>{
    const pending=fetchMooMooRawBundle({broker,app_key:'test',private_key:readFileSync('tests/fixtures/moomoo/ed25519-private.pem','utf8'),sign_alg:'Ed25519',acc_id:'A'},{fetchImpl,history:{mode:'incremental',from:'2026-10-27T00:00:00.000Z',through},retainedHistory:old});
    await vi.runAllTimersAsync();const result=await pending;
    expect(new Set(requests.map(u=>u.hostname))).toEqual(new Set([broker==='moomoo'?'webapi.moomoo.com':'webapi.futunn.com']));
-   const cashRequests=requests.filter(u=>u.pathname.endsWith('/cash_logs'));
+   const cashRequests=requests.filter(u=>u.pathname.endsWith('/cash_logs')&&u.searchParams.has('code'));
+   expect(result.account_cash_logs?.complete).toBe(true);
    expect(cashRequests).toHaveLength(4);expect(cashRequests[0].searchParams.get('begin_time')).toBe(String(Date.parse(from)*1000));
    expect(result.fee_fills_history).toHaveLength(2);expect(result.cash_logs!.every(g=>g.complete===!partial)).toBe(true);
    const merged=mergeBrokerHistory(old,history(result));expect(merged.executions).toHaveLength(2);

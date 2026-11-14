@@ -14,6 +14,12 @@ export interface BrokerCashLedgerRecord {
   contract_name: string | null;
   source_updated_at: string | null;
   source_path: string;
+  /** Some broker cash APIs expose no stable transaction ID. */
+  identity_basis?: 'native_id' | 'content_occurrence';
+  reported_time?: string | null;
+  reported_balance?: string | null;
+  native_symbol?: string | null;
+  currency_source?: string | null;
 }
 export interface BrokerCashLedgerBatch {
   /** Observation content identity excludes only archive location. */
@@ -54,10 +60,11 @@ function texts(raw: unknown): string[] {
 function hash(raw: unknown): string {
   const value = text(raw); if (!/^[a-f0-9]{64}$/.test(value)) throw Error('Invalid broker cash ledger digest'); return value;
 }
+const recordFields = ['id','segment','business_date','currency','amount','reported_type','description','contract_name','source_updated_at','source_path','identity_basis','reported_time','reported_balance','native_symbol','currency_source'];
 /** Fixed field order makes persisted jsonb and fresh mapper output equivalent. */
 export function cashLedgerBatchId(batch: Omit<BrokerCashLedgerBatch, 'id'>): string {
   return createHash('sha256').update(JSON.stringify({ source: batch.source, observed_at: batch.observed_at, from: batch.from, through: batch.through,
-    segments: batch.segments, complete: batch.complete, gaps: batch.gaps, evidence_sha256: batch.evidence_sha256, records: batch.records })).digest('hex');
+    segments: batch.segments, complete: batch.complete, gaps: batch.gaps, evidence_sha256: batch.evidence_sha256, records: batch.records.map(r => Object.fromEntries(recordFields.filter(k => Object.hasOwn(r,k)).map(k => [k,(r as unknown as Record<string,unknown>)[k]]))) })).digest('hex');
 }
 export function assertBrokerCashLedger(raw: unknown): BrokerCashLedger {
   const o = object(raw, ['broker_id','channel','account_id','batches']);
@@ -66,10 +73,13 @@ export function assertBrokerCashLedger(raw: unknown): BrokerCashLedger {
     const b = object(rawBatch, ['id','source','observed_at','from','through','segments','complete','gaps','source_ref','evidence_sha256','records']);
     if (!Array.isArray(b.records) || typeof b.complete !== 'boolean') throw Error('Invalid broker cash ledger batch');
     const records = b.records.map(rawRecord => {
-      const r = object(rawRecord, ['id','segment','business_date','currency','amount','reported_type','description','contract_name','source_updated_at','source_path']);
+      const r = object(rawRecord, recordFields);
+      if (r.identity_basis !== undefined && r.identity_basis !== 'native_id' && r.identity_basis !== 'content_occurrence') throw Error('Invalid cash ledger identity basis');
       return { id:text(r.id), segment:nullable(r.segment), business_date:r.business_date === null ? null : date(r.business_date),
         currency:nullable(r.currency), amount:r.amount === null ? null : decimal(r.amount), reported_type:nullable(r.reported_type),
-        description:nullable(r.description), contract_name:nullable(r.contract_name), source_updated_at:nullable(r.source_updated_at), source_path:text(r.source_path) };
+        description:nullable(r.description), contract_name:nullable(r.contract_name), source_updated_at:nullable(r.source_updated_at), source_path:text(r.source_path),
+        ...(r.identity_basis !== undefined ? {identity_basis:r.identity_basis as 'native_id' | 'content_occurrence'} : {}),
+        ...Object.fromEntries(['reported_time','reported_balance','native_symbol','currency_source'].filter(k => k in r).map(k => [k,nullable(r[k])])) };
     });
     const batch: BrokerCashLedgerBatch = { id:hash(b.id), source:text(b.source), observed_at:stamp(b.observed_at), from:date(b.from), through:date(b.through),
       segments:texts(b.segments), complete:b.complete, gaps:texts(b.gaps), source_ref:nullable(b.source_ref), evidence_sha256:hash(b.evidence_sha256), records };

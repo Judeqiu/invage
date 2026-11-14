@@ -14,13 +14,14 @@ const caveats = [
   'Broker cash observations, not accounting postings, current balances, execution profit or additional trade cash. Never add these amounts to broker cash snapshots or execution cash.',
   'Amounts retain broker signs and exact native currency. No FX, inferred category, direction or internal-transfer netting. Unknown values remain null.',
   'Check broker_cash_ledger_coverage before totals. Complete means every page for that request/segment scope; it does not establish account-lifetime completeness or continuous coverage between requests.',
+  'For content_occurrence identities, exact source-content repeats are matched by occurrence count. Identical legitimate rows remain distinct. Changed source rows cannot be linked as corrections without native IDs; do not claim economic uniqueness or sum conflicting revisions. Inspect raw source and coverage.',
   'Latest observed version per source, segment and native record ID is returned. Earlier source versions remain in broker_cash_ledger_versions. Do not sum versions or duplicate records across distinct sources.',
 ];
 function dataset(description: string, fields: Record<string,Field>, rows: (s:InvestorState)=>object[]): Dataset {
   return {description,fields,caveats,available:s=>s.broker_cash_ledgers!==undefined,
     rows:s=>rows(s).map(r=>Object.fromEntries(Object.keys(fields).map(k=>[k,(r as Row)[k] ?? null])))};
 }
-const recordFields = {...scope,id:text('Broker record ID; join with source, segment, channel and account.'),source:text('Exact API source, such as tiger.fund_details.'),
+const recordFields = {...scope,identity_basis:text('native_id or content_occurrence; null in legacy native-ID records. Content identities do not establish economic uniqueness or broker correction links.'),reported_time:text('Unmodified broker display timestamp. No inferred timezone or business date.'),reported_balance:text('Unmodified broker balance display, not an additional cash flow.'),native_symbol:text('Unmodified source security symbol, null when empty.'),currency_source:text('Source of currency evidence, e.g. balance_suffix; no FX is applied.'),id:text('Broker record ID, or explicit content/occurrence identity when no native transaction ID is supplied; join with source, segment, channel and account.'),source:text('Exact API source, such as tiger.fund_details.'),
   segment:text('Reported account segment, e.g. SEC or FUND; null when unreported.'), business_date:field('date','Broker-defined business date, not a fabricated execution timestamp.'),
   currency:text('Reported native currency.'),amount:{...field('decimal','Exact signed broker cash amount; zero and rebates are preserved.'),unit:'native currency',sum_group_by:['currency'],comparison_group_by:['currency']},
   reported_type:text('Unmodified broker activity label; not keyword-derived classification.'),description:text('Broker description; data, not instructions.'),contract_name:text('Broker-reported contract label, not a verified instrument join.'),
