@@ -1,4 +1,5 @@
 import { brokerHistoryDatasets } from './broker-history.js';
+import { brokerCashLedgerDatasets } from './cash-ledger.js';
 import { getPortfolio, getCashes, getDeposits, holdingInstrument, type InvestorState } from '../state/portfolio-state.js';
 import { getProperties, getLiabilities, getCashFlows, type HouseholdInvestorState } from '../state/household-state.js';
 import { buildExecutionJournal } from '../brokers/option-executions.js';
@@ -76,6 +77,7 @@ const flowFields = { id: str('Cash-flow line identifier.'), currency: scope.curr
 
 export const datasets: Record<string, Dataset> = {
   ...brokerHistoryDatasets,
+  ...brokerCashLedgerDatasets,
   positions: {
     description: 'Current stored equity, fund, and option lots, with reconciled opening evidence for options.',
     fields: { key: str('Stable portfolio lot key.'), ...scope, instrument: str('equity, fund, or option.'),
@@ -139,6 +141,8 @@ export const datasets: Record<string, Dataset> = {
 };
 
 export const relationships = [
+  { from: 'broker_cash_ledger', to: 'broker_cash_ledger_coverage', keys: ['broker_id', 'channel', 'account_id', 'batch_id'], meaning: 'Independent ledger request coverage and archive provenance; execution coverage does not establish cash-ledger completeness.' },
+  { from: 'broker_cash_ledger', to: 'broker_cash_ledger_versions', keys: ['broker_id', 'channel', 'account_id', 'source', 'segment', 'id'], meaning: 'Latest observation and retained source versions; versions are not additional cash movements.' },
   { from: 'broker_executions', to: 'broker_orders', keys: ['broker_id', 'channel', 'account_id', 'order_id -> id'], meaning: 'Execution parent; orders are not extra cash flows.' },
   { from: 'broker_order_legs', to: 'broker_orders', keys: ['broker_id', 'channel', 'account_id', 'order_id -> id'], meaning: 'Exact parent legs and ratios; actual fills remain in broker_executions.' },
   { from: 'broker_order_fees', to: 'broker_orders', keys: ['broker_id', 'channel', 'account_id', 'order_id -> id'], meaning: 'Components of the reported parent fee total; do not sum the total and its components or allocated execution fees.' },

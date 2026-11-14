@@ -320,6 +320,8 @@ export interface InvestorState extends UserState {
   option_journal?: Record<string, { thesis: string; updated_at: string }>;
   /** Account-scoped executions, orders, explicit gaps and reusable history sync checkpoints. */
   broker_history?: Record<string, import('../brokers/history.js').BrokerHistory>;
+  /** Channel-scoped broker cash observations with independent coverage; never balance postings. */
+  broker_cash_ledgers?: Record<string, import('../brokers/cash-ledger.js').BrokerCashLedger>;
   /** Imported execution history, independent of the current holdings snapshot. */
   option_executions?: import('../brokers/option-executions.js').OptionExecution[];
   /** Explicit broker exercise, assignment, expiration, and cash settlement records. */

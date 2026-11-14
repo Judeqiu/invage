@@ -13,6 +13,7 @@ import type { BrokerConnectionMetrics } from '../state/portfolio-state.js';
 import { envelopeOk, type TigerGatewayEnvelope, type TigerRawBundle } from './tiger-types.js';
 import { BrokerParseError } from '../brokers/errors.js';
 import { mapTigerHistory } from './tiger-history.js';
+import { mapTigerCashLedger } from './tiger-ledger.js';
 import { mapTigerOptionHistory } from './tiger-executions.js';
 import { invalidCashSkip } from '../brokers/snapshot-validation.js';
 
@@ -373,6 +374,8 @@ export function mapTigerBundleToStatement(bundle: TigerRawBundle, channel: strin
   };
   if (mapped.metrics) statement.metrics = mapped.metrics;
   if (!includeHistory || bundle.history_error) return statement;
+  const cashLedger = mapTigerCashLedger(bundle,channel);
+  if (cashLedger) statement.cash_ledger = cashLedger;
   statement.history = mapTigerHistory(bundle,lots,channel);
   const history = bundle.history ? undefined : mapTigerOptionHistory(bundle, lots, channel);
   if (history) {

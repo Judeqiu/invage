@@ -7,6 +7,7 @@ import { appendOptionObservation } from './option-history.js';
 import { normalizeBrokerOptionLot } from './statement.js';
 import { cashSnapshotPolicy, deferredSnapshotSections, invalidCashSkip, reconciledHistorySkips } from './snapshot-validation.js';
 import { mergeBrokerHistory, optionExecutionsFromHistory } from './history.js';
+import { mergeBrokerCashLedger } from './cash-ledger.js';
 import { createHash } from 'node:crypto';
 /**
  * Channel snapshot apply — writes only public books types
@@ -185,6 +186,10 @@ export async function applyBrokerStatement(
   // All adapters and custom parsers pass through this before any books writes.
   doc = { ...doc, lots: doc.lots.map(normalizeBrokerOptionLot) };
   if (doc.history && (doc.history.channel !== channel || doc.history.account_id !== doc.account_id || doc.history.broker_id !== (connection?.brokerId ?? connectorId))) throw new Error('History broker/channel/account differs from broker statement');
+  if (doc.cash_ledger && (doc.cash_ledger.channel !== channel || doc.cash_ledger.account_id !== doc.account_id || doc.cash_ledger.broker_id !== (connection?.brokerId ?? connectorId))) throw new Error('Cash ledger broker/channel/account differs from broker statement');
+  const cashLedger = doc.cash_ledger ? mergeBrokerCashLedger(state.broker_cash_ledgers?.[channel], {
+    ...doc.cash_ledger,batches:doc.cash_ledger.batches.map(b => ({...b,source_ref:observation?.rawDataId ?? b.source_ref})),
+  }) : undefined;
   // Prepare observation history on a copy, so replay conflicts fail before
   // ledger writes and a failed books transaction leaves the snapshot untouched.
   const observedState = { ...state };
@@ -257,6 +262,7 @@ export async function applyBrokerStatement(
   if (executions !== undefined) state.option_executions = executions;
   if (optionEvents !== undefined) state.option_events = optionEvents;
   if (history) state.broker_history = { ...state.broker_history, [channel]: history };
+  if (cashLedger) state.broker_cash_ledgers = { ...state.broker_cash_ledgers, [channel]:cashLedger };
 
   if (historyError) state.log.push({ ts: today, action: 'broker_history_deferred',
     connector_id: connectorId, account_id: doc.account_id, reason: historyError,

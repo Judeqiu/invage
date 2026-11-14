@@ -12,6 +12,7 @@ import { mergeOptionLifecycleEvents, type OptionLifecycleEvent } from './option-
 import { assertHolding, buildOptionKey, HOLDING_KEY_CHANNEL_SEP } from '../market/position-value.js';
 import { canonicalOptionUnderlying } from './option-symbol.js';
 import { assertBrokerHistory, type BrokerHistory } from './history.js';
+import { assertBrokerCashLedger, type BrokerCashLedger } from './cash-ledger.js';
 import {
   assertBrokerConnectionMetrics,
   type BrokerConnectionMetrics,
@@ -61,6 +62,7 @@ export function normalizeBrokerOptionLot(lot: BrokerLot): BrokerLot {
 }
 
 export interface BrokerStatement {
+  cash_ledger?: BrokerCashLedger;
   history?: BrokerHistory;
   option_executions?: OptionExecution[];
   option_events?: OptionLifecycleEvent[];
@@ -225,7 +227,7 @@ export function assertBrokerStatement(raw: unknown): BrokerStatement {
   }
   const o = raw as Record<string, unknown>;
   rejectVendorShape(o);
-  const allowed = new Set(['account_id', 'as_of', 'from_date', 'cash', 'cash_omitted', 'lots', 'skipped', 'metrics', 'option_executions', 'option_events', 'history']);
+  const allowed = new Set(['account_id', 'as_of', 'from_date', 'cash', 'cash_omitted', 'lots', 'skipped', 'metrics', 'option_executions', 'option_events', 'history', 'cash_ledger']);
   for (const k of Object.keys(o)) {
     if (!allowed.has(k)) {
       throw new Error(`Broker statement: unknown field "${k}".`);
@@ -298,6 +300,10 @@ export function assertBrokerStatement(raw: unknown): BrokerStatement {
   if (o.history !== undefined) {
     doc.history = assertBrokerHistory(o.history);
     if (doc.history.account_id !== doc.account_id) throw new Error('History account differs from statement account');
+  }
+  if (o.cash_ledger !== undefined) {
+    doc.cash_ledger = assertBrokerCashLedger(o.cash_ledger);
+    if (doc.cash_ledger.account_id !== doc.account_id) throw new Error('Cash ledger account differs from statement account');
   }
   return doc;
 }

@@ -195,30 +195,39 @@ export async function tigerExecute(args: {
 /** Complete, exact account cash evidence. Optional failure never erases primary history. */
 export async function fetchTigerFundDetails(args: {
   gateway:string; credentials:TigerCredentials; fetchImpl:typeof fetch; timestamp?:string;
-}, from:string, through:string) {
-  const evidence={from,through,complete:false,rows:[] as Record<string,unknown>[]};
+}, from:string, through:string, segments:string[] = ['SEC']) {
+  const evidence={from,through,segments:[...segments],complete:false,gaps:[] as string[],rows:[] as Record<string,unknown>[]};
   const ids=new Set<string>();
   try {
     let start=0, expectedPage=1;
     let pageCount:number|undefined;
+    let itemCount:number|undefined;
     for (;;) {
       if(start) await new Promise(resolve=>setTimeout(resolve,6100)); // Broker quota: ten calls/minute.
       const env=await tigerExecute({...args,method:'fund_details',biz:{account:args.credentials.account,
-        seg_types:['SEC'],fund_type:'ALL',lang:'en_US',start_date:from.slice(0,10),end_date:through.slice(0,10),start,limit:100}});
+        seg_types:segments,fund_type:'ALL',lang:'en_US',start_date:from.slice(0,10),end_date:through.slice(0,10),start,limit:100}});
       if(!envelopeOk(env))throw new Error('Fund detail query failed');
-      const data=env.data as {items?:Record<string,unknown>[];page?:number;pageCount?:number};
+      const data=env.data as {items?:Record<string,unknown>[];page?:number;pageCount?:number;itemCount?:number};
+      if(data?.page===1&&data.pageCount===0&&data.itemCount===0&&Array.isArray(data.items)&&!data.items.length){evidence.complete=true;break;}
       if(!Array.isArray(data?.items)||!Number.isSafeInteger(data.page)||!Number.isSafeInteger(data.pageCount)||
         data.page!==expectedPage||data.pageCount!<data.page!||pageCount!==undefined&&data.pageCount!==pageCount)throw new Error('Incomplete fund detail pagination');
       pageCount=data.pageCount;
+      if(data.itemCount!==undefined){
+        if(!Number.isSafeInteger(data.itemCount)||data.itemCount<0||itemCount!==undefined&&data.itemCount!==itemCount)throw new Error('Fund detail total changed during pagination');
+        itemCount=data.itemCount;
+      }
       for(const row of data.items){
         if(!row||typeof row!=='object'||Array.isArray(row)||typeof row.id!=='string'||!row.id||ids.has(row.id))throw new Error('Repeated or invalid fund detail record');
         ids.add(row.id);evidence.rows.push(row);
       }
-      if(data.page===data.pageCount){evidence.complete=true;break;}
+      if(data.page===data.pageCount){
+        if(itemCount!==undefined&&evidence.rows.length!==itemCount)throw new Error('Fund detail returned count differs from reported total');
+        evidence.complete=true;break;
+      }
       if(!data.items.length)throw new Error('Fund detail pagination did not advance');
       start+=data.items.length;expectedPage++;
     }
-  } catch { /* Keep all returned rows, explicitly incomplete. */ }
+  } catch (error) { evidence.gaps.push(error instanceof Error ? error.message : 'Fund detail retrieval failed'); }
   return evidence;
 }
 
@@ -417,13 +426,8 @@ export async function fetchTigerRawBundle(
     }
   }
   if(history&&account_kind!=='global'){
-    const parents=new Set(history.orders.filter(o=>o.secType==='MLEG').map(o=>String(o.id)));
-    const dates=history.transactions.filter(t=>parents.has(String(t.orderId))).flatMap(t=>{
-      const clock=tigerMarketClock(t.market);return clock?[tigerHistoryTime(t.transactionTime,clock).slice(0,10)]:[];
-    }).sort();
-    if(dates.length){
-      history.fund_details=await fetchTigerFundDetails({gateway,credentials,fetchImpl,timestamp:opts?.timestamp},dates[0],new Date(history.end).toISOString());
-    }
+    history.fund_details=await fetchTigerFundDetails({gateway,credentials,fetchImpl,timestamp:opts?.timestamp},
+      new Date(history.start).toISOString(),new Date(history.end).toISOString(),['SEC','FUT','FUND']);
   }
     return { ...snapshot, ...(history ? { history } : {}), ...(option_history ? { option_history } : {}) };
   } catch (error) {

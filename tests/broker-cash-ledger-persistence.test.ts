@@ -1,0 +1,54 @@
+import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { expect,it,vi } from 'vitest';
+import { useTestDatabase,createInvestorFixture } from './helpers/database.js';
+import { tigerLedgerBundle } from './helpers/cash-ledger.js';
+import { mapTigerBundleToStatement } from '../src/tiger/tiger-map.js';
+import { getCashes } from '../src/state/portfolio-state.js';
+import { runQuery } from '../src/data-query/engine.js';
+vi.mock('../src/brokers/sync-notification.js',async original=>({...await original<object>(),publishBrokerSyncSuccess:vi.fn(),publishBrokerSyncFailure:vi.fn()}));
+await useTestDatabase({books:true});
+const {migrateBooks}=await import('../src/books/index.js');
+const {withHouseholdTx}=await import('../src/books/db.js');
+const {loadInvestor,saveInvestor}=await import('../src/state/investor-store.js');
+const {addBrokerSource,addBrokerAccount,syncBrokerAccount}=await import('../src/brokers/accounts.js');
+const {adapters}=await import('../src/brokers/adapter.js');
+const {applyBrokerStatement}=await import('../src/brokers/apply-statement.js');
+
+it('syncs and queries ledger evidence through PostgreSQL without posting historical deposits, and preserves scope and archive versions',async()=>{
+  await migrateBooks();
+  const user=randomUUID(),other=randomUUID();
+  for(const id of [user,other]) await createInvestorFixture({user:{id,created_at:'2026-01-01',auth_token:randomUUID()},profile:{display_name:'Ledger test',contact_email:`${id}@test.local`},log:[]});
+  let snap=await loadInvestor(user);
+  const source=addBrokerSource(snap.state,'tiger',{tiger_id:'synthetic',private_key:readFileSync('tests/fixtures/tiger/test-private.pem','utf8'),license:'TBSG'});
+  const id=addBrokerAccount(snap.state,{source_id:source,account_id:'A',label:'Synthetic account',config:{}});
+  const channel=snap.state.broker_connections![id].channel;await saveInvestor(snap);
+  let raw=tigerLedgerBundle();
+  const fetch=vi.spyOn(adapters.tiger,'fetchRaw').mockImplementation(async()=>({kind:'json',body:Buffer.from(JSON.stringify(raw))}));
+  try {
+    await syncBrokerAccount(await loadInvestor(user),id,undefined,'manual',true);
+    snap=await loadInvestor(user);
+    expect(getCashes(snap.state)).toContainEqual(expect.objectContaining({channel,amount:500,currency:'USD'}));
+    expect(runQuery(snap,{from:'broker_cash_ledger'}).rows).toHaveLength(4);
+    const deposit=runQuery(snap,{from:'broker_cash_ledger',where:{field:'reported_type',op:'eq',value:'Deposit'}}).rows[0];
+    expect(deposit.amount).toBe('1000.1234567890123456789');expect(deposit.source_ref).toEqual(expect.any(String));
+    expect(runQuery(snap,{from:'broker_cash_ledger_coverage',select:['complete']}).rows).toEqual([{complete:true}]);
+    const before=await withHouseholdTx(user,async c=>(await c.query('SELECT id FROM journal_entries WHERE household_id=$1 ORDER BY id',[user])).rows);
+    await syncBrokerAccount(await loadInvestor(user),id,undefined,'manual',true);
+    snap=await loadInvestor(user);expect(snap.state.broker_cash_ledgers![channel].batches).toHaveLength(1);
+    raw=structuredClone(raw);raw.fetched_at='2026-11-15T08:00:00.000Z';raw.history!.fund_details!.rows[0].amount='-2000.00';
+    raw.history!.fund_details!.rows=raw.history!.fund_details!.rows.slice(0,1);raw.history!.fund_details!.complete=false;
+    await syncBrokerAccount(snap,id);
+    snap=await loadInvestor(user);
+    expect(runQuery(snap,{from:'broker_cash_ledger'}).rows).toHaveLength(4);
+    expect(runQuery(snap,{from:'broker_cash_ledger_versions'}).rows).toHaveLength(5);
+    expect(runQuery(snap,{from:'broker_cash_ledger',select:['amount'],where:{field:'reported_type',op:'eq',value:'Deposit'}}).rows).toEqual([{amount:'-2000.00'}]);
+    expect(await withHouseholdTx(user,async c=>(await c.query('SELECT id FROM journal_entries WHERE household_id=$1 ORDER BY id',[user])).rows)).toEqual(before);
+    expect(getCashes(snap.state)).toContainEqual(expect.objectContaining({channel,amount:500}));
+    expect(runQuery(await loadInvestor(other),{from:'broker_cash_ledger'}).available).toBe(false);
+    const foreign=mapTigerBundleToStatement(raw,'wrong-channel'),beforeMismatch=structuredClone(snap);
+    await expect(applyBrokerStatement(snap,id,foreign,undefined,undefined,{brokerId:'tiger',channel})).rejects.toThrow(/channel/);
+    expect(snap).toEqual(beforeMismatch);
+    expect(await loadInvestor(user)).toEqual(beforeMismatch);
+  } finally {fetch.mockRestore();}
+});
