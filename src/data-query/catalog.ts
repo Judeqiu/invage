@@ -141,6 +141,7 @@ export const datasets: Record<string, Dataset> = {
 };
 
 export const relationships = [
+  { from: 'channel_asset_values', to: 'channel_asset_components', keys: ['channel', 'currency'], meaning: 'Approved stock + cash + money-market fund formula and its saved valuation/FX evidence; pin the same source_version across queries.' },
   { from: 'broker_cash_ledger', to: 'broker_cash_ledger_coverage', keys: ['broker_id', 'channel', 'account_id', 'batch_id'], meaning: 'Independent ledger request coverage and archive provenance; execution coverage does not establish cash-ledger completeness.' },
   { from: 'broker_cash_ledger', to: 'broker_cash_ledger_versions', keys: ['broker_id', 'channel', 'account_id', 'source', 'segment', 'id'], meaning: 'Latest observation and retained source versions; versions are not additional cash movements.' },
   { from: 'broker_executions', to: 'broker_orders', keys: ['broker_id', 'channel', 'account_id', 'order_id -> id'], meaning: 'Execution parent; orders are not extra cash flows.' },

@@ -10,6 +10,7 @@ import { booksDatasets, loadBooksDataset } from './books.js';
 import { limits, type Query } from './engine.js';
 import type { InvestorSnapshot } from '../state/investor-store.js';
 import { optionRelationshipDatasets, loadOptionRelationshipDataset } from './option-relationships.js';
+import { channelAssetDatasets, loadChannelAssetDataset } from './channel-assets.js';
 
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const external = (description: string, source: string, fields: Record<string, Field> = recordFields): Dataset => ({
@@ -20,7 +21,7 @@ const external = (description: string, source: string, fields: Record<string, Fi
 });
 
 export const queryDatasets: Record<string, Dataset> = {
-  ...datasets, financial_state: financialStateDataset, ...booksDatasets, ...optionRelationshipDatasets,
+  ...datasets, financial_state: financialStateDataset, ...booksDatasets, ...optionRelationshipDatasets, ...channelAssetDatasets,
   valuation_snapshots: external('All saved portfolio valuation snapshot fields, including every stock, option, fund, FX, cash and deposit valuation.', 'drive.snapshots'),
   broker_sync_runs: external('All retained broker sync attempts, status, errors, statement dates and raw archive IDs.', 'broker_sync_history'),
   raw_files: external('Inventory of every original broker archive, upload, saved report and other authenticated Drive file. Use source_records for structured contents or fetch_raw_data for original bytes.', 'drive.files', {
@@ -138,7 +139,8 @@ export async function loadQueryCatalog(snapshot: InvestorSnapshot, raw: unknown)
       const root = constrainedFinancialRoot(query.where);
       if (root !== undefined) dataset = scopedFinancialDataset('/' + root.replaceAll('~', '~0').replaceAll('/', '~1'));
     }
-  } else if (Object.hasOwn(optionRelationshipDatasets, name)) dataset = loadOptionRelationshipDataset(name, snapshot.state, query.where);
+  } else if (Object.hasOwn(channelAssetDatasets, name)) dataset = loadChannelAssetDataset(name, snapshot.state);
+  else if (Object.hasOwn(optionRelationshipDatasets, name)) dataset = loadOptionRelationshipDataset(name, snapshot.state, query.where);
   else if (Object.hasOwn(booksDatasets, name)) dataset = await loadBooksDataset(name, userId);
   else if (name === 'valuation_snapshots') {
     const files = allRawFiles(userId); const index = files.find(file => file.id === 'snapshots.json');
