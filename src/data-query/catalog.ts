@@ -87,6 +87,9 @@ export const datasets: Record<string, Dataset> = {
       fund_mark: number('Stored fund NAV per unit; null for equities/options. Fetch equity prices with get_quote.'),
       quote_source: str('Recorded option/fund quote policy; not evidence of a fresh quote.'),
       fund_name: str('Recorded fund name.'), listing_exchange: str('Broker-native listing exchange.'),
+      fund_broker_symbol:str('Original broker fund symbol.'),fund_isin:str('Verified or broker-reported ISIN security identity.'),
+      fund_product_class:str('Structured income, balanced, equity, mmf or other class; null remains unclassified.'),
+      fund_classification_url:str('Issuer document supporting the recorded classification.'),fund_classification_sha256:str('SHA-256 of the classification source document.'),
       encumbrance_kind: str('pledged, lent, or right_to_use.'), encumbered_units: number('Encumbered shares/units/contracts.'),
       mark: field('number', 'Stored option premium per CONTRACT; not a fresh quote.', { unit: 'native currency per contract', comparison_group_by: ['currency'] }),
       settlement: str('Recorded option settlement.'), contract_id: str('Recorded broker-native id if present.'),
@@ -105,6 +108,8 @@ export const datasets: Record<string, Dataset> = {
           side: o?.side ?? null, mark: o?.mark ?? null, settlement: o?.settlement ?? null, contract_id: h.broker_ref?.native_id ?? null,
           fund_mark: h.fund?.mark ?? null, quote_source: o?.quote_source ?? h.fund?.quote_source ?? null,
           fund_name: h.fund?.name ?? null, listing_exchange: h.broker_ref?.listing_exchange ?? null,
+          fund_broker_symbol:h.fund?.broker_symbol??null,fund_isin:h.fund?.isin??null,fund_product_class:h.fund?.product_class??null,
+          fund_classification_url:h.fund?.classification_source?.url??null,fund_classification_sha256:h.fund?.classification_source?.sha256??null,
           encumbrance_kind: h.encumbrance?.kind ?? null, encumbered_units: h.encumbrance?.units ?? null,
           opening_status: e?.status ?? null, opened_from: opening?.openedFrom ?? null, opened_to: opening?.openedTo ?? null };
       });

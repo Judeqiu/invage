@@ -164,9 +164,10 @@ export async function tigerExecute(args: {
   const exactFields = new Set(['id', 'orderId', 'accountId', 'filledQuantity', 'filledPrice',
     'amount', 'filledAmount', 'commission', 'gst', 'avgFillPrice', 'avgFilledPrice', 'limitPrice', 'totalQuantity', 'ratio', 'strike', 'multiplier', 'total', 'originalAmount', 'afterDiscountAmount']);
   const parse = (text: string) => JSON.parse(text, (key, value, context?: { source?: string }) => {
-    if (!history || !exactFields.has(key) || typeof value !== 'number') return value;
+    const positionIdentity=args.method==='positions'&&key==='contractId';
+    if ((!history || !exactFields.has(key))&&!positionIdentity || typeof value !== 'number') return value;
     if (context?.source && /^-?\d+(?:\.\d+)?$/.test(context.source)) return context.source;
-    if (['id', 'orderId', 'accountId'].includes(key) && !Number.isSafeInteger(value)) {
+    if ((positionIdentity||['id', 'orderId', 'accountId'].includes(key)) && !Number.isSafeInteger(value)) {
       throw new BrokerParseError('Tiger history ID cannot be read without precision loss.');
     }
     return String(value);

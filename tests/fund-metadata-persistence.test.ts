@@ -1,0 +1,56 @@
+import {expect,it,afterAll} from 'vitest';
+import {randomUUID} from 'node:crypto';
+import {readFileSync,mkdtempSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {useTestDatabase,createInvestorFixture} from './helpers/database.js';
+import {tigerLedgerBundle} from './helpers/cash-ledger.js';
+import {mapTigerBundleToStatement} from '../src/tiger/tiger-map.js';
+import {buildHoldingKey} from '../src/market/position-value.js';
+import {buildLivePositions,buildDashboardModel} from '../src/report/dashboard-model.js';
+import {createPortfolioProjectionRefresher} from '../src/state/portfolio-projections.js';
+import {readPortfolioProjection,portfolioFingerprint,writePortfolioProjection} from '../src/state/projection-store.js';
+import {prepareFundMetadataProjection} from '../src/state/prepare-fund-metadata.js';
+import {loadQueryCatalog} from '../src/data-query/sources.js';
+import {runQuery} from '../src/data-query/engine.js';
+await useTestDatabase({books:true});
+const root=mkdtempSync(join(tmpdir(),'fund-recording-'));process.env.UTARUS_DATA_ROOT=root;afterAll(()=>rmSync(root,{recursive:true,force:true}));
+const {migrateBooks,withHouseholdTx}=await import('../src/books/index.js');
+const {loadInvestor,saveInvestor}=await import('../src/state/investor-store.js');
+const {addBrokerSource,addBrokerAccount,readBrokerAccountModel}=await import('../src/brokers/accounts.js');
+const {applyBrokerStatement}=await import('../src/brokers/apply-statement.js');
+
+it('persists fund evidence into normal books/state, keeps saved valuations and journals unchanged, and survives subsequent sync',async()=>{
+ await migrateBooks();const user=randomUUID();
+ await createInvestorFixture({user:{id:user,created_at:'2026-01-01',auth_token:randomUUID()},profile:{display_name:'Fund test',contact_email:'fund@test.local'},log:[]});
+ let s=await loadInvestor(user);
+ const source=addBrokerSource(s.state,'tiger',{tiger_id:'test',license:'TBSG',private_key:readFileSync('tests/fixtures/tiger/test-private.pem','utf8')});
+ const id=addBrokerAccount(s.state,{source_id:source,account_id:'A',label:'Fund account',config:{}}),channel=readBrokerAccountModel(s.state).connections[id].channel;
+ const raw=tigerLedgerBundle();raw.history=undefined;
+ raw.positions.FUND.data={items:[{secType:'FUND',market:'SG',symbol:'SG9999006043.USD',name:'Broker full fund name',contractId:123,currency:'USD',positionQty:2,averageCost:1,latestPrice:1.1}]};
+ const statement=mapTigerBundleToStatement(raw,channel),lot=statement.lots[0],key=buildHoldingKey(lot.ticker,channel);
+ s.state.portfolio={[key]:{...lot.holding,currency:'USD',fund:{quote_source:'manual',mark:1.1,name:'Old symbol-only name'}}};
+ s.state.cash={channel,currency:'USD',amount:500,updated_at:'2026-11-14'};await saveInvestor(s);
+ const refresh=createPortfolioProjectionRefresher({loadInvestor,loadDashboardForSlug:async(_user,_prices,_benchmark,_progress,options)=>{
+  const state=options!.snapshot!.state,live=buildLivePositions(state.portfolio??{},{},{},state.cash,null,'2026-11-14',{reportingCurrency:'USD',fxRates:{}},{allowEmpty:true});
+  return {slug:user,displayName:'Fund test',generatedAt:'2026-11-14T08:00:00.000Z',empty:false,model:buildDashboardModel(live,[]),benchmark:null,productProfile:'full',productName:'Test'};
+ }});
+ await refresh(user);s=await loadInvestor(user);const before=structuredClone(s.state),original=readPortfolioProjection(before)!;
+ const journals=await withHouseholdTx(user,async c=>(await c.query('SELECT id FROM journal_entries WHERE household_id=$1 ORDER BY id',[user])).rows);
+ const next=structuredClone(before);next.portfolio![key]={...lot.holding,currency:'USD'};
+ const prepared=prepareFundMetadataProjection(before,next);expect(prepared.calculatedAt).toBe(original.calculatedAt);
+ expect(prepared.dashboard.model!.live.byChannel).toEqual(original.dashboard.model!.live.byChannel);
+ expect(prepared.dashboard.model!.history).toEqual(original.dashboard.model!.history);
+ s.state=next;await saveInvestor(s);s=await loadInvestor(user);
+ prepared.fingerprint=portfolioFingerprint(s.state);writePortfolioProjection(prepared);
+ expect(s.state.portfolio![key].fund).toMatchObject({name:'Broker full fund name',isin:'SG9999006043',product_class:'mmf',mark:1.1});
+ const rawQuery={from:'channel_asset_values',where:{field:'channel',op:'eq',value:channel}};
+ expect(runQuery(s,rawQuery,await loadQueryCatalog(s,rawQuery)).rows[0]).toMatchObject({complete:true,money_market_fund_value:'2.2',asset_value:'502.2'});
+ await withHouseholdTx(user,async c=>{
+  const rows=(await c.query('SELECT fund_json FROM position_meta WHERE household_id=$1',[user])).rows;
+  expect(rows.some(r=>r.fund_json?.isin==='SG9999006043'&&r.fund_json?.product_class==='mmf')).toBe(true);
+ });
+ await applyBrokerStatement(s,id,statement,Buffer.from(JSON.stringify(raw)),undefined,{brokerId:'tiger',channel});
+ s=await loadInvestor(user);expect(s.state.portfolio![key].fund?.product_class).toBe('mmf');
+ expect(await withHouseholdTx(user,async c=>(await c.query('SELECT id FROM journal_entries WHERE household_id=$1 ORDER BY id',[user])).rows)).toEqual(journals);
+});

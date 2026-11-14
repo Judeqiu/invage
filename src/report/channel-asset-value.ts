@@ -8,7 +8,7 @@ import { resolveDashboardChannel } from './dashboard-model.js';
 /** Decimal representation of a saved finite number, including exponential notation.
  * This does not claim the underlying saved binary64 valuation is broker decimal cash.
  */
-function savedDecimal(value: number): string {
+export function savedDecimal(value: number): string {
   if (!Number.isFinite(value)) throw Error('Saved monetary value is unavailable');
   const raw=String(value),[mantissa,exponent]=raw.toLowerCase().split('e');
   if(exponent===undefined)return raw;

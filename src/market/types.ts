@@ -80,6 +80,12 @@ export type FundProductClass = 'income' | 'balanced' | 'equity' | 'mmf' | 'other
  * Economics match equity: avg_price / mark per unit; units = shares or fund units.
  */
 export interface FundSpec {
+  /** Broker-native identity and independently verified security identity. */
+  broker_symbol?: string;
+  isin?: string;
+  classification_source?: {
+    kind: 'issuer_document'; isin: string; url: string; sha256: string; verified_at: string;
+  };
   /** Required. yahoo = live quote; manual = fund.mark only. */
   quote_source: FundQuoteSource;
   /**

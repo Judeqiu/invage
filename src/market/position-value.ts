@@ -1,4 +1,5 @@
 import { isDeepStrictEqual } from 'node:util';
+import { validIsin } from '../funds/metadata.js';
 /**
  * Position valuation for equities and option contracts.
  *
@@ -506,6 +507,13 @@ const FUND_PRODUCT_CLASSES = new Set(['income', 'balanced', 'equity', 'mmf', 'ot
 const YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export function assertFundSpec(f: FundSpec, key: string): void {
+  if(f.broker_symbol!==undefined&&(typeof f.broker_symbol!=='string'||!f.broker_symbol.trim()))throw Error(`Fund ${key}: invalid broker symbol`);
+  if(f.isin!==undefined&&!validIsin(f.isin))throw Error(`Fund ${key}: invalid ISIN`);
+  if(f.classification_source!==undefined){
+    const s=f.classification_source;
+    if(s.kind!=='issuer_document'||!f.product_class||s.isin!==f.isin||!validIsin(s.isin)||
+      !/^[a-f0-9]{64}$/.test(s.sha256)||!Number.isFinite(Date.parse(s.verified_at))||new URL(s.url).protocol!=='https:')throw Error(`Fund ${key}: invalid classification evidence`);
+  }
   if (f.quote_source !== 'yahoo' && f.quote_source !== 'manual') {
     throw new Error(
       `Fund ${key}: fund.quote_source must be "yahoo" or "manual" (no silent default).`,

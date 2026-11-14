@@ -8,6 +8,7 @@ import { normalizeBrokerOptionLot } from './statement.js';
 import { cashSnapshotPolicy, deferredSnapshotSections, invalidCashSkip, reconciledHistorySkips } from './snapshot-validation.js';
 import { mergeBrokerHistory, optionExecutionsFromHistory } from './history.js';
 import { mergeBrokerCashLedger } from './cash-ledger.js';
+import { retainFundMetadata } from '../funds/metadata.js';
 import { createHash } from 'node:crypto';
 /**
  * Channel snapshot apply — writes only public books types
@@ -87,7 +88,7 @@ export function replaceChannelHoldings(
   }
   const next = { ...kept };
   for (const lot of lots) {
-    next[lot.mapKey] = lot.holding;
+    next[lot.mapKey] = retainFundMetadata(portfolio[lot.mapKey],lot.holding);
   }
   return { next, removedKeys };
 }

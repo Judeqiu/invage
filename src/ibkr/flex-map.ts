@@ -14,6 +14,7 @@ import type {
 import type { FlexOpenPosition, FlexSkip, FlexStatementDoc } from './flex-parse.js';
 import { yahooSymbolFromFlex } from '../brokers/yahoo-symbol.js';
 import { canonicalOptionUnderlying, parseBrokerOptionCode } from '../brokers/option-symbol.js';
+import { enrichFundMetadata } from '../funds/metadata.js';
 
 export { yahooSymbolFromFlex };
 
@@ -224,11 +225,12 @@ export function holdingsFromOpenPositions(
             units: pos.quantity,
             avg_price: avgPrice(pos, 1, false),
             channel,
-            fund: {
+            fund: enrichFundMetadata({
               quote_source: 'manual',
               mark: pos.markPrice,
-              name: pos.symbol,
-            },
+              name: pos.raw.description?.trim()?pos.raw.description:pos.symbol,
+            },{broker_id:'ibkr',symbol:pos.symbol,currency:pos.currency,
+              ...(pos.raw.isin?{isin:pos.raw.isin}:pos.raw.securityIDType==='ISIN'&&pos.raw.securityID?{isin:pos.raw.securityID}:{})}),
           },
           pos,
         );

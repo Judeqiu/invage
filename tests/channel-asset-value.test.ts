@@ -63,6 +63,10 @@ it('keeps fund classification and quote/FX gaps explicit instead of publishing p
   delete s.state.portfolio!.MMF.fund!.product_class;await save();
   let row=(await query({from:'channel_asset_values'})).rows.find(r=>r.channel==='alpha')!;
   expect(row).toMatchObject({complete:false,asset_value:null,money_market_fund_value:null});expect(row.issues).toContain('product class');
+  const allFunds=(await query({from:'fund_valuations',where:{field:'channel',op:'eq',value:'alpha'}})).rows;
+  expect(allFunds).toHaveLength(2);
+  expect(allFunds.find(f=>f.key==='MMF')).toMatchObject({market_value:'7.5',money_market_eligible:null,classification_status:'unclassified'});
+  expect(allFunds.find(f=>f.key==='OTHER')).toMatchObject({market_value:'400',product_class:'equity',money_market_eligible:false});
   s.state.portfolio!.MMF.fund!.product_class='mmf';await save({payload:p=>{p.model!.live.fxRates={};}});
   row=(await query({from:'channel_asset_values'})).rows.find(r=>r.channel==='alpha')!;
   expect(row).toMatchObject({complete:false,asset_value:null,cash_balance:null});expect(row.issues).toContain('FX');

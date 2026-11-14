@@ -1,0 +1,38 @@
+[
+  {
+    "isin": "SG9999006043",
+    "currency": "USD",
+    "name": "Phillip US Dollar Money Market Fund – Class A",
+    "product_class": "mmf",
+    "source": {
+      "url": "https://phillipfunds.com/wp-content/uploads/2026/03/Phillip-US-Dollar-Money-Market-Fund-Class-A-Factsheet.pdf",
+      "sha256": "497fc7e6c436b50d088ef71ae68e1950fc4f0d46525bc9937b0b3d4e26f96ad4",
+      "retrieved_at": "2026-11-14T10:41:25.784Z",
+      "basis": "Issuer identifies this ISIN as Phillip US Dollar Money Market Fund, Class A."
+    },
+    "broker_symbols": [
+      {
+        "broker_id": "tiger",
+        "symbol": "SG9999006043.USD"
+      }
+    ]
+  },
+  {
+    "isin": "SGXZ40088619",
+    "currency": "SGD",
+    "name": "Fullerton SGD Liquidity Fund – Class A",
+    "product_class": "mmf",
+    "source": {
+      "url": "https://www.fullertonfund.com/documents/factsheets/Fullerton_SGD_Liquidity_Fund_-_Class_A_202607.pdf",
+      "sha256": "2d06136d6689973d0aa6618e5d613ea9f88541c72b1c9161d850eeb427f72111",
+      "retrieved_at": "2026-11-14T10:41:26.055Z",
+      "basis": "Issuer identifies this ISIN and states that the Money Market Funds Investment Guidelines apply to management of this fund."
+    },
+    "broker_symbols": [
+      {
+        "broker_id": "tiger",
+        "symbol": "SGXZ40088619.SGD"
+      }
+    ]
+  }
+]

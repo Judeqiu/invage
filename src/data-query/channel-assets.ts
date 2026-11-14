@@ -1,5 +1,6 @@
 import { field, type Dataset } from './catalog.js';
 import { channelAssetValues } from '../report/channel-asset-value.js';
+import { fundValuations } from '../report/fund-valuations.js';
 import { readPortfolioProjection, requirePortfolioProjection, portfolioProjectionSignature } from '../state/projection-store.js';
 import type { InvestorState } from '../state/portfolio-state.js';
 
@@ -17,6 +18,14 @@ function dataset(description:string,fields:Dataset['fields']):Dataset {
   return {description,fields,source:'saved_portfolio_projection',caveats,available:s=>readPortfolioProjection(s)!==null,rows:()=>{throw Error('Load saved valuation through query_data');}};
 }
 export const channelAssetDatasets:Record<string,Dataset>={
+  fund_valuations:dataset('All recorded fund positions with saved market values, currency/FX evidence and independent product classification, including unknown and non-money-market funds.',{
+    ...scope,key:text('Exact fund holding key.'),name:text('Recorded full broker product name.'),broker_symbol:text('Original broker fund symbol.'),isin:text('Source-backed security identity.'),
+    product_class:text('Structured product class, or null when unresolved.'),classification_status:text('recorded or unclassified; independent of market-value availability.'),
+    classification_url:text('Issuer classification document URL.'),classification_sha256:text('Source document digest.'),classification_verified_at:field('datetime','Classification evidence retrieval time.'),
+    native_currency:text('Fund holding currency.'),units:field('decimal','Fund units; aggregate only within the same security identity.',{sum_group_by:['key']}),
+    native_mark:field('decimal','Saved native NAV per fund unit.'),quote_source:text('Recorded fund valuation policy.'),fx_rate:field('decimal','Saved native-to-reporting FX rate.'),market_value:money('Saved fund market value, available even when classification is unresolved.'),
+    money_market_eligible:field('boolean','True for mmf, false for a known other class, null when unclassified.'),calculated_at:field('datetime','Saved valuation generation time.'),broker_as_of:field('date','Saved broker statement date.'),source_path:text('JSON Pointer to the saved value.'),valuation_issue:text('Reason a market value is unavailable; unrelated to unknown product class.'),
+  }),
   channel_asset_values:dataset('Per-channel stock market value plus cash and money-market funds, in the saved reporting currency.',{
     ...scope,stock_market_value:money('Saved market values of stocks only; includes neither funds nor options.'),cash_balance:money('Signed saved cash balance converted using the saved FX rates.'),
     money_market_fund_value:money('Value of fund holdings whose structured product_class is mmf. Unknown classifications remain unavailable.'),asset_value:money('Sum of the displayed components only when all required inputs are resolved.'),
@@ -31,6 +40,8 @@ export const channelAssetDatasets:Record<string,Dataset>={
 };
 export function loadChannelAssetDataset(name:string,state:InvestorState):Dataset {
   const definition=channelAssetDatasets[name];if(!definition)throw Error('Unknown channel asset dataset');
-  const projection=requirePortfolioProjection(state),result=channelAssetValues(state,projection);
+  const projection=requirePortfolioProjection(state);
+  if(name==='fund_valuations')return {...definition,available:()=>state.portfolio!==undefined,source_version:portfolioProjectionSignature(projection),rows:()=>fundValuations(state,projection)};
+  const result=channelAssetValues(state,projection);
   return {...definition,available:()=>true,source_version:portfolioProjectionSignature(projection),rows:()=>name==='channel_asset_values'?result.rows:result.components.map(row=>({...row}))};
 }

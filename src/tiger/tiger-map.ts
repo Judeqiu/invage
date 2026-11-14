@@ -16,6 +16,7 @@ import { mapTigerHistory } from './tiger-history.js';
 import { mapTigerCashLedger } from './tiger-ledger.js';
 import { mapTigerOptionHistory } from './tiger-executions.js';
 import { invalidCashSkip } from '../brokers/snapshot-validation.js';
+import { enrichFundMetadata } from '../funds/metadata.js';
 
 export function parseNum(value: unknown): number | undefined {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
@@ -127,9 +128,11 @@ function mapOnePosition(
       units: qty,
       avg_price: avg,
       channel,
-      fund: { quote_source: 'manual', mark, name: symbol },
+      fund: enrichFundMetadata({ quote_source: 'manual', mark, name: typeof pick(item,'name')==='string'&&String(pick(item,'name')).trim()?String(pick(item,'name')):symbol },
+        {broker_id:'tiger',symbol,currency,...(typeof pick(item,'isin')==='string'?{isin:String(pick(item,'isin'))}:{})}),
     };
-    if (market) holding.broker_ref = { listing_exchange: market.toUpperCase() };
+    const nativeId=pick(item,'contractId','contract_id');
+    if (market||nativeId!=null) holding.broker_ref = {...(market?{listing_exchange:market.toUpperCase()}:{}),...(nativeId!=null?{native_id:String(nativeId)}:{})};
     assertHolding(mapKey, holding);
     return { lot: { ticker: holdingBaseKey(mapKey), currency, holding } };
   }
