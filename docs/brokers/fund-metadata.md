@@ -59,3 +59,33 @@ The command requires the verified application environment and service OS owner:
 node --import tsx scripts/repair-fund-metadata.mjs <user-uuid>
 node --import tsx scripts/repair-fund-metadata.mjs <user-uuid> --apply
 ```
+
+## MooMoo / Futu Cloud fund retrieval
+
+Cloud snapshots additionally request the read-only, bound-account
+`GET /api/v1.0/accounts/{acc_id}/fund_positions` endpoint on the selected broker
+host. The archived `fund_positions` section preserves the original response
+body, HTTP status, observation time, structured response when parseable, and an
+independent `available`/`unavailable` status. HTTP, broker, malformed-response and
+transport failures do not prevent ordinary cash, securities or history sync.
+A successful explicit `position_list: []` is distinct from an unsupported API.
+Existing archives without this section remain readable.
+
+To query these records, select the channel's archived sync through `raw_files`,
+then use `source_records` with that file's ID and version. Fund fields are under
+`/fund_positions/response/d/position_list`; check `/fund_positions/status` first.
+The original body remains available through `fetch_raw_data`, including HTTP
+error bodies and exact numeric tokens. This is source evidence, not additional
+cash, a new accounting posting or a new current portfolio valuation.
+
+The documented holdings structure includes symbol, short_name, sub_acc_id,
+share_holdings, hold_cost and market_value, but does not declare a currency.
+Do not infer currency from account reporting currency, market prefix or name,
+or infer money-market classification from the product name. These source rows
+are not automatically turned into priced portfolio lots or added to
+`fund_valuations`/NAV. Account `funds_assets` remains a separate reported aggregate.
+Currency, valuation basis and product classification require source-backed facts
+before financial aggregation. No currency conversion is applied to raw values.
+
+This retrieval applies to both Cloud hosts. The separate legacy Futu OpenD
+transport is unchanged; Cloud documentation does not establish OpenD support.

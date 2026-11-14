@@ -3,7 +3,7 @@ import { brokerRequestSignal } from '../brokers/network.js';
 import { BrokerHttpError, BrokerParseError } from '../brokers/errors.js';
 import { moomooNonce, moomooSignContent, parseSignAlg, signMooMooRequest, type MooMooSignAlg } from './moomoo-sign.js';
 import { looksLikeOptionCode } from '../brokers/option-symbol.js';
-import { envelopeOk, type MooMooEnvelope, type MooMooRawBundle } from './moomoo-types.js';
+import { envelopeOk, type MooMooEnvelope, type MooMooRawBundle, type CloudFundPositionsEvidence } from './moomoo-types.js';
 import type { BrokerHistory, BrokerHistorySyncPlan } from '../brokers/history.js';
 import { parseMooMooOrderFees } from './moomoo-fees.js';
 import { moomooContractMetadata } from './moomoo-history.js';
@@ -90,7 +90,7 @@ async function moomooRequest(args: {
   // Moomoo sends uint64 account IDs as JSON numbers. Preserve their source
   // digits before JavaScript rounds them beyond Number.MAX_SAFE_INTEGER.
   const json = JSON.parse(await res.text(), (key, value, context?: { source?: string }) => {
-    if (key !== 'account_id' || typeof value !== 'number') return value;
+    if ((key !== 'account_id' && key !== 'sub_acc_id') || typeof value !== 'number') return value;
     if (context?.source && /^\d+$/.test(context.source)) return context.source;
     if (Number.isSafeInteger(value)) return String(value);
     throw new BrokerParseError('MooMoo account_id cannot be read without precision loss. Use a Node.js runtime supporting JSON.parse source context.');
@@ -440,6 +440,44 @@ export async function fetchMooMooFundsSnapshot(
   return {acc_id,authorized,funds,fetched_at:new Date().toISOString()};
 }
 
+/** Read-only, account-bound fund evidence. The broker may not support this
+ * endpoint even when ordinary positions and funds work. Preserve failures and
+ * original decimal tokens without blocking independent snapshot sections.
+ * https://open.moomoo.com/api/trading/account/get-fund-positions
+ */
+export async function fetchMooMooFundPositions(
+  credentials: MooMooCredentials & { acc_id: string },
+  opts?: { fetchImpl?: typeof fetch },
+): Promise<CloudFundPositionsEvidence> {
+  const fetchImpl = opts?.fetchImpl ?? fetch;
+  let http_status: number | null = null, response_body: string | null = null;
+  const path = `/api/v1.0/accounts/${encodeURIComponent(credentials.acc_id)}/fund_positions`;
+  const capture: typeof fetch = async (url, init) => {
+    const res = await fetchImpl(url, init);
+    if (new URL(String(url)).pathname === path) {
+      http_status = res.status;
+      response_body = await res.clone().text();
+    }
+    return res;
+  };
+  const evidence = (): CloudFundPositionsEvidence => ({
+    status: 'unavailable', observed_at: new Date().toISOString(), http_status, response_body,
+  });
+  try {
+    const response = await getWithSkewRetry({path, credentials, fetchImpl:capture});
+    const d = response.d as {position_list?: unknown} | undefined;
+    if (!envelopeOk(response)) return {...evidence(), response, failure:'broker'};
+    if (!d || !Array.isArray(d.position_list) || d.position_list.some(row =>
+      !row || typeof row !== 'object' || Array.isArray(row))) {
+      return {...evidence(), response, failure:'malformed'};
+    }
+    return {...evidence(), status:'available', response};
+  } catch (error) {
+    return {...evidence(), failure:error instanceof BrokerHttpError ? 'http'
+      : error instanceof SyntaxError || error instanceof BrokerParseError ? 'malformed' : 'transport'};
+  }
+}
+
 export async function fetchMooMooRawBundle(
   credentials: MooMooCredentials,
   opts?: { fetchImpl?: typeof fetch; history?: BrokerHistorySyncPlan; retainedHistory?:BrokerHistory },
@@ -452,9 +490,10 @@ export async function fetchMooMooRawBundle(
     fetchImpl,
   });
   failIfError(positions, 'positions');
+  const fund_positions = await fetchMooMooFundPositions({...credentials, acc_id}, {fetchImpl});
   const snapshot: MooMooRawBundle = {
     schema: credentials.broker === 'futubull' ? 'invage.futubull.cloud.raw.v1' : 'invage.moomoo.raw.v1',
-    fetched_at: new Date().toISOString(), acc_id, authorized, funds, positions,
+    fetched_at: new Date().toISOString(), acc_id, authorized, funds, positions, fund_positions,
   };
   try {
   const plan = opts?.history ?? { mode:'full', from:'2000-01-01T00:00:00.000Z', through:new Date().toISOString() };

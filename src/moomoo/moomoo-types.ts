@@ -5,7 +5,19 @@ export interface MooMooEnvelope {
   errmsg?: string;
 }
 
+/** Independent evidence: unavailable is never an empty holdings list. */
+export interface CloudFundPositionsEvidence {
+  status: 'available' | 'unavailable';
+  observed_at: string;
+  http_status: number | null;
+  response_body: string | null;
+  response?: MooMooEnvelope;
+  failure?: 'http' | 'broker' | 'malformed' | 'transport';
+}
+
 export interface MooMooRawBundle {
+  /** Fund identity/quantity/value evidence; no inferred currency or product class. */
+  fund_positions?: CloudFundPositionsEvidence;
   history_error?: string;
   schema: 'invage.moomoo.raw.v1' | 'invage.futubull.cloud.raw.v1';
   fetched_at: string;
