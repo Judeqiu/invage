@@ -51,6 +51,7 @@ const GROUPS = [
     id: 'reports',
     label: 'Reports',
     questions: [
+      ['channel_asset_value', 'Channel asset value', 'Calculate my asset value for a custody account: stock market value + cash balance + money-market fund value. First show my recorded accounts and ask which account to use. Use the latest saved portfolio valuation and its reporting currency and FX rates. Show each component, the total, valuation date and any unresolved data. Exclude options and other fund types.'],
       ['stock_research_report', 'Stock research report', 'Generate an HTML stock research report for {ticker}. Include company and financial data, valuation, a transparent peer ranking, catalysts, risks, sources and dates. Deliver the report link here in chat so I can open it in the side panel.'],
       ['risk_scenarios_report', 'Create my Risk & scenarios report', 'Create my Risk & scenarios report for all accounts with a 5-trading-day horizon and show it in the sidebar.'],
       ['option_index_report', 'Options with calculated risk indexes', 'Create an options risk-index report for all my recorded open option positions. Automatically fetch the market inputs, calculate an index for each contract using its recorded side, show contract counts, stress losses, quote dates and any unavailable scores, and open the report in the sidebar. Do not ask me to fill in a calculator.'],
@@ -67,7 +68,7 @@ function questionGroups(profile: ProductProfileId = readProductProfile()) {
 export function createInvageChatQuestionStarters(profile: ProductProfileId = readProductProfile()): ChatEmptyStarter[] {
   return questionGroups(profile).flatMap((group) => group.questions.map(([id, title, template]) => ({
     id: `question_${id}`,
-    label: id === 'option_index_report' || id === 'stock_research_report' ? title : template.replaceAll('{ticker}', '[ticker]'),
+    label: id === 'option_index_report' || id === 'stock_research_report' || id === 'channel_asset_value' ? title : template.replaceAll('{ticker}', '[ticker]'),
     description: group.label,
     message: template.includes('{ticker}')
       ? `${template.replaceAll('{ticker}', 'the ticker I choose')} First ask me which ticker to use.`
@@ -105,6 +106,9 @@ export function createInvageChatQuestionLibrary(): ChatQuestionLibraryConfig {
     mode: 'preset',
     categories: questionGroups().map(({ id, label }) => ({ id, label })),
     capabilities: [{
+      id: 'portfolio_valuation.read',
+      description: 'Read recorded custody accounts, then use get_data_dictionary and query_data with channel_asset_values and channel_asset_components for the selected exact channel. Use its latest saved valuation and saved reporting currency/FX, show completeness and source evidence, and preserve unknown classifications and amounts. No live fetches or financial writes.',
+    }, {
       id: 'options_journal.read',
       description: 'Review the user’s recorded option trades, journal notes, positions, and sourced market data. Call out missing history or data; never invent outcomes or execute trades.',
     }, ...(readProductProfile() === 'consultant' ? [{
@@ -115,13 +119,15 @@ export function createInvageChatQuestionLibrary(): ChatQuestionLibraryConfig {
       id,
       categoryId: group.id,
       title,
-      description: id === 'stock_research_report'
+      description: id === 'channel_asset_value'
+        ? 'Show stock market value, cash and money-market funds for an account using the latest saved valuation and FX, with unresolved data identified.'
+        : id === 'stock_research_report'
         ? 'Research company financials, valuation, peers, catalysts and risks, with dated sources in an HTML side-panel report.'
         : id === 'option_index_report'
         ? 'Automatically score recorded open options and show their calculated indexes, stress losses, quote dates and data gaps in a sidebar report.'
         : template.replaceAll('{ticker}', '[ticker]'),
       template,
-      capabilityIds: [id === 'stock_research_report' ? 'stock_research.public' : 'options_journal.read'],
+      capabilityIds: [id === 'channel_asset_value' ? 'portfolio_valuation.read' : id === 'stock_research_report' ? 'stock_research.public' : 'options_journal.read'],
       ...(template.includes('{ticker}') ? {
         fields: [{ id: 'ticker', type: 'text', label: 'Ticker (e.g. TSLA)', required: true, maxLength: 12 }],
       } : {}),

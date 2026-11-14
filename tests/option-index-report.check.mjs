@@ -22,7 +22,7 @@ it('prepares the Reports preset without a ticker/form and includes all startup l
   assert.ok(preset); assert.equal(preset.categoryId, 'reports'); assert.equal((preset.fields ?? []).length, 0);
   assert.match(prepareQuestion(preset, {}), /all my recorded open option positions/);
   assert.match(prepareQuestion(preset, {}), /Automatically fetch/);
-  assert.equal(catalog.presets.filter(p => p.categoryId === 'reports').length, 2);
+  assert.equal(catalog.presets.filter(p => p.categoryId === 'reports').length, 4);
   const starter = createInvageChatQuestionStarters().find(p => p.id === 'question_option_index_report');
   const strings = JSON.parse(readFileSync('l10n/en.json', 'utf8'));
   for (const k of ['label', 'description', 'message']) assert.equal(strings[`chat.empty.starter.${starter.id}.${k}`], starter[k]);
