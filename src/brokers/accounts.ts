@@ -403,6 +403,24 @@ export function ibkrStatements(raw: Buffer, channel: string, includeHistory = tr
   }
   return out;
 }
+/** Fetch the bound broker's positions without applying a sync or rewriting books. */
+export async function readBrokerPositionSnapshot(state: InvestorState, connectionId: string, transport?: AdapterTransport) {
+  const model = readBrokerAccountModel(state);
+  const connection = model.connections[connectionId];
+  if (!connection?.enabled || !connection.account_id) throw new Error('No enabled bound account');
+  const adapter = getBrokerAdapter(connection.broker_id);
+  const raw = await adapter.fetchRaw(combinedCredentials(model, connection), {
+    transport, accountId: connection.account_id, channel: connection.channel, snapshotOnly: true,
+  });
+  const parser = adapter.usesCsvTables ? loadBrokerParserSpec(state.user.id, connection.broker_id,
+    connection.channel === connection.broker_id ? undefined : connectionId) : null;
+  const statement = parser ? runCsvTablesSpec(raw.body.toString('utf8'), parser, connection.channel)
+    : connection.broker_id === 'ibkr' ? ibkrStatements(raw.body, connection.channel, false).find(row => row.account_id === connection.account_id)
+    : adapter.parseToStatement(raw, connection.channel, false);
+  if (!statement || statement.account_id !== connection.account_id) throw new Error('Broker snapshot account mismatch');
+  return { statement, raw };
+}
+
 async function fetchStatements(model: BrokerAccountModel, conn: BrokerAccountConnection, connectionId: string, slug: string, transport?: AdapterTransport,
   onRaw?: (body: Buffer) => void, history?: BrokerHistorySyncPlan, sourceRef?: string, retainedHistory?: import('./history.js').BrokerHistory): Promise<{ raw: Buffer; statements: BrokerStatement[]; payload:BrokerRawPayload }> {
   const adapter = getBrokerAdapter(conn.broker_id);

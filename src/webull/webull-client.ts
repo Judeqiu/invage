@@ -225,7 +225,7 @@ export function pickAccountId(accounts: unknown[], stored?: string): string {
 
 export async function fetchWebullRawBundle(
   credentials: WebullCredentials,
-  opts?: { fetchImpl?: typeof fetch; history?: BrokerHistorySyncPlan },
+  opts?: { fetchImpl?: typeof fetch; history?: BrokerHistorySyncPlan; snapshotOnly?: boolean },
 ): Promise<WebullRawBundle> {
   const fetchImpl = opts?.fetchImpl ?? fetch;
   const host = WEBULL_API_HOSTS[credentials.region];
@@ -254,6 +254,7 @@ export async function fetchWebullRawBundle(
     schema: 'invage.webull.raw.v1', fetched_at: new Date().toISOString(), region: credentials.region,
     host, account_id, accounts, balances, positions,
   };
+  if (opts?.snapshotOnly) return snapshot;
   try {
   const option_history: unknown[] = [];
   snapshot.option_history = option_history;

@@ -114,7 +114,7 @@ export async function moomooMarketData(args: {
   credentials: MooMooCredentials; fetchImpl?: typeof fetch;
 }): Promise<Record<string, any>> {
   const post = ['/api/v1.0/quote/snapshot', '/api/v1.0/quote/stock-quote', '/api/v1.0/quote/stock-basicinfo', '/api/v1.0/quote/combo-option-quote'].includes(args.path);
-  const get = /^\/api\/v1\.0\/quote\/US\.[A-Z][A-Z0-9.]*\/(?:option-chain|history-kline|option-volatility|corporate-actions\/dividends)$/.test(args.path);
+  const get = /^\/api\/v1\.0\/quote\/US\.[A-Z][A-Z0-9.]*\/(?:option-chain|option-expiration|history-kline|option-volatility|corporate-actions\/(?:dividends|splits))$/.test(args.path);
   if (!post && !get || post !== (args.body !== undefined)) throw new Error('Unsupported read-only market-data request');
   const fetchImpl = args.fetchImpl ?? fetch;
   const request = { path: args.path, query: args.query, method: post ? 'POST' as const : 'GET' as const,
@@ -521,7 +521,7 @@ export async function fetchMooMooAccountCashLedger(
 
 export async function fetchMooMooRawBundle(
   credentials: MooMooCredentials,
-  opts?: { fetchImpl?: typeof fetch; history?: BrokerHistorySyncPlan; retainedHistory?:BrokerHistory },
+  opts?: { fetchImpl?: typeof fetch; history?: BrokerHistorySyncPlan; retainedHistory?:BrokerHistory; snapshotOnly?: boolean },
 ): Promise<MooMooRawBundle> {
   const fetchImpl = opts?.fetchImpl ?? fetch;
   const {authorized,acc_id,funds} = await fetchMooMooFundsSnapshot(credentials, {fetchImpl});
@@ -531,12 +531,15 @@ export async function fetchMooMooRawBundle(
     fetchImpl,
   });
   failIfError(positions, 'positions');
-  const fund_positions = await fetchMooMooFundPositions({...credentials, acc_id}, {fetchImpl});
-  const account_cash_logs = await fetchMooMooAccountCashLedger({...credentials,acc_id},{fetchImpl});
+  const ancillary = opts?.snapshotOnly ? {} : {
+    fund_positions: await fetchMooMooFundPositions({...credentials, acc_id}, {fetchImpl}),
+    account_cash_logs: await fetchMooMooAccountCashLedger({...credentials,acc_id},{fetchImpl}),
+  };
   const snapshot: MooMooRawBundle = {
     schema: credentials.broker === 'futubull' ? 'invage.futubull.cloud.raw.v1' : 'invage.moomoo.raw.v1',
-    fetched_at: new Date().toISOString(), acc_id, authorized, funds, positions, fund_positions, account_cash_logs,
+    fetched_at: new Date().toISOString(), acc_id, authorized, funds, positions, ...ancillary,
   };
+  if (opts?.snapshotOnly) return { ...snapshot, option_basicinfo: await fetchOptionBasicInfo(positions, credentials, fetchImpl) };
   try {
   const plan = opts?.history ?? { mode:'full', from:'2000-01-01T00:00:00.000Z', through:new Date().toISOString() };
   const fills_history = await fetchHistory(acc_id, credentials, fetchImpl, plan, 'fills_history');

@@ -15,6 +15,8 @@
   "settings.brokers.description": "Connect read-only brokerage channels",
   "settings.credits.title": "Credits",
   "settings.credits.description": "Your weekly AI credit allowance",
+  "settings.premarket-options.title": "Premarket options",
+  "settings.premarket-options.description": "Daily short-put reports and notifications",
   "page.dashboard": "Portfolio Dashboard",
   "page.positions": "Positions",
   "page.option-risk": "Option risk index",

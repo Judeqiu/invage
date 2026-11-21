@@ -252,10 +252,11 @@ export function createInvageWebUi(): DomainWebUiExtension {
         title: 'Brokers',
       },
     ] satisfies NonNullable<DomainWebUiExtension['routes']>).filter(route => route.path !== '/option-risk' || readDashboardConfig().showOptionRiskCalculator); },
-    ...(consultant ? {visibleSettingsSections: ['brokers','credits']} : {}),
+    ...(consultant ? {visibleSettingsSections: ['brokers','credits','premarket-options']} : {}),
     settingsSections: [
       ...(consultant ? [{id:'credits',title:'Credits',description:'Your weekly AI credit allowance',icon:'credit-card',
-        iframeSrc:'/domain-assets/invage/settings/credits/index.html',iframeHeightPx:520}] : []),
+        iframeSrc:'/domain-assets/invage/settings/credits/index.html',iframeHeightPx:520}, {id:'premarket-options',title:'Premarket options',description:'Daily short-put reports and notifications',
+        iframeSrc:'/domain-assets/invage/settings/premarket/index.html',iframeHeightPx:340}] : []),
       {id:'experience',title:'Your experience',description:'Choose the optional pages in your workspace',icon:'layout-dashboard',iframeSrc:'/domain-assets/invage/settings/experience/index.html',iframeHeightPx:460},
       {
         id: 'portfolio',

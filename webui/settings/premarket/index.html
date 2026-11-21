@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Premarket options · Velovest</title>
+  <link rel="stylesheet" href="../../report.css">
+  <link rel="stylesheet" href="../../dashboard/v2.css">
+  <link rel="stylesheet" href="../../account-risk/page.css">
+</head>
+<body class="settings-body">
+  <main class="experience">
+    <h1>Premarket options</h1>
+    <form id="preferences" aria-busy="true">
+      <section class="preference" aria-labelledby="scan-title">
+        <div></div>
+        <div>
+          <h2 id="scan-title">Daily short-put scan</h2>
+          <p>Review open short puts at 8 pm Singapore time on U.S. trading days. Receive a private report and notification when positions qualify or the scan has missing evidence.</p>
+        </div>
+        <label class="switch">
+          <input id="enabled" type="checkbox" role="switch" aria-label="Enable daily short-put scan" disabled>
+          <span aria-hidden="true"></span>
+        </label>
+      </section>
+      <div class="settings-actions">
+        <button id="save" type="submit" class="action" disabled>Save changes</button>
+        <button id="reload" type="button" class="chip-btn">Reload settings</button>
+      </div>
+      <p id="message" role="status" aria-live="polite"></p>
+    </form>
+  </main>
+  <script src="./app.js"></script>
+</body>
+</html>

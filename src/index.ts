@@ -15,13 +15,14 @@ async function main(): Promise<void> {
   let webTransport: {stop(): Promise<void>} | undefined;
   let projectionWorker: { stop: () => Promise<void> } | undefined;
   let brokerScheduler: { stop: () => Promise<void> } | undefined;
+  let premarketScheduler: { stop: () => Promise<void> } | undefined;
   let stopping: Promise<void> | undefined;
   let startup: Promise<void>;
   const stop = (error?: unknown): Promise<void> => {
     if (error !== undefined) { console.error('[FATAL]', error); process.exitCode = 1; }
     if (!stopping) stopping = (async () => {
       try { await startup; } catch (error) { console.error('[Startup]', error); process.exitCode = 1; }
-      try { await brokerScheduler?.stop(); await webTransport?.stop(); if (framework) await framework.stop(); }
+      try { await Promise.all([brokerScheduler?.stop(), premarketScheduler?.stop()]); await webTransport?.stop(); if (framework) await framework.stop(); }
       finally {
         try { await projectionWorker?.stop(); }
         finally { release(); await database.close(); }
@@ -66,6 +67,10 @@ async function main(): Promise<void> {
       framework.startTaskScheduler();
       const { startBrokerSyncScheduler } = await import('./brokers/scheduler.js');
       brokerScheduler = startBrokerSyncScheduler();
+      if (profile === 'consultant') {
+        const { startPremarketScheduler } = await import('./premarket/scheduler.js');
+        premarketScheduler = startPremarketScheduler();
+      }
     }
     if (process.env.WEB_ONLY === 'true') {
       if (!process.env.WEBAPP_PORT) throw new Error('WEB_ONLY requires WEBAPP_PORT');

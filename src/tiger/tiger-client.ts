@@ -303,7 +303,7 @@ function accountKindFromManaged(
 
 export async function fetchTigerRawBundle(
   credentials: TigerCredentials,
-  opts?: { fetchImpl?: typeof fetch; timestamp?: string; gateway?: string; history?: BrokerHistorySyncPlan; retainedHistory?:BrokerHistory },
+  opts?: { fetchImpl?: typeof fetch; timestamp?: string; gateway?: string; history?: BrokerHistorySyncPlan; retainedHistory?:BrokerHistory; snapshotOnly?: boolean },
 ): Promise<TigerRawBundle> {
   if (credentials.license.toUpperCase() === 'TBHK' && !credentials.token?.trim()) {
     throw new BrokerParseError(
@@ -383,6 +383,7 @@ export async function fetchTigerRawBundle(
     license: credentials.license, account_kind, managed_accounts: managed,
     assets: { method: assetMethod, envelope: assetsEnv }, positions: { STK, OPT, FUND },
   };
+  if (opts?.snapshotOnly) return snapshot;
   try {
   const retained=opts?.retainedHistory;
   if(retained&&(retained.account_id!==account||retained.broker_id!=='tiger'))throw new BrokerParseError('Tiger retained fee history scope mismatch');

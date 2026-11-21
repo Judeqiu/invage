@@ -312,8 +312,8 @@ export interface BrokerAccountConnection {
 export interface InvestorState extends UserState {
   /** Imported statement facts and exact source provenance, separate from broker raw archives. */
   broker_statement_evidence?: import('../brokers/statement-evidence.js').StatementEvidence[];
-  /** Personal optional pages; absent means off. */
-  experience_settings?: { account_risk?: boolean; show_daily_changes?: boolean };
+  /** Personal preferences; absent means off. */
+  experience_settings?: { account_risk?: boolean; show_daily_changes?: boolean; premarket_options?: boolean };
   /** Application-owned option-book and fill primary keys; additive, versioned identity index. */
   option_identities?: import('../brokers/option-identities.js').OptionIdentityIndex;
   /** User-authored thesis, keyed by the stable option-book primary key. */

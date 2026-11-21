@@ -33,6 +33,7 @@ export function createCloudBrokerAdapter(id: 'moomoo' | 'futubull'): BrokerConne
     async fetchRaw(credentials, opts) {
       const bundle = await fetchMooMooRawBundle({ ...credentialsFrom(credentials), broker: id }, {
         fetchImpl: fetchImpl(opts),
+        snapshotOnly: opts?.snapshotOnly,
         history: opts?.history,
         retainedHistory: opts?.retainedHistory,
       });
