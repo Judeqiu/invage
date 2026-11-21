@@ -1,8 +1,10 @@
-import { mkdir, readFile, writeFile, rename, unlink } from 'node:fs/promises';
+import { mkdir, readFile, readdir, writeFile, rename, unlink } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { join, relative } from 'node:path';
-import { listNotifications, listUserIds, notifyUser, resolveDataRoot, sessionBinDriveViewUrl } from 'utarus';
+import { listNotifications, listUserIds, notifyUser, publicBinDriveOrigin, resolveDataRoot } from 'utarus';
+import { getDatabaseRuntime, NoteRepositoryError } from 'utarus/database';
 import { withBrokerSyncLease } from '../brokers/sync-lease.js';
+import { validDate } from '../brokers/option-executions.js';
 import { loadInvestor } from '../state/investor-store.js';
 import { premarketOptionsEnabled } from '../webapp/experience-settings.js';
 import { dueSession, readTradingDay } from './session.js';
@@ -18,11 +20,24 @@ async function tradingDay(date: string) {
 }
 const runtime = { listUserIds, loadInvestor, listNotifications, notifyUser, readTradingDay: tradingDay, scanPremarket };
 export type PremarketRuntime = Partial<typeof runtime>;
-interface SessionReceipt {
-  filename?: string;
-  notificationBody?: string;
-  coverageGap?: boolean;
-  complete: boolean;
+
+interface PendingReport {
+  noteId: string;
+  title: string;
+  createdAt: string;
+  /** Keep the full report until the native note can be read by its owner. */
+  body?: string;
+  severity?: 'info' | 'medium';
+}
+
+const missingFile = (error: unknown) => (error as NodeJS.ErrnoException).code === 'ENOENT';
+async function readJson<T>(path: string): Promise<T | undefined> {
+  try { return JSON.parse(await readFile(path, 'utf8')) as T; }
+  catch (error) { if (!missingFile(error)) throw error; }
+}
+async function removeIfPresent(path: string) {
+  try { await unlink(path); }
+  catch (error) { if (!missingFile(error)) throw error; }
 }
 async function atomicWrite(path: string, data: string | Buffer) {
   const temp = `${path}.${randomUUID()}.tmp`;
@@ -30,6 +45,40 @@ async function atomicWrite(path: string, data: string | Buffer) {
     await writeFile(temp, data, { flag: 'wx', mode: 0o600 });
     await rename(temp, path);
   } finally { await unlink(temp).catch(() => {}); }
+}
+
+async function publishReport(userId: string, report: PendingReport, pendingPath: string,
+  deps: typeof runtime): Promise<boolean> {
+  const notes = getDatabaseRuntime().notes;
+  if (report.body !== undefined) {
+    // Allocate the ID in the durable draft before creating the native note. A
+    // process restart between the database commit and receipt write reuses it.
+    try {
+      await notes.create({ id: report.noteId, owner_user_id: userId, kind: 'markdown', title: report.title,
+        body: report.body, notebook_id: 'default', tags: [], provenance: 'system',
+        created_at: report.createdAt, updated_at: report.createdAt });
+    } catch (error) {
+      if (!(error instanceof NoteRepositoryError && error.code === 'conflict')) throw error;
+    }
+    await notes.read(userId, report.noteId);
+    delete report.body;
+    await atomicWrite(pendingPath, JSON.stringify(report));
+  } else {
+    await notes.read(userId, report.noteId);
+  }
+
+  if (report.severity) {
+    const href = `/notes/${report.noteId}`;
+    // If inbox insertion succeeded before a crash, the framework owns push retries.
+    if (!(await deps.listNotifications(userId)).some(notification => notification.href === href)) {
+      if (!premarketOptionsEnabled((await deps.loadInvestor(userId)).state)) return false;
+      const origin = process.env.UTARUS_PUBLIC_BASE_URL?.trim() || publicBinDriveOrigin();
+      // The inbox uses its own origin. Linked channels receive the same link as an absolute URL.
+      await deps.notifyUser({ userId, href, source: 'system', title: 'Premarket options report',
+        body: new URL(href, origin).href, severity: report.severity });
+    }
+  }
+  return true;
 }
 
 export async function runPremarketScans(now = new Date(), overrides: PremarketRuntime = {}) {
@@ -45,50 +94,49 @@ export async function runPremarketScans(now = new Date(), overrides: PremarketRu
   }
   if (!enabled.length || !await deps.readTradingDay(session.date)) return;
   await Promise.all(enabled.map(async userId => {
-    try {
-      await withBrokerSyncLease(userId, `premarket-options/${session.date}`, async () => {
-        const dir = join(resolveDataRoot(), 'premarket-options', userId, session.date);
-        const receipt = join(dir, 'receipt.json');
-        let outcome: SessionReceipt;
-        try { outcome = JSON.parse(await readFile(receipt, 'utf8')) as SessionReceipt; }
-        catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-          outcome = { complete: false };
-        }
-        if (outcome.complete) return;
-        const snapshot = await deps.loadInvestor(userId);
-        if (!premarketOptionsEnabled(snapshot.state)) return;
-        await mkdir(dir, { recursive: true, mode: 0o700 });
-        if (!outcome.filename) {
-          const scan = await deps.scanPremarket(snapshot, session, now, async (raw, sha256) => {
-            const path = join(dir, `${sha256}.${raw.kind}`);
-            await atomicWrite(path, raw.body);
-            return `${relative(resolveDataRoot(), path)} · SHA-256 ${sha256}`;
-          });
-          if (!premarketOptionsEnabled((await deps.loadInvestor(userId)).state)) return;
-          const confirmed = scan.rows.filter(row => !row.unverified.length).length;
-          const unresolved = scan.rows.length - confirmed;
-          const coverageGap = !!(unresolved || scan.notes.length || scan.sources.some(source => source.coverage.length));
-          const filename = `premarket-options-${session.date}.html`;
-          const drive = join(resolveDataRoot(), 'drive', userId);
-          await mkdir(drive, { recursive: true, mode: 0o700 });
-          await atomicWrite(join(drive, filename), renderPremarketReport(scan));
-          outcome = { filename, coverageGap, complete: false,
-            ...(confirmed || coverageGap ? { notificationBody: `${session.date} · ${confirmed} confirmed triggers · ${unresolved} positions to verify. Open your private report to compare holding, covered calls after assignment, rolling and closing.` } : {}) };
-          await atomicWrite(receipt, JSON.stringify(outcome));
-        }
-        if (outcome.notificationBody && premarketOptionsEnabled((await deps.loadInvestor(userId)).state)) {
-          const href = new URL(sessionBinDriveViewUrl(userId, outcome.filename!)).pathname;
-          // If inbox insertion succeeded before a crash, the framework owns push retries.
-          if (!(await deps.listNotifications(userId)).some(notification => notification.href === href)) {
-            if (!premarketOptionsEnabled((await deps.loadInvestor(userId)).state)) return;
-            await deps.notifyUser({ userId, href, source: 'system', title: 'Premarket options report',
-              body: outcome.notificationBody, severity: outcome.coverageGap ? 'medium' : 'info' });
+    const root = join(resolveDataRoot(), 'premarket-options', userId);
+    const pendingDir = join(root, 'pending');
+    const queuedFiles = await readdir(pendingDir).catch(error => {
+      if (missingFile(error)) return [];
+      throw error;
+    });
+    const outstanding = queuedFiles.filter(file => file.endsWith('.json')).map(file => file.slice(0, -5))
+      .filter(date => validDate(date) && date < session.date).sort();
+    for (const date of [...outstanding, session.date]) {
+      try {
+        await withBrokerSyncLease(userId, `premarket-options/${date}`, async () => {
+          const dir = join(root, date);
+          const receipt = join(dir, 'receipt.json');
+          const pendingPath = join(pendingDir, `${date}.json`);
+          if ((await readJson<{ complete: boolean }>(receipt))?.complete) {
+            await removeIfPresent(pendingPath);
+            return;
           }
-        }
-        await atomicWrite(receipt, JSON.stringify({ ...outcome, complete: true }));
-      });
-    } catch (error) { console.error('[premarket] Scan could not finish', userId, error); }
+          const snapshot = await deps.loadInvestor(userId);
+          if (!premarketOptionsEnabled(snapshot.state)) return;
+          let report = await readJson<PendingReport>(pendingPath);
+          if (!report) {
+            if (date !== session.date) return;
+            await mkdir(dir, { recursive: true, mode: 0o700 });
+            const scan = await deps.scanPremarket(snapshot, session, now, async (raw, sha256) => {
+              const path = join(dir, `${sha256}.${raw.kind}`);
+              await atomicWrite(path, raw.body);
+              return `${relative(resolveDataRoot(), path)} · SHA-256 ${sha256}`;
+            });
+            const coverageGap = !!(scan.rows.some(row => row.unverified.length) || scan.notes.length ||
+              scan.sources.some(source => source.coverage.length));
+            report = { noteId: randomUUID(), createdAt: scan.collectedAt, ...renderPremarketReport(scan),
+              severity: coverageGap ? 'medium' : scan.rows.length ? 'info' : undefined };
+            await mkdir(pendingDir, { recursive: true, mode: 0o700 });
+            await atomicWrite(pendingPath, JSON.stringify(report));
+          }
+          if (!premarketOptionsEnabled((await deps.loadInvestor(userId)).state)) return;
+          if (!await publishReport(userId, report, pendingPath, deps)) return;
+          await atomicWrite(receipt, JSON.stringify({ complete: true, noteId: report.noteId }));
+          await removeIfPresent(pendingPath);
+        });
+      } catch (error) { console.error('[premarket] Scan could not finish', userId, date, error); }
+    }
   }));
 }
 

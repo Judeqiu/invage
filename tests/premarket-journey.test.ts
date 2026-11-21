@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { expect, it, vi } from 'vitest';
 import puppeteer from 'puppeteer-core';
-import { createSession, createState, createFramework } from 'utarus';
+import { createSession, createState, createFramework, notifyUser } from 'utarus';
 import { useTestDatabase } from './helpers/database.js';
 import { buildInvageApp } from '../src/webapp/server.js';
 import { createInvageChromeCatalogs, createInvageWebUi } from '../src/webapp/invage-webui.js';
@@ -54,10 +54,9 @@ function flexPositions() {
   </FlexStatement></FlexStatements></FlexQueryResponse>`);
 }
 
-it('runs the opted-in browser journey with PostgreSQL, native Flex parsing, options evidence, and the owner inbox', async () => {
+it('saves the complete opted-in report in native Notes and opens it from a link-only owner notification', async () => {
   const root = await mkdtemp(join(tmpdir(), 'velovest-premarket-'));
   vi.stubEnv('UTARUS_DATA_ROOT', root);
-  vi.stubEnv('UTARUS_REPORTS_URL', 'http://127.0.0.1');
   vi.stubEnv('INVAGE_PRODUCT_PROFILE', 'consultant');
   vi.stubEnv('INVAGE_REQUIRE_BOOKS_FOR_PORTFOLIO', 'true');
   const { runtime } = await useTestDatabase();
@@ -82,7 +81,18 @@ it('runs the opted-in browser journey with PostgreSQL, native Flex parsing, opti
   }));
   const calendar = vi.fn(async (date: string) => readTradingDay(date, async () =>
     new Response('Holiday Name,Date,Regular Trading Hours,Global Trading Hours\nThanksgiving,2026-11-26,None,None\n')));
-  const tick = (at: Date) => runPremarketScans(at, { readTradingDay: calendar, scanPremarket: (snapshot, session, startedAt, archive) =>
+  const createNote = runtime.notes.create.bind(runtime.notes);
+  const noteWrites = vi.spyOn(runtime.notes, 'create')
+    .mockRejectedValueOnce(new Error('Fixture note storage unavailable'))
+    .mockImplementationOnce(async note => {
+      await createNote(note);
+      throw new Error('Fixture interruption after the note was committed');
+    });
+  const send = vi.fn(async (params: Parameters<typeof notifyUser>[0]) => {
+    await notifyUser(params);
+    throw new Error('Fixture interruption after the inbox was committed');
+  });
+  const tick = (at: Date) => runPremarketScans(at, { readTradingDay: calendar, notifyUser: send, scanPremarket: (snapshot, session, startedAt, archive) =>
     scanPremarket(snapshot, session, startedAt, archive, { readBrokerPositionSnapshot: broker }) });
   const framework = await createFramework({
     database: runtime, startTaskScheduler: false, startLifecycleMailScheduler: false, startWorkflowRuntime: false,
@@ -97,6 +107,7 @@ it('runs the opted-in browser journey with PostgreSQL, native Flex parsing, opti
   try {
     await new Promise<void>(resolve => server.once('listening', () => resolve()));
     const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    vi.stubEnv('UTARUS_PUBLIC_BASE_URL', url);
     await createState(fixture(owner));
     await createState(fixture(second));
     const auth = (userId: string) => createSession({ type: 'user', userId, displayName: 'Fixture investor' });
@@ -132,34 +143,63 @@ it('runs the opted-in browser journey with PostgreSQL, native Flex parsing, opti
     await tick(new Date('2026-11-23T11:59:00Z'));
     await tick(new Date('2026-11-26T12:00:00Z'));
     expect(broker).not.toHaveBeenCalled();
+    const api = (path: string, session: string) => fetch(url + path, {
+      headers: { Cookie: `bindrive_session=${session}` }, signal: AbortSignal.timeout(8000),
+    });
+    const inbox = async (session: string) => (await api('/api/notifications', session)).json();
+    const notes = async (session: string) => (await api('/api/notes', session)).json();
+
     await tick(now);
+    expect((await notes(token)).items).toEqual([]);
+    expect((await inbox(token)).items).toEqual([]);
+    expect(send).not.toHaveBeenCalled();
     await tick(new Date('2026-11-23T12:01:00Z'));
+    expect((await notes(token)).items).toHaveLength(1);
+    expect((await inbox(token)).items).toEqual([]);
+    await tick(new Date('2026-11-23T12:02:00Z'));
+    await tick(new Date('2026-11-23T12:03:00Z'));
     expect(broker).toHaveBeenCalledTimes(1);
     expect(broker.mock.calls[0][0].user.id).toBe(owner);
-    const inbox = async (session: string) => (await fetch(`${url}/api/notifications`, {
-      headers: { Cookie: `bindrive_session=${session}` }, signal: AbortSignal.timeout(8000),
-    })).json();
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(new Set(noteWrites.mock.calls.map(([note]) => note.id)).size).toBe(1);
+
     const ownInbox = await inbox(token);
     expect(ownInbox.items).toHaveLength(1);
-    expect(ownInbox.items[0].body).toContain('1 confirmed triggers');
     expect((await inbox(secondToken)).items).toEqual([]);
-    const { href } = ownInbox.items[0];
+    const { href, body, title } = ownInbox.items[0];
+    const ownedNotes = (await notes(token)).items;
+    expect(ownedNotes).toHaveLength(1);
+    const noteId = ownedNotes[0].id;
+    expect(ownedNotes[0]).toMatchObject({ kind: 'markdown', title: `Premarket options · ${day}` });
+    expect({ href, body, title }).toEqual({ href: `/notes/${noteId}`, body: `${url}/notes/${noteId}`, title: 'Premarket options report' });
+    const stored = await api(`/api/notes/${noteId}`, token);
+    expect(stored.status).toBe(200);
+    expect((await stored.json()).note).toMatchObject({ owner_user_id: owner, provenance: 'system',
+      body: expect.stringContaining('1 confirmed triggers') });
+    expect((await notes(secondToken)).items).toEqual([]);
+    expect((await api(`/api/notes/${noteId}?ownerUserId=${owner}`, secondToken)).status).toBe(404);
+
     const inboxPage = await page.browserContext().newPage();
+    inboxPage.setDefaultTimeout(8000);
     await inboxPage.goto(`${url}/notifications`, { waitUntil: 'domcontentloaded' });
     const link = await inboxPage.waitForSelector(`a[href="${href}"]`);
-    await Promise.all([browser.waitForTarget(t => t.url() === url + href, { timeout: 8000 }), link!.click()]);
-    // Attachment to a popup can race its initialization. Read the same authenticated
-    // document via an owned page after observing the browser open the inbox link.
+    const opened = browser.waitForTarget(target => target.url() === url + href, { timeout: 8000 });
+    await link!.click();
+    await opened;
+    // Verify rendered content using an owned page while the popup initializes.
     const report = await page.browserContext().newPage();
-    await report.setCacheEnabled(false);
-    expect((await report.goto(url + href, { waitUntil: 'domcontentloaded', timeout: 8000 }))?.status()).toBe(200);
-    await report.waitForSelector('article h3', { timeout: 8000 });
-    const contents = await report.$eval('body', node => node.textContent);
-    for (const heading of ['Hold and accept possible assignment', 'Sell a covered call after assignment', 'Roll the put', 'Close the put',
-      'USD 10,000', 'USD 1,500', expiry, rollExpiry, 'SHA-256']) expect(contents).toContain(heading);
-    expect(await report.$$eval('article', rows => rows.length)).toBe(1);
-    const foreign = await fetch(url + href + `?slug=${owner}`, { headers: { Cookie: `bindrive_session=${secondToken}` }, redirect: 'manual', signal: AbortSignal.timeout(8000) });
-    expect(foreign.ok).toBe(false);
+    report.setDefaultTimeout(8000);
+    await report.goto(url + href, { waitUntil: 'domcontentloaded', timeout: 8000 });
+    const preview = '[data-note-text-surface="preview"]';
+    await report.waitForFunction(selector => document.querySelector(selector)?.textContent?.includes('Close the put'),
+      { timeout: 8000 }, preview);
+    const headings = await report.$$eval(`${preview} h4`, nodes => nodes.map(node => node.textContent));
+    expect(headings).toEqual(['Hold and accept possible assignment', 'Sell a covered call after assignment', 'Roll the put', 'Close the put']);
+    expect(await report.$$eval(`${preview} h3`, nodes => nodes.length)).toBe(1);
+    const contents = await report.$eval(preview, node => node.textContent);
+    for (const detail of ['USD 10,000', 'USD 1,500', expiry, rollExpiry, 'SHA-256', 'New exercise cash / shares received']) {
+      expect(contents).toContain(detail);
+    }
     await page.bringToFront();
     await frame!.click('#enabled');
     await frame!.click('#save');
@@ -167,6 +207,7 @@ it('runs the opted-in browser journey with PostgreSQL, native Flex parsing, opti
     await tick(new Date('2026-11-24T12:00:00Z'));
     expect(broker).toHaveBeenCalledTimes(1);
     expect((await inbox(token)).items).toHaveLength(1);
+    expect((await notes(token)).items).toHaveLength(1);
   } finally {
     await browser?.close();
     server.closeAllConnections();
