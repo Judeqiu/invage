@@ -4,6 +4,8 @@ Operator deploy runbooks (not marketing changelogs).
 
 | Version | Date | Utarus pin | Summary |
 |---------|------|------------|---------|
+| [v0.3.23](./v0.3.23.md) | 2026-11-22 | `v4.2.52` | On-demand and scheduled options decision reports in private Notes |
+| [v0.3.22](./v0.3.22.md) | 2026-10-23 | `v4.2.34` | Account-level dashboard filters |
 | [v0.3.21](./v0.3.21.md) | 2026-10-13 | `v4.2.8` | Adjacent option roll chains and straight timeline arrows |
 | [v0.3.20](./v0.3.20.md) | 2026-10-13 | `v4.2.8` | Section 03 starts on Open and retains selected tabs during refresh |
 | [v0.3.19](./v0.3.19.md) | 2026-10-12 | `v4.2.8` | Responsive option timeline and dated price hover cards |
@@ -24,8 +26,5 @@ Operator deploy runbooks (not marketing changelogs).
 | [v0.3.1](./v0.3.1.md) | 2026-08-09 | `v3.0.0-beta.14` | Channel format spine pin (flags default off) |
 | [v0.3.0](./v0.3.0.md) | 2026-08-09 | `v3.0.0-beta.13` | Telegram connect + push; help-first async tasks |
 
-Deploy always via:
-
-```bash
-~/.claude/skills/agent-ops/scripts/fast-deploy.sh invage --services=invage,invage-drive
-```
+Use the deployment section for the selected release. Velovest deployments use
+the Agent Ops `fast-deploy.sh` path for `victorconsultant`.
