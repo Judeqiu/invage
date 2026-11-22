@@ -301,9 +301,8 @@ it('generates native decision reports from chat and the independent opt-in sched
     expect(weekend.status).toBe(200);
     const weekendNote = (await weekend.json()).note;
     expect(weekendNote.title).toBe(`Options decision report · ${manualNow.toISOString()}`);
-    for (const expected of ['U.S. weekend', 'A same-session underlying quote in the contract currency is unavailable.',
-      '39 / 33', market.exchangeTime, market.snapshotTime, 'futubull Cloud /api/v1.0/quote/order-book',
-      'Hold and accept possible assignment', 'Sell a covered call after assignment', 'Roll the put', 'Close the put']) {
+    for (const expected of ['U.S. weekend', 'Verify position and quotes', 'Buyback before fees', 'Cash if assigned',
+      'USD 1,500', 'USD 10,000', '## Appendix', REPORT_ARCHIVE_NAME]) {
       expect(weekendNote.body).toContain(expected);
     }
     await expect(api(weekendHref.replace('/notes/', '/api/notes/'), secondToken)).resolves.toHaveProperty('status', 404);
@@ -313,16 +312,18 @@ it('generates native decision reports from chat and the independent opt-in sched
     const fullWeekend = await api(`${weekendAttachments}/${weekendArchive.id}`, token);
     expect(fullWeekend.status).toBe(200);
     const fullWeekendText = await fullWeekend.text();
-    expect(fullWeekendText).toContain('New exercise cash / shares received');
-    expect(fullWeekendText).toContain('23 / 19');
-    expect(fullWeekendText).toContain('USD 1,600');
+    for (const detail of ['A same-session underlying quote in the contract currency is unavailable.',
+      '39 / 33', market.exchangeTime, market.snapshotTime, 'futubull Cloud /api/v1.0/quote/order-book',
+      'Hold and accept possible assignment', 'Sell a covered call after assignment', 'Roll the put', 'Close the put',
+      'New exercise cash / shares received', '23 / 19', 'USD 1,600', 'futubull Cloud chain unavailable for 2026-12-22.']) {
+      expect(fullWeekendText).toContain(detail);
+      expect(weekendNote.body).not.toContain(detail);
+    }
     expect(market.bookCodes).toHaveLength(1);
     expect(market.chains.map(({ from, through }) => [from, through])).toEqual([
       [expiry, rollExpiry], [expiry, rollExpiry], ['2026-12-22', '2026-12-22'],
     ]);
-    expect(weekendNote.body).toContain('futubull Cloud chain unavailable for 2026-12-22.');
     expect(market.chains[1].requestedAt - market.chains[0].requestedAt).toBeGreaterThanOrEqual(1000);
-    expect(weekendNote.body).not.toContain('New exercise cash / shares received');
     expect((await api(`${weekendAttachments}/${weekendArchive.id}`, secondToken)).status).toBe(404);
     // The preset prepares a draft in the same chat. This request makes a fresh
     // scan before the automatic window and its updated spot excludes the puts.
@@ -358,7 +359,14 @@ it('generates native decision reports from chat and the independent opt-in sched
     expect(await chat.$eval('body', node => node.innerText)).toContain('No positions matched in the available broker snapshots.');
     const sameDay = await api(sameDayHref.replace('/notes/', '/api/notes/'), token);
     expect(sameDay.status).toBe(200);
-    expect((await sameDay.json()).note.body).toContain('2026-11-23T11:59:50.000Z');
+    const sameDayNote = (await sameDay.json()).note;
+    expect(sameDayNote.body).toContain('No position met the scan criteria');
+    expect(sameDayNote.body).toContain(REPORT_ARCHIVE_NAME);
+    expect(sameDayNote.body).not.toContain('2026-11-23T11:59:50.000Z');
+    const sameDayAttachments = sameDayHref.replace('/notes/', '/api/notes/') + '/attachments';
+    const { items: [sameDayArchive] } = await (await api(sameDayAttachments, token)).json();
+    expect(sameDayArchive.name).toBe(REPORT_ARCHIVE_NAME);
+    expect(await (await api(`${sameDayAttachments}/${sameDayArchive.id}`, token)).text()).toContain('2026-11-23T11:59:50.000Z');
     expect(requests).toHaveLength(2);
     for (const request of requests) {
       expect(request.model).toBe('deepseek-v4-flash');
@@ -382,8 +390,7 @@ it('generates native decision reports from chat and the independent opt-in sched
     await chat.locator(chatLink).click();
     const openedChatNote = await (await chatLinkTarget).page();
     expect(openedChatNote).not.toBeNull();
-    await openedChatNote!.waitForFunction(selector => document.querySelector(selector)?.textContent?.includes('Close the put'),
-      { timeout: 8000 }, preview);
+    await openedChatNote!.waitForSelector(`${preview} li`, { visible: true, timeout: 8000 });
     await openedChatNote!.waitForSelector(`a[aria-label="Download ${REPORT_ARCHIVE_NAME}"]`, { visible: true });
     const noteTimes = '[aria-label="Note timestamps"] time';
     await openedChatNote!.waitForSelector(noteTimes, { visible: true });
@@ -458,22 +465,25 @@ it('generates native decision reports from chat and the independent opt-in sched
     const report = await page.browserContext().newPage();
     report.setDefaultTimeout(8000);
     await report.goto(url + href, { waitUntil: 'domcontentloaded', timeout: 8000 });
-    await report.waitForFunction(selector => document.querySelector(selector)?.textContent?.includes('Close the put'),
-      { timeout: 8000 }, preview);
-    const headings = await report.$$eval(`${preview} h4`, nodes => nodes.map(node => node.textContent));
-    expect(headings).toEqual(['Hold and accept possible assignment', 'Sell a covered call after assignment', 'Roll the put', 'Close the put']);
-    expect(await report.$$eval(`${preview} h3`, nodes => nodes.length)).toBe(1);
+    await report.waitForSelector(`${preview} li`, { timeout: 8000 });
+    const headings = await report.$$eval(`${preview} h2`, nodes => nodes.map(node => node.textContent));
+    expect(headings).toEqual(['Positions to review', 'Appendix']);
+    expect(await report.$$eval(`${preview} li`, nodes => nodes.length)).toBe(1);
     const contents = await report.$eval(preview, node => node.textContent);
-    for (const detail of ['USD 10,000', 'USD 1,500', expiry, 'SHA-256', REPORT_ARCHIVE_NAME, '39 / 33', market.exchangeTime]) {
+    for (const detail of ['USD 10,000', 'USD 1,500', expiry, REPORT_ARCHIVE_NAME, 'Compare holding and closing']) {
       expect(contents).toContain(detail);
     }
     const dailyAttachments = `/api/notes/${noteId}/attachments`;
     const { items: [dailyArchive] } = await (await api(dailyAttachments, token)).json();
     expect(dailyArchive.name).toBe(REPORT_ARCHIVE_NAME);
     const completeDaily = await (await api(`${dailyAttachments}/${dailyArchive.id}`, token)).text();
-    expect(completeDaily).toContain(rollExpiry);
-    expect(completeDaily).toContain('New exercise cash / shares received');
-    expect(completeDaily).toContain('USD 1,600');
+    for (const detail of [rollExpiry, 'New exercise cash / shares received', 'USD 1,600', 'SHA-256', '39 / 33', market.exchangeTime]) {
+      expect(completeDaily).toContain(detail);
+      expect(contents).not.toContain(detail);
+    }
+    await report.setViewport({ width: 390, height: 844 });
+    await report.waitForSelector(`${preview} li`, { visible: true });
+    expect(await report.$eval(preview, node => node.scrollWidth)).toBe(await report.$eval(preview, node => node.clientWidth));
     expect(market.bookCodes).toHaveLength(2);
     await page.bringToFront();
     await frame!.click('#enabled');

@@ -38,11 +38,7 @@ function quote(option: ListedOption | null) {
   ]);
 }
 
-function candidateDownload(count: number) {
-  return `See the ${number(count)} candidates in the private attachment **${REPORT_ARCHIVE_NAME}**.`;
-}
-
-function position(row: Row, includeCandidates: boolean) {
+function positionEvidence(row: Row) {
   const { source, position: p, stock, unverified, history } = row;
   const { hold, close, calls, rolls, feeReference } = row.decision;
   const amount = (n: number | null | undefined) => money(n, p.currency);
@@ -104,7 +100,7 @@ ${fields([['Shares received / exercise cash', `${number(hold.delivered)} / ${amo
 
 Wait until the shares are delivered and available to cover the call. Today's bid is a conditional illustration. Refresh the option chain after assignment. Early call exercise can occur and can affect dividend entitlement. Stock remains exposed below the call strike. P&L includes assignment and the full option cash history, before dividends, taxes and unknown future costs.
 
-${!calls.length ? 'Available covered-call candidates could not be established.' : !includeCandidates ? candidateDownload(calls.length) : calls.map(call => details(`${call.option.expiry} · ${amount(call.option.strike)} call · reference income ${amount(call.income)}`, `
+${!calls.length ? 'Available covered-call candidates could not be established.' : calls.map(call => details(`${call.option.expiry} · ${amount(call.option.strike)} call · reference income ${amount(call.income)}`, `
 ${p.expiry >= call.option.expiry ? 'Requires assignment and share delivery before this call expires.' : ''}
 
 ${quote(call.option)}
@@ -124,7 +120,7 @@ Buy back the current put and sell a different put on the same stock. Separate le
 ${fields([['Old put reference buyback / estimated fee', `${amount(close.buyback)} / ${amount(close.feeEstimate)}`],
     ['Old put P&L if closed at reference ask with estimated fee', amount(close.thisNetWithEstimatedFee)]])}
 
-${!rolls.length ? 'Available replacement puts could not be established.' : !includeCandidates ? candidateDownload(rolls.length) : rolls.map(roll => details(`${roll.option.expiry} · ${amount(roll.option.strike)} put · reference roll cash ${amount(roll.grossFlow)}`, `
+${!rolls.length ? 'Available replacement puts could not be established.' : rolls.map(roll => details(`${roll.option.expiry} · ${amount(roll.option.strike)} put · reference roll cash ${amount(roll.grossFlow)}`, `
 ${quote(roll.option)}
 
 ${fields([['New put proceeds at reference bid', amount(roll.newIncome)],
@@ -164,6 +160,26 @@ export function reportCoverage(scan: PremarketScan) {
   return { confirmed, unverified, incomplete: !!(unverified || scan.notes.length || scan.sources.some(source => source.coverage.length)) };
 }
 
+function positionSummary(scan: PremarketScan) {
+  const labels = new Map<string, number>();
+  for (const source of scan.sources) labels.set(source.label, (labels.get(source.label) ?? 0) + 1);
+  const rows = scan.rows.map(row => {
+    const { position, source, stock, decision, unverified } = row;
+    const account = (labels.get(source.label) ?? 0) > 1 ? `${source.label} · ${source.accountId}` : source.label;
+    const contract = `${row.underlying} ${money(position.strike, position.currency)} put`;
+    const quantity = `${number(position.quantity)} ${position.quantity === 1 ? 'contract' : 'contracts'}`;
+    const review = unverified.length ? 'Verify position and quotes' : decision.close.highlight ? 'Review closing first' : 'Compare holding and closing';
+    const amounts = [
+      `Stock reference ${stock ? money(stock.price, stock.currency) : 'Unknown'}`,
+      `Buyback before fees ${money(decision.close.buyback, position.currency)}`,
+      `Cash if assigned ${money(decision.hold.assignmentCash, position.currency)}`,
+      `Breakeven per share ${money(decision.hold.breakeven, position.currency)}`,
+    ].map(inline).join(' · ');
+    return `- **${inline(contract)}** · ${text(position.expiry)} · ${inline(account)} · ${inline(quantity)}  \n  **${review}** · ${amounts}`;
+  });
+  return rows.join('\n\n');
+}
+
 export function renderPremarketReport(scan: PremarketScan, trigger?: ReportTrigger) {
   const bySymbol = new Map<string, Row[]>();
   for (const row of scan.rows) bySymbol.set(row.underlying, [...(bySymbol.get(row.underlying) ?? []), row]);
@@ -184,8 +200,7 @@ export function renderPremarketReport(scan: PremarketScan, trigger?: ReportTrigg
     const chain = scan.market.get(symbol);
     const heading = [`## ${text(symbol)}`, ...totals.map(inline),
       ...(chain ? [notes([...chain.events.map(event => `${event.date} · ${event.kind} · ${event.detail} · ${event.source}`), ...chain.notices])] : [])];
-    return (includeCandidates: boolean) => [...heading, ...rows.map(row => position(row, includeCandidates))]
-      .filter(Boolean).join('\n\n');
+    return [...heading, ...rows.map(positionEvidence)].filter(Boolean).join('\n\n');
   });
   const introduction = [
     trigger?.kind === 'manual' ? `**Generated on demand** · ${manualMarkets[trigger.market]}` : '',
@@ -205,11 +220,21 @@ export function renderPremarketReport(scan: PremarketScan, trigger?: ReportTrigg
     ].filter(Boolean).join('\n\n'))),
     ...(additionalQuotes.length ? ['## Other underlying quotes checked', fields(additionalQuotes)] : []),
   ];
-  const render = (includeCandidates: boolean) => [...introduction,
-    ...(sections.length ? sections.map(section => section(includeCandidates)) : [incomplete
-      ? 'Coverage is incomplete. The available records cannot establish whether any positions met the scan criteria.'
-      : 'No position met the scan criteria in the available broker snapshots.']),
+  const empty = incomplete
+    ? 'Coverage is incomplete. The available records cannot establish whether any positions met the scan criteria.'
+    : 'No position met the scan criteria in the available broker snapshots.';
+  const marketNote = trigger?.market === 'weekend' ? 'U.S. weekend. Quotes are references from earlier sessions.'
+    : trigger?.market === 'holiday' ? 'U.S. market holiday. Quotes are references from earlier sessions.'
+    : trigger?.market === 'unknown' ? 'The U.S. trading calendar is unavailable. Check the quote times in the appendix.' : '';
+  const body = [
+    `**${number(confirmed)} confirmed triggers · ${number(unverified)} need verification** · U.S. scan ${text(scan.session.date)} · expiries through ${text(scan.session.windowEnd)}`,
+    marketNote,
+    scan.rows.length ? `## Positions to review\n\n${positionSummary(scan)}` : empty,
+    scan.rows.length && incomplete ? 'The appendix explains which positions or broker records need verification.' : '',
+    '## Appendix',
+    `In **Note details**, download **${REPORT_ARCHIVE_NAME}** for quote times, broker records, and the full comparisons for holding, closing, rolling, and selling covered calls after assignment.`,
   ].filter(Boolean).join('\n\n');
-  const hasCandidates = scan.rows.some(({ decision }) => decision.calls.length || decision.rolls.length);
-  return { title, body: render(false), ...(hasCandidates ? { completeBody: render(true) } : {}) };
+  const completeBody = [`# ${inline(title)} · Appendix`, ...introduction, ...(sections.length ? sections : [empty])]
+    .filter(Boolean).join('\n\n');
+  return { title, body, completeBody };
 }
