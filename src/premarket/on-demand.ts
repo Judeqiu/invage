@@ -75,6 +75,7 @@ export async function runOnDemandOptionReport(action: ManualReportAction, now = 
       }
     }
     delete run.report.body;
+    delete run.report.completeBody;
     try { await atomicWrite(receipt, JSON.stringify(run)); }
     catch (error) {
       // The draft already on disk retains the same note ID for a replay.

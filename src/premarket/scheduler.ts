@@ -64,6 +64,7 @@ export async function runPremarketScans(now = new Date(), overrides: PremarketRu
           await saveReportNote(userId, report);
           if (report.body !== undefined) {
             delete report.body;
+            delete report.completeBody;
             await atomicWrite(pendingPath, JSON.stringify(report));
           }
           if (!await sendReportLink(userId, report, deps,

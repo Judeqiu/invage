@@ -4,6 +4,7 @@ import type { PremarketScan } from './scan.js';
 import { calendarReference } from './session.js';
 
 type Row = PremarketScan['rows'][number];
+export const REPORT_ARCHIVE_NAME = 'full-options-decision-report.md';
 const number = (value: number | null | undefined) => value == null ? 'Unknown' : value.toLocaleString('en-US', { maximumFractionDigits: 8 });
 const money = (value: number | null | undefined, currency: string) => value == null ? 'Unknown' : `${currency} ${number(value)}`;
 const inline = (value: string) => escapeHtml(value.replace(/[\r\n]+/g, ' ')).replace(/[\\`*_\[\]|~$]/g, '\\$&');
@@ -35,7 +36,11 @@ function quote(option: ListedOption | null) {
   ]);
 }
 
-function position(row: Row) {
+function candidateDownload(count: number) {
+  return `See the ${number(count)} candidates in the private attachment **${REPORT_ARCHIVE_NAME}**.`;
+}
+
+function position(row: Row, includeCandidates: boolean) {
   const { source, position: p, stock, unverified, history } = row;
   const { hold, close, calls, rolls, feeReference } = row.decision;
   const amount = (n: number | null | undefined) => money(n, p.currency);
@@ -97,7 +102,7 @@ ${fields([['Shares received / exercise cash', `${number(hold.delivered)} / ${amo
 
 Wait until the shares are delivered and available to cover the call. Today's bid is a conditional illustration. Refresh the option chain after assignment. Early call exercise can occur and can affect dividend entitlement. Stock remains exposed below the call strike. P&L includes assignment and the full option cash history, before dividends, taxes and unknown future costs.
 
-${calls.length ? calls.map(call => details(`${call.option.expiry} · ${amount(call.option.strike)} call · reference income ${amount(call.income)}`, `
+${!calls.length ? 'Available covered-call candidates could not be established.' : !includeCandidates ? candidateDownload(calls.length) : calls.map(call => details(`${call.option.expiry} · ${amount(call.option.strike)} call · reference income ${amount(call.income)}`, `
 ${p.expiry >= call.option.expiry ? 'Requires assignment and share delivery before this call expires.' : ''}
 
 ${quote(call.option)}
@@ -108,7 +113,7 @@ ${fields([['Call contracts / covered shares / shares left over', `${number(call.
       ['Called away including estimated call fee', amount(call.ifCalledWithEstimatedFee)],
       ['Not called away, shares marked at scan stock price', call.ifNotCalledAtScanSpotFeasibleAtExpiry === false ? 'Scan price is above the call strike at expiry' : amount(call.ifNotCalledAtScanSpot)],
       ['Not called away, shares fall to zero', amount(call.ifNotCalledAtZero)],
-      ['Capped whole-chain P&L if all shares are covered', amount(call.upCap)]])}`)).join('\n\n') : 'Available covered-call candidates could not be established.'}
+      ['Capped whole-chain P&L if all shares are covered', amount(call.upCap)]])}`)).join('\n\n')}
 
 #### Roll the put
 
@@ -117,7 +122,7 @@ Buy back the current put and sell a different put on the same stock. Separate le
 ${fields([['Old put reference buyback / estimated fee', `${amount(close.buyback)} / ${amount(close.feeEstimate)}`],
     ['Old put P&L if closed at reference ask with estimated fee', amount(close.thisNetWithEstimatedFee)]])}
 
-${rolls.length ? rolls.map(roll => details(`${roll.option.expiry} · ${amount(roll.option.strike)} put · reference roll cash ${amount(roll.grossFlow)}`, `
+${!rolls.length ? 'Available replacement puts could not be established.' : !includeCandidates ? candidateDownload(rolls.length) : rolls.map(roll => details(`${roll.option.expiry} · ${amount(roll.option.strike)} put · reference roll cash ${amount(roll.grossFlow)}`, `
 ${quote(roll.option)}
 
 ${fields([['New put proceeds at reference bid', amount(roll.newIncome)],
@@ -125,7 +130,7 @@ ${fields([['New put proceeds at reference bid', amount(roll.newIncome)],
       ['New exercise cash / shares received', `${amount(roll.assignmentCash)} / ${number(roll.shares)}`],
       ['Days to expiry / change in days', `${number(roll.daysToExpiry)} / ${number(roll.additionalDays)}`],
       ['Chain net cash after roll before future fees', amount(roll.chainNetBeforeFutureFees)],
-      ['New economic breakeven / with estimated roll fees', `${amount(roll.breakeven)} / ${amount(roll.breakevenWithEstimatedFees)}`]])}`)).join('\n\n') : 'Available replacement puts could not be established.'}
+      ['New economic breakeven / with estimated roll fees', `${amount(roll.breakeven)} / ${amount(roll.breakevenWithEstimatedFees)}`]])}`)).join('\n\n')}
 
 #### Close the put
 
@@ -175,11 +180,12 @@ export function renderPremarketReport(scan: PremarketScan, trigger?: ReportTrigg
       return [`${number(matching.length)} confirmed positions · assignment cash across these positions ${money(knownSum(...matching.map(row => row.decision.hold.assignmentCash)), currency)} · chain net cash to date ${money(knownSum(...matching.map(row => row.decision.hold.cumulativeNetCash)), currency)}`];
     });
     const chain = scan.market.get(symbol);
-    return [`## ${text(symbol)}`, ...totals.map(inline),
-      ...(chain ? [notes([...chain.events.map(event => `${event.date} · ${event.kind} · ${event.detail} · ${event.source}`), ...chain.notices])] : []),
-      ...rows.map(position)].filter(Boolean).join('\n\n');
+    const heading = [`## ${text(symbol)}`, ...totals.map(inline),
+      ...(chain ? [notes([...chain.events.map(event => `${event.date} · ${event.kind} · ${event.detail} · ${event.source}`), ...chain.notices])] : [])];
+    return (includeCandidates: boolean) => [...heading, ...rows.map(row => position(row, includeCandidates))]
+      .filter(Boolean).join('\n\n');
   });
-  const body = [
+  const introduction = [
     trigger?.kind === 'manual' ? `**Generated on demand** · ${manualMarkets[trigger.market]}` : '',
     `${number(confirmed)} confirmed triggers · ${number(unverified)} need verification`,
     fields([[trigger ? 'U.S. scan date' : 'U.S. trading session', scan.session.date], ['Last included expiry', scan.session.windowEnd],
@@ -196,9 +202,12 @@ export function renderPremarketReport(scan: PremarketScan, trigger?: ReportTrigg
       notes(source.coverage),
     ].filter(Boolean).join('\n\n'))),
     ...(additionalQuotes.length ? ['## Other underlying quotes checked', fields(additionalQuotes)] : []),
-    ...(sections.length ? sections : [incomplete
+  ];
+  const render = (includeCandidates: boolean) => [...introduction,
+    ...(sections.length ? sections.map(section => section(includeCandidates)) : [incomplete
       ? 'Coverage is incomplete. The available records cannot establish whether any positions met the scan criteria.'
       : 'No position met the scan criteria in the available broker snapshots.']),
   ].filter(Boolean).join('\n\n');
-  return { title, body };
+  const hasCandidates = scan.rows.some(({ decision }) => decision.calls.length || decision.rolls.length);
+  return { title, body: render(false), ...(hasCandidates ? { completeBody: render(true) } : {}) };
 }

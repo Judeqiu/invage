@@ -20,6 +20,7 @@ import { runOnDemandOptionReport } from '../src/premarket/on-demand.js';
 import { runPremarketScans } from '../src/premarket/scheduler.js';
 import { scanPremarket } from '../src/premarket/scan.js';
 import { readTradingDay } from '../src/premarket/session.js';
+import { REPORT_ARCHIVE_NAME } from '../src/premarket/report.js';
 
 const modelServer = await vi.hoisted(async () => {
   const { createServer } = await import('node:http');
@@ -225,6 +226,14 @@ it('generates native decision reports from chat and the independent opt-in sched
       expect(weekendNote.body).toContain(expected);
     }
     await expect(api(weekendHref.replace('/notes/', '/api/notes/'), secondToken)).resolves.toHaveProperty('status', 404);
+    const weekendAttachments = weekendHref.replace('/notes/', '/api/notes/') + '/attachments';
+    const { items: [weekendArchive] } = await (await api(weekendAttachments, token)).json();
+    expect(weekendArchive.name).toBe(REPORT_ARCHIVE_NAME);
+    const fullWeekend = await api(`${weekendAttachments}/${weekendArchive.id}`, token);
+    expect(fullWeekend.status).toBe(200);
+    expect(await fullWeekend.text()).toContain('New exercise cash / shares received');
+    expect(weekendNote.body).not.toContain('New exercise cash / shares received');
+    expect((await api(`${weekendAttachments}/${weekendArchive.id}`, secondToken)).status).toBe(404);
     // The preset prepares a draft in the same chat. This request makes a fresh
     // scan before the automatic window and its updated spot excludes the puts.
     manualNow = new Date(`${day}T11:59:55Z`);
@@ -285,6 +294,7 @@ it('generates native decision reports from chat and the independent opt-in sched
     expect(openedChatNote).not.toBeNull();
     await openedChatNote!.waitForFunction(selector => document.querySelector(selector)?.textContent?.includes('Close the put'),
       { timeout: 8000 }, preview);
+    await openedChatNote!.waitForSelector(`a[aria-label="Download ${REPORT_ARCHIVE_NAME}"]`, { visible: true });
     const noteTimes = '[aria-label="Note timestamps"] time';
     await openedChatNote!.waitForSelector(noteTimes, { visible: true });
     expect(await openedChatNote!.$$eval(noteTimes, times => times.map(time => time.getAttribute('datetime'))))
@@ -297,12 +307,12 @@ it('generates native decision reports from chat and the independent opt-in sched
     expect(await frame!.$eval('#enabled', input => (input as HTMLInputElement).checked)).toBe(false);
     await tick(now);
     expect(scan).toHaveBeenCalledTimes(2);
-    const createNote = runtime.notes.create.bind(runtime.notes);
-    const noteWrites = vi.spyOn(runtime.notes, 'create')
+    const createNote = runtime.notes.createInTransaction.bind(runtime.notes);
+    const noteWrites = vi.spyOn(runtime.notes, 'createInTransaction')
       .mockRejectedValueOnce(new Error('Fixture note storage unavailable'))
-      .mockImplementationOnce(async note => {
-        await createNote(note);
-        throw new Error('Fixture interruption after the note was committed');
+      .mockImplementationOnce(async (client, note) => {
+        await createNote(client, note);
+        throw new Error('Fixture interruption before attachment publication');
       });
     await page.bringToFront();
     await frame!.click('#enabled');
@@ -316,14 +326,14 @@ it('generates native decision reports from chat and the independent opt-in sched
     expect((await inbox(token)).items).toHaveLength(2);
     expect(send).not.toHaveBeenCalled();
     await tick(new Date('2026-11-23T12:01:00Z'));
-    expect((await notes(token)).items).toHaveLength(3);
+    expect((await notes(token)).items).toHaveLength(2);
     expect((await inbox(token)).items).toHaveLength(2);
     await tick(new Date('2026-11-23T12:02:00Z'));
     await tick(new Date('2026-11-23T12:03:00Z'));
     expect(broker).toHaveBeenCalledTimes(3);
     expect(broker.mock.calls.every(([state]) => state.user.id === owner)).toBe(true);
     expect(send).toHaveBeenCalledTimes(1);
-    expect(new Set(noteWrites.mock.calls.map(([note]) => note.id)).size).toBe(1);
+    expect(new Set(noteWrites.mock.calls.map(([, note]) => note.id)).size).toBe(1);
 
     const ownInbox = await inbox(token);
     expect(ownInbox.items).toHaveLength(3);
@@ -364,9 +374,15 @@ it('generates native decision reports from chat and the independent opt-in sched
     expect(headings).toEqual(['Hold and accept possible assignment', 'Sell a covered call after assignment', 'Roll the put', 'Close the put']);
     expect(await report.$$eval(`${preview} h3`, nodes => nodes.length)).toBe(1);
     const contents = await report.$eval(preview, node => node.textContent);
-    for (const detail of ['USD 10,000', 'USD 1,500', expiry, rollExpiry, 'SHA-256', 'New exercise cash / shares received']) {
+    for (const detail of ['USD 10,000', 'USD 1,500', expiry, 'SHA-256', REPORT_ARCHIVE_NAME]) {
       expect(contents).toContain(detail);
     }
+    const dailyAttachments = `/api/notes/${noteId}/attachments`;
+    const { items: [dailyArchive] } = await (await api(dailyAttachments, token)).json();
+    expect(dailyArchive.name).toBe(REPORT_ARCHIVE_NAME);
+    const completeDaily = await (await api(`${dailyAttachments}/${dailyArchive.id}`, token)).text();
+    expect(completeDaily).toContain(rollExpiry);
+    expect(completeDaily).toContain('New exercise cash / shares received');
     await page.bringToFront();
     await frame!.click('#enabled');
     await frame!.click('#save');
