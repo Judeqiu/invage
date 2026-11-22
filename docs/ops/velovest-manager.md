@@ -38,19 +38,20 @@ All responses are private/no-store. Mutations require same-origin JSON.
 
 The credit exemption uses a live manager-role lookup at the shared effective-cap
 resolver, covering chat, tools and mid-turn enforcement. It does not change the
-user's administrator flag or billing subscription. The current framework pin is
-retained; `scripts/patch-utarus-credit-exemption.mjs` backports the framework hook
-at install/build time, including its runtime and TypeScript declarations. Remove
-the backport after upgrading to a pin that includes Utarus commit `d3cbab0ee`.
+user's administrator flag or billing subscription. Utarus v4.2.55 includes
+the `billing.creditExempt` hook in its runtime and type declarations.
 
 ## Upgrade
 
 The dependency pin includes the generic Utarus `webUi.managementUserSections`
 extension point. Each selected-user iframe receives a `userId` query parameter;
 this is only a selected resource ID, never an authentication identity or grant.
-The role API independently requires a full administrator. Framework changes
-after v4.2.47 are pin-only for this host; optional MCP/SSO features remain off
-unless separately configured. Read the intervening framework release notes.
+The role API independently requires a full administrator. For upgrades to
+Utarus v4.2.55, verify the application database has the additive referral
+migration 36 before starting the updated service. Review the
+[v4.2.53 upgrade notes](https://github.com/Judeqiu/utarus/blob/v4.2.53/docs/releases/v4.2.53.md)
+for the schema change. The framework includes native referral entry points, and
+rewards stay inactive until terms are configured.
 
 Before activating this code, apply the additive, rerunnable migration as a
 database administrator, with the verified application role:

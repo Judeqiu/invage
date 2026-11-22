@@ -285,6 +285,10 @@ it('generates native decision reports from chat and the independent opt-in sched
     expect(openedChatNote).not.toBeNull();
     await openedChatNote!.waitForFunction(selector => document.querySelector(selector)?.textContent?.includes('Close the put'),
       { timeout: 8000 }, preview);
+    const noteTimes = '[aria-label="Note timestamps"] time';
+    await openedChatNote!.waitForSelector(noteTimes, { visible: true });
+    expect(await openedChatNote!.$$eval(noteTimes, times => times.map(time => time.getAttribute('datetime'))))
+      .toEqual([weekendNote.created_at, weekendNote.updated_at]);
     await openedChatNote!.close();
     await page.bringToFront();
     await page.goto(`${url}/settings/premarket-options`, { waitUntil: 'domcontentloaded' });
