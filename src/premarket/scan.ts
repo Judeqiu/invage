@@ -136,6 +136,6 @@ export async function scanPremarket(snapshot: InvestorSnapshot, session: Session
   sources.sort((a, b) => a.label.localeCompare(b.label) || a.accountId.localeCompare(b.accountId));
   rows.sort((a, b) => a.underlying.localeCompare(b.underlying) || a.position.expiry.localeCompare(b.position.expiry) || a.key.localeCompare(b.key));
   return { session, startedAt: startedAt.toISOString(), collectedAt: new Date().toISOString(), revision: snapshot.revision, sources, notes,
-    rows, market: chains, inspected: candidates.length };
+    rows, market: chains, stocks, inspected: candidates.length };
 }
 export type PremarketScan = Awaited<ReturnType<typeof scanPremarket>>;

@@ -55,20 +55,22 @@ const GROUPS = [
       ['stock_research_report', 'Stock research report', 'Generate an HTML stock research report for {ticker}. Include company and financial data, valuation, a transparent peer ranking, catalysts, risks, sources and dates. Deliver the report link here in chat so I can open it in the side panel.'],
       ['risk_scenarios_report', 'Create my Risk & scenarios report', 'Create my Risk & scenarios report for all accounts with a 5-trading-day horizon and show it in the sidebar.'],
       ['option_index_report', 'Options with calculated risk indexes', 'Create an options risk-index report for all my recorded open option positions. Automatically fetch the market inputs, calculate an index for each contract using its recorded side, show contract counts, stress losses, quote dates and any unavailable scores, and open the report in the sidebar. Do not ask me to fill in a calculator.'],
+      ['option_decision_report', 'Generate options decision report', 'Generate my options decision report now and give me the Notes link.'],
     ],
   },
 ] as const;
 
 function questionGroups(profile: ProductProfileId = readProductProfile()) {
   return GROUPS.map(group => ({ ...group, questions: group.questions.filter(([id]) =>
-    id !== 'stock_research_report' || profile === 'consultant') }));
+    profile === 'consultant' || (id !== 'stock_research_report' && id !== 'option_decision_report')) }));
 }
 
 /** Empty-chat cards share the composer presets; ticker selection happens in chat. */
 export function createInvageChatQuestionStarters(profile: ProductProfileId = readProductProfile()): ChatEmptyStarter[] {
   return questionGroups(profile).flatMap((group) => group.questions.map(([id, title, template]) => ({
     id: `question_${id}`,
-    label: id === 'option_index_report' || id === 'stock_research_report' || id === 'channel_asset_value' ? title : template.replaceAll('{ticker}', '[ticker]'),
+    label: id === 'option_index_report' || id === 'stock_research_report' || id === 'option_decision_report' || id === 'channel_asset_value'
+      ? title : template.replaceAll('{ticker}', '[ticker]'),
     description: group.label,
     message: template.includes('{ticker}')
       ? `${template.replaceAll('{ticker}', 'the ticker I choose')} First ask me which ticker to use.`
@@ -91,7 +93,8 @@ export function assertInvageChatQuestionCatalog(
 
 /** Sample four distinct questions each time a page requests its WebUI manifest. */
 export function sampleInvageChatQuestionStarters(): ChatEmptyStarter[] {
-  const starters = createInvageChatQuestionStarters();
+  // The decision report is in the composer library, whose presets prepare drafts.
+  const starters = createInvageChatQuestionStarters().filter(starter => starter.id !== 'question_option_decision_report');
   for (let i = 0; i < 4; i++) {
     const selected = randomInt(i, starters.length);
     [starters[i], starters[selected]] = [starters[selected], starters[i]];

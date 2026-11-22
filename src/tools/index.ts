@@ -1,3 +1,5 @@
+import { readProductProfile } from '../agents/roster.js';
+import { createOptionDecisionReportTool } from './option_decision_report.js';
 import { createFinancialScriptTool } from './financial_script.js';
 import { createRestoreBrokerValuesTool } from './restore_broker_values.js';
 import { createOptionRiskReportTool } from './option_risk_report.js';
@@ -70,6 +72,7 @@ export function createInvageTools(): AgentTool[] {
     createOptionRiskIndexTool(),
     createOptionRiskResultTool(),
     createOptionRiskReportTool(),
+    ...(readProductProfile() === 'consultant' ? [createOptionDecisionReportTool()] : []),
     createGetPortfolioTool(),
     createListOptionTradesTool(),
     createQuoteTool(),
@@ -160,6 +163,7 @@ export function createOptionsExpertTools(): AgentTool[] {
     createOptionRiskIndexTool(),
     createOptionRiskResultTool(),
     createOptionRiskReportTool(),
+    ...(readProductProfile() === 'consultant' ? [createOptionDecisionReportTool()] : []),
     ...createDataQueryTools(),
     createFinancialScriptTool(),
     ...createCalculationTools(),

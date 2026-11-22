@@ -19,12 +19,21 @@ function clock(value: Date, format: Intl.DateTimeFormat) {
 export const usSessionDate = (value: Date) => clock(value, usClock).date;
 export const expiryWindowEnd = (date: string) => new Date(Date.parse(date) + EXPIRY_WINDOW_DAYS * DAY_MS).toISOString().slice(0, 10);
 
+export const isUsWeekend = (date: string) => {
+  const day = new Date(date).getUTCDay();
+  return day === 0 || day === 6;
+};
+
+export function decisionSession(now: Date) {
+  const date = usSessionDate(now);
+  return { date, windowEnd: expiryWindowEnd(date) };
+}
+
 /** Starts at the Singapore wall clock time. Catch up while the U.S. session is still premarket. */
 export function dueSession(now: Date) {
   const singapore = clock(now, singaporeClock), us = clock(now, usClock);
   if (singapore.date !== us.date || singapore.minutes < SCAN_HOUR_SINGAPORE * 60 || us.minutes >= 9 * 60 + 30) return null;
-  const weekday = new Date(us.date).getUTCDay();
-  return weekday === 0 || weekday === 6 ? null : { date: us.date, windowEnd: expiryWindowEnd(us.date) };
+  return isUsWeekend(us.date) ? null : decisionSession(now);
 }
 
 export function calendarFromCsv(csv: string) {

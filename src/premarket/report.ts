@@ -1,5 +1,5 @@
 import { escapeHtml } from '../report/html-kit.js';
-import { knownSum, stockMovePercent, triggerCeiling, type ListedOption } from './decisions.js';
+import { ABOVE_STRIKE_PERCENT, knownSum, stockMovePercent, triggerCeiling, type ListedOption } from './decisions.js';
 import type { PremarketScan } from './scan.js';
 import { calendarReference } from './session.js';
 
@@ -11,6 +11,9 @@ const text = (value: string | null | undefined) => inline(value || 'Unknown');
 const fields = (rows: Array<[string, string]>) => rows.map(([label, value]) =>
   `- **${inline(label)}** ${inline(value)}`).join('\n');
 const notes = (items: string[]) => items.map(item => `- ${inline(item)}`).join('\n');
+const stockQuote = (stock: Row['stock']) => stock
+  ? `${money(stock.price, stock.currency)} · ${stock.field} · ${stock.asOf} · ${stock.source}`
+  : 'Quote unavailable';
 
 function details(summary: string, body: string) {
   return `<details>\n<summary>${escapeHtml(summary)}</summary>\n\n${body.trim()}\n\n</details>`;
@@ -46,7 +49,7 @@ function position(row: Row) {
 **${unverified.length ? 'Trigger needs verification' : 'Triggered'}** · ${number(p.quantity)} contracts · account ${text(source.accountId)}
 
 ${fields([['Trigger ceiling', amount(triggerCeiling(p.strike))],
-    ['Underlying quote', stock ? `${money(stock.price, stock.currency)} · ${stock.field} · ${stock.asOf} · ${stock.source}` : 'Unknown'],
+    ['Underlying quote', stockQuote(stock)],
     ['Distance from strike (%)', number(stock?.currency === p.currency ? stockMovePercent(stock.price, p.strike) : null)],
     ['Broker snapshot / native identity', `${source.asOf ?? 'Unknown'} · ${row.nativeId ?? 'Unknown'}`],
     ['Broker-reported settlement / shares per contract', `${row.recordedSettlement} / ${number(row.recordedShares)}`],
@@ -140,11 +143,30 @@ ${feeReference ? `Fee estimate basis · ${text(feeReference)}.` : 'Future broker
 `;
 }
 
-export function renderPremarketReport(scan: PremarketScan) {
+export type ReportTrigger = { kind: 'manual'; market: 'weekend' | 'holiday' | 'trading-day' | 'unknown' };
+const manualMarkets = {
+  weekend: 'U.S. weekend. The regular market is closed. Earlier quotes are references, and a prior-session stock quote cannot confirm a current trigger.',
+  holiday: 'U.S. exchange holiday. The regular market is closed. Earlier quotes are references, and a prior-session stock quote cannot confirm a current trigger.',
+  'trading-day': 'U.S. trading day. Outside regular hours, the latest quote may be from an earlier session. See the source timestamps and coverage notes.',
+  unknown: 'The U.S. trading calendar is unavailable. Use the reported timestamps to assess quote freshness.',
+};
+
+export function reportCoverage(scan: PremarketScan) {
+  const confirmed = scan.rows.filter(row => !row.unverified.length).length;
+  const unverified = scan.rows.length - confirmed;
+  return { confirmed, unverified, incomplete: !!(unverified || scan.notes.length || scan.sources.some(source => source.coverage.length)) };
+}
+
+export function renderPremarketReport(scan: PremarketScan, trigger?: ReportTrigger) {
   const bySymbol = new Map<string, Row[]>();
   for (const row of scan.rows) bySymbol.set(row.underlying, [...(bySymbol.get(row.underlying) ?? []), row]);
-  const confirmed = scan.rows.filter(row => !row.unverified.length).length;
-  const title = `Premarket options · ${scan.session.date}`;
+  const { confirmed, unverified, incomplete } = reportCoverage(scan);
+  const title = trigger?.kind === 'manual'
+    ? `Options decision report · ${scan.startedAt}` : `Premarket options · ${scan.session.date}`;
+  const additionalQuotes = trigger
+    ? [...scan.stocks].filter(([symbol]) => !bySymbol.has(symbol)).map(([symbol, evidence]): [string, string] =>
+      [symbol, stockQuote(evidence.stock)])
+    : [];
   const sections = [...bySymbol].map(([symbol, rows]) => {
     const currencies = [...new Set(rows.map(row => row.position.currency))];
     const totals = currencies.flatMap(currency => {
@@ -158,10 +180,13 @@ export function renderPremarketReport(scan: PremarketScan) {
       ...rows.map(position)].filter(Boolean).join('\n\n');
   });
   const body = [
-    `${number(confirmed)} confirmed triggers · ${number(scan.rows.length - confirmed)} need verification`,
-    fields([['U.S. trading session', scan.session.date], ['Last included expiry', scan.session.windowEnd],
+    trigger?.kind === 'manual' ? `**Generated on demand** · ${manualMarkets[trigger.market]}` : '',
+    `${number(confirmed)} confirmed triggers · ${number(unverified)} need verification`,
+    fields([[trigger ? 'U.S. scan date' : 'U.S. trading session', scan.session.date], ['Last included expiry', scan.session.windowEnd],
       ['Scan start / collection completed (UTC)', `${scan.startedAt} / ${scan.collectedAt}`],
+      ...(trigger ? [['Short puts checked before eligibility filters', number(scan.inspected)] as [string, string]] : []),
       ['Saved execution history revision', number(scan.revision)], ['Trading calendar', calendarReference]]),
+    trigger ? `The scan covers open short American puts expiring from the scan date through the last included expiry. The underlying price can be at most ${ABOVE_STRIKE_PERCENT}% above the strike.` : '',
     'All comparisons use the same underlying observation per symbol and option prices collected during this scan. Books without a source timestamp can carry prior-session prices. Reference bid and ask calculations do not establish trade execution. Values are kept in broker currency. Economic breakeven reflects strategy cash flows without establishing a tax basis.',
     notes(scan.notes),
     '## Broker position evidence',
@@ -170,7 +195,10 @@ export function renderPremarketReport(scan: PremarketScan) {
         ['Raw snapshot reference and checksum', source.reference ?? 'Unknown']]),
       notes(source.coverage),
     ].filter(Boolean).join('\n\n'))),
-    ...(sections.length ? sections : ['No position met the scan criteria in the available broker snapshots.']),
+    ...(additionalQuotes.length ? ['## Other underlying quotes checked', fields(additionalQuotes)] : []),
+    ...(sections.length ? sections : [incomplete
+      ? 'Coverage is incomplete. The available records cannot establish whether any positions met the scan criteria.'
+      : 'No position met the scan criteria in the available broker snapshots.']),
   ].filter(Boolean).join('\n\n');
   return { title, body };
 }

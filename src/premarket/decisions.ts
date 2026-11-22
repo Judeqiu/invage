@@ -62,7 +62,7 @@ export interface FeeEstimate {
   reference: string;
 }
 
-const ABOVE_STRIKE_PERCENT = 10;
+export const ABOVE_STRIKE_PERCENT = 10;
 const CLOSE_PREMIUM_FACTOR = 2;
 export function triggerCeiling(strike: number) {
   const [mantissa, exponent = '0'] = String(strike).split('e');

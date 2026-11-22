@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createInvageChatQuestionLibrary } from '../src/webapp/chat-questions.js';
 import { createInvageWebUi } from '../src/webapp/invage-webui.js';
 // Exercise the same validation and preparation used by the framework service.
@@ -45,6 +45,19 @@ describe('Lovable chat question library', () => {
     for (const preset of reviews) {
       expect(preset.fields ?? []).toEqual([]);
       expect(prepareQuestion(preset, {})).toBe(preset.template);
+    }
+  });
+
+  it('prepares the consultant options decision report in Reports without fields', () => {
+    vi.stubEnv('INVAGE_PRODUCT_PROFILE', 'consultant');
+    try {
+      const catalog = sourceCatalog(createInvageChatQuestionLibrary());
+      const preset = catalog.presets.find(question => question.id === 'option_decision_report')!;
+      expect(preset.categoryId).toBe('reports');
+      expect(preset.fields ?? []).toEqual([]);
+      expect(prepareQuestion(preset, {})).toBe('Generate my options decision report now and give me the Notes link.');
+    } finally {
+      vi.unstubAllEnvs();
     }
   });
 });
