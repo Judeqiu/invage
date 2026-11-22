@@ -30,6 +30,7 @@ const modelServer = await vi.hoisted(async () => {
   vi.stubEnv('UTARUS_AGENT_NAME', 'Velovest');
   vi.stubEnv('INVAGE_PRODUCT_PROFILE', 'consultant');
   vi.stubEnv('INVAGE_REQUIRE_BOOKS_FOR_PORTFOLIO', 'true');
+  vi.stubEnv('UTARUS_DYNAMIC_WORKFLOWS', 'true');
   vi.stubEnv('WEB_ONLY', 'true');
   // Match deployed profiles and routing. All model transport stays on loopback.
   const baseUrl = `http://127.0.0.1:${(server.address() as { port: number }).port}/v1`;
@@ -51,13 +52,18 @@ const rollExpiry = '2027-01-15';
 const now = new Date(`${day}T12:00:00Z`);
 const owner = randomUUID(), second = randomUUID();
 const account = 'UTEST1';
+const cloudAccount = '101';
+const cloudKey = await readFile(new URL('./fixtures/moomoo/ed25519-private.pem', import.meta.url), 'utf8');
 function fixture(userId: string): InvestorState {
   return {
     user: { id: userId, created_at: day, auth_token: randomUUID() },
     profile: { display_name: 'Fixture investor', contact_email: `${userId}@test.local`, language: 'en' }, log: [],
-    broker_sources: { source: { broker_id: 'ibkr', credentials: { token: 'fixture' } } },
+    broker_sources: { source: { broker_id: 'ibkr', credentials: { token: 'fixture' } },
+      cloud: { broker_id: 'futubull', credentials: { app_key: 'fixture-cloud', private_key: cloudKey } } },
     broker_connections: { primary: { broker_id: 'ibkr', source_id: 'source', channel: 'ibkr', label: 'Fixture broker',
-      account_id: account, enabled: true, config: { activity_query_id: '1' } } },
+      account_id: account, enabled: true, config: { activity_query_id: '1' } },
+      futu: { broker_id: 'futubull', source_id: 'cloud', channel: 'futubull', label: 'Fixture Futu',
+        account_id: cloudAccount, enabled: true, config: { acc_id: cloudAccount } } },
     option_executions: [{ channel: 'ibkr', account_id: account, execution_id: 'opening', contract_id: '42',
       executed_at: '2026-11-20T11:00:00', underlying: 'AMD', right: 'put', expiry, strike: '100', multiplier: '100',
       contracts: '1', side: 'sell', effect: 'open', currency: 'USD', gross_premium: '1000', commission: '0' }],
@@ -71,6 +77,69 @@ function flexPositions() {
   <OpenPositions>${openPosition(expiry, 100, -1, 42)}${openPosition(expiry, 90, -1, 43)}${openPosition('2026-12-22', 110, -1, 44)}${openPosition(expiry, 110, 0, 45)}</OpenPositions>
   <CashReport><CashReportCurrency accountId="${account}" currency="USD" endingCash="99999" /></CashReport>
   </FlexStatement></FlexStatements></FlexQueryResponse>`);
+}
+
+function cloudMarketFixture() {
+  const definitions = [
+    { expiry, strike: 100, right: 'PUT', bid: 13, ask: 16 },
+    { expiry: rollExpiry, strike: 95, right: 'PUT', bid: 16, ask: 17 },
+    ...[expiry, rollExpiry].map(date => ({ expiry: date, strike: 115, right: 'CALL', bid: 3, ask: 4 })),
+  ];
+  const contracts = definitions.map(item => ({ ...item, code: `US.AMD${item.expiry.slice(2).replaceAll('-', '')}${item.right[0]}${item.strike * 1000}` }));
+  const held = contracts[0];
+  const snapshotTime = '2026-11-20T20:58:00.000Z';
+  const exchangeTime = '2026-11-20T20:59:20.000Z';
+  const originalFetch = globalThis.fetch;
+  const chains: Array<{ from: string | null; through: string | null; requestedAt: number }> = [];
+  const bookCodes: string[] = [];
+  vi.stubGlobal('fetch', (async (input, init) => {
+    const url = new URL(input instanceof Request ? input.url : input.toString());
+    if (url.hostname === '127.0.0.1') return originalFetch(input, init);
+    expect(url.hostname).toBe('webapi.futunn.com');
+    expect(new Headers(init?.headers).get('X-Api-Key')).toBe('fixture-cloud');
+    const reply = (data: unknown) => Response.json({ ret_code: 0, data });
+    switch (url.pathname) {
+      case '/api/v1.0/accounts/authorized_trd_accs':
+        return Response.json({ s: 'ok', d: { accounts: [{ account_id: cloudAccount }] } });
+      case `/api/v1.0/accounts/${cloudAccount}/funds`:
+        return Response.json({ s: 'ok', d: { currency: 'USD', us_cash: '10000' } });
+      case `/api/v1.0/accounts/${cloudAccount}/positions`:
+        return Response.json({ s: 'ok', d: [] });
+      case '/api/v1.0/quote/US.AMD/corporate-actions/dividends':
+        return reply({ dividend_list: [] });
+      case '/api/v1.0/quote/US.AMD/corporate-actions/splits':
+        return reply({ split_list: [] });
+      case '/api/v1.0/quote/US.AMD/option-expiration':
+        return reply({ expiration_list: [expiry, rollExpiry].map(strike_time => ({ strike_time })) });
+      case '/api/v1.0/quote/US.AMD/option-chain': {
+        const from = url.searchParams.get('start'), through = url.searchParams.get('end');
+        chains.push({ from, through, requestedAt: Date.now() });
+        if (chains.length === 1) return Response.json({ ret_code: -11 }, { headers: { 'Retry-After': '1' } });
+        return reply({ option_chain: contracts.filter(item => from && through && item.expiry >= from && item.expiry <= through)
+          .map(item => ({ code: item.code, stock_owner: 'US.AMD', strike_time: item.expiry, strike_price: item.strike,
+            option_type: item.right, lot_size: 100, option_standard_type: 'STANDARD' })) });
+      }
+      case '/api/v1.0/quote/snapshot': {
+        const { code_list } = JSON.parse(String(init?.body));
+        expect(code_list).toEqual(contracts.map(item => item.code));
+        return reply({ snapshot_list: contracts.map(item => ({ code: item.code, option_valid: true, option_type: item.right,
+          option_strike_price: item.strike, option_contract_size: 100, option_contract_multiplier: '100',
+          option_area_type: 'AMERICAN', bid_price: item.bid, ask_price: item.ask, bid_vol: 23, ask_vol: 19, volume: 0,
+          option_open_interest: 20, option_implied_volatility: 38, delta: -.3, gamma: .04, theta: -.02, vega: .1, rho: -.01,
+          update_time: Date.parse(snapshotTime), data_date: snapshotTime.slice(0, 10) })) });
+      }
+      case '/api/v1.0/quote/order-book': {
+        const { code } = JSON.parse(String(init?.body));
+        bookCodes.push(code);
+        expect(code).toBe(held.code);
+        return reply([{ code, books: [{ exchange: 'US', order_volume_precision: 0, exchange_data_time_ms: Date.parse(exchangeTime),
+          bid_flag: 1, ask_flag: 1, bid_list: [{ price: 14, volume: 39 }], ask_list: [{ price: 15, volume: 33 }] }] }]);
+      }
+      default:
+        throw new Error(`Unexpected test market endpoint ${url.pathname}`);
+    }
+  }) satisfies typeof fetch);
+  return { chains, bookCodes, snapshotTime, exchangeTime };
 }
 
 it('generates native decision reports from chat and the independent opt-in schedule', async () => {
@@ -101,10 +170,21 @@ it('generates native decision reports from chat and the independent opt-in sched
       ? Buffer.from('<FlexStatementResponse><Status>Success</Status><ReferenceCode>ref</ReferenceCode></FlexStatementResponse>')
       : flexPositions() },
   }));
+  const market = cloudMarketFixture();
   const calendar = vi.fn(async (date: string) => readTradingDay(date, async () =>
     new Response('Holiday Name,Date,Regular Trading Hours,Global Trading Hours\nThanksgiving,2026-11-26,None,None\n')));
   const scan = vi.fn((...args: Parameters<typeof scanPremarket>) =>
-    scanPremarket(args[0], args[1], args[2], args[3], { readBrokerPositionSnapshot: broker }));
+    scanPremarket(args[0], args[1], args[2], args[3], {
+      readBrokerPositionSnapshot: async (state, id) => {
+        if (id === 'primary') return broker(state, id);
+        const snapshot = await readBrokerPositionSnapshot(state, id);
+        expect(snapshot.statement.account_id).toBe(cloudAccount);
+        expect(snapshot.statement.lots).toEqual([]);
+        // The empty Cloud account read describes the fixture session, which runs
+        // against a fixed U.S. trading date independent of the machine clock.
+        return { ...snapshot, statement: { ...snapshot.statement, as_of: day } };
+      },
+    }));
   let manualNow = new Date('2026-11-28T12:00:00Z');
   const testGenerate: typeof runOnDemandOptionReport = async action => {
     const first = runOnDemandOptionReport(action, manualNow, { scanPremarket: scan, readTradingDay: calendar });
@@ -222,6 +302,7 @@ it('generates native decision reports from chat and the independent opt-in sched
     const weekendNote = (await weekend.json()).note;
     expect(weekendNote.title).toBe(`Options decision report · ${manualNow.toISOString()}`);
     for (const expected of ['U.S. weekend', 'A same-session underlying quote in the contract currency is unavailable.',
+      '39 / 33', market.exchangeTime, market.snapshotTime, 'futubull Cloud /api/v1.0/quote/order-book',
       'Hold and accept possible assignment', 'Sell a covered call after assignment', 'Roll the put', 'Close the put']) {
       expect(weekendNote.body).toContain(expected);
     }
@@ -231,7 +312,16 @@ it('generates native decision reports from chat and the independent opt-in sched
     expect(weekendArchive.name).toBe(REPORT_ARCHIVE_NAME);
     const fullWeekend = await api(`${weekendAttachments}/${weekendArchive.id}`, token);
     expect(fullWeekend.status).toBe(200);
-    expect(await fullWeekend.text()).toContain('New exercise cash / shares received');
+    const fullWeekendText = await fullWeekend.text();
+    expect(fullWeekendText).toContain('New exercise cash / shares received');
+    expect(fullWeekendText).toContain('23 / 19');
+    expect(fullWeekendText).toContain('USD 1,600');
+    expect(market.bookCodes).toHaveLength(1);
+    expect(market.chains.map(({ from, through }) => [from, through])).toEqual([
+      [expiry, rollExpiry], [expiry, rollExpiry], ['2026-12-22', '2026-12-22'],
+    ]);
+    expect(weekendNote.body).toContain('futubull Cloud chain unavailable for 2026-12-22.');
+    expect(market.chains[1].requestedAt - market.chains[0].requestedAt).toBeGreaterThanOrEqual(1000);
     expect(weekendNote.body).not.toContain('New exercise cash / shares received');
     expect((await api(`${weekendAttachments}/${weekendArchive.id}`, secondToken)).status).toBe(404);
     // The preset prepares a draft in the same chat. This request makes a fresh
@@ -374,7 +464,7 @@ it('generates native decision reports from chat and the independent opt-in sched
     expect(headings).toEqual(['Hold and accept possible assignment', 'Sell a covered call after assignment', 'Roll the put', 'Close the put']);
     expect(await report.$$eval(`${preview} h3`, nodes => nodes.length)).toBe(1);
     const contents = await report.$eval(preview, node => node.textContent);
-    for (const detail of ['USD 10,000', 'USD 1,500', expiry, 'SHA-256', REPORT_ARCHIVE_NAME]) {
+    for (const detail of ['USD 10,000', 'USD 1,500', expiry, 'SHA-256', REPORT_ARCHIVE_NAME, '39 / 33', market.exchangeTime]) {
       expect(contents).toContain(detail);
     }
     const dailyAttachments = `/api/notes/${noteId}/attachments`;
@@ -383,6 +473,8 @@ it('generates native decision reports from chat and the independent opt-in sched
     const completeDaily = await (await api(`${dailyAttachments}/${dailyArchive.id}`, token)).text();
     expect(completeDaily).toContain(rollExpiry);
     expect(completeDaily).toContain('New exercise cash / shares received');
+    expect(completeDaily).toContain('USD 1,600');
+    expect(market.bookCodes).toHaveLength(2);
     await page.bringToFront();
     await frame!.click('#enabled');
     await frame!.click('#save');
@@ -400,6 +492,7 @@ it('generates native decision reports from chat and the independent opt-in sched
     modelServer.closeAllConnections();
     await new Promise<void>((resolve, reject) => modelServer.close(error => error ? reject(error) : resolve()));
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
     vi.unstubAllEnvs();
     await rm(root, { recursive: true, force: true });
   }

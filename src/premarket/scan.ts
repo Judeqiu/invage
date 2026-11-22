@@ -2,7 +2,6 @@ import { createHash } from 'node:crypto';
 import { readBrokerAccountModel, readBrokerPositionSnapshot } from '../brokers/accounts.js';
 import { validDate } from '../brokers/option-executions.js';
 import { normalizeBrokerOptionLot, formatBrokerSkip } from '../brokers/statement.js';
-import { parseBrokerOptionCode } from '../brokers/option-symbol.js';
 import { buildHoldingKey } from '../market/position-value.js';
 import type { Holding } from '../market/types.js';
 import { getPortfolio } from '../state/portfolio-state.js';
@@ -10,9 +9,9 @@ import type { InvestorSnapshot } from '../state/investor-store.js';
 import { readOptionRiskCostModel } from '../webapp/dashboard-config.js';
 import { attachOpenVerticalSpreads, openOptionTradeDetails } from '../webapp/option-dashboard-data.js';
 import { prepareOptionRelationships } from '../webapp/option-relationships-data.js';
-import { analyzeDecision, triggerCeiling, type ListedOption } from './decisions.js';
+import { analyzeDecision, triggerCeiling } from './decisions.js';
 import { positionHistory } from './history.js';
-import { readChain, readStock, type ChainEvidence, type UnderlyingEvidence } from './market.js';
+import { matchListed, readChain, readStock, type ChainEvidence, type UnderlyingEvidence } from './market.js';
 import { usSessionDate } from './session.js';
 
 type SnapshotOfPositions = Awaited<ReturnType<typeof readBrokerPositionSnapshot>>;
@@ -20,23 +19,6 @@ type ScanSource = { accountId: string; broker: string; label: string; asOf: stri
 export type Session = { date: string; windowEnd: string };
 const deps = { readBrokerPositionSnapshot, readStock, readChain, prepareOptionRelationships, readOptionRiskCostModel };
 export type ScanDependencies = Partial<typeof deps>;
-
-function matchListed(holding: Holding, options: ListedOption[]) {
-  const o = holding.option!;
-  const exact = options.filter(item => item.right === o.right && item.strike === o.strike && item.expiry === o.expiry &&
-    item.currency === holding.currency && item.underlying === o.underlying);
-  const nativeCode = holding.broker_ref?.native_id?.replace(/^US\./, '').replaceAll(' ', '');
-  const native = nativeCode ? parseBrokerOptionCode(nativeCode) : null;
-  const matches = native && !('skip' in native) ? exact.filter(item => {
-    const id = parseBrokerOptionCode(item.id.replace(/^US\./, ''));
-    return !('skip' in id) && id.root === native.root;
-  }) : exact;
-  if (matches.length !== 1) return null;
-  const item = matches[0];
-  // Adjusted deliverables and opaque broker IDs may share strike and expiry.
-  if (!item.shareOnly) return native && !('skip' in native) ? item : null;
-  return item.shares === o.multiplier && o.settlement === 'physical' ? item : null;
-}
 
 function inWindow(h: Holding, session: Session) {
   return h.instrument === 'option' && h.option?.right === 'put' && h.option.side === 'short' &&
@@ -103,8 +85,8 @@ export async function scanPremarket(snapshot: InvestorSnapshot, session: Session
     const stock = stocks.get(symbol) ?? unknownStock;
     if (!stock.isUsEquity) return;
     try {
-      const expiries = [...new Set(retained.filter(([, h]) => h.option!.underlying === symbol).map(([, h]) => h.option!.expiry))];
-      chains.set(symbol, await runtime.readChain(state, symbol, session.date, expiries, stock));
+      const held = retained.flatMap(([, h]) => h.option!.underlying === symbol ? [h] : []);
+      chains.set(symbol, await runtime.readChain(state, symbol, session.date, held, stock));
     } catch { chains.set(symbol, { options: [], events: [], notices: ['The option chain could not be retrieved.'] }); }
   }));
   const relationships = await relationshipsTask;

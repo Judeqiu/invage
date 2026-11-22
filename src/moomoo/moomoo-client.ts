@@ -1,3 +1,4 @@
+import { setTimeout as delay } from 'node:timers/promises';
 import { deferredHistoryReason } from '../brokers/history-fetch.js';
 import { brokerRequestSignal } from '../brokers/network.js';
 import { BrokerHttpError, BrokerParseError } from '../brokers/errors.js';
@@ -55,6 +56,7 @@ async function moomooRequest(args: {
   timestampMs?: string;
   method?: 'GET' | 'POST';
   body?: string;
+  onResponse?: (response: Response) => void;
 }): Promise<unknown> {
   const method = args.method ?? 'GET';
   const query = args.query ?? '';
@@ -84,6 +86,7 @@ async function moomooRequest(args: {
     },
   });
   logRateHeaders(res);
+  args.onResponse?.(res);
   if (!res.ok) {
     throw new BrokerHttpError(`MooMoo ${args.path} HTTP ${res.status}`, String(res.status));
   }
@@ -108,26 +111,70 @@ export async function moomooGet(args: {
   return asEnvelope(await moomooRequest(args));
 }
 
-/** Read-only Cloud quote endpoints use ret_code/data rather than trade s/d. */
-export async function moomooMarketData(args: {
+interface MarketDataRequest {
   path: string; query?: string; body?: Record<string, unknown>;
   credentials: MooMooCredentials; fetchImpl?: typeof fetch;
-}): Promise<Record<string, any>> {
-  const post = ['/api/v1.0/quote/snapshot', '/api/v1.0/quote/stock-quote', '/api/v1.0/quote/stock-basicinfo', '/api/v1.0/quote/combo-option-quote'].includes(args.path);
+}
+
+/** Read-only Cloud quote endpoints use ret_code/data rather than trade s/d. */
+export function moomooMarketData(args: MarketDataRequest) {
+  return readMarketData(args, false);
+}
+
+// Reports share the provider's IP budget across symbols and concurrent scans.
+// Preserve the queued request during a provider-directed cooldown.
+let reportMarketQueue = Promise.resolve();
+export function readReportMarketData(args: MarketDataRequest) {
+  const result = reportMarketQueue.then(() => readMarketData(args, true));
+  reportMarketQueue = result.then(() => undefined, () => undefined);
+  return result;
+}
+
+function retryAfterMs(header: string | null, attempt: number): number {
+  if (header?.trim()) {
+    const seconds = Number(header);
+    const wait = Number.isFinite(seconds) ? seconds * 1000 : Date.parse(header) - Date.now();
+    if (Number.isFinite(wait)) return Math.max(1000, wait);
+  }
+  // Cloud's documented fallback is exponential in the absence of Retry-After.
+  return 1000 * 2 ** attempt;
+}
+
+async function readMarketData(args: MarketDataRequest, retryRateLimits: boolean): Promise<Record<string, any>> {
+  const post = ['/api/v1.0/quote/snapshot', '/api/v1.0/quote/stock-quote', '/api/v1.0/quote/stock-basicinfo',
+    '/api/v1.0/quote/combo-option-quote', '/api/v1.0/quote/order-book'].includes(args.path);
   const get = /^\/api\/v1\.0\/quote\/US\.[A-Z][A-Z0-9.]*\/(?:option-chain|option-expiration|history-kline|option-volatility|corporate-actions\/(?:dividends|splits))$/.test(args.path);
   if (!post && !get || post !== (args.body !== undefined)) throw new Error('Unsupported read-only market-data request');
   const fetchImpl = args.fetchImpl ?? fetch;
   const request = { path: args.path, query: args.query, method: post ? 'POST' as const : 'GET' as const,
     body: args.body ? JSON.stringify(args.body) : undefined, credentials: args.credentials, fetchImpl };
-  let raw = await moomooRequest(request) as Record<string, unknown>;
-  if (raw?.errcode === CLOCK_SKEW) {
-    const timestampMs = await serverTimeMs(fetchImpl, args.credentials);
-    if (timestampMs) raw = await moomooRequest({ ...request, timestampMs }) as Record<string, unknown>;
+  for (let attempt = 0; ; attempt++) {
+    const response: { retryAfter: string | null } = { retryAfter: null };
+    const send = (timestampMs?: string) => moomooRequest({ ...request, timestampMs,
+      onResponse: res => { response.retryAfter = res.headers.get('retry-after'); },
+    }) as Promise<Record<string, unknown>>;
+    let raw;
+    let httpThrottled = false;
+    try {
+      raw = await send();
+      if (raw?.errcode === CLOCK_SKEW) {
+        const timestampMs = await serverTimeMs(fetchImpl, args.credentials);
+        if (timestampMs) raw = await send(timestampMs);
+      }
+    } catch (error) {
+      if (!(retryRateLimits && error instanceof BrokerHttpError && error.vendorCode === '429')) throw error;
+      httpThrottled = true;
+    }
+    if (retryRateLimits && (httpThrottled || raw?.ret_code === -11 || raw?.code === -11 || raw?.errcode === -12011)) {
+      await delay(retryAfterMs(response.retryAfter, attempt));
+      continue;
+    }
+    if (raw?.ret_code !== 0 || !raw.data || typeof raw.data !== 'object' ||
+        (Array.isArray(raw.data) && args.path !== '/api/v1.0/quote/order-book')) {
+      throw new BrokerParseError('Connected broker market data unavailable or not authorized');
+    }
+    return raw.data as Record<string, any>;
   }
-  if (raw?.ret_code !== 0 || !raw.data || typeof raw.data !== 'object' || Array.isArray(raw.data)) {
-    throw new BrokerParseError('Connected broker market data unavailable or not authorized');
-  }
-  return raw.data as Record<string, any>;
 }
 
 /** Trade positions omit contract size; obtain it from exact-code static metadata. */

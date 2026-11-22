@@ -32,7 +32,9 @@ function quote(option: ListedOption | null) {
     ['Volume / open interest', `${number(q.volume)} / ${number(q.openInterest)}`],
     ['IV (%) / delta / gamma / theta / vega / rho', [q.ivPercent, q.delta, q.gamma, q.theta, q.vega, q.rho].map(number).join(' / ')],
     ['Quotes collected / book as of / last trade', `${q.collectedAt} / ${q.bookAsOf ?? 'Unknown'} / ${q.lastTradeAt ?? 'Unknown'}`],
-    ['Quote source', q.source], ...(q.greeksSource && q.greeksCollectedAt ? [['Greeks source and collection time', `${q.greeksSource} · ${q.greeksCollectedAt}`] as [string, string]] : []),
+    ['Quote source', q.source], ...(q.greeksSource && q.greeksCollectedAt ? [['Greeks source and collection time',
+      [q.greeksSource, q.greeksCollectedAt, q.snapshotAsOf && `snapshot updated ${q.snapshotAsOf}`,
+        q.snapshotDate && `provider data date ${q.snapshotDate}`].filter(Boolean).join(' · ')] as [string, string]] : []),
   ]);
 }
 

@@ -3,6 +3,8 @@ export interface OptionQuote {
   source: string;
   collectedAt: string;
   bookAsOf: string | null;
+  snapshotAsOf?: string | null;
+  snapshotDate?: string | null;
   lastTradeAt: string | null;
   greeksSource?: string;
   greeksCollectedAt?: string | null;
