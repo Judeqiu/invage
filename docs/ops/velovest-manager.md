@@ -62,10 +62,12 @@ psql -v ON_ERROR_STOP=1 -v application_role=<verified role> \
 ```
 
 Prepare the committed dependency locally and deploy through the canonical
-agent-ops script with both Velovest units and `--force-utarus`. Existing account
-data, admin flags, subscriptions, credentials and mail configuration are not
-changed. Do not deploy other sites or alter any live account assignment without
-an explicit request.
+agent-ops script with both Velovest units and `--force-utarus`. For this upgrade,
+stage the runtime dependency changes in the lockfile, including `qrcode` and
+its dependencies. A slim Utarus package transfer does not install dependencies
+outside `node_modules/utarus`. Preserve existing account data, admin flags,
+subscriptions, credentials and mail configuration. Do not deploy other sites
+or alter any live account assignment without an explicit request.
 
 Validation: `npm run build`; focused `management-api` and `management-roles`
 tests; `node --import tsx tests/management-ui.mjs` renders the real built framework
