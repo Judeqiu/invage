@@ -127,7 +127,8 @@ function cloudMarketFixture() {
         expect(code_list).toEqual(contracts.map(item => item.code));
         return reply({ snapshot_list: contracts.map(item => ({ code: item.code, option_valid: true, option_type: item.right,
           option_strike_price: item.strike, option_contract_size: 100, option_contract_multiplier: '100',
-          option_area_type: 'AMERICAN', bid_price: item.bid, ask_price: item.ask, bid_vol: 23, ask_vol: 19, volume: 0,
+          option_area_type: 'AMERICAN', bid_price: item.code === replacement.code && replacementUnavailable ? 14 : item.bid,
+          ask_price: item.ask, bid_vol: 23, ask_vol: 19, volume: 0,
           option_open_interest: 20, option_implied_volatility: 38, delta: -.3, gamma: .04, theta: -.02, vega: .1, rho: -.01,
           update_time: Date.parse(snapshotTime), data_date: snapshotTime.slice(0, 10) })) });
       }
@@ -310,11 +311,14 @@ it('generates native decision reports from chat and the independent opt-in sched
     const weekendNote = (await weekend.json()).note;
     expect(weekendNote.title).toBe(`Options decision report · ${manualNow.toISOString()}`);
     for (const expected of ['U.S. weekend', 'A same-session stock quote was unavailable for every position shown',
-      'historical quote as of', 'Historical book as of', '## Assignment exposure', 'USD 10,000 for positions with verified share deliverables',
+      'historical quote as of', 'Historical order book from', '## Assignment exposure', 'USD 10,000 for positions with verified share deliverables',
       '2 with unknown assignment cash', 'buyback USD 1,500', 'cash if assigned USD 10,000 for 100 shares',
       'current put breakeven USD 90 per share', 'current put expiry P&amp;L USD -500', 'whole-strategy breakeven and expiry P&amp;L unavailable',
-      'Lower assignment cash, later expiry', 'USD 95 put expiring', 'USD 200 gross roll cash',
-      `USD 17 bid / USD 18 ask per unit · Historical book as of ${market.replacementTime}`, '## Appendix', REPORT_ARCHIVE_NAME]) {
+      'Roll example with less cash due if assigned and a later expiry', 'you would receive USD 200 before fees',
+      'Selling the USD 95 put expiring Jan 15, 2027 would bring in USD 1,700',
+      'you would pay USD 9,500 for 100 shares, compared with USD 10,000 on the current put',
+      'The new put expires 25 days later than the current put',
+      'USD 17 bid and USD 18 ask per unit. Historical order book from Nov 20, 2026 at 20:59:25 UTC', '## Appendix', REPORT_ARCHIVE_NAME]) {
       expect(weekendNote.body).toContain(expected);
     }
     await expect(api(weekendHref.replace('/notes/', '/api/notes/'), secondToken)).resolves.toHaveProperty('status', 404);
@@ -405,7 +409,7 @@ it('generates native decision reports from chat and the independent opt-in sched
     const openedChatNote = await (await chatLinkTarget).page();
     expect(openedChatNote).not.toBeNull();
     await openedChatNote!.waitForSelector(`${preview} h3`, { visible: true, timeout: 8000 });
-    expect(await openedChatNote!.$eval(preview, node => node.textContent)).toContain('USD 200 gross roll cash');
+    expect(await openedChatNote!.$eval(preview, node => node.textContent)).toContain('you would receive USD 200 before fees');
     expect(await openedChatNote!.$eval(preview, node => node.textContent)).toContain('current put breakeven USD 90 per share');
     await openedChatNote!.waitForSelector(`a[aria-label="Download ${REPORT_ARCHIVE_NAME}"]`, { visible: true });
     const noteTimes = '[aria-label="Note timestamps"] time';
@@ -488,8 +492,8 @@ it('generates native decision reports from chat and the independent opt-in sched
     expect(await report.$$eval(`${preview} h3`, nodes => nodes.length)).toBe(1);
     const contents = await report.$eval(preview, node => node.textContent);
     for (const detail of ['cash if assigned USD 10,000', 'buyback USD 1,500', expiry, REPORT_ARCHIVE_NAME,
-      'Historical book as of', 'current leg P&L before close fee USD -500', 'USD 9,500 if assigned',
-      'USD 100 gross roll cash', `USD 16 bid / USD 17 ask per unit · Provider price snapshot dated ${market.snapshotTime.slice(0, 10)}`,
+      'Historical order book from', 'current leg P&L before close fee USD -500', 'you would pay USD 9,500 for 100 shares',
+      'the roll would cost USD 100 before fees', 'USD 14 bid and USD 17 ask per unit. Provider snapshot from Nov 20, 2026',
       'current put breakeven USD 90 per share', 'current put expiry P&L USD 1,000', 'whole-strategy breakeven and expiry P&L unavailable']) {
       expect(contents).toContain(detail);
     }
@@ -497,7 +501,7 @@ it('generates native decision reports from chat and the independent opt-in sched
     const { items: [dailyArchive] } = await (await api(dailyAttachments, token)).json();
     expect(dailyArchive.name).toBe(REPORT_ARCHIVE_NAME);
     const completeDaily = await (await api(`${dailyAttachments}/${dailyArchive.id}`, token)).text();
-    for (const detail of [rollExpiry, 'New exercise cash / shares received', 'USD 1,600', 'SHA-256', '39 / 33', market.exchangeTime,
+    for (const detail of [rollExpiry, 'New exercise cash / shares received', 'USD 1,400', 'SHA-256', '39 / 33', market.exchangeTime,
       `futubull Cloud order book unavailable for ${market.replacementCode}.`]) {
       expect(completeDaily).toContain(detail);
     }

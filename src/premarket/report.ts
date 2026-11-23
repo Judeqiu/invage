@@ -7,6 +7,8 @@ type Row = PremarketScan['rows'][number];
 export const REPORT_ARCHIVE_NAME = 'full-options-decision-report.md';
 const number = (value: number | null | undefined) => value == null ? 'Unknown' : value.toLocaleString('en-US', { maximumFractionDigits: 8 });
 const money = (value: number | null | undefined, currency: string) => value == null ? 'Unknown' : `${currency} ${number(value)}`;
+const dateFormat = new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeZone: 'UTC' });
+const timeFormat = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23', timeZone: 'UTC' });
 const inline = (value: string) => escapeHtml(value.replace(/[\r\n]+/g, ' ')).replace(/[\\`*_\[\]|~$]/g, '\\$&');
 const text = (value: string | null | undefined) => inline(value || 'Unknown');
 const fields = (rows: Array<[string, string]>) => rows.map(([label, value]) =>
@@ -185,33 +187,51 @@ function assignmentExposure(rows: Row[]) {
 function optionPriceReference(option: ListedOption | null, date: string) {
   const quote = option?.quote;
   if (quote?.bookAsOf) {
-    const label = usSessionDate(new Date(quote.bookAsOf)) === date ? 'Same-session book' : 'Historical book';
-    return `${label} as of ${quote.bookAsOf}`;
+    const bookTime = new Date(quote.bookAsOf);
+    const label = usSessionDate(bookTime) === date ? 'Same-session order book' : 'Historical order book';
+    return `${label} from ${dateFormat.format(bookTime)} at ${timeFormat.format(bookTime)} UTC`;
   }
-  if (quote?.priceFromSnapshot && quote.snapshotDate) return `Provider price snapshot dated ${quote.snapshotDate} · bid/ask time unavailable`;
-  return 'Bid/ask time unavailable';
+  if (quote?.priceFromSnapshot && quote.snapshotDate) {
+    return `Provider snapshot from ${dateFormat.format(new Date(quote.snapshotDate))}. Bid and ask time unavailable`;
+  }
+  return 'Bid and ask time unavailable';
 }
 
 const rollReferenceLabels = {
-  quoted: 'Quoted roll references',
-  equalOrHigherCash: 'Rolls with equal or higher assignment cash',
-  lowerCashLater: 'Lower assignment cash, later expiry',
-  lowerCashSameOrEarlier: 'Lower assignment cash, same or earlier expiry',
+  quoted: 'Roll example',
+  equalOrHigherCash: 'Roll example with the same or more cash due if assigned',
+  lowerCashLater: 'Roll example with less cash due if assigned and a later expiry',
+  lowerCashSameOrEarlier: 'Roll example with less cash due if assigned and the same or earlier expiry',
 };
 
 function rollReferences(row: Row, date: string): Array<[string, string]> {
   if (!row.rollReferences.length) return [['Roll', 'Refresh the held put ask and replacement bids to compare roll cash and the new assignment exposure.']];
   const amount = (n: number | null) => money(n, row.position.currency);
-  return row.rollReferences.map(({ kind, example, count, minDays, maxDays }) => {
+  const buyback = row.decision.close.buyback;
+  const currentAssignment = row.decision.hold.assignmentCash;
+  return row.rollReferences.map(({ kind, example }) => {
     const { option, assignmentCash, additionalDays } = example;
-    const cash = row.decision.rolls.find(roll => roll.option.id === option.id)?.grossFlow ?? null;
-    const flow = cash === null ? 'gross roll cash unavailable' : `${amount(cash)} gross roll cash`;
-    const quote = `${amount(option.quote.bid)} bid / ${amount(option.quote.ask)} ask per unit · ${optionPriceReference(option, date)}`;
-    const change = minDays === maxDays ? number(minDays) : `${number(minDays)} to ${number(maxDays)}`;
-    const contract = `${amount(option.strike)} put expiring ${option.expiry}`;
-    const intro = count === 1 ? `${contract} calls for`
-      : `Expiry changes range from ${change} days. The ${contract} has this group's lowest assignment cash at`;
-    return [rollReferenceLabels[kind], `${intro} ${amount(assignmentCash)} if assigned, with ${flow} and an expiry change of ${number(additionalDays)} days. Replacement quote ${quote}.`];
+    const roll = row.decision.rolls.find(roll => roll.option.id === option.id);
+    const cash = roll?.grossFlow ?? null;
+    const proceeds = roll?.newIncome ?? null;
+    const flow = cash === null ? 'The net cost or credit to roll is unavailable.'
+      : cash < 0 ? `At these prices, the roll would cost ${amount(-cash)} before fees.`
+      : cash > 0 ? `At these prices, you would receive ${amount(cash)} before fees.`
+      : 'At these prices, the sale proceeds would cover the buyback before fees.';
+    const contract = `${amount(option.strike)} put expiring ${dateFormat.format(new Date(option.expiry))}`;
+    const replacement = proceeds === null ? `The replacement is the ${contract}.`
+      : `Selling the ${contract} would bring in ${amount(proceeds)}.`;
+    const days = Math.abs(additionalDays);
+    const expiryChange = additionalDays === 0 ? 'The expiry date stays the same.'
+      : `The new put expires ${number(days)} ${days === 1 ? 'day' : 'days'} ${additionalDays < 0 ? 'earlier' : 'later'} than the current put.`;
+    const shares = roll?.shares == null ? '' : ` for ${number(roll.shares)} shares`;
+    const prior = currentAssignment === null ? '' : currentAssignment === assignmentCash ? ', the same cash as on the current put'
+      : `, compared with ${amount(currentAssignment)} on the current put`;
+    return [rollReferenceLabels[kind], [flow,
+      buyback === null ? '' : `Buying back the current put would cost ${amount(buyback)}.`, replacement,
+      `If assigned on the new put, you would pay ${amount(assignmentCash)}${shares}${prior}.`, expiryChange,
+      `The replacement quote was ${amount(option.quote.bid)} bid and ${amount(option.quote.ask)} ask per unit. ${optionPriceReference(option, date)}.`,
+    ].filter(Boolean).join(' ')];
   });
 }
 
@@ -326,7 +346,7 @@ export function renderPremarketReport(scan: PremarketScan, trigger?: ReportTrigg
     notes(scan.sources.filter(source => source.coverage.length).map(source => `${source.label} · account ${source.accountId} needs a broker position refresh or reconciliation.`)),
     assignmentExposure(scan.rows),
     scan.rows.length ? `## Positions to review\n\n${positionSummary(scan)}` : empty,
-    scan.rows.length ? 'A filled close removes assignment exposure on that put. Holding keeps exposure to further stock declines and can result in early assignment. Before rolling, get a combined order quote. Roll cash uses reference bids and asks that may come from different times. Negative roll cash is a debit. After assignment and share delivery, a covered call can earn premium and caps upside on the covered shares.' : '',
+    scan.rows.length ? 'A filled close removes assignment exposure on that put. Holding keeps exposure to further stock declines and can result in early assignment. Before rolling, get a combined order quote. The prices for buying back the current put and selling the new one can come from different times. After assignment and share delivery, a covered call can earn premium and caps upside on the covered shares.' : '',
     '## Appendix',
     `In **Note details**, download **${REPORT_ARCHIVE_NAME}** for quote times, broker records, and the full comparisons for holding, closing, rolling, and selling covered calls after assignment.`,
   ].filter(Boolean).join('\n\n');

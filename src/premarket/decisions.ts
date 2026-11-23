@@ -175,9 +175,6 @@ type RollReferenceKind = 'quoted' | 'equalOrHigherCash' | 'lowerCashLater' | 'lo
 type RollReference = {
   kind: RollReferenceKind;
   example: { option: ListedOption; assignmentCash: number; additionalDays: number };
-  count: number;
-  minDays: number;
-  maxDays: number;
 };
 
 export function selectRollReferences({ hold, rolls }: ReturnType<typeof analyzeDecision>): RollReference[] {
@@ -186,17 +183,11 @@ export function selectRollReferences({ hold, rolls }: ReturnType<typeof analyzeD
     if (assignmentCash === null || grossFlow === null) continue;
     const kind = hold.assignmentCash === null ? 'quoted' : assignmentCash >= hold.assignmentCash ? 'equalOrHigherCash'
       : additionalDays > 0 ? 'lowerCashLater' : 'lowerCashSameOrEarlier';
-    const item = { option, assignmentCash, additionalDays };
     const group = groups.get(kind);
-    if (!group) {
-      groups.set(kind, { kind, example: item, count: 1, minDays: additionalDays, maxDays: additionalDays });
-      continue;
+    if (!group || assignmentCash < group.example.assignmentCash ||
+        assignmentCash === group.example.assignmentCash && additionalDays < group.example.additionalDays) {
+      groups.set(kind, { kind, example: { option, assignmentCash, additionalDays } });
     }
-    group.count++;
-    group.minDays = Math.min(group.minDays, additionalDays);
-    group.maxDays = Math.max(group.maxDays, additionalDays);
-    if (assignmentCash < group.example.assignmentCash ||
-        assignmentCash === group.example.assignmentCash && additionalDays < group.example.additionalDays) group.example = item;
   }
   return [...groups.values()];
 }
