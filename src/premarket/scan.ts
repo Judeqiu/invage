@@ -9,9 +9,9 @@ import type { InvestorSnapshot } from '../state/investor-store.js';
 import { readOptionRiskCostModel } from '../webapp/dashboard-config.js';
 import { attachOpenVerticalSpreads, openOptionTradeDetails } from '../webapp/option-dashboard-data.js';
 import { prepareOptionRelationships } from '../webapp/option-relationships-data.js';
-import { analyzeDecision, triggerCeiling } from './decisions.js';
+import { analyzeDecision, selectRollReferences, triggerCeiling } from './decisions.js';
 import { positionHistory } from './history.js';
-import { matchListed, readChain, readStock, type ChainEvidence, type UnderlyingEvidence } from './market.js';
+import { matchListed, readChain, readReplacementBooks, readStock, type ChainEvidence, type UnderlyingEvidence } from './market.js';
 import { usSessionDate } from './session.js';
 
 type SnapshotOfPositions = Awaited<ReturnType<typeof readBrokerPositionSnapshot>>;
@@ -24,7 +24,7 @@ export const positionVerification = {
   underlyingQuote: 'A same-session underlying quote in the contract currency is unavailable.',
   relatedLegs: 'Other same-account option legs exist. Confirm this put is held as a standalone position.',
 };
-const deps = { readBrokerPositionSnapshot, readStock, readChain, prepareOptionRelationships, readOptionRiskCostModel };
+const deps = { readBrokerPositionSnapshot, readStock, readChain, readReplacementBooks, prepareOptionRelationships, readOptionRiskCostModel };
 export type ScanDependencies = Partial<typeof deps>;
 
 function inWindow(h: Holding, session: Session) {
@@ -120,8 +120,19 @@ export async function scanPremarket(snapshot: InvestorSnapshot, session: Session
     const position = { currency: h.currency ?? 'Unknown', strike: option.strike, expiry: option.expiry, quantity: h.units, listed };
     const decision = analyzeDecision(position, history.cash, stock.stock, chain?.options ?? [], session.date, fee);
     return [{ key, underlying: option.underlying, source, position, stock: stock.stock, nativeId: h.broker_ref?.native_id ?? null,
-      recordedShares: option.multiplier, recordedSettlement: option.settlement, unverified, history, decision }];
+      recordedShares: option.multiplier, recordedSettlement: option.settlement, unverified, history, decision,
+      rollReferences: selectRollReferences(decision) }];
   });
+  // Keep the selected contracts visible even if their exact books return a one-sided quote.
+  await Promise.all([...chains].map(async ([symbol, chain]) => {
+    const scopedRows = rows.filter(row => row.underlying === symbol);
+    const replacements = scopedRows.flatMap(row => row.rollReferences.map(ref => ref.example.option));
+    if (!replacements.length) return;
+    chain.notices.push(...await runtime.readReplacementBooks(state, replacements));
+    for (const row of scopedRows) {
+      row.decision = analyzeDecision(row.position, row.history.cash, row.stock, chain.options, session.date, fee);
+    }
+  }));
   sources.sort((a, b) => a.label.localeCompare(b.label) || a.accountId.localeCompare(b.accountId));
   rows.sort((a, b) => a.underlying.localeCompare(b.underlying) || a.position.expiry.localeCompare(b.position.expiry) || a.key.localeCompare(b.key));
   return { session, startedAt: startedAt.toISOString(), collectedAt: new Date().toISOString(), revision: snapshot.revision, sources, notes,

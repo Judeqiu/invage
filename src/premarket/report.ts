@@ -192,33 +192,26 @@ function optionPriceReference(option: ListedOption | null, date: string) {
   return 'Bid/ask time unavailable';
 }
 
-function range(values: number[], format: (value: number) => string) {
-  const [min, max] = values.reduce(([low, high], value) => [Math.min(low, value), Math.max(high, value)], [Infinity, -Infinity]);
-  return min === max ? format(min) : `${format(min)} to ${format(max)}`;
-}
+const rollReferenceLabels = {
+  quoted: 'Quoted roll references',
+  equalOrHigherCash: 'Rolls with equal or higher assignment cash',
+  lowerCashLater: 'Lower assignment cash, later expiry',
+  lowerCashSameOrEarlier: 'Lower assignment cash, same or earlier expiry',
+};
 
 function rollReferences(row: Row, date: string): Array<[string, string]> {
-  const { hold, rolls } = row.decision;
-  const quoted = rolls.flatMap(roll => roll.grossFlow === null || roll.assignmentCash === null ? [] : [{
-    assignmentCash: roll.assignmentCash, flow: roll.grossFlow, days: roll.additionalDays, option: roll.option,
-  }]);
-  if (!quoted.length) return [['Roll', 'Refresh the held put ask and replacement bids to compare roll cash and the new assignment exposure.']];
-  const groups = new Map<string, typeof quoted>();
-  for (const item of quoted) {
-    const label = hold.assignmentCash === null ? 'Quoted roll references'
-      : item.assignmentCash >= hold.assignmentCash ? 'Rolls with equal or higher assignment cash'
-      : item.days > 0 ? 'Lower assignment cash, later expiry' : 'Lower assignment cash, same or earlier expiry';
-    const group = groups.get(label) ?? [];
-    group.push(item);
-    groups.set(label, group);
-  }
-  const amount = (n: number) => money(n, row.position.currency);
-  return [...groups].map(([label, group]) => {
-    const lowestCash = group.reduce((lowest, item) => item.assignmentCash < lowest.assignmentCash ||
-      item.assignmentCash === lowest.assignmentCash && item.days < lowest.days ? item : lowest);
-    const example = `${amount(lowestCash.option.strike)} put expiring ${lowestCash.option.expiry} calls for ${amount(lowestCash.assignmentCash)} if assigned, with ${amount(lowestCash.flow)} gross roll cash and an expiry change of ${number(lowestCash.days)} days. Replacement quote: ${optionPriceReference(lowestCash.option, date)}.`;
-    return [label, group.length === 1 ? example
-      : `Expiry changes range from ${range(group.map(r => r.days), number)} days. Lowest assignment cash in this group: ${example}.`];
+  if (!row.rollReferences.length) return [['Roll', 'Refresh the held put ask and replacement bids to compare roll cash and the new assignment exposure.']];
+  const amount = (n: number | null) => money(n, row.position.currency);
+  return row.rollReferences.map(({ kind, example, count, minDays, maxDays }) => {
+    const { option, assignmentCash, additionalDays } = example;
+    const cash = row.decision.rolls.find(roll => roll.option.id === option.id)?.grossFlow ?? null;
+    const flow = cash === null ? 'gross roll cash unavailable' : `${amount(cash)} gross roll cash`;
+    const quote = `${amount(option.quote.bid)} bid / ${amount(option.quote.ask)} ask per unit · ${optionPriceReference(option, date)}`;
+    const change = minDays === maxDays ? number(minDays) : `${number(minDays)} to ${number(maxDays)}`;
+    const contract = `${amount(option.strike)} put expiring ${option.expiry}`;
+    const intro = count === 1 ? `${contract} calls for`
+      : `Expiry changes range from ${change} days. The ${contract} has this group's lowest assignment cash at`;
+    return [rollReferenceLabels[kind], `${intro} ${amount(assignmentCash)} if assigned, with ${flow} and an expiry change of ${number(additionalDays)} days. Replacement quote ${quote}.`];
   });
 }
 

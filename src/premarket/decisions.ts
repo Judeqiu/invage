@@ -32,6 +32,8 @@ export interface StockQuote {
 }
 export interface ListedOption {
   id: string;
+  /** Native Cloud listing identity for order-book requests. */
+  cloudBookCode?: string;
   underlying: string;
   right: 'put' | 'call';
   strike: number;
@@ -167,4 +169,34 @@ export function analyzeDecision(position: DecisionPosition, cash: PositionCash, 
   });
   return { hold, close: { ...close, highlight: buyback !== null && close.preferredUnder !== null && buyback < close.preferredUnder },
     calls, rolls, feeReference: feeEstimate?.currency === currency ? feeEstimate.reference : null };
+}
+
+type RollReferenceKind = 'quoted' | 'equalOrHigherCash' | 'lowerCashLater' | 'lowerCashSameOrEarlier';
+type RollReference = {
+  kind: RollReferenceKind;
+  example: { option: ListedOption; assignmentCash: number; additionalDays: number };
+  count: number;
+  minDays: number;
+  maxDays: number;
+};
+
+export function selectRollReferences({ hold, rolls }: ReturnType<typeof analyzeDecision>): RollReference[] {
+  const groups = new Map<RollReferenceKind, RollReference>();
+  for (const { option, assignmentCash, additionalDays, grossFlow } of rolls) {
+    if (assignmentCash === null || grossFlow === null) continue;
+    const kind = hold.assignmentCash === null ? 'quoted' : assignmentCash >= hold.assignmentCash ? 'equalOrHigherCash'
+      : additionalDays > 0 ? 'lowerCashLater' : 'lowerCashSameOrEarlier';
+    const item = { option, assignmentCash, additionalDays };
+    const group = groups.get(kind);
+    if (!group) {
+      groups.set(kind, { kind, example: item, count: 1, minDays: additionalDays, maxDays: additionalDays });
+      continue;
+    }
+    group.count++;
+    group.minDays = Math.min(group.minDays, additionalDays);
+    group.maxDays = Math.max(group.maxDays, additionalDays);
+    if (assignmentCash < group.example.assignmentCash ||
+        assignmentCash === group.example.assignmentCash && additionalDays < group.example.additionalDays) group.example = item;
+  }
+  return [...groups.values()];
 }

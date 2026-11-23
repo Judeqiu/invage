@@ -256,8 +256,8 @@ function snapshotQuote(source: string, { row, collectedAt }: CloudSnapshot): Opt
   };
 }
 
-type HeldBook = Pick<OptionQuote, 'source' | 'collectedAt' | 'bookAsOf' | 'bid' | 'ask' | 'bidSize' | 'askSize'>;
-async function readHeldBook(cloud: CloudReader, code: string): Promise<HeldBook | null> {
+type OrderBook = Pick<OptionQuote, 'source' | 'collectedAt' | 'bookAsOf' | 'bid' | 'ask' | 'bidSize' | 'askSize'>;
+async function readOrderBook(cloud: CloudReader, code: string): Promise<OrderBook | null> {
   const result = await cloud.post(bookPath, { code, num: 1 });
   if (!Array.isArray(result) || result.length !== 1 || result[0]?.code !== code || !Array.isArray(result[0].books)) return null;
   const books = result[0].books;
@@ -277,6 +277,23 @@ async function readHeldBook(cloud: CloudReader, code: string): Promise<HeldBook 
   return { source: `${cloud.broker} Cloud ${bookPath}`, collectedAt: new Date().toISOString(),
     bookAsOf: sourceTime(book.exchange_data_time_ms), bid: asNumber(bid?.price), ask: asNumber(ask?.price),
     bidSize: size(bid), askSize: size(ask) };
+}
+
+async function refreshOrderBooks(cloud: CloudReader, options: Iterable<ListedOption>) {
+  const results = await Promise.all([...new Set(options)].map(async option => {
+    const code = option.cloudBookCode;
+    if (!code || option.quote.bookAsOf) return null;
+    const book = await readOrderBook(cloud, code).catch(() => null);
+    if (!book) return `${cloud.broker} Cloud order book unavailable for ${code}.`;
+    option.quote = { ...option.quote, ...book, priceFromSnapshot: false, lastTradeAt: null };
+    return null;
+  }));
+  return results.filter(notice => notice !== null);
+}
+
+export async function readReplacementBooks(state: InvestorState, options: ListedOption[]) {
+  const cloud = cloudReader(state);
+  return cloud ? refreshOrderBooks(cloud, options) : [];
 }
 
 function cloudOption(symbol: string, row: CloudContract, snapshot: CloudSnapshot | undefined,
@@ -308,7 +325,7 @@ function cloudOption(symbol: string, row: CloudContract, snapshot: CloudSnapshot
       bidSize: savedQuote.bidSize, askSize: savedQuote.askSize }
     : providerQuote ?? savedQuote ?? emptyQuote;
 
-  return { id: row.code, underlying: symbol, right: row.option_type === 'PUT' ? 'put' : 'call',
+  return { id: row.code, cloudBookCode: row.code, underlying: symbol, right: row.option_type === 'PUT' ? 'put' : 'call',
     strike: row.strike_price, expiry: row.strike_time, currency: 'USD', shares: shareOnly ? delivery : null,
     premiumMultiplier: multiplier ?? exactYahoo?.premiumMultiplier ?? null, exercise: exercise ?? exactYahoo?.exercise ?? null,
     shareOnly, source: sources.join(' and '), quote };
@@ -346,16 +363,8 @@ export async function readChain(state: InvestorState, symbol: string, date: stri
     options.set(row.code, cloudOption(symbol, row, snapshots.get(row.code), yahoo, listingSource, cloudSource));
   }
   const listed = [...options.values()];
-  const cloudCodes = new Set(contracts.map(row => row.code));
-  const heldContracts = new Set(held.flatMap(holding => {
-    const match = matchListed(holding, listed);
-    return match && cloudCodes.has(match.id) ? [match] : [];
-  }));
-  await Promise.all([...heldContracts].map(async option => {
-    const book = await readHeldBook(cloud, option.id).catch(() => null);
-    if (book) option.quote = { ...option.quote, ...book, priceFromSnapshot: false, lastTradeAt: null };
-    else notices.push(`${cloud.broker} Cloud order book unavailable for ${option.id}.`);
-  }));
+  const heldContracts = held.map(holding => matchListed(holding, listed)).filter(option => option !== null);
+  notices.push(...await refreshOrderBooks(cloud, heldContracts));
   events.push(...await actions);
   return { options: listed, events, notices: [...new Set(notices)] };
 }
