@@ -74,7 +74,7 @@ function flexPositions() {
   const openPosition = (exp: string, strike: number, quantity: number, conid: number) =>
     `<OpenPosition accountId="${account}" symbol="AMD   ${exp.slice(2).replaceAll('-', '')}P${String(strike * 1000).padStart(8, '0')}" assetCategory="OPT" position="${quantity}" strike="${strike}" expiry="${exp.replaceAll('-', '')}" putCall="P" underlyingSymbol="AMD" conid="${conid}" markPrice="15" costBasisMoney="-1000" currency="USD" multiplier="100" />`;
   return Buffer.from(`<FlexQueryResponse><FlexStatements><FlexStatement accountId="${account}" fromDate="${dates}" toDate="${dates}">
-  <OpenPositions>${openPosition(expiry, 100, -1, 42)}${openPosition(expiry, 90, -1, 43)}${openPosition('2026-12-22', 110, -1, 44)}${openPosition(expiry, 110, 0, 45)}</OpenPositions>
+  <OpenPositions>${openPosition(expiry, 100, -1, 42)}${openPosition('2026-12-18', 90, -1, 43)}${openPosition('2026-12-22', 110, -1, 44)}${openPosition(expiry, 110, 0, 45)}</OpenPositions>
   <CashReport><CashReportCurrency accountId="${account}" currency="USD" endingCash="99999" /></CashReport>
   </FlexStatement></FlexStatements></FlexQueryResponse>`);
 }
@@ -302,7 +302,7 @@ it('generates native decision reports from chat and the independent opt-in sched
     await chat.locator('::-p-aria([name="Skip tour"])').click();
     await chat.waitForSelector('[aria-labelledby="product-tour-title"]', { hidden: true });
     expect(requests).toHaveLength(0);
-    quote.preMarketPrice = 85;
+    quote.preMarketPrice = 95;
     await chat.focus(composer);
     await chat.keyboard.sendCharacter('现在生成期权决策报告');
     const weekendHref = await sendDraft();
@@ -310,10 +310,10 @@ it('generates native decision reports from chat and the independent opt-in sched
     expect(weekend.status).toBe(200);
     const weekendNote = (await weekend.json()).note;
     expect(weekendNote.title).toBe(`Options decision report · ${manualNow.toISOString()}`);
-    for (const expected of ['U.S. weekend', 'A same-session stock quote was unavailable for every position shown',
-      'historical quote as of', 'Historical order book from', '## Assignment exposure', 'USD 10,000 for positions with verified share deliverables',
-      '2 with unknown assignment cash', 'buyback USD 1,500', 'cash if assigned USD 10,000 for 100 shares',
-      'current put breakeven USD 90 per share', 'current put expiry P&amp;L USD -500', 'whole-strategy breakeven and expiry P&amp;L unavailable',
+    for (const expected of ['U.S. weekend', 'Same-session stock prices were unavailable for all positions shown',
+      'Historical quote from', 'Historical order book from', '## Cash needed if assigned, by stock', 'USD 10,000 for positions with verified share deliverables',
+      '1 with unknown assignment cash', 'Buying back the puts would cost USD 1,500', 'If assigned, you would pay USD 10,000 for 100 shares',
+      'Breakeven USD 90 per share for the current put', 'a gain of USD 500 for the current put before future charges', 'Whole-strategy figures are unavailable',
       'Roll example with less cash due if assigned and a later expiry', 'you would receive USD 200 before fees',
       'Selling the USD 95 put expiring Jan 15, 2027 would bring in USD 1,700',
       'you would pay USD 9,500 for 100 shares, compared with USD 10,000 on the current put',
@@ -338,7 +338,7 @@ it('generates native decision reports from chat and the independent opt-in sched
     expect(weekendNote.body).not.toContain('39 / 33');
     expect(market.bookCodes).toEqual([market.heldCode, market.replacementCode]);
     expect(market.chains.map(({ from, through }) => [from, through])).toEqual([
-      [expiry, rollExpiry], [expiry, rollExpiry], ['2026-12-22', '2026-12-22'],
+      ['2026-12-18', rollExpiry], ['2026-12-18', rollExpiry], ['2026-12-18', '2026-12-18'], ['2026-12-22', '2026-12-22'],
     ]);
     expect(market.chains[1].requestedAt - market.chains[0].requestedAt).toBeGreaterThanOrEqual(1000);
     expect((await api(`${weekendAttachments}/${weekendArchive.id}`, secondToken)).status).toBe(404);
@@ -378,7 +378,7 @@ it('generates native decision reports from chat and the independent opt-in sched
     const sameDay = await api(sameDayHref.replace('/notes/', '/api/notes/'), token);
     expect(sameDay.status).toBe(200);
     const sameDayNote = (await sameDay.json()).note;
-    expect(sameDayNote.body).toContain('No position met the scan criteria');
+    expect(sameDayNote.body).toContain('No positions met the scan criteria');
     expect(sameDayNote.body).toContain(REPORT_ARCHIVE_NAME);
     expect(sameDayNote.body).not.toContain('2026-11-23T11:59:50.000Z');
     const sameDayAttachments = sameDayHref.replace('/notes/', '/api/notes/') + '/attachments';
@@ -410,7 +410,9 @@ it('generates native decision reports from chat and the independent opt-in sched
     expect(openedChatNote).not.toBeNull();
     await openedChatNote!.waitForSelector(`${preview} h3`, { visible: true, timeout: 8000 });
     expect(await openedChatNote!.$eval(preview, node => node.textContent)).toContain('you would receive USD 200 before fees');
-    expect(await openedChatNote!.$eval(preview, node => node.textContent)).toContain('current put breakeven USD 90 per share');
+    expect(await openedChatNote!.$eval(preview, node => node.textContent)).toContain('Breakeven USD 90 per share for the current put');
+    expect(await openedChatNote!.$$eval(`${preview} h3`, nodes => nodes.map(node => node.textContent?.split(' · ')[0])))
+      .toEqual(['AMD USD 110 put', 'AMD USD 100 put', 'AMD USD 90 put']);
     await openedChatNote!.waitForSelector(`a[aria-label="Download ${REPORT_ARCHIVE_NAME}"]`, { visible: true });
     const noteTimes = '[aria-label="Note timestamps"] time';
     await openedChatNote!.waitForSelector(noteTimes, { visible: true });
@@ -466,7 +468,7 @@ it('generates native decision reports from chat and the independent opt-in sched
     const stored = await api(`/api/notes/${noteId}`, token);
     expect(stored.status).toBe(200);
     expect((await stored.json()).note).toMatchObject({ owner_user_id: owner, provenance: 'system',
-      body: expect.stringContaining('1 confirmed triggers') });
+      body: expect.stringContaining('1 position meets the scan criteria') });
     expect((await notes(secondToken)).items).toEqual([]);
     expect((await api(`/api/notes/${noteId}?ownerUserId=${owner}`, secondToken)).status).toBe(404);
 
@@ -491,10 +493,10 @@ it('generates native decision reports from chat and the independent opt-in sched
     expect(headings).toEqual(['Positions to review', 'Appendix']);
     expect(await report.$$eval(`${preview} h3`, nodes => nodes.length)).toBe(1);
     const contents = await report.$eval(preview, node => node.textContent);
-    for (const detail of ['cash if assigned USD 10,000', 'buyback USD 1,500', expiry, REPORT_ARCHIVE_NAME,
-      'Historical order book from', 'current leg P&L before close fee USD -500', 'you would pay USD 9,500 for 100 shares',
+    for (const detail of ['If assigned, you would pay USD 10,000 for 100 shares', 'Buying back the puts would cost USD 1,500', 'expires Dec 21, 2026', REPORT_ARCHIVE_NAME,
+      'Historical order book from', 'a loss of USD 500 for the current put before the closing fee', 'you would pay USD 9,500 for 100 shares',
       'the roll would cost USD 100 before fees', 'USD 14 bid and USD 17 ask per unit. Provider snapshot from Nov 20, 2026',
-      'current put breakeven USD 90 per share', 'current put expiry P&L USD 1,000', 'whole-strategy breakeven and expiry P&L unavailable']) {
+      'Breakeven USD 90 per share for the current put', 'a gain of USD 1,000 for the current put before future charges', 'Whole-strategy figures are unavailable']) {
       expect(contents).toContain(detail);
     }
     const dailyAttachments = `/api/notes/${noteId}/attachments`;
