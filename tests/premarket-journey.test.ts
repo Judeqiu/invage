@@ -294,6 +294,7 @@ it('generates native decision reports from chat and the independent opt-in sched
     await chat.locator('::-p-aria([name="Skip tour"])').click();
     await chat.waitForSelector('[aria-labelledby="product-tour-title"]', { hidden: true });
     expect(requests).toHaveLength(0);
+    quote.preMarketPrice = 85;
     await chat.focus(composer);
     await chat.keyboard.sendCharacter('现在生成期权决策报告');
     const weekendHref = await sendDraft();
@@ -301,8 +302,11 @@ it('generates native decision reports from chat and the independent opt-in sched
     expect(weekend.status).toBe(200);
     const weekendNote = (await weekend.json()).note;
     expect(weekendNote.title).toBe(`Options decision report · ${manualNow.toISOString()}`);
-    for (const expected of ['U.S. weekend', 'Verify position and quotes', 'Buyback before fees', 'Cash if assigned',
-      'USD 1,500', 'USD 10,000', '## Appendix', REPORT_ARCHIVE_NAME]) {
+    for (const expected of ['U.S. weekend', 'A same-session stock quote was unavailable for every position shown',
+      'historical quote as of', 'Historical book as of', '## Assignment exposure', 'USD 10,000 for positions with verified share deliverables',
+      '2 with unknown assignment cash', 'buyback USD 1,500', 'cash if assigned USD 10,000 for 100 shares',
+      'Lower assignment cash, later expiry', 'USD 95 put expiring', 'USD 100 gross roll cash',
+      `Provider price snapshot dated ${market.snapshotTime.slice(0, 10)}`, '## Appendix', REPORT_ARCHIVE_NAME]) {
       expect(weekendNote.body).toContain(expected);
     }
     await expect(api(weekendHref.replace('/notes/', '/api/notes/'), secondToken)).resolves.toHaveProperty('status', 404);
@@ -317,8 +321,8 @@ it('generates native decision reports from chat and the independent opt-in sched
       'Hold and accept possible assignment', 'Sell a covered call after assignment', 'Roll the put', 'Close the put',
       'New exercise cash / shares received', '23 / 19', 'USD 1,600', 'futubull Cloud chain unavailable for 2026-12-22.']) {
       expect(fullWeekendText).toContain(detail);
-      expect(weekendNote.body).not.toContain(detail);
     }
+    expect(weekendNote.body).not.toContain('39 / 33');
     expect(market.bookCodes).toHaveLength(1);
     expect(market.chains.map(({ from, through }) => [from, through])).toEqual([
       [expiry, rollExpiry], [expiry, rollExpiry], ['2026-12-22', '2026-12-22'],
@@ -328,6 +332,7 @@ it('generates native decision reports from chat and the independent opt-in sched
     // The preset prepares a draft in the same chat. This request makes a fresh
     // scan before the automatic window and its updated spot excludes the puts.
     manualNow = new Date(`${day}T11:59:55Z`);
+    quote.preMarketPrice = 110;
     vi.mocked(yf.quote).mockResolvedValueOnce({ ...quote, preMarketPrice: 150 } as never);
     const preset = createInvageChatQuestionLibrary().presets!.find(entry => entry.id === 'option_decision_report')!;
     await chat.bringToFront();
@@ -390,7 +395,8 @@ it('generates native decision reports from chat and the independent opt-in sched
     await chat.locator(chatLink).click();
     const openedChatNote = await (await chatLinkTarget).page();
     expect(openedChatNote).not.toBeNull();
-    await openedChatNote!.waitForSelector(`${preview} li`, { visible: true, timeout: 8000 });
+    await openedChatNote!.waitForSelector(`${preview} h3`, { visible: true, timeout: 8000 });
+    expect(await openedChatNote!.$eval(preview, node => node.textContent)).toContain('USD 100 gross roll cash');
     await openedChatNote!.waitForSelector(`a[aria-label="Download ${REPORT_ARCHIVE_NAME}"]`, { visible: true });
     const noteTimes = '[aria-label="Note timestamps"] time';
     await openedChatNote!.waitForSelector(noteTimes, { visible: true });
@@ -468,9 +474,10 @@ it('generates native decision reports from chat and the independent opt-in sched
     await report.waitForSelector(`${preview} li`, { timeout: 8000 });
     const headings = await report.$$eval(`${preview} h2`, nodes => nodes.map(node => node.textContent));
     expect(headings).toEqual(['Positions to review', 'Appendix']);
-    expect(await report.$$eval(`${preview} li`, nodes => nodes.length)).toBe(1);
+    expect(await report.$$eval(`${preview} h3`, nodes => nodes.length)).toBe(1);
     const contents = await report.$eval(preview, node => node.textContent);
-    for (const detail of ['USD 10,000', 'USD 1,500', expiry, REPORT_ARCHIVE_NAME, 'Compare holding and closing']) {
+    for (const detail of ['cash if assigned USD 10,000', 'buyback USD 1,500', expiry, REPORT_ARCHIVE_NAME,
+      'Historical book as of', 'current leg P&L before close fee USD -500', 'USD 9,500 if assigned']) {
       expect(contents).toContain(detail);
     }
     const dailyAttachments = `/api/notes/${noteId}/attachments`;
@@ -479,8 +486,8 @@ it('generates native decision reports from chat and the independent opt-in sched
     const completeDaily = await (await api(`${dailyAttachments}/${dailyArchive.id}`, token)).text();
     for (const detail of [rollExpiry, 'New exercise cash / shares received', 'USD 1,600', 'SHA-256', '39 / 33', market.exchangeTime]) {
       expect(completeDaily).toContain(detail);
-      expect(contents).not.toContain(detail);
     }
+    for (const detail of ['SHA-256', '39 / 33', 'New exercise cash / shares received']) expect(contents).not.toContain(detail);
     await report.setViewport({ width: 390, height: 844 });
     await report.waitForSelector(`${preview} li`, { visible: true });
     expect(await report.$eval(preview, node => node.scrollWidth)).toBe(await report.$eval(preview, node => node.clientWidth));

@@ -248,6 +248,7 @@ function snapshotQuote(source: string, { row, collectedAt }: CloudSnapshot): Opt
   return {
     source, collectedAt, bookAsOf: null, lastTradeAt: null,
     snapshotAsOf: sourceTime(row.update_time), snapshotDate: reportedDate(row.data_date),
+    priceFromSnapshot: true,
     bid: asNumber(row.bid_price), ask: asNumber(row.ask_price), bidSize: asNumber(row.bid_vol), askSize: asNumber(row.ask_vol),
     volume: asNumber(row.volume), openInterest: asNumber(row.option_open_interest), ivPercent: asNumber(row.option_implied_volatility),
     delta: asNumber(row.delta), gamma: asNumber(row.gamma), theta: asNumber(row.theta), vega: asNumber(row.vega), rho: asNumber(row.rho),
@@ -302,6 +303,7 @@ function cloudOption(symbol: string, row: CloudContract, snapshot: CloudSnapshot
   const savedQuote = yahoo?.quote;
   const quote = providerQuote && savedQuote && providerQuote.bid === null && providerQuote.ask === null
     ? { ...providerQuote, source: savedQuote.source, collectedAt: savedQuote.collectedAt,
+      priceFromSnapshot: false,
       lastTradeAt: savedQuote.lastTradeAt, bid: savedQuote.bid, ask: savedQuote.ask,
       bidSize: savedQuote.bidSize, askSize: savedQuote.askSize }
     : providerQuote ?? savedQuote ?? emptyQuote;
@@ -351,7 +353,7 @@ export async function readChain(state: InvestorState, symbol: string, date: stri
   }));
   await Promise.all([...heldContracts].map(async option => {
     const book = await readHeldBook(cloud, option.id).catch(() => null);
-    if (book) option.quote = { ...option.quote, ...book, lastTradeAt: null };
+    if (book) option.quote = { ...option.quote, ...book, priceFromSnapshot: false, lastTradeAt: null };
     else notices.push(`${cloud.broker} Cloud order book unavailable for ${option.id}.`);
   }));
   events.push(...await actions);

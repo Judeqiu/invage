@@ -17,6 +17,13 @@ import { usSessionDate } from './session.js';
 type SnapshotOfPositions = Awaited<ReturnType<typeof readBrokerPositionSnapshot>>;
 type ScanSource = { accountId: string; broker: string; label: string; asOf: string | null; capturedAt: string | null; reference: string | null; coverage: string[] };
 export type Session = { date: string; windowEnd: string };
+export const positionVerification = {
+  listing: 'U.S. equity listing could not be verified.',
+  broker: 'Latest account position evidence is incomplete or predates the trading session.',
+  contract: 'Exercise style or exact contract terms could not be verified.',
+  underlyingQuote: 'A same-session underlying quote in the contract currency is unavailable.',
+  relatedLegs: 'Other same-account option legs exist. Confirm this put is held as a standalone position.',
+};
 const deps = { readBrokerPositionSnapshot, readStock, readChain, prepareOptionRelationships, readOptionRiskCostModel };
 export type ScanDependencies = Partial<typeof deps>;
 
@@ -100,15 +107,15 @@ export async function scanPremarket(snapshot: InvestorSnapshot, session: Session
     const chain = chains.get(option.underlying);
     const listed = matchListed(h, chain?.options ?? []);
     if (details[key]?.spread || listed?.exercise === 'european') return [];
-    const unverified: string[] = [];
-    if (!stock.isUsEquity) unverified.push('U.S. equity listing could not be verified.');
-    if (source.coverage.length) unverified.push('Latest account position evidence is incomplete or predates the trading session.');
-    if (listed?.exercise !== 'american') unverified.push('Exercise style or exact contract terms could not be verified.');
+    const unverified: (keyof typeof positionVerification)[] = [];
+    if (!stock.isUsEquity) unverified.push('listing');
+    if (source.coverage.length) unverified.push('broker');
+    if (listed?.exercise !== 'american') unverified.push('contract');
     if (stock.stock?.currency !== h.currency || !stock.stock || usSessionDate(new Date(stock.stock.asOf)) !== session.date)
-      unverified.push('A same-session underlying quote in the contract currency is unavailable.');
+      unverified.push('underlyingQuote');
     const otherLegs = Object.values(positions).filter(other => other.channel === h.channel && other.units > 0 &&
       other.option?.underlying === option.underlying && (other.option.side === 'long' || other.option.right === 'call'));
-    if (otherLegs.length) unverified.push('Other same-account option legs exist. Confirm this put is held as a standalone position.');
+    if (otherLegs.length) unverified.push('relatedLegs');
     const history = positionHistory(state, relationships, h, source.accountId, details[key]);
     const position = { currency: h.currency ?? 'Unknown', strike: option.strike, expiry: option.expiry, quantity: h.units, listed };
     const decision = analyzeDecision(position, history.cash, stock.stock, chain?.options ?? [], session.date, fee);

@@ -5,6 +5,8 @@ export interface OptionQuote {
   bookAsOf: string | null;
   snapshotAsOf?: string | null;
   snapshotDate?: string | null;
+  /** The retained bid and ask come from the same provider snapshot as snapshotDate. */
+  priceFromSnapshot?: boolean;
   lastTradeAt: string | null;
   greeksSource?: string;
   greeksCollectedAt?: string | null;
