@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { analyzeDecision, triggerCeiling, type ListedOption, type PositionCash } from '../src/premarket/decisions.js';
+import { analyzeDecision, selectRollReferences, triggerCeiling, type ListedOption, type PositionCash } from '../src/premarket/decisions.js';
 import type { OptionExecution } from '../src/brokers/option-executions.js';
 import type { OptionRelationship, RollContract } from '../src/brokers/option-relationships.js';
 import type { InvestorState } from '../src/state/portfolio-state.js';
@@ -50,6 +50,19 @@ it('keeps verified current-put outcomes available when earlier cash flows cannot
   expect(withoutQuote).toMatchObject({ currentPutBreakeven: 90.02, currentPutExpiryAtSpot: null });
   const withoutFees = analyzeDecision(position, { ...incomplete, openFees: null }, stock, [], '2026-11-02').hold;
   expect(withoutFees).toMatchObject({ currentPutBreakeven: null, currentPutExpiryAtSpot: null });
+});
+
+it('prefers a credit roll even when cheaper assignment alternatives would cost money', () => {
+  const candidates = [19, 20, 20.5, 21, 22].map((bid, i) => ({ ...option, id: String(bid), strike: 90 + i,
+    quote: { ...option.quote, bid, ask: bid + 1 } }));
+  const fees = { ...cost, minimumOrderFee: 50 };
+  const decision = analyzeDecision(position, cash, stock, candidates, '2026-11-02', fees);
+  expect(decision.rolls.map(roll => roll.netFlowEstimate)).toEqual([-200, -100, -50, 0, 100]);
+  expect(selectRollReferences(decision)).toMatchObject([{ example: { option: { id: '22' }, netFlowEstimate: 100 } }]);
+  expect(selectRollReferences({ ...decision, rolls: decision.rolls.slice(0, -1) })).toEqual([]);
+
+  const beforeFees = analyzeDecision(position, cash, stock, candidates, '2026-11-02');
+  expect(selectRollReferences(beforeFees)).toMatchObject([{ example: { option: { id: '20.5' }, grossFlow: 50, netFlowEstimate: null } }]);
 });
 
 it('keeps the same Singapore start across U.S. DST, handles exchange holidays, and uses an inclusive calendar-day window', () => {

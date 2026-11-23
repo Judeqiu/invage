@@ -9,7 +9,7 @@ import type { InvestorSnapshot } from '../state/investor-store.js';
 import { readOptionRiskCostModel } from '../webapp/dashboard-config.js';
 import { attachOpenVerticalSpreads, openOptionTradeDetails } from '../webapp/option-dashboard-data.js';
 import { prepareOptionRelationships } from '../webapp/option-relationships-data.js';
-import { analyzeDecision, selectRollReferences, triggerCeiling } from './decisions.js';
+import { analyzeDecision, selectRollReferences, triggerCeiling, type ListedOption } from './decisions.js';
 import { positionHistory } from './history.js';
 import { matchListed, readChain, readReplacementBooks, readStock, type ChainEvidence, type UnderlyingEvidence } from './market.js';
 import { usSessionDate } from './session.js';
@@ -120,17 +120,21 @@ export async function scanPremarket(snapshot: InvestorSnapshot, session: Session
     const position = { currency: h.currency ?? 'Unknown', strike: option.strike, expiry: option.expiry, quantity: h.units, listed };
     const decision = analyzeDecision(position, history.cash, stock.stock, chain?.options ?? [], session.date, fee);
     return [{ key, underlying: option.underlying, source, position, stock: stock.stock, nativeId: h.broker_ref?.native_id ?? null,
-      recordedShares: option.multiplier, recordedSettlement: option.settlement, unverified, history, decision,
-      rollReferences: selectRollReferences(decision) }];
+      recordedShares: option.multiplier, recordedSettlement: option.settlement, unverified, history, decision }];
   });
-  // Keep the selected contracts visible even if their exact books return a one-sided quote.
   await Promise.all([...chains].map(async ([symbol, chain]) => {
     const scopedRows = rows.filter(row => row.underlying === symbol);
-    const replacements = scopedRows.flatMap(row => row.rollReferences.map(ref => ref.example.option));
-    if (!replacements.length) return;
-    chain.notices.push(...await runtime.readReplacementBooks(state, replacements));
-    for (const row of scopedRows) {
-      row.decision = analyzeDecision(row.position, row.history.cash, row.stock, chain.options, session.date, fee);
+    const checked = new Set<ListedOption>();
+    // If an exact book removes the quoted credit, check the next eligible example.
+    while (true) {
+      const replacements = [...new Set(scopedRows.flatMap(row =>
+        selectRollReferences(row.decision).map(ref => ref.example.option)))].filter(option => !checked.has(option));
+      if (!replacements.length) break;
+      for (const option of replacements) checked.add(option);
+      chain.notices.push(...await runtime.readReplacementBooks(state, replacements));
+      for (const row of scopedRows) {
+        row.decision = analyzeDecision(row.position, row.history.cash, row.stock, chain.options, session.date, fee);
+      }
     }
   }));
   sources.sort((a, b) => a.label.localeCompare(b.label) || a.accountId.localeCompare(b.accountId));

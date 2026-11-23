@@ -174,19 +174,20 @@ export function analyzeDecision(position: DecisionPosition, cash: PositionCash, 
 type RollReferenceKind = 'quoted' | 'equalOrHigherCash' | 'lowerCashLater' | 'lowerCashSameOrEarlier';
 type RollReference = {
   kind: RollReferenceKind;
-  example: { option: ListedOption; assignmentCash: number; additionalDays: number };
+  example: ReturnType<typeof analyzeDecision>['rolls'][number] & { assignmentCash: number; grossFlow: number };
 };
 
 export function selectRollReferences({ hold, rolls }: ReturnType<typeof analyzeDecision>): RollReference[] {
   const groups = new Map<RollReferenceKind, RollReference>();
-  for (const { option, assignmentCash, additionalDays, grossFlow } of rolls) {
-    if (assignmentCash === null || grossFlow === null) continue;
+  for (const roll of rolls) {
+    const { assignmentCash, additionalDays, grossFlow, netFlowEstimate } = roll;
+    if (assignmentCash === null || grossFlow === null || grossFlow <= 0 || (netFlowEstimate !== null && netFlowEstimate <= 0)) continue;
     const kind = hold.assignmentCash === null ? 'quoted' : assignmentCash >= hold.assignmentCash ? 'equalOrHigherCash'
       : additionalDays > 0 ? 'lowerCashLater' : 'lowerCashSameOrEarlier';
     const group = groups.get(kind);
     if (!group || assignmentCash < group.example.assignmentCash ||
         assignmentCash === group.example.assignmentCash && additionalDays < group.example.additionalDays) {
-      groups.set(kind, { kind, example: { option, assignmentCash, additionalDays } });
+      groups.set(kind, { kind, example: { ...roll, assignmentCash, grossFlow } });
     }
   }
   return [...groups.values()];

@@ -87,11 +87,11 @@ function cloudMarketFixture() {
     ...[expiry, rollExpiry].map(date => ({ expiry: date, strike: 115, right: 'CALL', bid: 3, ask: 4 })),
   ];
   const contracts = definitions.map(item => ({ ...item, code: `US.AMD${item.expiry.slice(2).replaceAll('-', '')}${item.right[0]}${item.strike * 1000}` }));
-  const [held, replacement] = contracts;
+  const [held, replacement, alternative] = contracts;
   const snapshotTime = '2026-11-20T20:58:00.000Z';
   const exchangeTime = '2026-11-20T20:59:20.000Z';
   const replacementTime = '2026-11-20T20:59:25.000Z';
-  let replacementUnavailable = false;
+  let noCreditRolls = false;
   const originalFetch = globalThis.fetch;
   const chains: Array<{ from: string | null; through: string | null; requestedAt: number }> = [];
   const bookCodes: string[] = [];
@@ -127,7 +127,7 @@ function cloudMarketFixture() {
         expect(code_list).toEqual(contracts.map(item => item.code));
         return reply({ snapshot_list: contracts.map(item => ({ code: item.code, option_valid: true, option_type: item.right,
           option_strike_price: item.strike, option_contract_size: 100, option_contract_multiplier: '100',
-          option_area_type: 'AMERICAN', bid_price: item.code === replacement.code && replacementUnavailable ? 14 : item.bid,
+          option_area_type: 'AMERICAN', bid_price: noCreditRolls && [replacement.code, alternative.code].includes(item.code) ? 14 : item.bid,
           ask_price: item.ask, bid_vol: 23, ask_vol: 19, volume: 0,
           option_open_interest: 20, option_implied_volatility: 38, delta: -.3, gamma: .04, theta: -.02, vega: .1, rho: -.01,
           update_time: Date.parse(snapshotTime), data_date: snapshotTime.slice(0, 10) })) });
@@ -135,19 +135,18 @@ function cloudMarketFixture() {
       case '/api/v1.0/quote/order-book': {
         const { code } = JSON.parse(String(init?.body));
         bookCodes.push(code);
-        expect([held.code, replacement.code]).toContain(code);
-        const isReplacement = code === replacement.code;
-        if (isReplacement && replacementUnavailable) return Response.json({ ret_code: -10 });
+        expect([held.code, replacement.code, alternative.code]).toContain(code);
+        const isReplacement = code !== held.code;
         return reply([{ code, books: [{ exchange: 'US', order_volume_precision: 0,
           exchange_data_time_ms: Date.parse(isReplacement ? replacementTime : exchangeTime), bid_flag: 1, ask_flag: 1,
-          bid_list: [{ price: isReplacement ? 17 : 14, volume: 39 }], ask_list: [{ price: isReplacement ? 18 : 15, volume: 33 }] }] }]);
+          bid_list: [{ price: code === alternative.code ? 17 : 14, volume: 39 }], ask_list: [{ price: isReplacement ? 18 : 15, volume: 33 }] }] }]);
       }
       default:
         throw new Error(`Unexpected test market endpoint ${url.pathname}`);
     }
   }) satisfies typeof fetch);
   return { chains, bookCodes, snapshotTime, exchangeTime, replacementTime, heldCode: held.code, replacementCode: replacement.code,
-    useReplacementSnapshot() { replacementUnavailable = true; } };
+    alternativeCode: alternative.code, removeCreditRolls() { noCreditRolls = true; } };
 }
 
 it('generates native decision reports from chat and the independent opt-in schedule', async () => {
@@ -314,9 +313,9 @@ it('generates native decision reports from chat and the independent opt-in sched
       'Historical quote from', 'Historical order book from', '## Cash needed if assigned, by stock', 'USD 10,000 for positions with verified share deliverables',
       '1 with unknown assignment cash', 'Buying back the puts would cost USD 1,500', 'If assigned, you would pay USD 10,000 for 100 shares',
       'Breakeven USD 90 per share for the current put', 'a gain of USD 500 for the current put before future charges', 'Whole-strategy figures are unavailable',
-      'Roll example with less cash due if assigned and a later expiry', 'you would receive USD 200 before fees',
-      'Selling the USD 95 put expiring Jan 15, 2027 would bring in USD 1,700',
-      'you would pay USD 9,500 for 100 shares, compared with USD 10,000 on the current put',
+      'Credit roll with less cash due if assigned and a later expiry', 'the credit would be USD 198 after estimated fees (USD 200 before fees)',
+      'Selling the USD 97 put expiring Jan 15, 2027 would bring in USD 1,700',
+      'you would pay USD 9,700 for 100 shares, compared with USD 10,000 on the current put',
       'The new put expires 25 days later than the current put',
       'USD 17 bid and USD 18 ask per unit. Historical order book from Nov 20, 2026 at 20:59:25 UTC', '## Appendix', REPORT_ARCHIVE_NAME]) {
       expect(weekendNote.body).toContain(expected);
@@ -332,11 +331,12 @@ it('generates native decision reports from chat and the independent opt-in sched
       '39 / 33', market.exchangeTime, market.snapshotTime, 'futubull Cloud /api/v1.0/quote/order-book',
       'Hold and accept possible assignment', 'Sell a covered call after assignment', 'Roll the put', 'Close the put',
       'Current put breakeven per share before future charges', 'Current put expiry P&amp;L at scan stock price before future charges',
-      'New exercise cash / shares received', '23 / 19', 'USD 1,700', market.replacementTime, 'futubull Cloud chain unavailable for 2026-12-22.']) {
+      'New exercise cash / shares received', '23 / 19', 'USD 1,700', 'USD -100 / USD -102', market.replacementTime, 'futubull Cloud chain unavailable for 2026-12-22.']) {
       expect(fullWeekendText).toContain(detail);
     }
     expect(weekendNote.body).not.toContain('39 / 33');
-    expect(market.bookCodes).toEqual([market.heldCode, market.replacementCode]);
+    expect(weekendNote.body).not.toContain('Selling the USD 95 put');
+    expect(market.bookCodes).toEqual([market.heldCode, market.replacementCode, market.alternativeCode]);
     expect(market.chains.map(({ from, through }) => [from, through])).toEqual([
       ['2026-12-18', rollExpiry], ['2026-12-18', rollExpiry], ['2026-12-18', '2026-12-18'], ['2026-12-22', '2026-12-22'],
     ]);
@@ -409,7 +409,7 @@ it('generates native decision reports from chat and the independent opt-in sched
     const openedChatNote = await (await chatLinkTarget).page();
     expect(openedChatNote).not.toBeNull();
     await openedChatNote!.waitForSelector(`${preview} h3`, { visible: true, timeout: 8000 });
-    expect(await openedChatNote!.$eval(preview, node => node.textContent)).toContain('you would receive USD 200 before fees');
+    expect(await openedChatNote!.$eval(preview, node => node.textContent)).toContain('the credit would be USD 198 after estimated fees');
     expect(await openedChatNote!.$eval(preview, node => node.textContent)).toContain('Breakeven USD 90 per share for the current put');
     expect(await openedChatNote!.$$eval(`${preview} h3`, nodes => nodes.map(node => node.textContent?.split(' · ')[0])))
       .toEqual(['AMD USD 110 put', 'AMD USD 100 put', 'AMD USD 90 put']);
@@ -419,7 +419,7 @@ it('generates native decision reports from chat and the independent opt-in sched
     expect(await openedChatNote!.$$eval(noteTimes, times => times.map(time => time.getAttribute('datetime'))))
       .toEqual([weekendNote.created_at, weekendNote.updated_at]);
     await openedChatNote!.close();
-    market.useReplacementSnapshot();
+    market.removeCreditRolls();
     await page.bringToFront();
     await page.goto(`${url}/settings/premarket-options`, { waitUntil: 'domcontentloaded' });
     frame = await (await settingsFrame())!.contentFrame();
@@ -494,8 +494,8 @@ it('generates native decision reports from chat and the independent opt-in sched
     expect(await report.$$eval(`${preview} h3`, nodes => nodes.length)).toBe(1);
     const contents = await report.$eval(preview, node => node.textContent);
     for (const detail of ['If assigned, you would pay USD 10,000 for 100 shares', 'Buying back the puts would cost USD 1,500', 'expires Dec 21, 2026', REPORT_ARCHIVE_NAME,
-      'Historical order book from', 'a loss of USD 500 for the current put before the closing fee', 'you would pay USD 9,500 for 100 shares',
-      'the roll would cost USD 100 before fees', 'USD 14 bid and USD 17 ask per unit. Provider snapshot from Nov 20, 2026',
+      'Historical order book from', 'a loss of USD 500 for the current put before the closing fee',
+      'No credit roll was found in the available quotes',
       'Breakeven USD 90 per share for the current put', 'a gain of USD 1,000 for the current put before future charges', 'Whole-strategy figures are unavailable']) {
       expect(contents).toContain(detail);
     }
@@ -503,15 +503,15 @@ it('generates native decision reports from chat and the independent opt-in sched
     const { items: [dailyArchive] } = await (await api(dailyAttachments, token)).json();
     expect(dailyArchive.name).toBe(REPORT_ARCHIVE_NAME);
     const completeDaily = await (await api(`${dailyAttachments}/${dailyArchive.id}`, token)).text();
-    for (const detail of [rollExpiry, 'New exercise cash / shares received', 'USD 1,400', 'SHA-256', '39 / 33', market.exchangeTime,
-      `futubull Cloud order book unavailable for ${market.replacementCode}.`]) {
+    for (const detail of [rollExpiry, 'New exercise cash / shares received', 'USD 1,400', 'USD -100 / USD -102',
+      'SHA-256', '39 / 33', market.exchangeTime]) {
       expect(completeDaily).toContain(detail);
     }
-    for (const detail of ['SHA-256', '39 / 33', 'New exercise cash / shares received']) expect(contents).not.toContain(detail);
+    for (const detail of ['SHA-256', '39 / 33', 'New exercise cash / shares received', 'Credit roll with']) expect(contents).not.toContain(detail);
     await report.setViewport({ width: 390, height: 844 });
     await report.waitForSelector(`${preview} li`, { visible: true });
     expect(await report.$eval(preview, node => node.scrollWidth)).toBe(await report.$eval(preview, node => node.clientWidth));
-    expect(market.bookCodes).toEqual([market.heldCode, market.replacementCode, market.heldCode, market.replacementCode]);
+    expect(market.bookCodes).toEqual([market.heldCode, market.replacementCode, market.alternativeCode, market.heldCode]);
     await page.bringToFront();
     await frame!.click('#enabled');
     await frame!.click('#save');

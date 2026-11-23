@@ -1,5 +1,5 @@
 import { escapeHtml } from '../report/html-kit.js';
-import { ABOVE_STRIKE_PERCENT, knownSum, stockMovePercent, triggerCeiling, type ListedOption } from './decisions.js';
+import { ABOVE_STRIKE_PERCENT, knownSum, selectRollReferences, stockMovePercent, triggerCeiling, type ListedOption } from './decisions.js';
 import { positionVerification, type PremarketScan } from './scan.js';
 import { calendarReference, usSessionDate } from './session.js';
 
@@ -200,38 +200,32 @@ function optionPriceReference(option: ListedOption | null, date: string) {
 }
 
 const rollReferenceLabels = {
-  quoted: 'Roll example',
-  equalOrHigherCash: 'Roll example with the same or more cash due if assigned',
-  lowerCashLater: 'Roll example with less cash due if assigned and a later expiry',
-  lowerCashSameOrEarlier: 'Roll example with less cash due if assigned and the same or earlier expiry',
+  quoted: 'Credit roll',
+  equalOrHigherCash: 'Credit roll with the same or more cash due if assigned',
+  lowerCashLater: 'Credit roll with less cash due if assigned and a later expiry',
+  lowerCashSameOrEarlier: 'Credit roll with less cash due if assigned and the same or earlier expiry',
 };
 
 function rollReferences(row: Row, date: string): Array<[string, string]> {
-  if (!row.rollReferences.length) return [['Roll', 'Refresh the held put ask and replacement bids to compare roll cash and the new assignment exposure.']];
+  const references = selectRollReferences(row.decision);
+  if (!references.length) return [['Roll', 'No credit roll was found in the available quotes. Other roll prices are in the appendix.']];
   const amount = (n: number | null) => money(n, row.position.currency);
   const buyback = row.decision.close.buyback;
   const currentAssignment = row.decision.hold.assignmentCash;
-  return row.rollReferences.map(({ kind, example }) => {
-    const { option, assignmentCash, additionalDays } = example;
-    const roll = row.decision.rolls.find(roll => roll.option.id === option.id);
-    const cash = roll?.grossFlow ?? null;
-    const proceeds = roll?.newIncome ?? null;
-    const flow = cash === null ? 'The net cost or credit to roll is unavailable.'
-      : cash < 0 ? `At these prices, the roll would cost ${amount(-cash)} before fees.`
-      : cash > 0 ? `At these prices, you would receive ${amount(cash)} before fees.`
-      : 'At these prices, the sale proceeds would cover the buyback before fees.';
+  return references.map(({ kind, example }) => {
+    const { option, assignmentCash, additionalDays, grossFlow, netFlowEstimate, newIncome, shares } = example;
+    const flow = netFlowEstimate === null ? `At these prices, the credit would be ${amount(grossFlow)} before fees. Fees are unknown.`
+      : `At these prices, the credit would be ${amount(netFlowEstimate)} after estimated fees (${amount(grossFlow)} before fees).`;
     const contract = `${amount(option.strike)} put expiring ${calendarDate(option.expiry)}`;
-    const replacement = proceeds === null ? `The replacement is the ${contract}.`
-      : `Selling the ${contract} would bring in ${amount(proceeds)}.`;
     const days = Math.abs(additionalDays);
     const expiryChange = additionalDays === 0 ? 'The expiry date stays the same.'
       : `The new put expires ${number(days)} ${days === 1 ? 'day' : 'days'} ${additionalDays < 0 ? 'earlier' : 'later'} than the current put.`;
-    const shares = roll?.shares == null ? '' : ` for ${number(roll.shares)} shares`;
+    const shareCount = shares === null ? '' : ` for ${number(shares)} shares`;
     const prior = currentAssignment === null ? '' : currentAssignment === assignmentCash ? ', the same cash as on the current put'
       : `, compared with ${amount(currentAssignment)} on the current put`;
     return [rollReferenceLabels[kind], [flow,
-      buyback === null ? '' : `Buying back the current put would cost ${amount(buyback)}.`, replacement,
-      `If assigned on the new put, you would pay ${amount(assignmentCash)}${shares}${prior}.`, expiryChange,
+      `Buying back the current put would cost ${amount(buyback)}. Selling the ${contract} would bring in ${amount(newIncome)}.`,
+      `If assigned on the new put, you would pay ${amount(assignmentCash)}${shareCount}${prior}.`, expiryChange,
       `The replacement quote was ${amount(option.quote.bid)} bid and ${amount(option.quote.ask)} ask per unit. ${optionPriceReference(option, date)}.`,
     ].filter(Boolean).join(' ')];
   });
