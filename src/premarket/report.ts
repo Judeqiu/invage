@@ -1,5 +1,5 @@
 import { escapeHtml } from '../report/html-kit.js';
-import { ABOVE_STRIKE_PERCENT, knownSum, selectRollReferences, stockMovePercent, triggerCeiling, type ListedOption } from './decisions.js';
+import { ABOVE_STRIKE_PERCENT, CALL_STRIKE_BAND_PERCENT, callStrikeBand, knownSum, selectRollReferences, stockMovePercent, triggerCeiling, type ListedOption } from './decisions.js';
 import { positionVerification, type PremarketScan } from './scan.js';
 import { calendarReference, usSessionDate } from './session.js';
 
@@ -86,15 +86,15 @@ You can be assigned before expiry. If assigned, you buy the shares at the strike
 ${fields([['Shares received / exercise cash', `${number(hold.delivered)} / ${amount(hold.assignmentCash)}`],
     ['Days to contract expiry', number(hold.daysToExpiry)],
     ['Whole-strategy breakeven per share before future charges', amount(hold.breakeven)],
-    ...(hold.breakeven === null && hold.currentPutBreakeven !== null
-      ? [['Current put breakeven per share before future charges', amount(hold.currentPutBreakeven)] as [string, string]] : []),
+    ...(hold.breakeven === null && hold.currentLegBreakeven !== null
+      ? [['Current put breakeven per share before future charges', amount(hold.currentLegBreakeven)] as [string, string]] : []),
     ['Cumulative net option cash to date', amount(hold.cumulativeNetCash)],
     ['Intrinsic / residual at the reference ask per unit', `${amount(hold.intrinsic)} / ${amount(hold.timeValueAtAsk)}`],
     ['Current leg / whole chain P&L at reference ask before new fees', `${amount(hold.currentLegPnlAtAsk)} / ${amount(hold.chainPnlAtAsk)}`],
     ['Whole-chain expiry P&L at strike', amount(hold.expiryAtStrike)],
     ['Whole-chain expiry P&L at scan stock price', amount(hold.expiryAtSpot)],
-    ...(hold.expiryAtSpot === null && hold.currentPutExpiryAtSpot !== null
-      ? [['Current put expiry P&L at scan stock price before future charges', amount(hold.currentPutExpiryAtSpot)] as [string, string]] : []),
+    ...(hold.expiryAtSpot === null && hold.currentLegExpiryAtSpot !== null
+      ? [['Current put expiry P&L at scan stock price before future charges', amount(hold.currentLegExpiryAtSpot)] as [string, string]] : []),
     ['Whole-chain expiry P&L if stock goes to zero', amount(hold.expiryAtZero)]])}
 
 #### Sell a covered call after assignment
@@ -204,6 +204,8 @@ const rollReferenceLabels = {
   equalOrHigherCash: 'Credit roll with the same or more cash due if assigned',
   lowerCashLater: 'Credit roll with less cash due if assigned and a later expiry',
   lowerCashSameOrEarlier: 'Credit roll with less cash due if assigned and the same or earlier expiry',
+  callHigherStrike: 'Credit roll to a higher strike',
+  callSameOrLowerStrike: 'Credit roll to the same or a lower strike',
 };
 
 function rollReferences(row: Row, date: string): Array<[string, string]> {
@@ -212,20 +214,24 @@ function rollReferences(row: Row, date: string): Array<[string, string]> {
   const amount = (n: number | null) => money(n, row.position.currency);
   const buyback = row.decision.close.buyback;
   const currentAssignment = row.decision.hold.assignmentCash;
+  const right = row.position.right;
   return references.map(({ kind, example }) => {
     const { option, assignmentCash, additionalDays, grossFlow, netFlowEstimate, newIncome, shares } = example;
     const flow = netFlowEstimate === null ? `At these prices, the credit would be ${amount(grossFlow)} before fees. Fees are unknown.`
       : `At these prices, the credit would be ${amount(netFlowEstimate)} after estimated fees (${amount(grossFlow)} before fees).`;
-    const contract = `${amount(option.strike)} put expiring ${calendarDate(option.expiry)}`;
+    const contract = `${amount(option.strike)} ${right} expiring ${calendarDate(option.expiry)}`;
     const days = Math.abs(additionalDays);
     const expiryChange = additionalDays === 0 ? 'The expiry date stays the same.'
-      : `The new put expires ${number(days)} ${days === 1 ? 'day' : 'days'} ${additionalDays < 0 ? 'earlier' : 'later'} than the current put.`;
+      : `The new ${right} expires ${number(days)} ${days === 1 ? 'day' : 'days'} ${additionalDays < 0 ? 'earlier' : 'later'} than the current ${right}.`;
     const shareCount = shares === null ? '' : ` for ${number(shares)} shares`;
-    const prior = currentAssignment === null ? '' : currentAssignment === assignmentCash ? ', the same cash as on the current put'
-      : `, compared with ${amount(currentAssignment)} on the current put`;
+    const prior = currentAssignment === null ? '' : currentAssignment === assignmentCash ? `, the same cash as on the current ${right}`
+      : `, compared with ${amount(currentAssignment)} on the current ${right}`;
+    const assignment = right === 'call'
+      ? `If assigned on the new call, you would deliver ${number(shares)} shares and receive ${amount(assignmentCash)} before charges${prior}.`
+      : `If assigned on the new put, you would pay ${amount(assignmentCash)}${shareCount}${prior}.`;
     return [rollReferenceLabels[kind], [flow,
-      `Buying back the current put would cost ${amount(buyback)}. Selling the ${contract} would bring in ${amount(newIncome)}.`,
-      `If assigned on the new put, you would pay ${amount(assignmentCash)}${shareCount}${prior}.`, expiryChange,
+      `Buying back the current ${right} would cost ${amount(buyback)}. Selling the ${contract} would bring in ${amount(newIncome)}.`,
+      assignment, expiryChange,
       `The replacement quote was ${amount(option.quote.bid)} bid and ${amount(option.quote.ask)} ask per unit. ${optionPriceReference(option, date)}.`,
     ].filter(Boolean).join(' ')];
   });
@@ -246,7 +252,8 @@ function positionChecks(row: Row, date: string) {
 function positionsInReviewOrder(rows: Row[]) {
   return rows.map(row => {
     const { stock, position } = row;
-    const distance = stock?.currency === position.currency ? stockMovePercent(stock.price, position.strike) : NaN;
+    const distance = stock?.currency === position.currency
+      ? stockMovePercent(stock.price, position.strike) * (position.right === 'put' ? 1 : -1) : NaN;
     const group = !Number.isFinite(distance) ? 1 : distance <= 0 ? 0 : 2;
     return { row, group, distance };
   }).sort((a, b) => a.group - b.group || (a.group === 1 ? 0 : a.distance - b.distance) ||
@@ -257,32 +264,109 @@ function gainOrLoss(value: number, currency: string) {
   return value < 0 ? `a loss of ${money(-value, currency)}` : value > 0 ? `a gain of ${money(value, currency)}` : 'no gain or loss';
 }
 
+function closeReference(row: Row, date: string) {
+  const { right, currency, listed } = row.position;
+  const { close } = row.decision;
+  if (close.buyback === null) return 'Buyback price unavailable.';
+  const outcome = close.chainNetBeforeFutureFees ?? close.thisNetBeforeFutureFees;
+  const scope = close.chainNetBeforeFutureFees !== null
+    ? (right === 'put' ? 'for the whole strategy' : 'across the recorded call trades')
+    : `for the current ${right}`;
+  return [
+    `Buying back the ${right}s would cost ${money(close.buyback, currency)} before fees.`,
+    outcome === null ? 'Profit or loss at that price is unavailable.'
+      : `Closing at that price would mean ${gainOrLoss(outcome, currency)} ${scope} before the closing fee.`,
+    `Estimated fee ${money(close.feeEstimate, currency)}.`, `${optionPriceReference(listed, date)}.`,
+    close.highlight && right === 'put' ? `The buyback is below your closing threshold of ${money(close.preferredUnder, currency)}.` : '',
+  ].filter(Boolean).join(' ');
+}
+
+function positionHeading(row: Row, account: string) {
+  const { position } = row;
+  const quantity = `${number(position.quantity)} ${position.quantity === 1 ? 'contract' : 'contracts'}`;
+  return `### ${inline(row.underlying)} ${inline(money(position.strike, position.currency))} ${position.right} · expires ${text(calendarDate(position.expiry))} · ${inline(account)} · ${inline(quantity)}`;
+}
+
+function stockReference(row: Row, date: string, showDistance = false) {
+  const { stock, position } = row;
+  if (!stock) return 'Stock quote unavailable.';
+  const distance = stock.currency === position.currency ? stockMovePercent(stock.price, position.strike) : null;
+  const comparison = distance === null ? '' : distance === 0 ? ', at strike'
+    : `, ${showDistance ? `${number(Math.abs(distance))}% ` : ''}${distance < 0 ? 'below' : 'above'} strike`;
+  const label = usSessionDate(new Date(stock.asOf)) === date ? 'Quoted' : 'Historical quote from';
+  return `${money(stock.price, stock.currency)}${comparison}. ${label} ${quoteTime(stock.asOf)}.`;
+}
+
+function callSummary(row: Row, date: string) {
+  const { hold } = row.decision;
+  const { accountShares, inSpread, otherLegs, position } = row;
+  const days = hold.daysToExpiry;
+  const expiry = days === 0 ? 'Expires today.' : `Expires in ${number(days)} calendar ${days === 1 ? 'day' : 'days'}.`;
+  const delivery = hold.delivered === null ? 'The share delivery obligation is unknown.'
+    : `If assigned, you would deliver ${number(hold.delivered)} shares and receive ${money(hold.assignmentCash, position.currency)} before charges.`;
+  const shares = accountShares === null ? 'Same-account stock position unavailable.'
+    : `The broker snapshot shows ${number(accountShares)} shares in this account.`;
+  const related = inSpread ? 'The broker history links this call to a spread. Review both legs before closing or rolling.'
+    : otherLegs.length ? 'This account holds other options on the same stock. Check how they affect share delivery before acting.' : '';
+  const checks = positionChecks(row, date);
+  const quoteStatus = row.unverified.includes('underlyingQuote') ? ' Urgency needs a same-session price.' : '';
+  const comparison: Array<[string, string]> = [['Stock price', `${stockReference(row, date, true)} ${expiry}${quoteStatus}`]];
+  if (checks) comparison.push(['What to verify', checks]);
+  comparison.push(['Hold', [delivery, shares, 'Assignment can occur before expiry.', related].filter(Boolean).join(' ')],
+    ['Close', closeReference(row, date)], ...rollReferences(row, date));
+  return comparison;
+}
+
+function callEvidence(row: Row) {
+  const { source, position, stock, nativeId, history, decision, otherLegs } = row;
+  const { floor, ceiling } = callStrikeBand(position.strike);
+  const amount = (n: number | null) => money(n, position.currency);
+  return [
+    `### ${text(source.label)} · ${text(position.expiry)} call · ${inline(amount(position.strike))}`,
+    fields([
+      ['Account / broker snapshot / native identity', `${source.accountId} / ${source.asOf ?? 'Unknown'} / ${nativeId ?? 'Unknown'}`],
+      ['Contracts / broker-reported settlement / shares per contract', `${number(position.quantity)} / ${row.recordedSettlement} / ${number(row.recordedShares)}`],
+      ['Underlying quote', stockQuote(stock)],
+      ['Strike band', `${amount(floor)} through ${amount(ceiling)}`],
+      ['Shares to deliver / proceeds if assigned before charges', `${number(decision.hold.delivered)} / ${amount(decision.hold.assignmentCash)}`],
+      ['Shares reported in the same account', number(row.accountShares)],
+      ['Buyback at reference ask / estimated fee', `${amount(decision.close.buyback)} / ${amount(decision.close.feeEstimate)}`],
+      ['Current call P&L before new fees / including estimated close fee', `${amount(decision.close.thisNetBeforeFutureFees)} / ${amount(decision.close.thisNetWithEstimatedFee)}`],
+      ['Recorded call chain P&L before new fees / including estimated close fee', `${amount(decision.close.chainNetBeforeFutureFees)} / ${amount(decision.close.chainNetWithEstimatedFee)}`],
+      ['Fee estimate basis', decision.feeReference ?? 'Unavailable'],
+    ]),
+    notes(row.unverified.map(issue => positionVerification[issue])),
+    details('Current call quote and terms', quote(position.listed)),
+    otherLegs.length ? details('Other options in this account on the same stock', notes(otherLegs.map(({ option, quantity, currency }) =>
+      `${option.side} ${option.right} · ${money(option.strike, currency ?? 'Unknown currency')} · ${option.expiry} · ${number(quantity)} contracts`))) : '',
+    details('Opening cash and fees', [fields([
+      ['Current opening proceeds / actual fees and rebates', `${amount(history.cash.openGross)} / ${amount(history.cash.openFees)}`],
+      ['Recorded chain gross cash / actual fees and rebates', `${amount(history.cash.chainGross)} / ${amount(history.cash.chainFees)}`],
+    ]), notes(history.notices)].filter(Boolean).join('\n\n')),
+    '#### Roll the call',
+    ...(decision.rolls.length ? decision.rolls.map(roll => details(
+      `${roll.option.expiry} · ${amount(roll.option.strike)} call · reference roll cash ${amount(roll.grossFlow)}`,
+      [quote(roll.option), fields([
+        ['Sell-to-open proceeds at reference bid', amount(roll.newIncome)],
+        ['Roll cash before fees / after estimated fees', `${amount(roll.grossFlow)} / ${amount(roll.netFlowEstimate)}`],
+        ['Days to expiry / change in days', `${number(roll.daysToExpiry)} / ${number(roll.additionalDays)}`],
+        ['Shares to deliver / proceeds if assigned before charges', `${number(roll.shares)} / ${amount(roll.assignmentCash)}`],
+      ])].join('\n\n'))) : ['Available replacement calls could not be established.']),
+  ].filter(Boolean).join('\n\n');
+}
+
 function positionSummary(scan: PremarketScan, positions: Row[]) {
   const labels = new Map<string, number>();
   for (const source of scan.sources) labels.set(source.label, (labels.get(source.label) ?? 0) + 1);
   const rows = positions.map(row => {
-    const { position, source, stock, decision } = row;
-    const { close, hold } = decision;
+    const { position, source, decision } = row;
     const account = (labels.get(source.label) ?? 0) > 1 ? `${source.label} · ${source.accountId}` : source.label;
-    const contract = `${row.underlying} ${money(position.strike, position.currency)} put`;
-    const quantity = `${number(position.quantity)} ${position.quantity === 1 ? 'contract' : 'contracts'}`;
+    const heading = positionHeading(row, account);
+    if (position.right === 'call') return `${heading}\n\n${fields(callSummary(row, scan.session.date))}`;
+    const { hold } = decision;
     const amount = (n: number | null) => money(n, position.currency);
-    const compareStrike = stock?.currency === position.currency
-      ? stock.price < position.strike ? 'below strike' : stock.price > position.strike ? 'above strike' : 'at strike'
-      : '';
-    const stockRef = stock ? `${money(stock.price, stock.currency)}${compareStrike ? `, ${compareStrike}` : ''}. ${
-      usSessionDate(new Date(stock.asOf)) === scan.session.date ? 'Quoted' : 'Historical quote from'} ${quoteTime(stock.asOf)}.` : 'Stock quote unavailable.';
-    const closeOutcome = close.chainNetBeforeFutureFees ?? close.thisNetBeforeFutureFees;
-    const closeScope = close.chainNetBeforeFutureFees !== null ? 'for the whole strategy' : 'for the current put';
-    const closeReference = close.buyback === null ? 'Buyback price unavailable.' : [
-      `Buying back the puts would cost ${amount(close.buyback)} before fees.`,
-      closeOutcome === null ? 'Profit or loss at that price is unavailable.'
-        : `Closing at that price would mean ${gainOrLoss(closeOutcome, position.currency)} ${closeScope} before the closing fee.`,
-      `Estimated fee ${amount(close.feeEstimate)}.`, `${optionPriceReference(position.listed, scan.session.date)}.`,
-      close.highlight ? `The buyback is below your closing threshold of ${amount(close.preferredUnder)}.` : '',
-    ].filter(Boolean).join(' ');
-    const breakeven = hold.breakeven ?? hold.currentPutBreakeven;
-    const expiry = hold.expiryAtSpot ?? hold.currentPutExpiryAtSpot;
+    const breakeven = hold.breakeven ?? hold.currentLegBreakeven;
+    const expiry = hold.expiryAtSpot ?? hold.currentLegExpiryAtSpot;
     const breakevenScope = hold.breakeven !== null ? 'for the whole strategy' : 'for the current put';
     const expiryScope = hold.expiryAtSpot !== null ? 'for the whole strategy' : 'for the current put';
     const holdReference = [
@@ -293,18 +377,19 @@ function positionSummary(scan: PremarketScan, positions: Row[]) {
       hold.cumulativeNetCash === null && (breakeven !== null || expiry !== null) ? 'Whole-strategy figures are unavailable.' : '',
     ].filter(Boolean).join(' ');
     const checks = positionChecks(row, scan.session.date);
-    const comparison: Array<[string, string]> = [['Stock price', stockRef]];
+    const comparison: Array<[string, string]> = [['Stock price', stockReference(row, scan.session.date)]];
     if (checks) comparison.push(['What to verify', checks]);
-    comparison.push(['Close', closeReference], ['Hold', holdReference], ...rollReferences(row, scan.session.date));
-    return `### ${inline(contract)} · expires ${text(calendarDate(position.expiry))} · ${inline(account)} · ${inline(quantity)}\n\n${fields(comparison)}`;
+    comparison.push(['Close', closeReference(row, scan.session.date)], ['Hold', holdReference], ...rollReferences(row, scan.session.date));
+    return `${heading}\n\n${fields(comparison)}`;
   });
   return rows.join('\n\n');
 }
 
 export function renderPremarketReport(scan: PremarketScan, trigger?: ReportTrigger) {
-  const positions = positionsInReviewOrder(scan.rows);
+  const puts = positionsInReviewOrder(scan.rows.filter(row => row.position.right === 'put'));
+  const calls = positionsInReviewOrder(scan.rows.filter(row => row.position.right === 'call'));
   const bySymbol = new Map<string, Row[]>();
-  for (const row of positions) bySymbol.set(row.underlying, [...(bySymbol.get(row.underlying) ?? []), row]);
+  for (const row of [...puts, ...calls]) bySymbol.set(row.underlying, [...(bySymbol.get(row.underlying) ?? []), row]);
   const { confirmed, unverified, incomplete } = reportCoverage(scan);
   const title = trigger?.kind === 'manual'
     ? `Options decision report · ${scan.startedAt}` : `Premarket options · ${scan.session.date}`;
@@ -315,23 +400,24 @@ export function renderPremarketReport(scan: PremarketScan, trigger?: ReportTrigg
   const sections = [...bySymbol].map(([symbol, rows]) => {
     const currencies = [...new Set(rows.map(row => row.position.currency))];
     const totals = currencies.flatMap(currency => {
-      const matching = rows.filter(row => row.position.currency === currency && !row.unverified.length);
+      const matching = rows.filter(row => row.position.right === 'put' && row.position.currency === currency && !row.unverified.length);
       if (!matching.length) return [];
       return [`${number(matching.length)} confirmed positions · assignment cash across these positions ${money(knownSum(...matching.map(row => row.decision.hold.assignmentCash)), currency)} · chain net cash to date ${money(knownSum(...matching.map(row => row.decision.hold.cumulativeNetCash)), currency)}`];
     });
     const chain = scan.market.get(symbol);
     const heading = [`## ${text(symbol)}`, ...totals.map(inline),
       ...(chain ? [notes([...chain.events.map(event => `${event.date} · ${event.kind} · ${event.detail} · ${event.source}`), ...chain.notices])] : [])];
-    return [...heading, ...rows.map(positionEvidence)].filter(Boolean).join('\n\n');
+    return [...heading, ...rows.map(row => row.position.right === 'put' ? positionEvidence(row) : callEvidence(row))]
+      .filter(Boolean).join('\n\n');
   });
   const introduction = [
     trigger?.kind === 'manual' ? `**Generated on demand** · ${manualMarkets[trigger.market]}` : '',
     `${number(confirmed)} confirmed triggers · ${number(unverified)} need verification`,
     fields([[trigger ? 'U.S. scan date' : 'U.S. trading session', scan.session.date], ['Last included expiry', scan.session.windowEnd],
       ['Scan start / collection completed (UTC)', `${scan.startedAt} / ${scan.collectedAt}`],
-      ...(trigger ? [['Short puts checked before eligibility filters', number(scan.inspected)] as [string, string]] : []),
+      ...(trigger ? [['Short puts / short calls checked in the expiry window', `${number(scan.inspected.puts)} / ${number(scan.inspected.calls)}`] as [string, string]] : []),
       ['Saved execution history revision', number(scan.revision)], ['Trading calendar', calendarReference]]),
-    trigger ? `The scan covers open short American puts expiring from the scan date through the last included expiry. The underlying price can be at most ${ABOVE_STRIKE_PERCENT}% above the strike.` : '',
+    trigger ? `The scan checks short American puts and calls from the scan date through the last included expiry. Puts qualify up to ${ABOVE_STRIKE_PERCENT}% above strike. Calls qualify from ${CALL_STRIKE_BAND_PERCENT}% below through ${CALL_STRIKE_BAND_PERCENT}% above strike.` : '',
     'All comparisons use the same underlying observation per symbol and option prices collected during this scan. Books without a source timestamp can carry prior-session prices. Reference bid and ask calculations do not establish trade execution. Values are kept in broker currency. Economic breakeven reflects strategy cash flows without establishing a tax basis.',
     notes(scan.notes),
     '## Broker position evidence',
@@ -355,11 +441,14 @@ export function renderPremarketReport(scan: PremarketScan, trigger?: ReportTrigg
       ? 'Same-session stock prices were unavailable for all positions shown. Earlier quotes are for comparison.' : '',
     notes(scan.notes),
     notes(scan.sources.filter(source => source.coverage.length).map(source => `${source.label} · account ${source.accountId} needs a broker position refresh or reconciliation.`)),
-    positions.length ? `## Positions to review\n\nPuts with stock at or below strike come first, starting with the stock furthest below its strike in percentage terms. Positions without a comparable stock price come next, then puts with stock above strike.\n\n${positionSummary(scan, positions)}` : empty,
-    assignmentExposure(positions),
-    positions.length ? 'A buyback removes assignment risk once it fills. Holding can lead to early assignment, and the stock can fall further. The two prices in a roll may come from different times. A covered call after share delivery brings in premium and limits gains on the shares it covers.' : '',
+    puts.length ? `## Positions to review\n\nPuts with stock at or below strike come first, starting with the stock furthest below its strike in percentage terms. Positions without a comparable stock price come next, then puts with stock above strike.\n\n${positionSummary(scan, puts)}` : '',
+    calls.length ? `## Urgent short calls\n\nCalls in the expiry window qualify when the stock is within ${CALL_STRIKE_BAND_PERCENT}% of the strike in either direction. Calls without a same-session stock quote need verification.\n\n${positionSummary(scan, calls)}` :
+      puts.length ? `## Urgent short calls\n\n${incomplete ? 'No matching calls were found in the available evidence.' : 'No short calls met the scan criteria.'}` : '',
+    scan.rows.length ? '' : empty,
+    assignmentExposure(puts),
+    puts.length ? 'A buyback removes assignment risk once it fills. Holding can lead to early assignment, and the stock can fall further. The two prices in a roll may come from different times. A covered call after share delivery brings in premium and limits gains on the shares it covers.' : '',
     '## Appendix',
-    `In **Note details**, download **${REPORT_ARCHIVE_NAME}** for quote times, broker records, and the full comparisons for holding, closing, rolling, and selling covered calls after assignment.`,
+    `In **Note details**, download **${REPORT_ARCHIVE_NAME}** for quote times, broker records, and the full comparisons for holding, closing, rolling, and selling covered calls after put assignment.`,
   ].filter(Boolean).join('\n\n');
   const completeBody = [`# ${inline(title)} · Appendix`, ...introduction, ...(sections.length ? sections : [empty])]
     .filter(Boolean).join('\n\n');

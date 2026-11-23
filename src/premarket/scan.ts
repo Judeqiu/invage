@@ -9,7 +9,7 @@ import type { InvestorSnapshot } from '../state/investor-store.js';
 import { readOptionRiskCostModel } from '../webapp/dashboard-config.js';
 import { attachOpenVerticalSpreads, openOptionTradeDetails } from '../webapp/option-dashboard-data.js';
 import { prepareOptionRelationships } from '../webapp/option-relationships-data.js';
-import { analyzeDecision, selectRollReferences, triggerCeiling, type ListedOption } from './decisions.js';
+import { analyzeDecision, inCallStrikeBand, selectRollReferences, triggerCeiling, type ListedOption } from './decisions.js';
 import { positionHistory } from './history.js';
 import { matchListed, readChain, readReplacementBooks, readStock, type ChainEvidence, type UnderlyingEvidence } from './market.js';
 import { usSessionDate } from './session.js';
@@ -28,7 +28,7 @@ const deps = { readBrokerPositionSnapshot, readStock, readChain, readReplacement
 export type ScanDependencies = Partial<typeof deps>;
 
 function inWindow(h: Holding, session: Session) {
-  return h.instrument === 'option' && h.option?.right === 'put' && h.option.side === 'short' &&
+  return h.instrument === 'option' && h.option?.side === 'short' &&
     h.units > 0 && validDate(h.option.expiry) && h.option.expiry >= session.date && h.option.expiry <= session.windowEnd;
 }
 
@@ -82,9 +82,10 @@ export async function scanPremarket(snapshot: InvestorSnapshot, session: Session
   const stocks = new Map(await Promise.all(symbols.map(async symbol =>
     [symbol, await runtime.readStock(symbol).catch(() => unknownStock)] as const)));
   const retained = candidates.filter(([, h]) => {
-    const quote = stocks.get(h.option!.underlying)?.stock;
-    const sameSession = quote && usSessionDate(new Date(quote.asOf)) === session.date;
-    return !sameSession || quote.currency !== h.currency || quote.price <= triggerCeiling(h.option!.strike);
+    const option = h.option!;
+    const quote = stocks.get(option.underlying)?.stock;
+    if (!quote || quote.currency !== h.currency || usSessionDate(new Date(quote.asOf)) !== session.date) return true;
+    return option.right === 'call' ? inCallStrikeBand(quote.price, option.strike) : quote.price <= triggerCeiling(option.strike);
   });
   const chains = new Map<string, ChainEvidence>();
   const relationshipsTask = retained.length ? runtime.prepareOptionRelationships(state).catch(() => null) : Promise.resolve(null);
@@ -106,21 +107,28 @@ export async function scanPremarket(snapshot: InvestorSnapshot, session: Session
     const stock = stocks.get(option.underlying) ?? unknownStock;
     const chain = chains.get(option.underlying);
     const listed = matchListed(h, chain?.options ?? []);
-    if (details[key]?.spread || listed?.exercise === 'european') return [];
+    if ((option.right === 'put' && details[key]?.spread) || listed?.exercise === 'european') return [];
     const unverified: (keyof typeof positionVerification)[] = [];
     if (!stock.isUsEquity) unverified.push('listing');
     if (source.coverage.length) unverified.push('broker');
-    if (listed?.exercise !== 'american') unverified.push('contract');
+    if (listed?.exercise !== 'american' || (option.right === 'call' && !listed.shareOnly)) unverified.push('contract');
     if (stock.stock?.currency !== h.currency || !stock.stock || usSessionDate(new Date(stock.stock.asOf)) !== session.date)
       unverified.push('underlyingQuote');
-    const otherLegs = Object.values(positions).filter(other => other.channel === h.channel && other.units > 0 &&
-      other.option?.underlying === option.underlying && (other.option.side === 'long' || other.option.right === 'call'));
-    if (otherLegs.length) unverified.push('relatedLegs');
+    const otherLegs = Object.entries(positions).flatMap(([otherKey, other]) =>
+      otherKey !== key && other.channel === h.channel && other.units > 0 && other.option?.underlying === option.underlying
+        ? [{ option: other.option, quantity: other.units, currency: other.currency }] : []);
+    if (option.right === 'put' && otherLegs.some(leg => leg.option.side === 'long' || leg.option.right === 'call')) {
+      unverified.push('relatedLegs');
+    }
+    const stockHolding = positions[buildHoldingKey(option.underlying, h.channel)];
+    const accountShares = stockHolding?.instrument === 'equity' ? stockHolding.units
+      : !stockHolding && !source.coverage.length ? 0 : null;
     const history = positionHistory(state, relationships, h, source.accountId, details[key]);
-    const position = { currency: h.currency ?? 'Unknown', strike: option.strike, expiry: option.expiry, quantity: h.units, listed };
+    const position = { currency: h.currency ?? 'Unknown', right: option.right, strike: option.strike, expiry: option.expiry, quantity: h.units, listed };
     const decision = analyzeDecision(position, history.cash, stock.stock, chain?.options ?? [], session.date, fee);
     return [{ key, underlying: option.underlying, source, position, stock: stock.stock, nativeId: h.broker_ref?.native_id ?? null,
-      recordedShares: option.multiplier, recordedSettlement: option.settlement, unverified, history, decision }];
+      recordedShares: option.multiplier, recordedSettlement: option.settlement, unverified, history, decision,
+      accountShares, otherLegs, inSpread: Boolean(details[key]?.spread) }];
   });
   await Promise.all([...chains].map(async ([symbol, chain]) => {
     const scopedRows = rows.filter(row => row.underlying === symbol);
@@ -140,6 +148,9 @@ export async function scanPremarket(snapshot: InvestorSnapshot, session: Session
   sources.sort((a, b) => a.label.localeCompare(b.label) || a.accountId.localeCompare(b.accountId));
   rows.sort((a, b) => a.underlying.localeCompare(b.underlying) || a.position.expiry.localeCompare(b.position.expiry) || a.key.localeCompare(b.key));
   return { session, startedAt: startedAt.toISOString(), collectedAt: new Date().toISOString(), revision: snapshot.revision, sources, notes,
-    rows, market: chains, stocks, inspected: candidates.length };
+    rows, market: chains, stocks, inspected: {
+      puts: candidates.filter(([, h]) => h.option!.right === 'put').length,
+      calls: candidates.filter(([, h]) => h.option!.right === 'call').length,
+    } };
 }
 export type PremarketScan = Awaited<ReturnType<typeof scanPremarket>>;

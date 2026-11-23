@@ -85,9 +85,10 @@ function cloudMarketFixture() {
     { expiry: rollExpiry, strike: 95, right: 'PUT', bid: 16, ask: 17 },
     { expiry: rollExpiry, strike: 97, right: 'PUT', bid: 16.5, ask: 17.5 },
     ...[expiry, rollExpiry].map(date => ({ expiry: date, strike: 115, right: 'CALL', bid: 3, ask: 4 })),
+    { expiry: rollExpiry, strike: 120, right: 'CALL', bid: 4.5, ask: 5 },
   ];
   const contracts = definitions.map(item => ({ ...item, code: `US.AMD${item.expiry.slice(2).replaceAll('-', '')}${item.right[0]}${item.strike * 1000}` }));
-  const [held, replacement, alternative] = contracts;
+  const [held, replacement, alternative, heldCall, , callRoll] = contracts;
   const snapshotTime = '2026-11-20T20:58:00.000Z';
   const exchangeTime = '2026-11-20T20:59:20.000Z';
   const replacementTime = '2026-11-20T20:59:25.000Z';
@@ -107,7 +108,12 @@ function cloudMarketFixture() {
       case `/api/v1.0/accounts/${cloudAccount}/funds`:
         return Response.json({ s: 'ok', d: { currency: 'USD', us_cash: '10000' } });
       case `/api/v1.0/accounts/${cloudAccount}/positions`:
-        return Response.json({ s: 'ok', d: [] });
+        return Response.json({ s: 'ok', d: [
+          { code: heldCall.code, qty: '-2', position_side: 'SHORT', currency: 'USD',
+            contract_size: 100, cost_price: '3', cost_price_valid: true, nominal_price: '4' },
+          { code: 'US.AMD', qty: '150', position_side: 'LONG', currency: 'USD',
+            cost_price: '95', cost_price_valid: true, nominal_price: '110' },
+        ] });
       case '/api/v1.0/quote/US.AMD/corporate-actions/dividends':
         return reply({ dividend_list: [] });
       case '/api/v1.0/quote/US.AMD/corporate-actions/splits':
@@ -135,18 +141,21 @@ function cloudMarketFixture() {
       case '/api/v1.0/quote/order-book': {
         const { code } = JSON.parse(String(init?.body));
         bookCodes.push(code);
-        expect([held.code, replacement.code, alternative.code]).toContain(code);
-        const isReplacement = code !== held.code;
+        expect([held.code, replacement.code, alternative.code, heldCall.code, callRoll.code]).toContain(code);
+        const isReplacement = code !== held.code && code !== heldCall.code;
+        const call = code === heldCall.code ? heldCall : code === callRoll.code ? callRoll : null;
         return reply([{ code, books: [{ exchange: 'US', order_volume_precision: 0,
           exchange_data_time_ms: Date.parse(isReplacement ? replacementTime : exchangeTime), bid_flag: 1, ask_flag: 1,
-          bid_list: [{ price: code === alternative.code ? 17 : 14, volume: 39 }], ask_list: [{ price: isReplacement ? 18 : 15, volume: 33 }] }] }]);
+          bid_list: [{ price: call?.bid ?? (code === alternative.code ? 17 : 14), volume: 39 }],
+          ask_list: [{ price: call?.ask ?? (isReplacement ? 18 : 15), volume: 33 }] }] }]);
       }
       default:
         throw new Error(`Unexpected test market endpoint ${url.pathname}`);
     }
   }) satisfies typeof fetch);
   return { chains, bookCodes, snapshotTime, exchangeTime, replacementTime, heldCode: held.code, replacementCode: replacement.code,
-    alternativeCode: alternative.code, removeCreditRolls() { noCreditRolls = true; } };
+    alternativeCode: alternative.code, heldCallCode: heldCall.code, callRollCode: callRoll.code,
+    removeCreditRolls() { noCreditRolls = true; } };
 }
 
 it('generates native decision reports from chat and the independent opt-in schedule', async () => {
@@ -186,9 +195,11 @@ it('generates native decision reports from chat and the independent opt-in sched
         if (id === 'primary') return broker(state, id);
         const snapshot = await readBrokerPositionSnapshot(state, id);
         expect(snapshot.statement.account_id).toBe(cloudAccount);
-        expect(snapshot.statement.lots).toEqual([]);
-        // The empty Cloud account read describes the fixture session, which runs
-        // against a fixed U.S. trading date independent of the machine clock.
+        expect(snapshot.statement.lots).toEqual(expect.arrayContaining([
+          expect.objectContaining({ ticker: 'AMD', holding: expect.objectContaining({ units: 150, instrument: 'equity' }) }),
+          expect.objectContaining({ holding: expect.objectContaining({ units: 2, option: expect.objectContaining({ right: 'call', side: 'short' }) }) }),
+        ]));
+        // The Cloud account fixture describes the fixed U.S. trading date.
         return { ...snapshot, statement: { ...snapshot.statement, as_of: day } };
       },
     }));
@@ -317,7 +328,12 @@ it('generates native decision reports from chat and the independent opt-in sched
       'Selling the USD 97 put expiring Jan 15, 2027 would bring in USD 1,700',
       'you would pay USD 9,700 for 100 shares, compared with USD 10,000 on the current put',
       'The new put expires 25 days later than the current put',
-      'USD 17 bid and USD 18 ask per unit. Historical order book from Nov 20, 2026 at 20:59:25 UTC', '## Appendix', REPORT_ARCHIVE_NAME]) {
+      'USD 17 bid and USD 18 ask per unit. Historical order book from Nov 20, 2026 at 20:59:25 UTC',
+      '## Urgent short calls', 'AMD USD 115 call', 'Urgency needs a same-session price',
+      'If assigned, you would deliver 200 shares and receive USD 23,000 before charges',
+      'The broker snapshot shows 150 shares in this account', 'Buying back the calls would cost USD 800',
+      'Credit roll to a higher strike', 'the credit would be USD 97.4 after estimated fees (USD 100 before fees)',
+      'Selling the USD 120 call expiring Jan 15, 2027 would bring in USD 900', '## Appendix', REPORT_ARCHIVE_NAME]) {
       expect(weekendNote.body).toContain(expected);
     }
     await expect(api(weekendHref.replace('/notes/', '/api/notes/'), secondToken)).resolves.toHaveProperty('status', 404);
@@ -331,12 +347,14 @@ it('generates native decision reports from chat and the independent opt-in sched
       '39 / 33', market.exchangeTime, market.snapshotTime, 'futubull Cloud /api/v1.0/quote/order-book',
       'Hold and accept possible assignment', 'Sell a covered call after assignment', 'Roll the put', 'Close the put',
       'Current put breakeven per share before future charges', 'Current put expiry P&amp;L at scan stock price before future charges',
-      'New exercise cash / shares received', '23 / 19', 'USD 1,700', 'USD -100 / USD -102', market.replacementTime, 'futubull Cloud chain unavailable for 2026-12-22.']) {
+      'New exercise cash / shares received', '23 / 19', 'USD 1,700', 'USD -100 / USD -102', market.replacementTime,
+      'futubull Cloud chain unavailable for 2026-12-22.', 'Roll the call', 'Shares to deliver / proceeds if assigned before charges',
+      'USD 115 call · reference roll cash USD -200']) {
       expect(fullWeekendText).toContain(detail);
     }
     expect(weekendNote.body).not.toContain('39 / 33');
     expect(weekendNote.body).not.toContain('Selling the USD 95 put');
-    expect(market.bookCodes).toEqual([market.heldCode, market.replacementCode, market.alternativeCode]);
+    expect(market.bookCodes).toEqual([market.heldCode, market.heldCallCode, market.replacementCode, market.callRollCode, market.alternativeCode]);
     expect(market.chains.map(({ from, through }) => [from, through])).toEqual([
       ['2026-12-18', rollExpiry], ['2026-12-18', rollExpiry], ['2026-12-18', '2026-12-18'], ['2026-12-22', '2026-12-22'],
     ]);
@@ -412,7 +430,7 @@ it('generates native decision reports from chat and the independent opt-in sched
     expect(await openedChatNote!.$eval(preview, node => node.textContent)).toContain('the credit would be USD 198 after estimated fees');
     expect(await openedChatNote!.$eval(preview, node => node.textContent)).toContain('Breakeven USD 90 per share for the current put');
     expect(await openedChatNote!.$$eval(`${preview} h3`, nodes => nodes.map(node => node.textContent?.split(' · ')[0])))
-      .toEqual(['AMD USD 110 put', 'AMD USD 100 put', 'AMD USD 90 put']);
+      .toEqual(['AMD USD 110 put', 'AMD USD 100 put', 'AMD USD 90 put', 'AMD USD 115 call']);
     await openedChatNote!.waitForSelector(`a[aria-label="Download ${REPORT_ARCHIVE_NAME}"]`, { visible: true });
     const noteTimes = '[aria-label="Note timestamps"] time';
     await openedChatNote!.waitForSelector(noteTimes, { visible: true });
@@ -468,7 +486,7 @@ it('generates native decision reports from chat and the independent opt-in sched
     const stored = await api(`/api/notes/${noteId}`, token);
     expect(stored.status).toBe(200);
     expect((await stored.json()).note).toMatchObject({ owner_user_id: owner, provenance: 'system',
-      body: expect.stringContaining('1 position meets the scan criteria') });
+      body: expect.stringContaining('2 positions meet the scan criteria') });
     expect((await notes(secondToken)).items).toEqual([]);
     expect((await api(`/api/notes/${noteId}?ownerUserId=${owner}`, secondToken)).status).toBe(404);
 
@@ -490,12 +508,15 @@ it('generates native decision reports from chat and the independent opt-in sched
     await report.goto(url + href, { waitUntil: 'domcontentloaded', timeout: 8000 });
     await report.waitForSelector(`${preview} li`, { timeout: 8000 });
     const headings = await report.$$eval(`${preview} h2`, nodes => nodes.map(node => node.textContent));
-    expect(headings).toEqual(['Positions to review', 'Appendix']);
-    expect(await report.$$eval(`${preview} h3`, nodes => nodes.length)).toBe(1);
+    expect(headings).toEqual(['Positions to review', 'Urgent short calls', 'Appendix']);
+    expect(await report.$$eval(`${preview} h3`, nodes => nodes.length)).toBe(2);
     const contents = await report.$eval(preview, node => node.textContent);
     for (const detail of ['If assigned, you would pay USD 10,000 for 100 shares', 'Buying back the puts would cost USD 1,500', 'expires Dec 21, 2026', REPORT_ARCHIVE_NAME,
       'Historical order book from', 'a loss of USD 500 for the current put before the closing fee',
-      'No credit roll was found in the available quotes',
+      'No credit roll was found in the available quotes', 'Expires in 28 calendar days',
+      'AMD USD 115 call', 'If assigned, you would deliver 200 shares and receive USD 23,000 before charges',
+      'The broker snapshot shows 150 shares in this account', 'Credit roll to a higher strike',
+      'The new call expires 25 days later than the current call',
       'Breakeven USD 90 per share for the current put', 'a gain of USD 1,000 for the current put before future charges', 'Whole-strategy figures are unavailable']) {
       expect(contents).toContain(detail);
     }
@@ -511,7 +532,8 @@ it('generates native decision reports from chat and the independent opt-in sched
     await report.setViewport({ width: 390, height: 844 });
     await report.waitForSelector(`${preview} li`, { visible: true });
     expect(await report.$eval(preview, node => node.scrollWidth)).toBe(await report.$eval(preview, node => node.clientWidth));
-    expect(market.bookCodes).toEqual([market.heldCode, market.replacementCode, market.alternativeCode, market.heldCode]);
+    expect(market.bookCodes).toEqual([market.heldCode, market.heldCallCode, market.replacementCode, market.callRollCode,
+      market.alternativeCode, market.heldCode, market.heldCallCode, market.callRollCode]);
     await page.bringToFront();
     await frame!.click('#enabled');
     await frame!.click('#save');

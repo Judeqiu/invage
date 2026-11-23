@@ -1,10 +1,13 @@
 import { expect, it } from 'vitest';
-import { analyzeDecision, selectRollReferences, triggerCeiling, type ListedOption, type PositionCash } from '../src/premarket/decisions.js';
+import { analyzeDecision, callStrikeBand, inCallStrikeBand, selectRollReferences, triggerCeiling, type ListedOption, type PositionCash } from '../src/premarket/decisions.js';
 import type { OptionExecution } from '../src/brokers/option-executions.js';
 import type { OptionRelationship, RollContract } from '../src/brokers/option-relationships.js';
 import type { InvestorState } from '../src/state/portfolio-state.js';
+import type { BrokerLot } from '../src/brokers/statement.js';
+import { buildOptionKey } from '../src/market/position-value.js';
 import { positionHistory } from '../src/premarket/history.js';
-import { calendarFromCsv, dueSession } from '../src/premarket/session.js';
+import { scanPremarket } from '../src/premarket/scan.js';
+import { calendarFromCsv, decisionSession, dueSession } from '../src/premarket/session.js';
 
 const option: ListedOption = { id: 'CURRENT', underlying: 'AMD', strike: 100, expiry: '2026-11-27', right: 'put',
   currency: 'USD', shares: 100, premiumMultiplier: 100, shareOnly: true, exercise: 'american', source: 'option terms',
@@ -13,7 +16,7 @@ const option: ListedOption = { id: 'CURRENT', underlying: 'AMD', strike: 100, ex
 const cost = { currency: 'USD', feePerContract: .65, minimumOrderFee: 1, reference: 'test fee estimate' };
 const cash: PositionCash = { openGross: 1000, openFees: -2, chainGross: 1000, chainFees: -2, originalGross: 1000 };
 const stock = { price: 90, currency: 'USD', asOf: '2026-11-02T11:59:50Z', source: 'test source', field: 'preMarketPrice' };
-const position = { currency: option.currency, strike: option.strike, expiry: option.expiry, quantity: 1, listed: option };
+const position = { currency: option.currency, right: option.right, strike: option.strike, expiry: option.expiry, quantity: 1, listed: option };
 
 it('distinguishes the buyback amount, fee cash, close preference and strategy P&L at the exact boundary', () => {
   const result = analyzeDecision(position, cash, stock, [], '2026-11-02', cost);
@@ -45,11 +48,11 @@ it('compares both expirations and exposure using the whole cash history, preserv
 it('keeps verified current-put outcomes available when earlier cash flows cannot be reconciled', () => {
   const incomplete = { ...cash, chainGross: null, chainFees: null, originalGross: null };
   const hold = analyzeDecision(position, incomplete, stock, [], '2026-11-02').hold;
-  expect(hold).toMatchObject({ breakeven: null, expiryAtSpot: null, currentPutBreakeven: 90.02, currentPutExpiryAtSpot: -2 });
+  expect(hold).toMatchObject({ breakeven: null, expiryAtSpot: null, currentLegBreakeven: 90.02, currentLegExpiryAtSpot: -2 });
   const withoutQuote = analyzeDecision(position, incomplete, null, [], '2026-11-02').hold;
-  expect(withoutQuote).toMatchObject({ currentPutBreakeven: 90.02, currentPutExpiryAtSpot: null });
+  expect(withoutQuote).toMatchObject({ currentLegBreakeven: 90.02, currentLegExpiryAtSpot: null });
   const withoutFees = analyzeDecision(position, { ...incomplete, openFees: null }, stock, [], '2026-11-02').hold;
-  expect(withoutFees).toMatchObject({ currentPutBreakeven: null, currentPutExpiryAtSpot: null });
+  expect(withoutFees).toMatchObject({ currentLegBreakeven: null, currentLegExpiryAtSpot: null });
 });
 
 it('prefers a credit roll even when cheaper assignment alternatives would cost money', () => {
@@ -63,6 +66,64 @@ it('prefers a credit roll even when cheaper assignment alternatives would cost m
 
   const beforeFees = analyzeDecision(position, cash, stock, candidates, '2026-11-02');
   expect(selectRollReferences(beforeFees)).toMatchObject([{ example: { option: { id: '20.5' }, grossFlow: 50, netFlowEstimate: null } }]);
+});
+
+it('includes both call strike boundaries, even for fractional strikes', () => {
+  expect(callStrikeBand(12.5)).toEqual({ floor: 11.25, ceiling: 13.75 });
+  expect([11.249, 11.25, 12.5, 13.75, 13.751].map(spot => inCallStrikeBand(spot, 12.5)))
+    .toEqual([false, true, true, true, false]);
+});
+
+it('scans only open short calls meeting both boundaries with a same-session quote', async () => {
+  const now = new Date('2026-11-02T12:00:00Z');
+  const session = decisionSession(now);
+  const lot = (strike: number, expiry = session.windowEnd, side: 'short' | 'long' = 'short'): BrokerLot => {
+    const spec = { right: 'call', side, strike, expiry, underlying: 'AMD', multiplier: 100,
+      settlement: 'physical', mark: 200 } as const;
+    return { ticker: buildOptionKey(spec), currency: 'USD', holding: { instrument: 'option', units: 1, avg_price: 200, option: spec } };
+  };
+  const upper = lot(90), lower = lot(110), sameDay = lot(99, session.date);
+  const state: InvestorState = {
+    user: { id: 'fixture', created_at: session.date }, log: [],
+    profile: { display_name: 'Fixture investor', contact_email: 'fixture@test.local' },
+    broker_sources: { source: { broker_id: 'ibkr', credentials: { token: 'fixture' } } },
+    broker_connections: { primary: { broker_id: 'ibkr', source_id: 'source', channel: 'ibkr',
+      label: 'Fixture', account_id: 'FIXTURE', enabled: true, config: { activity_query_id: '1' } } },
+  };
+  const listed = [upper, lower, sameDay].map(row => ({
+    ...option, id: row.ticker, right: 'call' as const, strike: row.holding.option!.strike, expiry: row.holding.option!.expiry,
+  }));
+  const result = await scanPremarket({ state, revision: 1 }, session, now, async () => 'fixture', {
+    readBrokerPositionSnapshot: async () => ({ raw: { kind: 'json', body: Buffer.from('{}') }, statement: {
+      as_of: session.date, account_id: 'FIXTURE', cash: [], skipped: [],
+      lots: [upper, lower, sameDay, lot(89), lot(111), lot(99, '2026-12-01'), lot(101, session.windowEnd, 'long')],
+    } }),
+    readStock: async () => ({ stock: { ...stock, price: 99 }, isUsEquity: true, earnings: null }),
+    readChain: async () => ({ options: listed, events: [], notices: [] }),
+    readReplacementBooks: async () => [],
+    prepareOptionRelationships: async () => ({ groups: [], spreads: [], historyGaps: [],
+      coverage: [], gaps: [], as_of: null, connections: [] }),
+  });
+  expect(result.rows.map(row => [row.position.strike, row.decision.hold.daysToExpiry, row.unverified]))
+    .toEqual([[99, 0, []], [110, 28, []], [90, 28, []]]);
+});
+
+it('calculates call delivery and option-only close cash and selects credit rolls for the same right', () => {
+  const call: ListedOption = { ...option, right: 'call', shares: 50 };
+  const replacement = (id: string, strike: number, bid: number) => ({
+    ...call, id, strike, expiry: '2026-12-18', quote: { ...call.quote, bid, ask: bid + 1 },
+  });
+  const decision = analyzeDecision({ ...position, right: 'call', listed: call, quantity: 2 }, cash, { ...stock, price: 110 },
+    [replacement('debit', 105, 19), replacement('smallCredit', 110, 20.01),
+      replacement('credit', 115, 22), replacement('lower', 95, 23), { ...option, id: 'put' }], '2026-11-02', cost);
+  expect(decision.hold).toMatchObject({ delivered: 100, assignmentCash: 10000, intrinsic: 10, expiryAtSpot: -2 });
+  expect(decision.close).toMatchObject({ buyback: 4000, thisNetBeforeFutureFees: -3002 });
+  expect(decision.calls).toEqual([]);
+  expect(decision.rolls).toHaveLength(4);
+  expect(selectRollReferences(decision)).toMatchObject([
+    { kind: 'callHigherStrike', example: { option: { id: 'credit' }, netFlowEstimate: expect.closeTo(397.4), assignmentCash: 11500 } },
+    { kind: 'callSameOrLowerStrike', example: { option: { id: 'lower' }, netFlowEstimate: expect.closeTo(597.4), assignmentCash: 9500 } },
+  ]);
 });
 
 it('keeps the same Singapore start across U.S. DST, handles exchange holidays, and uses an inclusive calendar-day window', () => {

@@ -56,6 +56,7 @@ export interface PositionCash {
 }
 export interface DecisionPosition {
   currency: string;
+  right: ListedOption['right'];
   strike: number;
   expiry: string;
   quantity: number;
@@ -69,13 +70,23 @@ export interface FeeEstimate {
 }
 
 export const ABOVE_STRIKE_PERCENT = 10;
+export const CALL_STRIKE_BAND_PERCENT = 10;
 const CLOSE_PREMIUM_FACTOR = 2;
-export function triggerCeiling(strike: number) {
+function scaleStrike(strike: number, percent: number) {
   const [mantissa, exponent = '0'] = String(strike).split('e');
   const [whole, fraction = ''] = mantissa.split('.');
-  const scaled = BigInt(whole + fraction) * BigInt(100 + ABOVE_STRIKE_PERCENT);
+  const scaled = BigInt(whole + fraction) * BigInt(percent);
   // Scale in decimal so a quote exactly at the approval boundary is included.
   return Number(`${scaled}e${Number(exponent) - fraction.length - 2}`);
+}
+export const triggerCeiling = (strike: number) => scaleStrike(strike, 100 + ABOVE_STRIKE_PERCENT);
+export const callStrikeBand = (strike: number) => ({
+  floor: scaleStrike(strike, 100 - CALL_STRIKE_BAND_PERCENT),
+  ceiling: scaleStrike(strike, 100 + CALL_STRIKE_BAND_PERCENT),
+});
+export function inCallStrikeBand(spot: number, strike: number) {
+  const { floor, ceiling } = callStrikeBand(strike);
+  return spot >= floor && spot <= ceiling;
 }
 export const stockMovePercent = (spot: number, strike: number) => (spot - strike) * 100 / strike;
 const differenceInDays = (from: string, to: string) => (Date.parse(to) - Date.parse(from)) / 86_400_000;
@@ -97,17 +108,20 @@ const estimatedFee = (model: FeeEstimate | undefined, currency: string, size: nu
 
 export function analyzeDecision(position: DecisionPosition, cash: PositionCash, stock: StockQuote | null,
   candidates: ListedOption[], date: string, feeEstimate?: FeeEstimate) {
-  const { listed, currency, quantity, strike, expiry } = position;
+  const { listed, currency, quantity, strike, expiry, right } = position;
+  const direction = right === 'put' ? -1 : 1;
+  const intrinsicAt = (price: number) => Math.max(direction * (price - strike), 0);
   const openNet = knownSum(cash.openGross, cash.openFees);
   const net = knownSum(cash.chainGross, cash.chainFees);
   const delivered = listed?.shareOnly ? times(listed.shares, quantity) : null;
   const assignmentCash = times(delivered, strike);
   const spot = stock?.currency === currency ? stock.price : null;
-  const intrinsic = spot === null ? null : Math.max(strike - spot, 0);
+  const intrinsic = spot === null ? null : intrinsicAt(spot);
   const buyback = listed ? cashAtQuote(listed, 'ask', quantity) : null;
   const fee = estimatedFee(feeEstimate, currency, quantity);
-  const breakeven = (optionCash: number | null) => delivered && optionCash !== null ? strike - optionCash / delivered : null;
-  const atExpiry = (price: number, optionCash = net) => knownSum(optionCash, negative(times(delivered, Math.max(strike - price, 0))));
+  const breakeven = (optionCash: number | null) =>
+    delivered && optionCash !== null ? strike + direction * optionCash / delivered : null;
+  const atExpiry = (price: number, optionCash = net) => knownSum(optionCash, negative(times(delivered, intrinsicAt(price))));
   const close = {
     buyback, feeEstimate: fee,
     thisGrossBeforeFutureFees: knownSum(cash.openGross, negative(buyback)),
@@ -122,20 +136,20 @@ export function analyzeDecision(position: DecisionPosition, cash: PositionCash, 
   const hold = {
     delivered, assignmentCash, openNet, cumulativeNetCash: net,
     breakeven: breakeven(net),
-    currentPutBreakeven: breakeven(openNet),
+    currentLegBreakeven: breakeven(openNet),
     intrinsic,
     timeValueAtAsk: buyback !== null && intrinsic !== null && listed?.premiumMultiplier
       ? buyback / (quantity * listed.premiumMultiplier) - intrinsic : null,
     currentLegPnlAtAsk: close.thisNetBeforeFutureFees, chainPnlAtAsk: close.chainNetBeforeFutureFees,
     expiryAtStrike: atExpiry(strike), expiryAtSpot: spot === null ? null : atExpiry(spot),
-    currentPutExpiryAtSpot: spot === null ? null : atExpiry(spot, openNet),
+    currentLegExpiryAtSpot: spot === null ? null : atExpiry(spot, openNet),
     expiryAtZero: atExpiry(0),
     daysToExpiry: differenceInDays(date, expiry),
   };
 
   const comparable = (item: ListedOption) =>
     item.shareOnly && item.currency === currency && listed !== null && item.underlying === listed.underlying;
-  const rolls = candidates.filter(item => item.right === 'put' && item.id !== listed?.id && item.expiry >= date).map(option => {
+  const rolls = candidates.filter(item => item.right === right && item.id !== listed?.id && item.expiry >= date).map(option => {
     const shares = comparable(option) && option.exercise === 'american' ? times(option.shares, quantity) : null;
     const newIncome = shares !== null ? cashAtQuote(option, 'bid', quantity) : null;
     const grossFlow = knownSum(negative(buyback), newIncome);
@@ -144,12 +158,13 @@ export function analyzeDecision(position: DecisionPosition, cash: PositionCash, 
     return { option, shares, newIncome, grossFlow, netFlowEstimate,
       assignmentCash: times(shares, option.strike), daysToExpiry: differenceInDays(date, option.expiry),
       additionalDays: differenceInDays(expiry, option.expiry), chainNetBeforeFutureFees: chainNet,
-      breakeven: shares && chainNet !== null ? option.strike - chainNet / shares : null,
-      breakevenWithEstimatedFees: shares && chainNet !== null && fee !== null ? option.strike - (chainNet - 2 * fee) / shares : null };
+      breakeven: shares && chainNet !== null ? option.strike + direction * chainNet / shares : null,
+      breakevenWithEstimatedFees: shares && chainNet !== null && fee !== null
+        ? option.strike + direction * (chainNet - 2 * fee) / shares : null };
   });
   // Same-day calls are kept as evidence. Delivery must occur before their sale
   // and before they expire, even if an early put assignment occurs.
-  const calls = candidates.filter(item => item.right === 'call' && item.expiry >= date).map(option => {
+  const calls = candidates.filter(item => right === 'put' && item.right === 'call' && item.expiry >= date).map(option => {
     const contracts = comparable(option) && delivered !== null && option.shares !== null && option.shares > 0
       ? Math.floor(delivered / option.shares) : null;
     const covered = contracts === null ? null : times(option.shares, contracts);
@@ -167,26 +182,29 @@ export function analyzeDecision(position: DecisionPosition, cash: PositionCash, 
       ifNotCalledAtScanSpotFeasibleAtExpiry: spot === null ? null : spot <= option.strike,
       upCap: leftover === 0 ? ifCalled : null };
   });
-  return { hold, close: { ...close, highlight: buyback !== null && close.preferredUnder !== null && buyback < close.preferredUnder },
+  return { right, strike, hold, close: { ...close, highlight: buyback !== null && close.preferredUnder !== null && buyback < close.preferredUnder },
     calls, rolls, feeReference: feeEstimate?.currency === currency ? feeEstimate.reference : null };
 }
 
-type RollReferenceKind = 'quoted' | 'equalOrHigherCash' | 'lowerCashLater' | 'lowerCashSameOrEarlier';
+type RollReferenceKind = 'quoted' | 'equalOrHigherCash' | 'lowerCashLater' | 'lowerCashSameOrEarlier'
+  | 'callHigherStrike' | 'callSameOrLowerStrike';
 type RollReference = {
   kind: RollReferenceKind;
   example: ReturnType<typeof analyzeDecision>['rolls'][number] & { assignmentCash: number; grossFlow: number };
 };
 
-export function selectRollReferences({ hold, rolls }: ReturnType<typeof analyzeDecision>): RollReference[] {
+export function selectRollReferences({ right, strike, hold, rolls }: ReturnType<typeof analyzeDecision>): RollReference[] {
   const groups = new Map<RollReferenceKind, RollReference>();
   for (const roll of rolls) {
     const { assignmentCash, additionalDays, grossFlow, netFlowEstimate } = roll;
     if (assignmentCash === null || grossFlow === null || grossFlow <= 0 || (netFlowEstimate !== null && netFlowEstimate <= 0)) continue;
-    const kind = hold.assignmentCash === null ? 'quoted' : assignmentCash >= hold.assignmentCash ? 'equalOrHigherCash'
-      : additionalDays > 0 ? 'lowerCashLater' : 'lowerCashSameOrEarlier';
+    const kind = right === 'call' ? (roll.option.strike > strike ? 'callHigherStrike' : 'callSameOrLowerStrike')
+      : hold.assignmentCash === null ? 'quoted' : assignmentCash >= hold.assignmentCash ? 'equalOrHigherCash'
+        : additionalDays > 0 ? 'lowerCashLater' : 'lowerCashSameOrEarlier';
     const group = groups.get(kind);
-    if (!group || assignmentCash < group.example.assignmentCash ||
-        assignmentCash === group.example.assignmentCash && additionalDays < group.example.additionalDays) {
+    const comparison = !group ? 0 : right === 'call' ? group.example.grossFlow - grossFlow
+      : assignmentCash - group.example.assignmentCash;
+    if (!group || comparison < 0 || (comparison === 0 && additionalDays < group.example.additionalDays)) {
       groups.set(kind, { kind, example: { ...roll, assignmentCash, grossFlow } });
     }
   }

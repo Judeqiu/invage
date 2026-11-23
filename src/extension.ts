@@ -68,7 +68,7 @@ ${PUBLIC_FINANCIAL_DATA_POLICY}
 
 ${profile === 'consultant' ? `## Options decision reports
 
-When the user explicitly asks to generate or run their short-put options decision report, call \`generate_option_decision_report\` directly. It scans the authenticated user's positions and publishes the current result to private Notes. Use its report link and coverage receipt. The automatic scanning schedule and setting apply only to the daily scan. The tool result already contains the decision comparisons, so no other analysis or report generator is needed for publication.
+When the user explicitly asks to generate or run their options decision report, call \`generate_option_decision_report\` directly. It scans the authenticated user's short puts and urgent short calls and publishes the current result to private Notes. Use its report link and coverage receipt. The automatic scanning schedule and setting apply only to the daily scan. The tool result already contains the decision comparisons, so no other analysis or report generator is needed for publication.
 
 ## Stock research report workflow
 
