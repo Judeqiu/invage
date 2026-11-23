@@ -96,6 +96,18 @@ export function CompactHomepage() {
       <Button asChild variant="outline"><Link to="/risk-disclosure">Read Risk Disclosure</Link></Button>
     </div></section>
     <CompactCallout title="Build Knowledge Before Complexity." copy="Start an educational workspace for clearer questions, more structured reviews, and informed independent decisions."/>
+
+    <section aria-labelledby="founder-note-title" className={section}>
+      <div className="mx-auto max-w-3xl border-l border-border pl-4 sm:pl-5">
+        <p className={eyebrow}>A note from the founder</p>
+        <h2 id="founder-note-title" className="mt-2 text-2xl font-semibold leading-tight">Why I built Velovest</h2>
+        <div className="mt-3 space-y-3 text-sm leading-6 text-muted-foreground sm:text-base sm:leading-7">
+          <p>I started trading options about four years ago and learned the hard way: books, YouTube, and my own mistakes.</p>
+          <p>I kept careful records, and when I shared what I’d learned with friends, I saw how hard it was to track positions across brokers. So I built the Velovest Dashboard and began teaching what I wish I’d been told: <strong className="font-semibold text-foreground">the risks first, the premium second.</strong> It’s cheaper to learn from others’ mistakes.</p>
+        </div>
+        <p className="mt-3 text-xs leading-5 text-muted-foreground sm:text-sm"><strong className="font-semibold text-foreground">Victor Lim</strong>, Founder · <time dateTime="2026-11">November 2026</time></p>
+      </div>
+    </section>
   </MarketingLayout>;
 }
 
