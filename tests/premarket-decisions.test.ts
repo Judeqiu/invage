@@ -42,6 +42,16 @@ it('compares both expirations and exposure using the whole cash history, preserv
   expect(unknown.rolls[0].grossFlow).toBeNull();
 });
 
+it('keeps verified current-put outcomes available when earlier cash flows cannot be reconciled', () => {
+  const incomplete = { ...cash, chainGross: null, chainFees: null, originalGross: null };
+  const hold = analyzeDecision(position, incomplete, stock, [], '2026-11-02').hold;
+  expect(hold).toMatchObject({ breakeven: null, expiryAtSpot: null, currentPutBreakeven: 90.02, currentPutExpiryAtSpot: -2 });
+  const withoutQuote = analyzeDecision(position, incomplete, null, [], '2026-11-02').hold;
+  expect(withoutQuote).toMatchObject({ currentPutBreakeven: 90.02, currentPutExpiryAtSpot: null });
+  const withoutFees = analyzeDecision(position, { ...incomplete, openFees: null }, stock, [], '2026-11-02').hold;
+  expect(withoutFees).toMatchObject({ currentPutBreakeven: null, currentPutExpiryAtSpot: null });
+});
+
 it('keeps the same Singapore start across U.S. DST, handles exchange holidays, and uses an inclusive calendar-day window', () => {
   expect(dueSession(new Date('2026-10-30T11:59:00Z'))).toBeNull();
   expect(dueSession(new Date('2026-10-30T12:00:00Z'))).toEqual({ date: '2026-10-30', windowEnd: '2026-11-27' });

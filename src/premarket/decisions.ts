@@ -104,7 +104,8 @@ export function analyzeDecision(position: DecisionPosition, cash: PositionCash, 
   const intrinsic = spot === null ? null : Math.max(strike - spot, 0);
   const buyback = listed ? cashAtQuote(listed, 'ask', quantity) : null;
   const fee = estimatedFee(feeEstimate, currency, quantity);
-  const atExpiry = (price: number) => knownSum(net, negative(times(delivered, Math.max(strike - price, 0))));
+  const breakeven = (optionCash: number | null) => delivered && optionCash !== null ? strike - optionCash / delivered : null;
+  const atExpiry = (price: number, optionCash = net) => knownSum(optionCash, negative(times(delivered, Math.max(strike - price, 0))));
   const close = {
     buyback, feeEstimate: fee,
     thisGrossBeforeFutureFees: knownSum(cash.openGross, negative(buyback)),
@@ -118,12 +119,14 @@ export function analyzeDecision(position: DecisionPosition, cash: PositionCash, 
 
   const hold = {
     delivered, assignmentCash, openNet, cumulativeNetCash: net,
-    breakeven: delivered && net !== null ? strike - net / delivered : null,
+    breakeven: breakeven(net),
+    currentPutBreakeven: breakeven(openNet),
     intrinsic,
     timeValueAtAsk: buyback !== null && intrinsic !== null && listed?.premiumMultiplier
       ? buyback / (quantity * listed.premiumMultiplier) - intrinsic : null,
     currentLegPnlAtAsk: close.thisNetBeforeFutureFees, chainPnlAtAsk: close.chainNetBeforeFutureFees,
     expiryAtStrike: atExpiry(strike), expiryAtSpot: spot === null ? null : atExpiry(spot),
+    currentPutExpiryAtSpot: spot === null ? null : atExpiry(spot, openNet),
     expiryAtZero: atExpiry(0),
     daysToExpiry: differenceInDays(date, expiry),
   };

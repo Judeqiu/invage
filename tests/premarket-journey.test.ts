@@ -305,6 +305,7 @@ it('generates native decision reports from chat and the independent opt-in sched
     for (const expected of ['U.S. weekend', 'A same-session stock quote was unavailable for every position shown',
       'historical quote as of', 'Historical book as of', '## Assignment exposure', 'USD 10,000 for positions with verified share deliverables',
       '2 with unknown assignment cash', 'buyback USD 1,500', 'cash if assigned USD 10,000 for 100 shares',
+      'current put breakeven USD 90 per share', 'current put expiry P&amp;L USD -500', 'whole-strategy breakeven and expiry P&amp;L unavailable',
       'Lower assignment cash, later expiry', 'USD 95 put expiring', 'USD 100 gross roll cash',
       `Provider price snapshot dated ${market.snapshotTime.slice(0, 10)}`, '## Appendix', REPORT_ARCHIVE_NAME]) {
       expect(weekendNote.body).toContain(expected);
@@ -319,6 +320,7 @@ it('generates native decision reports from chat and the independent opt-in sched
     for (const detail of ['A same-session underlying quote in the contract currency is unavailable.',
       '39 / 33', market.exchangeTime, market.snapshotTime, 'futubull Cloud /api/v1.0/quote/order-book',
       'Hold and accept possible assignment', 'Sell a covered call after assignment', 'Roll the put', 'Close the put',
+      'Current put breakeven per share before future charges', 'Current put expiry P&amp;L at scan stock price before future charges',
       'New exercise cash / shares received', '23 / 19', 'USD 1,600', 'futubull Cloud chain unavailable for 2026-12-22.']) {
       expect(fullWeekendText).toContain(detail);
     }
@@ -397,6 +399,7 @@ it('generates native decision reports from chat and the independent opt-in sched
     expect(openedChatNote).not.toBeNull();
     await openedChatNote!.waitForSelector(`${preview} h3`, { visible: true, timeout: 8000 });
     expect(await openedChatNote!.$eval(preview, node => node.textContent)).toContain('USD 100 gross roll cash');
+    expect(await openedChatNote!.$eval(preview, node => node.textContent)).toContain('current put breakeven USD 90 per share');
     await openedChatNote!.waitForSelector(`a[aria-label="Download ${REPORT_ARCHIVE_NAME}"]`, { visible: true });
     const noteTimes = '[aria-label="Note timestamps"] time';
     await openedChatNote!.waitForSelector(noteTimes, { visible: true });
@@ -477,7 +480,8 @@ it('generates native decision reports from chat and the independent opt-in sched
     expect(await report.$$eval(`${preview} h3`, nodes => nodes.length)).toBe(1);
     const contents = await report.$eval(preview, node => node.textContent);
     for (const detail of ['cash if assigned USD 10,000', 'buyback USD 1,500', expiry, REPORT_ARCHIVE_NAME,
-      'Historical book as of', 'current leg P&L before close fee USD -500', 'USD 9,500 if assigned']) {
+      'Historical book as of', 'current leg P&L before close fee USD -500', 'USD 9,500 if assigned',
+      'current put breakeven USD 90 per share', 'current put expiry P&L USD 1,000', 'whole-strategy breakeven and expiry P&L unavailable']) {
       expect(contents).toContain(detail);
     }
     const dailyAttachments = `/api/notes/${noteId}/attachments`;

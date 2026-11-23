@@ -81,12 +81,16 @@ An American put can be assigned early. Check cash and confirm that you still wan
 
 ${fields([['Shares received / exercise cash', `${number(hold.delivered)} / ${amount(hold.assignmentCash)}`],
     ['Days to contract expiry', number(hold.daysToExpiry)],
-    ['Economic breakeven per share before future charges', amount(hold.breakeven)],
+    ['Whole-strategy breakeven per share before future charges', amount(hold.breakeven)],
+    ...(hold.breakeven === null && hold.currentPutBreakeven !== null
+      ? [['Current put breakeven per share before future charges', amount(hold.currentPutBreakeven)] as [string, string]] : []),
     ['Cumulative net option cash to date', amount(hold.cumulativeNetCash)],
     ['Intrinsic / residual at the reference ask per unit', `${amount(hold.intrinsic)} / ${amount(hold.timeValueAtAsk)}`],
     ['Current leg / whole chain P&L at reference ask before new fees', `${amount(hold.currentLegPnlAtAsk)} / ${amount(hold.chainPnlAtAsk)}`],
     ['Whole-chain expiry P&L at strike', amount(hold.expiryAtStrike)],
     ['Whole-chain expiry P&L at scan stock price', amount(hold.expiryAtSpot)],
+    ...(hold.expiryAtSpot === null && hold.currentPutExpiryAtSpot !== null
+      ? [['Current put expiry P&L at scan stock price before future charges', amount(hold.currentPutExpiryAtSpot)] as [string, string]] : []),
     ['Whole-chain expiry P&L if stock goes to zero', amount(hold.expiryAtZero)]])}
 
 #### Sell a covered call after assignment
@@ -252,7 +256,18 @@ function positionSummary(scan: PremarketScan) {
       optionPriceReference(position.listed, scan.session.date),
       close.highlight ? `Reference buyback is below the closing preference of ${amount(close.preferredUnder)}` : '',
     ].filter(Boolean).join(' · ');
-    const holdReference = `cash if assigned ${amount(hold.assignmentCash)} for ${number(hold.delivered)} shares · breakeven per share ${amount(hold.breakeven)} · strategy P&L at expiry at the reference stock price ${amount(hold.expiryAtSpot)} before future charges`;
+    const breakeven = hold.breakeven !== null ? `whole-strategy breakeven ${amount(hold.breakeven)} per share`
+      : hold.currentPutBreakeven !== null ? `current put breakeven ${amount(hold.currentPutBreakeven)} per share` : '';
+    const expiry = hold.expiryAtSpot !== null ? `whole-strategy expiry P&L ${amount(hold.expiryAtSpot)}`
+      : hold.currentPutExpiryAtSpot !== null ? `current put expiry P&L ${amount(hold.currentPutExpiryAtSpot)}` : '';
+    const unavailable = hold.breakeven === null && hold.expiryAtSpot === null ? 'whole-strategy breakeven and expiry P&L unavailable'
+      : hold.breakeven === null ? 'whole-strategy breakeven unavailable' : hold.expiryAtSpot === null ? 'expiry P&L at the reference stock price unavailable' : '';
+    const holdReference = [
+      `cash if assigned ${amount(hold.assignmentCash)} for ${number(hold.delivered)} shares`,
+      breakeven && `${breakeven} before future charges`,
+      expiry && `${expiry} at the reference stock price before future charges`,
+      unavailable,
+    ].filter(Boolean).join(' · ');
     const checks = positionChecks(row, scan.session.date);
     const comparison: Array<[string, string]> = [
       ['Underlying', stockRef], ['Close', closeReference], ['Hold', holdReference], ...rollReferences(row, scan.session.date),
