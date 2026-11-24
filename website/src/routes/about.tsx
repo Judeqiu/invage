@@ -48,5 +48,17 @@ function AboutPage() {
         <p className={p}><span className={b}>Velovest — Intelligent Investment Technology.</span> Let us help you master wealth management and build your financial future.</p>
       </article>
     </div></section>
+
+    <section aria-labelledby="founder-note-title" className="px-4 py-8 sm:px-6 sm:py-10 lg:px-8 lg:py-12">
+      <div className="mx-auto max-w-3xl border-l border-border pl-4 sm:pl-5">
+        <p className="text-[10px] font-bold uppercase text-primary">A note from the founder</p>
+        <h2 id="founder-note-title" className="mt-2 text-2xl font-semibold leading-tight">Why I built Velovest</h2>
+        <div className="mt-3 space-y-3 text-sm leading-6 text-muted-foreground sm:text-base sm:leading-7">
+          <p>I started trading options about four years ago and learned the hard way: books, YouTube, and my own mistakes.</p>
+          <p>I kept careful records, and when I shared what I’d learned with friends, I saw how hard it was to track positions across brokers. So I built the Velovest Dashboard and began teaching what I wish I’d been told: <strong className={b}>the risks first, the premium second.</strong> It’s cheaper to learn from others’ mistakes.</p>
+        </div>
+        <p className="mt-3 text-xs leading-5 text-muted-foreground sm:text-sm"><strong className={b}>Victor Lim</strong>, Founder · <time dateTime="2026-11">November 2026</time></p>
+      </div>
+    </section>
   </MarketingLayout>;
 }
