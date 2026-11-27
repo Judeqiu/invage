@@ -4,6 +4,7 @@ Operator deploy runbooks (not marketing changelogs).
 
 | Version | Date | Utarus pin | Summary |
 |---------|------|------------|---------|
+| [v0.3.24](./v0.3.24.md) | 2026-11-27 | `v4.2.57` | Utarus upgrade and expanded options decision reports |
 | [v0.3.23](./v0.3.23.md) | 2026-11-22 | `v4.2.52` | On-demand and scheduled options decision reports in private Notes |
 | [v0.3.22](./v0.3.22.md) | 2026-10-23 | `v4.2.34` | Account-level dashboard filters |
 | [v0.3.21](./v0.3.21.md) | 2026-10-13 | `v4.2.8` | Adjacent option roll chains and straight timeline arrows |
