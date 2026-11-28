@@ -52,7 +52,7 @@ async function openHelp(button) {
 }
 
 function setupHelp(id, attemptId) {
-  return attemptId ? { attempt_id: attemptId } : { connection_id: id };
+  return attemptId ? { attempt_id: attemptId } : { connection_id: id, action_unconfirmed: true };
 }
 
 function syncFeedback(state, title, message, support) {
@@ -242,8 +242,7 @@ function existingCard(c) {
   const b = broker(c.broker_id);
   const s = source(c.source_id);
   const open = managed === c.id;
-  const help = accountHelp.get(c.id) || (c.last_sync?.ok === false || c.sync_retry || c.status === 'needs_setup'
-    || c.last_sync?.snapshot_deferred?.length || c.last_sync?.not_imported?.length ? { connection_id: c.id } : null);
+  const help = accountHelp.get(c.id) ?? { connection_id: c.id };
   const last = c.sync_retry ? c.last_sync?.ok === true ? 'Current positions and cash saved. Historical reconciliation will retry automatically.' : 'Sync will retry automatically. Your last saved data remains available.'
     : c.last_sync?.ok === false ? `Last sync failed: ${c.last_sync.error}`
     : c.last_sync?.ok === true ? `Last sync: ${c.last_sync.as_of || c.last_sync.at}` : 'Never synced';
@@ -258,7 +257,7 @@ function existingCard(c) {
     <div class="actions">
       <button data-action="manage" data-id="${esc(c.id)}">${open ? 'Close' : 'Manage'}</button>
       <button data-action="preview" data-id="${esc(c.id)}" ${busy || dirty.has(c.id) || !c.account_id ? 'disabled' : ''}>Preview</button>
-      ${help ? helpButton(help) : ''}
+      ${helpButton(help)}
     </div>
     <div class="sync-controls"><div class="actions" role="group" aria-label="Sync ${esc(c.label)}">
       <button class="primary" data-action="sync" data-id="${esc(c.id)}" ${busy || dirty.has(c.id) || !c.enabled || !c.account_id || (!c.last_sync && !preview[c.id]) ? 'disabled' : ''}>Sync latest</button>

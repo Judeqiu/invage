@@ -15,7 +15,8 @@ import { BrokerHttpError } from './errors.js';
 import { brokerSyncBinding } from './sync-retries.js';
 import { getBrokerSyncRun, listBrokerSyncRuns } from './sync-history.js';
 
-export type BrokerHelpScope = { connectionId: unknown; runId?: unknown } | { sourceId: unknown } | { brokerId: unknown };
+export type BrokerHelpScope = { connectionId: unknown; runId?: unknown; actionUnconfirmed?: boolean }
+  | { sourceId: unknown } | { brokerId: unknown };
 export type BrokerHelpOperation = 'setup' | 'save_access' | 'discover_accounts' | 'create_account' |
   'save_account' | 'check_token' | 'create_token' | 'preview' | 'sync' | 'full_sync';
 
@@ -129,9 +130,20 @@ export function recordBrokerHelp(state: InvestorState, scope: BrokerHelpScope, o
   const view = conn && publicBrokerAccounts(state).connections.find(account => account.id === connectionId);
   const requestedRun = 'runId' in scope ? scope.runId : attempt?.runId;
   if (requestedRun !== undefined && (!conn || typeof requestedRun !== 'string')) return null;
+  const currentAccount = !!view && !attempt && requestedRun === undefined;
+  const lastSync = view?.last_sync;
+  const latestRun = conn && currentAccount ? listBrokerSyncRuns(owner, conn.channel, 0, 1).runs[0] : undefined;
   const run = conn && (typeof requestedRun === 'string' ? getBrokerSyncRun(owner, conn.channel, requestedRun)
-    : !attempt ? listBrokerSyncRuns(owner, conn.channel, 0, 1).runs[0] : undefined);
+    : latestRun && (!lastSync || Date.parse(latestRun.at) >= Date.parse(lastSync.at)) ? latestRun : undefined);
   if (requestedRun !== undefined && !run) return null;
+  const currentSync = lastSync && (run ? lastSync.at === run.at : currentAccount) ? lastSync : undefined;
+  const sync = run ? { at: run.at, trigger: run.trigger, ok: run.ok, statementDate: run.as_of }
+    : currentSync && { at: currentSync.at, trigger: undefined, ok: currentSync.ok, statementDate: currentSync.as_of };
+  const actionUnconfirmed = currentAccount && 'actionUnconfirmed' in scope && scope.actionUnconfirmed === true;
+  const needsSetup = view?.status === 'needs_setup';
+  const mode = currentAccount && !actionUnconfirmed && !needsSetup && !view?.sync_retry
+    && sync?.ok !== false && !currentSync?.snapshot_deferred?.length && !currentSync?.not_imported?.length
+    ? 'health_check' : 'troubleshooting';
 
   const privateValues = [...new Set([
     ...stringValues(source?.credentials), ...stringValues(conn?.config), ...stringValues(attempt?.privateInput),
@@ -143,10 +155,10 @@ export function recordBrokerHelp(state: InvestorState, scope: BrokerHelpScope, o
   const clean = (value: string) => redactSecrets(value, redactions);
   const error = attempt?.error;
   const providerCode = providerFailure(error).providerCode;
-  const errorMessage = error instanceof Error ? error.message : run?.error ?? (!attempt ? view?.last_sync?.error : undefined);
-  const currentSync = view?.last_sync && (run ? view.last_sync.at === run.at : !attempt) ? view.last_sync : undefined;
+  const errorMessage = error instanceof Error ? error.message : run?.error ?? currentSync?.error;
   const remoteResponse = attempt?.raw ? { archived: false, ...responseShape(broker.id, attempt.raw, conn?.account_id) }
-    : conn && run?.raw_data_id ? storedResponse(owner, conn.channel, broker.id, run.raw_data_id, conn.account_id) : undefined;
+    : mode === 'troubleshooting' && conn && run?.raw_data_id
+      ? storedResponse(owner, conn.channel, broker.id, run.raw_data_id, conn.account_id) : undefined;
   const usesOpenD = broker.id === 'futubull' && !!source?.credentials.opend_port && !source.credentials.app_key;
   const isFlexStatement = !!remoteResponse && 'matchingStatements' in remoteResponse && !!remoteResponse.matchingStatements;
   const documentation = usesOpenD ? 'https://openapi.futunn.com/futu-api-doc/en/opend/opend-intro.html'
@@ -154,17 +166,23 @@ export function recordBrokerHelp(state: InvestorState, scope: BrokerHelpScope, o
     : broker.helpHref;
   const facts = {
     broker: broker.displayName,
+    mode,
     transport: broker.id === 'futubull' ? usesOpenD ? 'OpenD' : 'Cloud OpenAPI' : undefined,
     documentation,
-    step: operation === 'sync' && !attempt && !run && !view?.last_sync ? 'setup' : operation,
+    step: operation === 'sync' && currentAccount && (needsSetup || (!sync && !actionUnconfirmed)) ? 'setup' : operation,
     capturedAt: new Date().toISOString(),
+    actionUnconfirmed: actionUnconfirmed || undefined,
     failure: errorMessage ? { message: clean(errorMessage), providerCode: providerCode && !privateValues.includes(providerCode) ? providerCode : undefined } : undefined,
     discovery: attempt?.discoveredAccounts === undefined ? undefined : { authorizedAccounts: attempt.discoveredAccounts },
     account: view && { bound: !!conn?.account_id, enabled: view.enabled, retryAt: view.sync_retry?.retry_at },
     fields: broker.credentialFields.map(field => ({
       label: field.label, required: field.required, saved: !!(source?.credentials[field.id] ?? conn?.config[field.id]),
     })),
-    sync: run ? { at: run.at, trigger: run.trigger, ok: run.ok, statementDate: run.as_of } : undefined,
+    sync,
+    historyCoverage: currentAccount && view?.history_sync ? {
+      status: view.history_sync.status, from: view.history_sync.from, through: view.history_sync.through,
+      historicalImported: view.history_sync.historical_imported, fees: view.history_sync.fees,
+    } : undefined,
     snapshotDeferred: currentSync?.snapshot_deferred,
     historyDeferred: attempt?.historyDeferred,
     importNotices: (attempt?.notices ?? currentSync?.not_imported)?.map(clean),
@@ -194,8 +212,11 @@ export function readBrokerHelp(state: InvestorState, id: unknown): ReturnType<ty
 }
 
 export function brokerHelpChat(receipt: NonNullable<ReturnType<typeof recordBrokerHelp>>) {
+  const request = receipt.facts.mode === 'health_check'
+    ? `Run a health check for my ${receipt.broker} connection in Brokers. Review its saved sync and import status and tell me if anything needs attention.`
+    : `Help me troubleshoot ${receipt.broker} in Brokers and walk me through the next step.`;
   return {
-    text: `@${PEER_CATALOG.bookkeeper.label} Help me troubleshoot ${receipt.broker} in Brokers and walk me through the next step.`,
+    text: `@${PEER_CATALOG.bookkeeper.label} ${request}`,
     pageContext: { broker_help_id: receipt.id },
   };
 }

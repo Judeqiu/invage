@@ -9,7 +9,10 @@ import { createFramework, createSession, createState, getConversation } from 'ut
 import { expect, it, vi } from 'vitest';
 import { buildFrameworkAgentList } from '../src/agents/framework-agents.js';
 import { HOST_AGENT_ID } from '../src/agents/roster.js';
-import { listBrokerSyncRuns } from '../src/brokers/sync-history.js';
+import { getBrokerConnector } from '../src/brokers/catalog.js';
+import { readBrokerHelp } from '../src/brokers/support.js';
+import { listBrokerSyncRuns, recordBrokerSyncRun } from '../src/brokers/sync-history.js';
+import { loadInvestor } from '../src/state/investor-store.js';
 import type { InvestorState } from '../src/state/portfolio-state.js';
 import { managementRepository } from '../src/management/repository.js';
 import { buildInvageApp } from '../src/webapp/server.js';
@@ -43,6 +46,10 @@ const token = 'fixture-secret-not-for-chat';
 const statementDate = '20261127';
 const guidance = 'In Client Portal, edit the Activity Flex Query and include Currency and Ending Cash in Cash Report. Then run Preview in Brokers.';
 const documentation = 'https://www.ibkrguides.com/clientportal/performanceandstatements/activityflex.htm';
+const healthReply = 'The last saved sync succeeded with no recorded import warnings.';
+const warningReply = 'MooMoo reported an account fund total, but individual fund holdings were unavailable.';
+const importWarning = 'The broker returned a fund total without individual holdings.';
+const moomooDocumentation = getBrokerConnector('moomoo').helpHref!;
 
 function fixture(userId: string, previousSync = false): InvestorState {
   return {
@@ -57,7 +64,7 @@ function fixture(userId: string, previousSync = false): InvestorState {
   };
 }
 
-it('opens Bookkeeper from first Preview and a recorded sync failure with private broker diagnostics', async () => {
+it('opens the right Bookkeeper chat for a clean sync, a warning and failed attempts', async () => {
   await modelReady;
   const model = await modelServer;
   const { runtime, databaseUrl } = await useTestDatabase();
@@ -68,15 +75,31 @@ it('opens Bookkeeper from first Preview and a recorded sync failure with private
   await management.pool.query(await readFile(new URL('../src/management/schema.sql', import.meta.url), 'utf8'));
   const fresh = randomUUID();
   const returning = randomUUID();
+  const reviewing = randomUUID();
   await createState(fixture(fresh));
   await createState(fixture(returning, true));
-  const sessions = await Promise.all([fresh, returning].map(userId => createSession({ type: 'user', userId, displayName: 'Test investor' })));
+  const reviewState = fixture(reviewing, true);
+  reviewState.broker_sources!.cloud = {
+    broker_id: 'moomoo',
+    credentials: { app_key: 'test-app', private_key: await readFile(new URL('fixtures/moomoo/ed25519-private.pem', import.meta.url), 'utf8') },
+  };
+  reviewState.broker_connections!.cloud = {
+    broker_id: 'moomoo', source_id: 'cloud', channel: 'moomoo', label: 'Test MooMoo', enabled: true,
+    account_id: '12345', config: { acc_id: '12345' },
+    last_sync: { ok: true, at: '2026-11-27T09:00:00Z', as_of: '2026-11-27', account_id: '12345', not_imported: [importWarning] },
+  };
+  await createState(reviewState);
+  recordBrokerSyncRun(reviewing, 'ibkr', { at: '2026-11-26T09:00:00Z', trigger: 'manual', ok: false, error: 'Old, resolved failure' });
+  const owners = [fresh, returning, reviewing, reviewing];
+  const sessions = await Promise.all(owners.map(userId => createSession({ type: 'user', userId, displayName: 'Test investor' })));
   const nativeFetch = globalThis.fetch;
   const requests: Array<{ model: string; stream: boolean }> = [];
   const documentationReads: string[] = [];
+  let brokerRequests = 0;
   vi.stubGlobal('fetch', (async (input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input));
     if (url.hostname === 'ndcdyn.interactivebrokers.com') {
+      brokerRequests++;
       expect(url.searchParams.get('t')).toBe(token);
       if (url.pathname.endsWith('/SendRequest')) return new Response('<FlexStatementResponse><Status>Success</Status><ReferenceCode>ref</ReferenceCode></FlexStatementResponse>');
       return new Response(`<FlexQueryResponse><FlexStatements><FlexStatement accountId="${account}" fromDate="${statementDate}" toDate="${statementDate}">
@@ -85,15 +108,15 @@ it('opens Bookkeeper from first Preview and a recorded sync failure with private
     if (url.hostname === 'api.firecrawl.dev') {
       const body = JSON.parse(String(init?.body));
       documentationReads.push(body.url);
-      expect(body.url).toBe(documentation);
-      return Response.json({ success: true, data: { markdown: 'Flex Queries are configurable report templates in Client Portal.',
-        metadata: { sourceURL: documentation } } });
+      expect([documentation, moomooDocumentation]).toContain(body.url);
+      return Response.json({ success: true, data: { markdown: 'Broker setup and source data documentation.',
+        metadata: { sourceURL: body.url } } });
     }
     return nativeFetch(input, init);
   }) satisfies typeof fetch);
 
   const sent: Array<{ text: string; pageContext: { broker_help_id: string } }> = [];
-  const facts: Array<Record<string, unknown>> = [];
+  let evidence: { broker?: string } | undefined;
   const fixtureFailures: unknown[] = [];
   model.on('request', async (request, response) => {
     try {
@@ -120,12 +143,15 @@ it('opens Bookkeeper from first Preview and a recorded sync failure with private
       const results = payload.messages.filter((message: { role: string }) => message.role === 'tool');
       const last = results.at(-1);
       const phase = results.length;
-      if (phase === 1) facts.push(JSON.parse(last.content));
-      const next = [
+      if (phase === 1) evidence = JSON.parse(last.content);
+      const moomoo = evidence?.broker === 'MooMoo';
+      const source = moomoo ? moomooDocumentation : documentation;
+      const steps = [
         ['inspect_broker_help', sent.at(-1)!.pageContext],
-        ['firecrawl', { action: 'scrape', url: documentation }],
-        ['commit_reply', { markdown: `${guidance}\n\n[IBKR Flex Web Service](${documentation})` }],
-      ][phase];
+        ['firecrawl', { action: 'scrape', url: source }],
+        ['commit_reply', { markdown: `${moomoo ? warningReply : guidance}\n\n[Broker documentation](${source})` }],
+      ];
+      const next = steps[phase];
       if (next) {
         response.write(event({ role: 'assistant', tool_calls: [{ index: 0, id: randomUUID(), type: 'function',
           function: { name: next[0], arguments: JSON.stringify(next[1]) } }] }));
@@ -153,8 +179,11 @@ it('opens Bookkeeper from first Preview and a recorded sync failure with private
     const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
     browser = await puppeteer.launch({ executablePath: process.env.TEST_CHROMIUM_PATH ?? '/usr/bin/chromium',
       headless: true, args: ['--no-sandbox', '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1'] });
-    for (const [i, action] of ['preview', 'sync'].entries()) {
-      const owner = [fresh, returning][i];
+    for (const [i, action] of ['preview', 'sync', 'health', 'warning'].entries()) {
+      const owner = owners[i];
+      const failedAction = action === 'preview' || action === 'sync';
+      const health = action === 'health';
+      const brokerRequestsBefore = brokerRequests;
       const context = await browser.createBrowserContext();
       try {
         await context.setCookie({ name: 'bindrive_session', value: sessions[i], url });
@@ -163,33 +192,63 @@ it('opens Bookkeeper from first Preview and a recorded sync failure with private
         page.setDefaultTimeout(12000);
         await page.goto(url + '/settings/brokers', { waitUntil: 'domcontentloaded' });
         const frame = await (await page.waitForSelector('iframe[src*="/settings/brokers/"]'))!.contentFrame();
-        const control = await frame!.waitForSelector(`[data-action="${action}"]:not([disabled])`);
-        const failed = page.waitForResponse(response => response.url().endsWith('/primary/' + action));
-        await control!.click();
-        const result = await (await failed).json();
-        expect(result.help_id).toBeTruthy();
-        expect(listBrokerSyncRuns(owner, 'ibkr').total).toBe(i);
-        const help = await frame!.waitForSelector(action === 'sync' ? '#sync-feedback [data-help]' : '.connector [data-help]', { visible: true });
+        let scope: { attempt_id: string } | { connection_id: string };
+        if (failedAction) {
+          const control = await frame!.waitForSelector(`[data-action="${action}"]:not([disabled])`);
+          const failed = page.waitForResponse(response => response.url().endsWith('/primary/' + action));
+          await control!.click();
+          const result = await (await failed).json();
+          expect(result.help_id).toBeTruthy();
+          expect(listBrokerSyncRuns(owner, 'ibkr').total).toBe(action === 'sync' ? 1 : 0);
+          scope = { attempt_id: result.help_id };
+        } else {
+          await frame!.waitForFunction(() => document.querySelectorAll('.connector button[data-help]').length === 2);
+          scope = { connection_id: health ? 'primary' : 'cloud' };
+        }
+        const helpArea = action === 'sync' ? '#sync-feedback' : '.connector';
+        const help = await frame!.waitForSelector(`${helpArea} button[data-help='${JSON.stringify(scope)}']`, { visible: true });
+        const prepared = page.waitForResponse(response => response.url().endsWith('/broker-help'));
         const newTab = browser.waitForTarget(target => target.browserContext() === context && target.url().startsWith(url + '/?c='));
         await help!.click();
+        const prompt = await (await prepared).json();
         const chat = (await (await newTab).page())!;
-        await chat.waitForFunction(text => document.querySelector('main')?.textContent?.includes(text), { timeout: 18000 }, guidance);
-        expect(await chat.$eval(`main a[href="${documentation}"]`, link => link.textContent)).toBe('IBKR Flex Web Service');
+        await chat.waitForFunction(text => document.querySelector('main')?.textContent?.includes(text), { timeout: 18000 },
+          health ? healthReply : action === 'warning' ? warningReply : guidance);
+        if (!health) {
+          const source = action === 'warning' ? moomooDocumentation : documentation;
+          expect(await chat.$eval(`main a[href="${source}"]`, link => link.textContent)).toBe('Broker documentation');
+        }
         expect(new URL(page.url()).pathname).toBe('/settings/brokers');
         const conversationId = new URL(chat.url()).searchParams.get('c')!;
         const saved = await getConversation(owner, conversationId);
-        expect(saved.messages.some(message => message.speaker === 'Bookkeeper')).toBe(true);
-        expect(sent[i].pageContext).toEqual({ broker_help_id: result.help_id });
+        const reply = saved.messages.find(message => message.speaker === 'Bookkeeper');
+        expect(reply?.tools).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'inspect_broker_help', ok: true })]));
+        const facts = readBrokerHelp((await loadInvestor(owner)).state, prompt.pageContext.broker_help_id)?.facts;
+        expect(sent[i].pageContext).toEqual(prompt.pageContext);
         expect(JSON.stringify(sent[i])).not.toContain(token);
-        expect(facts[i]).toMatchObject({ step: action,
-          failure: { message: expect.stringContaining('CashReport has no currency rows') },
-          remoteResponse: { archived: action === 'sync', cash: { rows: 1, withCurrency: 0, withEndingCash: 1 } } });
-        expect(JSON.stringify(facts[i])).not.toContain(account);
-        expect(JSON.stringify(facts[i])).not.toContain('1234.56');
+        if (failedAction) {
+          expect(facts).toMatchObject({ mode: 'troubleshooting', step: action,
+            failure: { message: expect.stringContaining('CashReport has no currency rows') },
+            remoteResponse: { archived: action === 'sync', cash: { rows: 1, withCurrency: 0, withEndingCash: 1 } } });
+        } else {
+          expect(brokerRequests).toBe(brokerRequestsBefore);
+          expect(facts).toMatchObject({ mode: health ? 'health_check' : 'troubleshooting', step: 'sync',
+            sync: { ok: true, at: '2026-11-27T09:00:00Z', statementDate: '2026-11-27' },
+            account: { enabled: true, bound: true },
+          });
+          expect(prompt.text).toContain(health ? 'Run a health check for my Interactive Brokers' : 'Help me troubleshoot MooMoo');
+          if (health) {
+            expect(reply?.tools?.map(tool => tool.name)).toEqual(['inspect_broker_help', 'commit_reply']);
+            expect(facts).not.toHaveProperty('failure');
+            expect(facts).not.toHaveProperty('remoteResponse');
+          } else expect(facts?.importNotices).toEqual([importWarning]);
+        }
+        expect(JSON.stringify(facts)).not.toContain(account);
+        expect(JSON.stringify(facts)).not.toContain('1234.56');
         const otherOwner = i === 0 ? 1 : 0;
         const reused = await nativeFetch(url + '/api/domain/invage/broker-help', {
           method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: `bindrive_session=${sessions[otherOwner]}` },
-          body: JSON.stringify({ attempt_id: result.help_id }),
+          body: JSON.stringify({ attempt_id: prompt.pageContext.broker_help_id }),
         });
         expect(reused.status).toBe(404);
         if (action === 'sync') {
@@ -205,7 +264,7 @@ it('opens Bookkeeper from first Preview and a recorded sync failure with private
         await context.close();
       }
     }
-    expect(documentationReads).toEqual([documentation, documentation]);
+    expect(documentationReads).toEqual([documentation, documentation, moomooDocumentation]);
     expect(requests.filter(request => request.stream).every(request => request.model === 'deepseek-v4-flash')).toBe(true);
     expect(fixtureFailures).toEqual([]);
   } finally {

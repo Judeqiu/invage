@@ -225,9 +225,11 @@ export function createBrokerConnectionsRouter(): Router {
   router.post('/broker-help', async (req: Request, res: Response) => {
     try {
       const { state } = await sessionInvestor(req);
-      const { attempt_id, connection_id, run_id, source_id, broker_id } = req.body ?? {};
+      const { attempt_id, connection_id, run_id, source_id, broker_id, action_unconfirmed } = req.body ?? {};
       const receipt = attempt_id !== undefined ? readBrokerHelp(state, attempt_id)
-        : connection_id !== undefined ? recordBrokerHelp(state, { connectionId: connection_id, runId: run_id }, 'sync')
+        : connection_id !== undefined ? recordBrokerHelp(state, {
+          connectionId: connection_id, runId: run_id, actionUnconfirmed: action_unconfirmed === true,
+        }, 'sync')
         : source_id !== undefined ? recordBrokerHelp(state, { sourceId: source_id }, 'setup')
         : recordBrokerHelp(state, { brokerId: broker_id }, 'setup');
       res.setHeader('Cache-Control', 'private, no-store');
