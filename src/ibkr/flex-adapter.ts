@@ -12,7 +12,7 @@ import type {
 import { getBrokerConnector } from '../brokers/catalog.js';
 import { createFlexTransport, fetchFlexStatement, FlexHttpError } from './flex-client.js';
 import { mapFlexDocToStatement } from './flex-map.js';
-import { flexHistoryDates,mapFlexHistory } from './flex-history.js';
+import { flexHistoryDates, mapFlexHistory, type FlexHistoryReport } from './flex-history.js';
 import type { BrokerHistoryGap } from '../brokers/history.js';
 import { parseFlexQueryXml,looksLikeCsv } from './flex-parse.js';
 
@@ -39,10 +39,9 @@ export const ibkrFlexAdapter: BrokerConnectorAdapter = {
     if(looksLikeCsv(xml.toString('utf8')))return {kind:'xml',body:xml,historyUnavailable:{broker_id:'ibkr',channel:opts.channel??'ibkr',plan:opts.history,reason:'Configured Flex query returns CSV. Existing snapshot parser remains supported; historical executions require account-scoped execution-level XML.'}};
     const account=opts.accountId??parseFlexQueryXml(xml).accountId,channel=opts.channel??'ibkr';
     const dates=flexHistoryDates(xml.toString('utf8'),account);if(!dates.length)throw new Error('Flex current account binding mismatch');
-    const latest=dates.map(d=>d.through).sort().at(-1)!;const reports=[{xml:xml.toString('utf8'),from:dates[0].from,through:latest}];
+    const latest=dates.map(d=>d.through).sort().at(-1)!;const reports: FlexHistoryReport[] = [{xml:xml.toString('utf8'),from:dates[0].from,through:latest}];
     const attachments:NonNullable<BrokerRawPayload['historyAttachments']>=[],gaps:BrokerHistoryGap[]=[];
     try {
-    let imported=opts.history.mode==='full';
     if(opts.history.mode==='full'){
       const year=Number(latest.slice(0,4));
       for(let y=year;y>=year-4;y--){
@@ -53,7 +52,7 @@ export const ibkrFlexAdapter: BrokerConnectorAdapter = {
           const historical=await fetchFlexStatement({token:credentials.token??'',queryId:credentials[queryField]??'',fromDate:from,throughDate:through,pollAttempts:30},transport);
           const actual=flexHistoryDates(historical.toString('utf8'),account);if(!actual.length)throw new Error('Historical Flex account mismatch');
           if(actual.some(d=>d.from!==from||d.through!==through))gaps.push({kind:'coverage',reference:from,reason:'Returned historical Flex dates differ from the requested interval.'});
-          reports.push({xml:historical.toString('utf8'),from,through});attachments.push({kind:'xml',body:historical});
+          reports.push({xml:historical.toString('utf8'),from,through,historical:true});attachments.push({kind:'xml',body:historical});
         }catch(error){
           if(!(error instanceof FlexHttpError) || error.code!=='1003')throw error;
           gaps.push({kind:'coverage',reference:from,reason:`IBKR historical report unavailable (${error.code}); stopped further yearly requests to avoid repeated failed attempts.`});
@@ -65,7 +64,7 @@ export const ibkrFlexAdapter: BrokerConnectorAdapter = {
     const cutoff=latest.replace(/^(\d{4})(\d{2})(\d{2})$/,'$1-$2-$3')+'T23:59:59.000Z';
     const through=opts.history.through<cutoff?opts.history.through:cutoff;
     const effective={...opts.history,through,from:opts.history.from>through?new Date(Date.parse(through)-2*86400000).toISOString():opts.history.from};
-    const history=mapFlexHistory(reports,account,channel,effective,gaps,imported);
+    const history=mapFlexHistory(reports,account,channel,effective,gaps);
     return {kind:'xml',body:xml,history,historyAttachments:attachments};
     } catch (error) {
       return {kind:'xml',body:xml,historyAttachments:attachments,historyDeferred:{reason:deferredHistoryReason('IBKR',error)}};

@@ -10,7 +10,7 @@ const option = '<Trade tradeID="o" conid="123" dateTime="20261020;100000" levelO
 const stock = '<Trade tradeID="s" conid="456" dateTime="20261020;100001" levelOfDetail="EXECUTION" assetCategory="STK" multiplier="1" quantity="2" proceeds="-100.00" buySell="BUY" currency="USD"/>';
 const xml = `<FlexQueryResponse><FlexStatement accountId="A" fromDate="20261001" toDate="20261020"><OpenPositions><OpenPosition accountId="A" currency="USD" assetCategory="OPT" symbol="AMD   261120P00150000" position="1" costBasisMoney="100" markPrice="1"/></OpenPositions><CashReport><CashReportCurrency currency="USD" endingCash="500"/></CashReport><Trades>${option}${stock}</Trades></FlexStatement></FlexQueryResponse>`;
 const plan = { mode: 'full' as const, from: '2026-10-01T00:00:00Z', through: '2026-10-20T23:59:59Z' };
-const history = (body = xml) => mapFlexHistory([{ xml: body, from: '20261001', through: '20261020' }], 'A', 'ibkr-A', plan, [], false);
+const history = (body = xml) => mapFlexHistory([{ xml: body, from: '20261001', through: '20261020' }], 'A', 'ibkr-A', plan, []);
 
 describe('usable IBKR evidence without redundant fields', () => {
   it('imports current positions and exact mixed execution cash without row accounts, prices or stock tickers', () => {
@@ -45,6 +45,15 @@ describe('usable IBKR evidence without redundant fields', () => {
     expect(parseFlexQueryXml(iso).optionExecutions![0]).toMatchObject({ executed_at: '2026-10-20T10:00:00', right: 'put', expiry: '2026-11-20' });
     expect(history(iso).executions[0].executed_at).toBe('2026-10-20T10:00:00');
     expect(parseRelationshipArchive('ibkr', Buffer.from(iso), 'A', { id: 'test', version: '1' })[0].at).toBe('2026-10-20T10:00:00');
+  });
+
+  it('retains verified executions alongside rows that lack a broker ID or timestamp', () => {
+    const incomplete = stock.replace('tradeID="s" ', '').replace('dateTime="20261020;100001" ', '');
+    const h = history(xml.replace(stock, incomplete));
+    expect(h.executions.map(row => row.id)).toEqual(['o']);
+    expect(h.sync.gaps).toContainEqual(expect.objectContaining({ kind: 'coverage', reference: '20261001',
+      reason: expect.stringContaining('Trade ID or Date/Time') }));
+    expect(h.sync.fees).toBe('available');
   });
 });
 

@@ -42,9 +42,9 @@ describe('explicit latest and full broker sync',()=>{
   order.account_id='B';expect(()=>mapWebullHistory(bundle,'webull-A')).toThrow('account mismatch');
  });
  it('deduplicates overlapping Flex reports and makes imported history visible to generic agent queries',()=>{
-  const report={xml:flexRows(),from:'20230101',through:'20231231'};
-  const h=mapFlexHistory([report,report],'A','ibkr-A',full,[],true);expect(h.executions).toHaveLength(1);
-  const latest=mapFlexHistory([{...report,xml:flexRows().replace('20230901','20261013').replace('20230901','20261013').replace('tradeID="1"','tradeID="2"').replace('expiry="20230915"','expiry="20270915"').replace('conid="10"','conid="20"')}],'A','ibkr-A',planBrokerHistorySync(h,'A',now),[],false);
+  const report={xml:flexRows(),from:'20230101',through:'20231231',historical:true};
+  const h=mapFlexHistory([report,report],'A','ibkr-A',full,[]);expect(h.executions).toHaveLength(1);
+  const latest=mapFlexHistory([{...report,historical:false,xml:flexRows().replace('20230901','20261013').replace('20230901','20261013').replace('tradeID="1"','tradeID="2"').replace('expiry="20230915"','expiry="20270915"').replace('conid="10"','conid="20"')}],'A','ibkr-A',planBrokerHistorySync(h,'A',now),[]);
   const merged=mergeBrokerHistory(h,latest);expect(merged.executions).toHaveLength(2);expect(merged.sync.historical_imported).toBe(true);expect(merged.sync.gaps.length).toBeGreaterThan(0);
   const snapshot={revision:1,state:{broker_history:{'ibkr-A':merged}}} as any;
   expect(runQuery(snapshot,{from:'broker_executions',select:['id','gross_cash']}).rows).toEqual([{id:'1',gross_cash:'300'},{id:'2',gross_cash:'300'}]);
@@ -57,13 +57,14 @@ describe('explicit latest and full broker sync',()=>{
 });
 
 describe('IBKR sync transport modes',()=>{
- async function fetchMode(fullMode:boolean){
+ async function fetchMode(fullMode:boolean, transformReport: (body:string, historical:boolean) => string = body => body){
   const {ibkrFlexAdapter}=await import('../src/ibkr/flex-adapter.js');
   const calls:Array<Record<string,string>>=[];const refs=new Map<string,Record<string,string>>();let pauses=0;
   const xml=(from:string,to:string,id:string,date:string,cash:string)=>`<FlexQueryResponse><FlexStatement accountId="A" fromDate="${from}" toDate="${to}"><OpenPositions/><CashReport><CashReportCurrency accountId="A" currency="USD" endingCash="${cash}"/></CashReport><Trades><Trade accountId="A" levelOfDetail="EXECUTION" assetCategory="STK" tradeID="${id}" conid="100" dateTime="${date};100000" tradeDate="${date}" buySell="BUY" quantity="1" multiplier="1" symbol="AAPL" currency="USD" proceeds="-10" tradePrice="10" ibCommission="-1" ibCommissionCurrency="USD"/></Trades></FlexStatement></FlexQueryResponse>`;
   const transport={kind:'ibkr' as const,flex:{sleepMs:async()=>{pauses++;},get:async(path:string,p:Record<string,string>)=>{
    if(path==='SendRequest'){calls.push(p);const ref=String(calls.length);refs.set(ref,p);return Buffer.from(`<FlexStatementResponse><Status>Success</Status><ReferenceCode>${ref}</ReferenceCode></FlexStatementResponse>`);}
-   const request=refs.get(p.q)!;return Buffer.from(request.fd?xml(request.fd,request.td,request.fd.slice(0,4),request.fd==='20260101'?'20261012':request.fd,'999'):xml('20251013','20261012','2026','20261012','100'));
+   const request=refs.get(p.q)!;
+   return Buffer.from(transformReport(request.fd ? xml(request.fd,request.td,request.fd.slice(0,4),request.fd==='20260101'?'20261012':request.fd,'999') : xml('20251013','20261012','2026','20261012','100'), !!request.fd));
   }}};
   const raw=await ibkrFlexAdapter.fetchRaw({token:'secret',activity_query_id:'q'},{transport,accountId:'A',channel:'ibkr-A',history:planBrokerHistorySync(undefined,'A',now,fullMode)});
   return {raw,calls,pauses,statement:ibkrFlexAdapter.parseToStatement(raw,'ibkr-A')};
@@ -77,6 +78,20 @@ describe('IBKR sync transport modes',()=>{
   const {raw,calls,pauses,statement}=await fetchMode(true);expect(calls).toHaveLength(6);expect(calls[1]).toMatchObject({fd:'20260101',td:'20261012'});expect(calls.at(-1)).toMatchObject({fd:'20220101',td:'20221231'});expect(pauses).toBe(5);
   expect(raw.historyAttachments).toHaveLength(5);expect(raw.history?.executions).toHaveLength(5);
   expect(statement.cash).toEqual([{currency:'USD',amount:100}]);expect(statement.lots).toEqual([]);expect(statement.history?.sync.historical_imported).toBe(true);
+ });
+ it('reports a missing execution configuration when yearly Trades rows arrive without detail, identity or time',async()=>{
+  const { raw, statement } = await fetchMode(true, (body, historical) => historical
+    ? body.replace('levelOfDetail="EXECUTION" ', '').replace(/tradeID="[^"]+" |dateTime="[^"]+" /g, '')
+    : body.replace(/<Trades>.*<\/Trades>/, '<Trades/>'));
+  expect(raw.historyDeferred).toBeUndefined();
+  expect(raw.historyAttachments).toHaveLength(5);
+  expect(statement.cash).toEqual([{ currency: 'USD', amount: 100 }]);
+  expect(statement.history?.executions).toEqual([]);
+  expect(statement.history?.sync).toMatchObject({ mode: 'full', status: 'partial', historical_imported: false, fees: 'unavailable' });
+  expect(statement.history?.sync.gaps).toEqual(expect.arrayContaining(
+    ['20260101', '20250101', '20240101', '20230101', '20220101'].map(reference => ({
+      kind: 'coverage', reference, reason: expect.stringContaining('omit Level of Detail'),
+    }))));
  });
 });
 

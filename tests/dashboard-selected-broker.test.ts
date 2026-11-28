@@ -9,6 +9,8 @@ import { buildDashboardModel, buildLivePositions } from '../src/report/dashboard
 import { buildBrokerProjections } from '../src/report/broker-projections.js';
 import { buildPageProjections } from '../src/report/page-projections.js';
 import { buildExecutionJournal } from '../src/brokers/option-executions.js';
+import { optionExecutionsFromHistory } from '../src/brokers/history.js';
+import { mapFlexHistory } from '../src/ibkr/flex-history.js';
 import { buildRecordedOptionAnalytics } from '../src/webapp/option-analytics.js';
 import type { InvestorState } from '../src/state/portfolio-state.js';
 import type { DashboardPayload } from '../src/webapp/dashboard-data.js';
@@ -32,10 +34,24 @@ function fixture() {
     },
     cash: ['retirement', 'savings', 'other'].map((channel, i) => ({ channel, currency: 'USD', amount: [50, 75, 25][i], updated_at: '2026-10-23' })),
   };
-  state.option_executions = ['retirement', 'savings', 'other'].map((channel, i) => ({ channel, account_id: 'A' + i,
+  const expectedExecutions = ['retirement', 'savings', 'other'].map((channel, i) => ({ channel, account_id: 'A' + i,
     execution_id: 'open', contract_id: 'option-' + i, executed_at: '2026-10-23T09:00:00', underlying: i < 2 ? 'AAPL' : 'MSFT',
-    right: 'put', side: 'sell', effect: 'open', strike: i < 2 ? '100' : '200', expiry: '2026-11-20', multiplier: '100',
+    right: 'put' as const, side: 'sell' as const, effect: 'open' as const, strike: i < 2 ? '100' : '200', expiry: '2026-11-20', multiplier: '100',
     contracts: '1', gross_premium: ['100', '200', '500'][i], currency: 'USD', commission: '-1' }));
+  state.option_executions = expectedExecutions.flatMap(execution => {
+    if (state.broker_connections![execution.channel].broker_id !== 'ibkr') return [execution];
+    const report = { historical: true, from: '20260101', through: '20261023', xml: `
+      <FlexQueryResponse><FlexStatement accountId="${execution.account_id}" fromDate="20260101" toDate="20261023">
+        <Trades><Trade levelOfDetail="EXECUTION" tradeID="${execution.execution_id}" conid="${execution.contract_id}"
+          dateTime="20261023;090000" assetCategory="OPT" underlyingSymbol="AAPL" putCall="P" strike="100"
+          expiry="20261120" multiplier="100" quantity="-1" buySell="SELL" openCloseIndicator="O"
+          currency="USD" proceeds="${execution.gross_premium}" ibCommission="-1" ibCommissionCurrency="USD"/>
+        </Trades></FlexStatement></FlexQueryResponse>` };
+    const history = mapFlexHistory([report], execution.account_id, execution.channel,
+      { mode: 'full', from: '2026-01-01T00:00:00Z', through: '2026-10-23T23:59:59Z' }, []);
+    return optionExecutionsFromHistory(history);
+  });
+  expect(state.option_executions).toEqual(expectedExecutions);
   const journal = buildExecutionJournal(state.option_executions);
   const live = buildLivePositions(state.portfolio!, { AAPL: 100, MSFT: 200 }, {}, state.cash, [], '2026-10-23', { reportingCurrency: 'USD', fxRates: {} });
   const dashboard: DashboardPayload = { slug: state.user.id, displayName: state.profile.display_name, empty: false,
@@ -129,6 +145,10 @@ it.skipIf(!existsSync(executablePath)).each(['index.html', 'v2.html'])('%s keeps
     expect(await page.$eval('#navDelta', node => node.textContent)).toContain('Daily vs 22-Oct-2026');
     expect(await page.$eval('#deskEyebrow', node => node.textContent)).toContain('retirement');
     expect(await page.$eval('#totalPremiumValue', node => node.textContent)).toBe('$100.00');
+    const premiumCards = fileName === 'v2.html' ? '#v2Summary .v2-premium-card .v2-stat' : '#kpiRow .metric-card';
+    expect(await page.$$eval(premiumCards, cards => cards
+      .filter(card => ['Net premium · Daily', 'Net premium · MTD'].includes(card.querySelector('.label-eyebrow')?.textContent ?? ''))
+      .map(card => card.querySelector('.metric-value')?.textContent))).toEqual(['$100', '$100']);
     expect(await page.$eval('#openOptions', node => node.textContent)).toContain('AAPL');
     expect(await page.$eval('#openOptions', node => node.textContent)).not.toContain('MSFT');
     expect(await page.$eval('#dateSelect', node => (node as HTMLInputElement).disabled)).toBe(false);
