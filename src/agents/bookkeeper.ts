@@ -17,6 +17,8 @@ import {
 import { readFileSync, existsSync } from 'fs';
 import { resolve, dirname, join } from 'path';
 import { fileURLToPath } from 'url';
+import { BROKER_HELP_GUIDANCE } from '../tools/broker_help.js';
+import { PUBLIC_WEB_RESEARCH_POLICY } from './routing-policy.js';
 import { createBookkeeperTools } from '../tools/index.js';
 import {
   getCashes,
@@ -239,7 +241,8 @@ export const bookkeeperExtension: DomainExtension = {
   llmRouting: TEXT_AND_IMAGE_ROUTING,
   llmHeavyHeuristics: TEXT_HEAVY_HEURISTICS,
   l10n: PEER_L10N,
-  purpose: PROFILE === 'consultant' ? OPTIONS_BOOKKEEPER_PURPOSE : BOOKKEEPER_PURPOSE,
+  purpose: (PROFILE === 'consultant' ? OPTIONS_BOOKKEEPER_PURPOSE : BOOKKEEPER_PURPOSE)
+    + '\n' + PUBLIC_WEB_RESEARCH_POLICY + BROKER_HELP_GUIDANCE,
 
   tools: () => createBookkeeperTools(),
 

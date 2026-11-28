@@ -35,10 +35,11 @@ import { parseSignAlg } from '../moomoo/moomoo-sign.js';
 import { checkWebullToken, createWebullToken, parseWebullRegion, type WebullCredentials } from '../webull/webull-client.js';
 import type { InvestorState } from '../state/portfolio-state.js';
 import {
-  addBrokerAccount, addBrokerSource, discoverBrokerAccounts, patchBrokerAccount,
+  addBrokerAccount, addBrokerSource, BrokerAccountSyncFailure, discoverBrokerAccounts, patchBrokerAccount,
   patchBrokerSource, previewBrokerAccount, publicBrokerAccounts,
   readBrokerAccountModel, syncBrokerAccount,
 } from '../brokers/accounts.js';
+import { brokerHelpChat, readBrokerHelp, recordBrokerHelp, type BrokerHelpOperation, type BrokerHelpScope } from '../brokers/support.js';
 
 function connectorIdParam(req: Request): string {
   const id = req.params.id;
@@ -184,7 +185,7 @@ export function createBrokerConnectionsRouter(): Router {
     } catch (e) { accountError(res, e); }
   });
 
-  function accountError(res: Response, e: unknown): void {
+  function accountError(res: Response, e: unknown, helpId?: string): void {
     const message = e instanceof Error ? e.message : String(e);
     const code = /account mismatch|account binding differs|does not match the broker/i.test(message) ? 'account_mismatch'
       : /Duplicate broker account/i.test(message) ? 'duplicate_account'
@@ -198,8 +199,42 @@ export function createBrokerConnectionsRouter(): Router {
       : /already in progress|paused|Duplicate broker account|revision|conflict/i.test(message) ? 409
       : /HTTP |response signature/.test(message) ? 502
       : /required|invalid|missing|mismatch|does not match|incomplete|cannot|must|duplicate|unknown .*field|no .*account|not .*account|not allowed|Flex|statement|parse|CSV/i.test(message) ? 400 : 500;
-    jsonError(res, status, code, message);
+    res.status(status).json({ error: code, message, ...(helpId && { help_id: helpId }) });
   }
+  function attemptHelp(snapshot: InvestorSnapshot, scope: BrokerHelpScope, step: BrokerHelpOperation,
+    failure: NonNullable<Parameters<typeof recordBrokerHelp>[3]>) {
+    try { return recordBrokerHelp(snapshot.state, scope, step, failure)?.id; }
+    catch { console.error('[Brokers] Could not prepare setup or sync diagnostics.'); return undefined; }
+  }
+
+  function setupRoute(step: BrokerHelpOperation, scope: (req: Request) => BrokerHelpScope,
+    action: (req: Request, res: Response, snapshot: InvestorSnapshot, observeRaw: (body: Buffer) => void) => Promise<void>) {
+    return async (req: Request, res: Response) => {
+      let snapshot: InvestorSnapshot | undefined;
+      let raw: Buffer | undefined;
+      try {
+        snapshot = await sessionInvestor(req);
+        await action(req, res, snapshot, body => { raw = body; });
+      } catch (error) {
+        const helpId = snapshot && attemptHelp(snapshot, scope(req), step, { error, privateInput: req.body, raw });
+        accountError(res, error, helpId);
+      }
+    };
+  }
+
+  router.post('/broker-help', async (req: Request, res: Response) => {
+    try {
+      const { state } = await sessionInvestor(req);
+      const { attempt_id, connection_id, run_id, source_id, broker_id } = req.body ?? {};
+      const receipt = attempt_id !== undefined ? readBrokerHelp(state, attempt_id)
+        : connection_id !== undefined ? recordBrokerHelp(state, { connectionId: connection_id, runId: run_id }, 'sync')
+        : source_id !== undefined ? recordBrokerHelp(state, { sourceId: source_id }, 'setup')
+        : recordBrokerHelp(state, { brokerId: broker_id }, 'setup');
+      res.setHeader('Cache-Control', 'private, no-store');
+      if (!receipt) { jsonError(res, 404, 'broker_help_unavailable', 'These broker diagnostics are no longer available.'); return; }
+      res.json(brokerHelpChat(receipt));
+    } catch (e) { accountError(res, e); }
+  });
   router.get('/broker-catalog', async (req: Request, res: Response) => {
     try {
       const snapshot = await sessionInvestor(req);
@@ -222,96 +257,94 @@ export function createBrokerConnectionsRouter(): Router {
         connections: data.connections.map(c => ({ ...c, latest_raw_data: latestBrokerRawData(snapshot.state.user.id, c.channel) })) });
     } catch (e) { accountError(res, e); }
   });
-  router.post('/broker-access', async (req: Request, res: Response) => {
+  const sourceScope = (req: Request) => ({ sourceId: req.params.id });
+  const connectionScope = (req: Request) => ({ connectionId: req.params.id });
+  router.post('/broker-access', setupRoute('save_access', req => ({ brokerId: req.body?.broker_id }), async (req, res, snapshot) => {
+    const id = addBrokerSource(snapshot.state, req.body?.broker_id, req.body?.credentials ?? {});
+    await saveInvestor(snapshot);
+    res.status(201).json({ id });
+  }));
+  router.patch('/broker-access/:id', setupRoute('save_access', sourceScope, async (req, res, snapshot) => {
+    patchBrokerSource(snapshot.state, String(req.params.id), req.body?.credentials ?? {});
+    await saveInvestor(snapshot);
+    res.json({ ok: true });
+  }));
+  router.post('/broker-access/:id/discover', setupRoute('discover_accounts', sourceScope, async (req, res, snapshot, observeRaw) => {
+    const accounts = await discoverBrokerAccounts(snapshot.state, String(req.params.id), req.body?.config ?? {}, undefined, observeRaw);
+    const helpId = accounts.length === 0 ? attemptHelp(snapshot, sourceScope(req), 'discover_accounts', { discoveredAccounts: accounts.length }) : undefined;
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.json({ accounts, ...(helpId && { help_id: helpId }) });
+  }));
+  router.post('/broker-access/:id/webull-token', setupRoute('create_token', sourceScope, async (req, res, snapshot) => {
+    const id = String(req.params.id);
+    const source = readBrokerAccountModel(snapshot.state).sources[id];
+    if (!source || source.broker_id !== 'webull') throw new Error('Unknown Webull access source.');
+    const c = source.credentials;
+    let created;
     try {
-      const snapshot = await sessionInvestor(req);
-      const id = addBrokerSource(snapshot.state, req.body?.broker_id, req.body?.credentials ?? {});
-      await saveInvestor(snapshot);
-      res.status(201).json({ id });
-    } catch (e) { accountError(res, e); }
-  });
-  router.patch('/broker-access/:id', async (req: Request, res: Response) => {
+      created = await createWebullToken({ app_key: c.app_key, app_secret: c.app_secret,
+        region: parseWebullRegion(c.region), ...(c.access_token ? { access_token: c.access_token } : {}) });
+    } catch (e) {
+      throw new Error(redactSecrets(e instanceof Error ? e.message : String(e), [c.app_secret, c.access_token].filter((v): v is string => !!v)), { cause: e });
+    }
+    patchBrokerSource(snapshot.state, id, { access_token: created.token });
+    await saveInvestor(snapshot);
+    res.json({ status: created.status });
+  }));
+  router.get('/broker-access/:id/webull-token', setupRoute('check_token', sourceScope, async (req, res, snapshot) => {
+    const source = readBrokerAccountModel(snapshot.state).sources[String(req.params.id)];
+    if (!source || source.broker_id !== 'webull') throw new Error('Unknown Webull access source.');
+    const c = source.credentials;
     try {
-      const snapshot = await sessionInvestor(req);
-      patchBrokerSource(snapshot.state, String(req.params.id), req.body?.credentials ?? {});
-      await saveInvestor(snapshot);
-      res.json({ ok: true });
-    } catch (e) { accountError(res, e); }
-  });
-  router.post('/broker-access/:id/discover', async (req: Request, res: Response) => {
-    try {
-      const snapshot = await sessionInvestor(req);
-      const accounts = await discoverBrokerAccounts(snapshot.state, String(req.params.id), req.body?.config ?? {});
-      res.setHeader('Cache-Control', 'private, no-store');
-      res.json({ accounts });
-    } catch (e) { accountError(res, e); }
-  });
-  router.post('/broker-access/:id/webull-token', async (req: Request, res: Response) => {
-    try {
-      const snapshot = await sessionInvestor(req);
-      const id = String(req.params.id);
-      const source = readBrokerAccountModel(snapshot.state).sources[id];
-      if (!source || source.broker_id !== 'webull') throw new Error('Unknown Webull access source.');
-      const c = source.credentials;
-      let created;
-      try {
-        created = await createWebullToken({ app_key: c.app_key, app_secret: c.app_secret,
-          region: parseWebullRegion(c.region), ...(c.access_token ? { access_token: c.access_token } : {}) });
-      } catch (e) {
-        throw new Error(redactSecrets(e instanceof Error ? e.message : String(e), [c.app_secret, c.access_token].filter((v): v is string => !!v)));
-      }
-      patchBrokerSource(snapshot.state, id, { access_token: created.token });
-      await saveInvestor(snapshot);
-      res.json({ status: created.status });
-    } catch (e) { accountError(res, e); }
-  });
-  router.get('/broker-access/:id/webull-token', async (req: Request, res: Response) => {
-    try {
-      const snapshot = await sessionInvestor(req);
-      const source = readBrokerAccountModel(snapshot.state).sources[String(req.params.id)];
-      if (!source || source.broker_id !== 'webull') throw new Error('Unknown Webull access source.');
-      const c = source.credentials;
-      try {
-        res.json(await checkWebullToken({ app_key: c.app_key, app_secret: c.app_secret,
-          region: parseWebullRegion(c.region), ...(c.access_token ? { access_token: c.access_token } : {}) }));
-      } catch (e) {
-        throw new Error(redactSecrets(e instanceof Error ? e.message : String(e), [c.app_secret, c.access_token].filter((v): v is string => !!v)));
-      }
-    } catch (e) { accountError(res, e); }
-  });
-  router.post('/broker-accounts', async (req: Request, res: Response) => {
-    try {
-      const snapshot = await sessionInvestor(req);
-      const id = addBrokerAccount(snapshot.state, req.body);
-      await saveInvestor(snapshot);
-      res.status(201).json({ id });
-    } catch (e) { accountError(res, e); }
-  });
-  router.patch('/broker-accounts/:id', async (req: Request, res: Response) => {
-    try {
-      const snapshot = await sessionInvestor(req);
-      patchBrokerAccount(snapshot.state, String(req.params.id), req.body ?? {});
-      await saveInvestor(snapshot);
-      res.json({ ok: true });
-    } catch (e) { accountError(res, e); }
-  });
-  router.post('/broker-accounts/:id/preview', async (req: Request, res: Response) => {
-    try {
-      const snapshot = await sessionInvestor(req);
-      res.json(await previewBrokerAccount(snapshot.state, String(req.params.id)));
-    } catch (e) { accountError(res, e); }
-  });
+      res.json(await checkWebullToken({ app_key: c.app_key, app_secret: c.app_secret,
+        region: parseWebullRegion(c.region), ...(c.access_token ? { access_token: c.access_token } : {}) }));
+    } catch (e) {
+      throw new Error(redactSecrets(e instanceof Error ? e.message : String(e), [c.app_secret, c.access_token].filter((v): v is string => !!v)), { cause: e });
+    }
+  }));
+  router.post('/broker-accounts', setupRoute('create_account', req => ({ sourceId: req.body?.source_id }), async (req, res, snapshot) => {
+    const id = addBrokerAccount(snapshot.state, req.body);
+    await saveInvestor(snapshot);
+    res.status(201).json({ id });
+  }));
+  router.patch('/broker-accounts/:id', setupRoute('save_account', connectionScope, async (req, res, snapshot) => {
+    patchBrokerAccount(snapshot.state, String(req.params.id), req.body ?? {});
+    await saveInvestor(snapshot);
+    res.json({ ok: true });
+  }));
+  router.post('/broker-accounts/:id/preview', setupRoute('preview', connectionScope, async (req, res, snapshot, observeRaw) => {
+    let raw: Buffer | undefined;
+    const preview = await previewBrokerAccount(snapshot.state, String(req.params.id), undefined, body => {
+      raw = body;
+      observeRaw(body);
+    });
+    const helpId = preview.not_imported.length ? attemptHelp(snapshot, connectionScope(req), 'preview', { raw, notices: preview.not_imported }) : undefined;
+    res.json({ ...preview, ...(helpId && { help_id: helpId }) });
+  }));
   router.post('/broker-accounts/:id/sync', async (req: Request, res: Response) => {
     let snapshot: InvestorSnapshot | undefined;
+    const full = req.body?.full_sync === true;
     try {
       snapshot = await sessionInvestor(req);
       if(req.body?.full_sync!==undefined&&typeof req.body.full_sync!=='boolean'){res.status(400).json({error:'full_sync must be boolean'});return;}
-      res.json(await syncBrokerAccount(snapshot, String(req.params.id),undefined,'manual',req.body?.full_sync===true));
-    } catch (e) {
+      const result = await syncBrokerAccount(snapshot, String(req.params.id), undefined, 'manual', full);
+      const { applied } = result;
+      const helpId = applied.deferred?.length || applied.historyReconciliationDeferred || applied.skipped.length
+        ? attemptHelp(snapshot, connectionScope(req), full ? 'full_sync' : 'sync',
+          { runId: result.syncRunId, notices: applied.skipped.map(formatBrokerSkip), historyDeferred: applied.historyReconciliationDeferred })
+        : undefined;
+      res.json({ ...result, ...(helpId && { help_id: helpId }) });
+    } catch (error) {
+      const runId = error instanceof BrokerAccountSyncFailure ? error.runId : undefined;
+      const helpId = snapshot && attemptHelp(snapshot, connectionScope(req), full ? 'full_sync' : 'sync', { error, runId });
       const connection = snapshot && readBrokerAccountModel(snapshot.state).connections[String(req.params.id)];
       const retry = connection?.enabled && brokerSyncRetry(snapshot!.state.user.id, String(req.params.id), brokerSyncBinding(connection));
-      if (retry) { res.status(202).json({ queued: true, retry_at: retry.retry_at, message: 'Sync queued for automatic retry. Your last saved data remains available.' }); return; }
-      accountError(res, e);
+      if (retry) {
+        res.status(202).json({ queued: true, retry_at: retry.retry_at,
+          message: 'Sync queued for automatic retry. Your last saved data remains available.', ...(helpId && { help_id: helpId }) });
+        return;
+      }
+      accountError(res, error, helpId);
     }
   });
   router.get('/broker-accounts/:id/sync-history', async (req: Request, res: Response) => {

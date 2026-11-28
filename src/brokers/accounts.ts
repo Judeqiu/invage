@@ -440,7 +440,7 @@ async function fetchStatements(model: BrokerAccountModel, conn: BrokerAccountCon
     : [parseBrokerSnapshot(adapter, raw, conn.channel)];
   return { raw: raw.body, statements:statements.map(statement=>statement.skipped.some(s=>s.reason===HISTORY_PENDING_REASON) ? statement : attachFetchedHistory(raw,statement)),payload:raw };
 }
-export async function discoverBrokerAccounts(state: InvestorState, sourceId: string, config: Record<string, string>, transport?: AdapterTransport) {
+export async function discoverBrokerAccounts(state: InvestorState, sourceId: string, config: Record<string, string>, transport?: AdapterTransport, onRaw?: (body: Buffer) => void) {
   const model = readBrokerAccountModel(state);
   const source = model.sources[sourceId];
   if (!source) throw new Error('Unknown broker source.');
@@ -454,6 +454,7 @@ export async function discoverBrokerAccounts(state: InvestorState, sourceId: str
     if (!parsed.activity_query_id) throw new Error('Activity query ID is required.');
     const adapter = getBrokerAdapter('ibkr');
     const raw = await adapter.fetchRaw({ ...source.credentials, ...parsed }, transport ? { transport } : undefined);
+    onRaw?.(raw.body);
     return ibkrStatements(raw.body, 'ibkr').map(s => ({ account_id: s.account_id, as_of: s.as_of, lots: s.lots.length, currencies: s.cash.map(c => c.currency) }));
   }
   if (source.broker_id === 'moomoo' || (source.broker_id === 'futubull' && source.credentials.app_key)) {
@@ -473,21 +474,21 @@ export async function discoverBrokerAccounts(state: InvestorState, sourceId: str
     region: source.credentials.region, access_token: source.credentials.access_token });
   } catch (error) {
     throw new Error(redactSecrets(error instanceof Error ? error.message : String(error),
-      def.credentialFields.filter(f => f.type === 'secret').map(f => source.credentials[f.id]).filter((v): v is string => !!v)));
+      def.credentialFields.filter(f => f.type === 'secret').map(f => source.credentials[f.id]).filter((v): v is string => !!v)), { cause: error });
   }
 }
-export async function previewBrokerAccount(state: InvestorState, id: string, transport?: AdapterTransport) {
+export async function previewBrokerAccount(state: InvestorState, id: string, transport?: AdapterTransport, onRaw?: (body: Buffer) => void) {
   const model = readBrokerAccountModel(state);
   const conn = model.connections[id];
   if (!conn || !conn.account_id) throw new Error('Broker account binding is required.');
   let statements: BrokerStatement[];
   try {
-    ({ statements } = await fetchStatements(model, conn, id, state.user.id, transport));
+    ({ statements } = await fetchStatements(model, conn, id, state.user.id, transport, onRaw));
   } catch (error) {
     const def = getBrokerConnector(conn.broker_id);
     const credentials = combinedCredentials(model, conn);
     throw new Error(redactSecrets(error instanceof Error ? error.message : String(error),
-      def.credentialFields.filter(f => f.type === 'secret').map(f => credentials[f.id]).filter((v): v is string => !!v)));
+      def.credentialFields.filter(f => f.type === 'secret').map(f => credentials[f.id]).filter((v): v is string => !!v)), { cause: error });
   }
   const selected = statements.find(s => s.account_id === conn.account_id);
   if (!selected) throw new Error(`Broker statement account mismatch: expected ${conn.account_id}.`);
@@ -510,8 +511,14 @@ function archive(slug: string, conn: BrokerAccountConnection, raw: Buffer, asOf:
     `broker_id: ${JSON.stringify(conn.broker_id)}\nchannel: ${JSON.stringify(conn.channel)}\naccount_id: ${JSON.stringify(conn.account_id ?? '')}\nerror: ${JSON.stringify(error ?? 'parse failed')}\n`);
   return file;
 }
+export class BrokerAccountSyncFailure extends Error {
+  constructor(message: string, readonly runId: string, cause: unknown) {
+    super(message, { cause });
+  }
+}
+
 export async function syncBrokerAccount(snapshot: InvestorSnapshot, id: string, transport?: AdapterTransport,
-  trigger: 'manual' | 'scheduled' = 'manual', full = false): Promise<{ applied: BrokerApplyResult; aggregation?: { status: 'ready' | 'pending' | 'failed' } }> {
+  trigger: 'manual' | 'scheduled' = 'manual', full = false): Promise<{ applied: BrokerApplyResult; syncRunId: string; aggregation?: { status: 'ready' | 'pending' | 'failed' } }> {
   try { return await withBrokerSyncLease(snapshot.state.user.id,id,()=>syncBrokerAccountUnlocked(snapshot,id,transport,trigger,full)); }
   catch(error) {
     const conn=readBrokerAccountModel(snapshot.state).connections[id];
@@ -521,7 +528,7 @@ export async function syncBrokerAccount(snapshot: InvestorSnapshot, id: string, 
 }
 
 async function syncBrokerAccountUnlocked(snapshot: InvestorSnapshot, id: string, transport?: AdapterTransport,
-  trigger: 'manual' | 'scheduled' = 'manual', full = false): Promise<{ applied: BrokerApplyResult; aggregation?: { status: 'ready' | 'pending' | 'failed' } }> {
+  trigger: 'manual' | 'scheduled' = 'manual', full = false): Promise<{ applied: BrokerApplyResult; syncRunId: string; aggregation?: { status: 'ready' | 'pending' | 'failed' } }> {
   let state = snapshot.state;
   const model = readBrokerAccountModel(state);
   const conn = model.connections[id];
@@ -608,7 +615,7 @@ async function syncBrokerAccountUnlocked(snapshot: InvestorSnapshot, id: string,
       } finally {
         await publishBrokerSyncFailure(state.user.id, def.displayName, conn.label, message, { retryScheduled: true });
       }
-      throw new Error(message);
+      throw new BrokerAccountSyncFailure(message, syncId, error);
     }
     recordBrokerSyncRun(state.user.id, conn.channel, { id: syncId, at, trigger, ok: true, as_of: applied.asOf,
       account_id: applied.accountId, lots_upserted: applied.lotsUpserted, lots_removed: applied.lotsRemoved,
@@ -624,7 +631,7 @@ async function syncBrokerAccountUnlocked(snapshot: InvestorSnapshot, id: string,
       console.error('[broker/sync-notification] comparison failed:', error);
     }
     const aggregation = await refreshPortfolioAfterSync(state.user.id);
-    return { applied, aggregation };
+    return { applied, aggregation, syncRunId: syncId };
   } finally {
     inflight.delete(key);
     finishBrokerSync(intent, complete);

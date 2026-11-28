@@ -1,4 +1,5 @@
 import { readProductProfile } from '../agents/roster.js';
+import { createInspectBrokerHelpTool } from './broker_help.js';
 import { createOptionDecisionReportTool } from './option_decision_report.js';
 import { createFinancialScriptTool } from './financial_script.js';
 import { createRestoreBrokerValuesTool } from './restore_broker_values.js';
@@ -107,6 +108,7 @@ export function createBookkeeperTools(): AgentTool[] {
     createConfigureBrokerTool(),
     createListBrokerAccountsTool(),
     createSyncBrokerTool(),
+    createInspectBrokerHelpTool(),
     createListBrokerTriageTool(),
     createReadBrokerRawTool(),
     createSaveBrokerParserTool(),

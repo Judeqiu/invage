@@ -13,12 +13,53 @@ let managedAccounts = {};
 let dirty = new Set();
 let history = {};
 let syncActivity = null;
+const accountHelp = new Map();
+let openingHelp = false;
 
-function syncFeedback(state, title, message) {
+function helpButton(scope) {
+  return `<button type="button" data-help="${esc(JSON.stringify(scope))}">Help me</button>`;
+}
+
+async function openHelp(button) {
+  if (openingHelp) return;
+  openingHelp = true;
+  button.disabled = true;
+  const tab = window.open('about:blank', '_blank');
+  if (tab) {
+    tab.opener = null;
+    tab.document.title = 'Opening broker help';
+    tab.document.body.textContent = 'Opening broker help…';
+  }
+  try {
+    const context = await call('/broker-help', 'POST', JSON.parse(button.dataset.help));
+    const messageId = crypto.randomUUID();
+    const response = await json(await fetch('/api/chat/messages', {
+      method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...context, clientMessageId: messageId, clientConversationId: messageId }),
+    }));
+    if (!response.conversationId) throw new Error('Chat did not return a conversation.');
+    const url = new URL('/', location.origin);
+    url.searchParams.set('c', response.conversationId);
+    if (tab && !tab.closed) tab.location.replace(url.href);
+    else window.top.location.assign(url.href);
+  } catch (e) {
+    tab?.close();
+    error(`Could not open broker help. ${e instanceof Error ? e.message : String(e)}`);
+  } finally {
+    openingHelp = false;
+    button.disabled = false;
+  }
+}
+
+function setupHelp(id, attemptId) {
+  return attemptId ? { attempt_id: attemptId } : { connection_id: id };
+}
+
+function syncFeedback(state, title, message, support) {
   el.feedback.hidden = false;
   el.feedback.className = `sync-feedback ${state}`;
   el.feedback.innerHTML = `<div class="feedback-heading">${state === 'working' ? '<span class="spinner" aria-hidden="true"></span>' : ''}<strong>${esc(title)}</strong></div>
-    <p>${esc(message)}</p>${state === 'working' ? '<div class="sync-progress" role="progressbar" aria-label="Broker sync in progress"><span></span></div><span class="elapsed" aria-hidden="true">Elapsed: 0s</span>' : ''}`;
+    <p>${esc(message)}</p>${state === 'working' ? '<div class="sync-progress" role="progressbar" aria-label="Broker sync in progress"><span></span></div><span class="elapsed" aria-hidden="true">Elapsed: 0s</span>' : ''}${support ? `<div class="actions">${helpButton(support)}</div>` : ''}`;
 }
 function elapsedTime(started) {
   const seconds = Math.floor((Date.now() - started) / 1000);
@@ -48,7 +89,7 @@ function error(message) {
 }
 async function json(response) {
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.message || body.error || `HTTP ${response.status}`);
+  if (!response.ok) throw Object.assign(new Error(body.message || body.error || `HTTP ${response.status}`), { helpId: body.help_id });
   return body;
 }
 async function call(path, method = 'GET', body) {
@@ -57,7 +98,7 @@ async function call(path, method = 'GET', body) {
     ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
   }));
 }
-async function run(task, sync = null) {
+async function run(task, { sync, accountId, setup } = {}) {
   if (busy) return;
   if (wizard) {
     wizard.config = values('config', broker(wizard.broker_id));
@@ -89,18 +130,32 @@ async function run(task, sync = null) {
   try {
     result = await task();
     completed = true;
-    await load();
+    if (setup && wizard) wizard.helpId = result?.help_id;
+    if (accountId) {
+      if (result?.help_id) accountHelp.set(accountId, setupHelp(accountId, result.help_id));
+      else accountHelp.delete(accountId);
+    }
     if (sync) {
       const [state, title, message] = syncResult(result);
-      syncFeedback(state, `${title} · ${sync.label}`, message);
+      const support = state === 'attention' ? setupHelp(sync.id, result.help_id) : undefined;
+      if (support) accountHelp.set(sync.id, support);
+      else accountHelp.delete(sync.id);
+      syncFeedback(state, `${title} · ${sync.label}`, message, support);
     }
+    await load();
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     if (sync) {
+      const support = completed ? accountHelp.get(sync.id) : setupHelp(sync.id, e?.helpId);
+      if (support) accountHelp.set(sync.id, support);
       syncFeedback('attention', completed ? 'Sync responded · refresh unavailable' : 'Sync could not be confirmed',
         completed ? `${syncResult(result)[1]}. Account details could not be refreshed: ${message}. Use Refresh to check the latest status.`
-          : `${message}. Use Refresh to check account status before trying again; the server may still be processing the request.`);
-    } else error(message);
+          : `${message}. Use Refresh to check account status before trying again; the server may still be processing the request.`, support);
+    } else {
+      if (!completed && setup && wizard) wizard.helpId = e?.helpId;
+      if (!completed && accountId) accountHelp.set(accountId, setupHelp(accountId, e?.helpId));
+      error(message);
+    }
   } finally {
     clearInterval(timer);
     busy = false;
@@ -133,6 +188,7 @@ function historyHtml(c) {
   return `<div class="sync-history">${page.runs.map(run => `<div class="sync-run">
     <div><strong>${esc(when(run.at))}</strong> · ${run.trigger === 'scheduled' ? 'Scheduled' : 'Manual'} · ${run.ok ? 'Succeeded' : 'Failed'}</div>
     <div class="hint">${run.ok ? `${esc(run.as_of || '')}${run.lots_upserted != null ? ` · ${esc(run.lots_upserted)} lots` : ''}` : esc(run.error || 'Sync failed')}</div>
+    ${!run.ok ? helpButton({ connection_id: c.id, run_id: run.id }) : ''}
     ${run.raw_data_id ? `<a href="${ROOT}/broker-accounts/${encodeURIComponent(c.id)}/raw-data?run=${encodeURIComponent(run.id)}" download>Download raw data</a>` : '<span class="hint">No raw response received</span>'}
   </div>`).join('')}</div>
   ${page.next_offset != null ? `<button data-action="history-more" data-id="${esc(c.id)}" ${dirty.has(c.id) ? 'disabled' : ''}>Show older runs</button>` : ''}`;
@@ -186,6 +242,8 @@ function existingCard(c) {
   const b = broker(c.broker_id);
   const s = source(c.source_id);
   const open = managed === c.id;
+  const help = accountHelp.get(c.id) || (c.last_sync?.ok === false || c.sync_retry || c.status === 'needs_setup'
+    || c.last_sync?.snapshot_deferred?.length || c.last_sync?.not_imported?.length ? { connection_id: c.id } : null);
   const last = c.sync_retry ? c.last_sync?.ok === true ? 'Current positions and cash saved. Historical reconciliation will retry automatically.' : 'Sync will retry automatically. Your last saved data remains available.'
     : c.last_sync?.ok === false ? `Last sync failed: ${c.last_sync.error}`
     : c.last_sync?.ok === true ? `Last sync: ${c.last_sync.as_of || c.last_sync.at}` : 'Never synced';
@@ -200,6 +258,7 @@ function existingCard(c) {
     <div class="actions">
       <button data-action="manage" data-id="${esc(c.id)}">${open ? 'Close' : 'Manage'}</button>
       <button data-action="preview" data-id="${esc(c.id)}" ${busy || dirty.has(c.id) || !c.account_id ? 'disabled' : ''}>Preview</button>
+      ${help ? helpButton(help) : ''}
     </div>
     <div class="sync-controls"><div class="actions" role="group" aria-label="Sync ${esc(c.label)}">
       <button class="primary" data-action="sync" data-id="${esc(c.id)}" ${busy || dirty.has(c.id) || !c.enabled || !c.account_id || (!c.last_sync && !preview[c.id]) ? 'disabled' : ''}>Sync latest</button>
@@ -242,7 +301,9 @@ function wizardHtml() {
   const selectedSource = wizard.source_id ? source(wizard.source_id) : null;
   return `<section class="connector">
     <div class="card-head"><div class="title">Add ${esc(b.display_name)} account</div>
-      <button data-action="cancel">Close</button></div>
+      <div class="actions">${helpButton(wizard.helpId ? { attempt_id: wizard.helpId }
+        : wizard.source_id ? { source_id: wizard.source_id } : { broker_id: b.id })}
+      <button data-action="cancel">Close</button></div></div>
     <p class="hint">${esc(b.capability)}</p>
     ${guide(b)}
     <label class="field" for="source-choice">Access source
@@ -293,9 +354,16 @@ function render() {
   }
   el.list.querySelector('#source-choice')?.addEventListener('change', e => {
     wizard.source_id = e.target.value;
+    wizard.helpId = undefined;
     wizard.accounts = null;
     wizard.account = '';
     render();
+  });
+}
+for (const container of [el.list, el.feedback]) {
+  container.addEventListener('click', event => {
+    const button = event.target.closest('button[data-help]');
+    if (button) void openHelp(button);
   });
 }
 async function action(node) {
@@ -334,7 +402,7 @@ async function action(node) {
         broker_id: b.id, credentials: values('access', b),
       });
       wizard.source_id = created.id;
-    });
+    }, { setup: true });
     return;
   }
   if (a === 'discover') {
@@ -344,7 +412,8 @@ async function action(node) {
       const found = await call(`/broker-access/${encodeURIComponent(wizard.source_id)}/discover`, 'POST',
         { config: wizard.config });
       wizard.accounts = found.accounts;
-    });
+      return found;
+    }, { setup: true });
     return;
   }
   if (a === 'wizard-token-create' || a === 'wizard-token-check') {
@@ -353,7 +422,7 @@ async function action(node) {
       const result = await call(`/broker-access/${encodeURIComponent(wizard.source_id)}/webull-token`,
         a === 'wizard-token-create' ? 'POST' : 'GET');
       wizard.tokenStatus = result.status;
-    });
+    }, { setup: true });
     return;
   }
   if (a === 'create-account') {
@@ -364,7 +433,7 @@ async function action(node) {
     await run(async () => {
       await call('/broker-accounts', 'POST', { source_id: wizard.source_id, account_id: account, label, config });
       wizard = null;
-    });
+    }, { setup: true });
     return;
   }
   const c = data.connections.find(item => item.id === id);
@@ -376,12 +445,14 @@ async function action(node) {
         { credentials: values('access', b, source(c.source_id).credentials) });
       dirty.delete(id);
       preview = {};
-    });
+    }, { accountId: id });
   } else if (a === 'find-binding') {
     const config = Object.fromEntries(Object.entries(c.config).filter(([, v]) => v.value).map(([k, v]) => [k, v.value]));
     await run(async () => {
-      managedAccounts[id] = (await call(`/broker-access/${encodeURIComponent(c.source_id)}/discover`, 'POST', { config })).accounts;
-    });
+      const found = await call(`/broker-access/${encodeURIComponent(c.source_id)}/discover`, 'POST', { config });
+      managedAccounts[id] = found.accounts;
+      return found;
+    }, { accountId: id });
   } else if (a === 'save-account') {
     await run(async () => {
       await call(`/broker-accounts/${encodeURIComponent(id)}`, 'PATCH', {
@@ -393,17 +464,19 @@ async function action(node) {
       });
       dirty.delete(id);
       preview[id] = undefined;
-    });
+    }, { accountId: id });
   } else if (a === 'preview') {
-    await run(async () => { preview[id] = await call(`/broker-accounts/${encodeURIComponent(id)}/preview`, 'POST'); });
+    await run(async () => { preview[id] = await call(`/broker-accounts/${encodeURIComponent(id)}/preview`, 'POST');
+      return preview[id];
+    }, { accountId: id });
   } else if (a === 'sync' || a === 'full-sync') {
-    await run(() => call(`/broker-accounts/${encodeURIComponent(id)}/sync`, 'POST', {full_sync:a === 'full-sync'}), {id, label:c.label, full:a === 'full-sync', node});
+    await run(() => call(`/broker-accounts/${encodeURIComponent(id)}/sync`, 'POST', {full_sync:a === 'full-sync'}), { sync: { id, label: c.label, full: a === 'full-sync', node } });
   } else if (a === 'token-create' || a === 'token-check') {
     await run(async () => {
       const got = await call(`/broker-access/${encodeURIComponent(c.source_id)}/webull-token`,
         a === 'token-create' ? 'POST' : 'GET');
       error(`Webull token status: ${got.status}`);
-    });
+    }, { accountId: id });
   }
 }
 load().catch(e => error(e instanceof Error ? e.message : String(e)));

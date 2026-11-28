@@ -73,7 +73,7 @@ export const BROKER_CATALOG: readonly BrokerConnectorDef[] = [
       'Performance & Reports → Flex Queries → Activity query, XML, sections Open Positions and Cash Report. Copy Query ID from the Info icon.',
       'Optional Trade Confirmation query for later; not used by Sync now in v1.',
     ],
-    helpHref: 'https://www.interactivebrokers.com/campus/ibkr-api-page/flex-web-service/',
+    helpHref: 'https://www.interactivebrokers.com/docs/web-api/flex-web-service/introduction',
     helpHrefLabel: 'Flex Web Service docs',
     ipWhitelistHelp: true,
     syncQueryFieldId: 'activity_query_id',
