@@ -11,12 +11,20 @@ const tradingShellCss = `
 }
 `;
 
-/** Add critical CSS only to the framework SPA, leaving report/login documents alone. */
+// Match the landing handoff in Utarus's login embed. An explicit document URL
+// already chose its destination, so the SPA must not apply its default later.
+const tradingShellEntry = `<script>
+  if (window === window.top && (location.pathname !== '/' || new URLSearchParams(location.search).get('c')?.trim())) {
+    try { sessionStorage.setItem('utarus_default_landed', '1'); } catch { /* Storage is unavailable. */ }
+  }
+</script>`;
+
+/** Add Velovest's entry handling and critical layout to the framework SPA. */
 export const tradingShellFirstPaint: RequestHandler = (_req, res, next) => {
   const send = res.send;
   res.send = function (body) {
     if (typeof body === 'string' && body.includes('<div id="root"></div>') && body.includes('</head>')) {
-      body = body.replace('</head>', `<style id="velovest-trading-shell">${tradingShellCss}</style></head>`);
+      body = body.replace('</head>', `<style id="velovest-trading-shell">${tradingShellCss}</style>${tradingShellEntry}</head>`);
     }
     return send.call(this, body);
   };
