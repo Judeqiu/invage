@@ -166,6 +166,7 @@ export function recordBrokerHelp(state: InvestorState, scope: BrokerHelpScope, o
     : broker.helpHref;
   const facts = {
     broker: broker.displayName,
+    brokerId: broker.id,
     mode,
     transport: broker.id === 'futubull' ? usesOpenD ? 'OpenD' : 'Cloud OpenAPI' : undefined,
     documentation,
@@ -214,7 +215,9 @@ export function readBrokerHelp(state: InvestorState, id: unknown): ReturnType<ty
 export function brokerHelpChat(receipt: NonNullable<ReturnType<typeof recordBrokerHelp>>) {
   const request = receipt.facts.mode === 'health_check'
     ? `Run a health check for my ${receipt.broker} connection in Brokers. Review its saved sync and import status and tell me if anything needs attention.`
-    : `Help me troubleshoot ${receipt.broker} in Brokers and walk me through the next step.`;
+    : receipt.facts.step === 'setup' && !receipt.facts.failure
+      ? `Help me set up ${receipt.broker} in Brokers. Find the broker's current official instructions and walk me through the setup.`
+      : `Help me troubleshoot ${receipt.broker} in Brokers and walk me through the next step.`;
   return {
     text: `@${PEER_CATALOG.bookkeeper.label} ${request}`,
     pageContext: { broker_help_id: receipt.id },

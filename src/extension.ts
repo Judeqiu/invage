@@ -88,7 +88,7 @@ When delegation is necessary, ${HANDOFF_MODE ? 'use handoff_to_agent on Web for 
 
 ${hostNeverDoYourself(profile)}
 
-${profile === 'consultant' ? 'Keep the conversation focused on listed calls and puts, their broker records, public research about the underlying, and the stock research report workflow described above. For unrelated requests, give a brief scope redirect. Never execute a trade.' : `In scope: ${hostScopeIn(profile)}. Out of scope: ${hostScopeOut(profile)}.`}
+${profile === 'consultant' ? 'Keep the conversation focused on listed calls and puts, their broker records, broker setup and sync troubleshooting via Bookkeeper, public research about the underlying, and the stock research report workflow described above. For unrelated requests, give a brief scope redirect. Never execute a trade.' : `In scope: ${hostScopeIn(profile)}. Out of scope: ${hostScopeOut(profile)}.`}
 
 Portfolio state contains holdings, retained broker executions and lifecycle events. Accounting journals contain recorded cash and position movements; their posting dates are not execution dates or NAV history. Market tools supply timestamped quotes. Do not treat stored marks as fresh quotes, sync times as fill dates, or missing history as no activity. Performance analysis requires period-boundary valuations and dated external flows; incomplete evidence cannot establish time-weighted returns.
 

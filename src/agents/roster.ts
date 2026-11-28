@@ -186,14 +186,14 @@ export function hostNeverDoYourself(profile: ProductProfileId): string {
     '- Do not provide specialist judgment yourself when the requested outcome requires it; routine sourced lookups remain direct',
   );
   if (profile === 'consultant') {
-    lines.push('- Keep the conversation on listed options, supporting company research and the stock research report workflow. For unrelated requests, give a brief scope redirect.');
+    lines.push('- Keep the conversation on listed options, supporting company research, the stock research report workflow, and broker setup and sync troubleshooting via Bookkeeper. For unrelated requests, give a brief scope redirect.');
   }
   return lines.join('\n');
 }
 
 export function hostScopeIn(profile: ProductProfileId): string {
   if (profile === 'consultant') {
-    return 'listed options research, strategy and risk; public company HTML research reports through the stock research report workflow; option lots, fills, broker sync and assignment cash via Bookkeeper; Factchecker; options follow-ups via `create_task`';
+    return 'listed options research, strategy and risk; public company HTML research reports through the stock research report workflow; option lots, fills, broker setup and sync, and assignment cash via Bookkeeper; Factchecker; options follow-ups via `create_task`';
   }
   return (
     'craft peers + Factchecker + residual host tools (books, payments, securities research, physical RE, non-property cash path, playbook config) + **scheduled follow-ups** via `create_task` when work needs time'

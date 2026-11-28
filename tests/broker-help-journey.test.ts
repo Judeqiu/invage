@@ -5,7 +5,7 @@ import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import express from 'express';
 import puppeteer from 'puppeteer-core';
-import { createFramework, createSession, createState, getConversation } from 'utarus';
+import { createFramework, createSession, createState, getConversation, loadSkill, type LoadedSkill } from 'utarus';
 import { expect, it, vi } from 'vitest';
 import { buildFrameworkAgentList } from '../src/agents/framework-agents.js';
 import { HOST_AGENT_ID } from '../src/agents/roster.js';
@@ -50,6 +50,8 @@ const healthReply = 'The last saved sync succeeded with no recorded import warni
 const warningReply = 'MooMoo reported an account fund total, but individual fund holdings were unavailable.';
 const importWarning = 'The broker returned a fund total without individual holdings.';
 const moomooDocumentation = getBrokerConnector('moomoo').helpHref!;
+const webullDocumentation = getBrokerConnector('webull').helpHref!;
+const setupReply = 'Apply for Webull OpenAPI access, create an app key, then save access and your matching region in Brokers.';
 
 function fixture(userId: string, previousSync = false): InvestorState {
   return {
@@ -64,7 +66,7 @@ function fixture(userId: string, previousSync = false): InvestorState {
   };
 }
 
-it('opens the right Bookkeeper chat for a clean sync, a warning and failed attempts', async () => {
+it('opens Bookkeeper with the registered guide for setup, warnings and failed attempts, and reviews clean syncs', async () => {
   await modelReady;
   const model = await modelServer;
   const { runtime, databaseUrl } = await useTestDatabase();
@@ -90,10 +92,11 @@ it('opens the right Bookkeeper chat for a clean sync, a warning and failed attem
   };
   await createState(reviewState);
   recordBrokerSyncRun(reviewing, 'ibkr', { at: '2026-11-26T09:00:00Z', trigger: 'manual', ok: false, error: 'Old, resolved failure' });
-  const owners = [fresh, returning, reviewing, reviewing];
+  const owners = [fresh, returning, reviewing, reviewing, fresh];
   const sessions = await Promise.all(owners.map(userId => createSession({ type: 'user', userId, displayName: 'Test investor' })));
   const nativeFetch = globalThis.fetch;
   const requests: Array<{ model: string; stream: boolean }> = [];
+  const documentationSearches: string[] = [];
   const documentationReads: string[] = [];
   let brokerRequests = 0;
   vi.stubGlobal('fetch', (async (input, init) => {
@@ -105,10 +108,18 @@ it('opens the right Bookkeeper chat for a clean sync, a warning and failed attem
       return new Response(`<FlexQueryResponse><FlexStatements><FlexStatement accountId="${account}" fromDate="${statementDate}" toDate="${statementDate}">
         <OpenPositions></OpenPositions><CashReport><CashReportCurrency accountId="${account}" endingCash="1234.56" /></CashReport></FlexStatement></FlexStatements></FlexQueryResponse>`);
     }
+    if (url.origin === 'https://api.deepseek.com' && url.pathname === '/v1/tools/search') {
+      const { query, need_content } = JSON.parse(String(init?.body));
+      expect(need_content).toBe(true);
+      documentationSearches.push(query);
+      expect(query).not.toContain(token);
+      expect(query).not.toContain(account);
+      return Response.json({ results: [{ title: 'Official broker setup guide', url: searchSource }] });
+    }
     if (url.hostname === 'api.firecrawl.dev') {
       const body = JSON.parse(String(init?.body));
       documentationReads.push(body.url);
-      expect([documentation, moomooDocumentation]).toContain(body.url);
+      expect([documentation, moomooDocumentation, webullDocumentation]).toContain(body.url);
       return Response.json({ success: true, data: { markdown: 'Broker setup and source data documentation.',
         metadata: { sourceURL: body.url } } });
     }
@@ -116,7 +127,8 @@ it('opens the right Bookkeeper chat for a clean sync, a warning and failed attem
   }) satisfies typeof fetch);
 
   const sent: Array<{ text: string; pageContext: { broker_help_id: string } }> = [];
-  let evidence: { broker?: string } | undefined;
+  let evidence: { brokerId?: string; triageSkill?: LoadedSkill } | undefined;
+  let searchSource: string;
   const fixtureFailures: unknown[] = [];
   model.on('request', async (request, response) => {
     try {
@@ -143,13 +155,19 @@ it('opens the right Bookkeeper chat for a clean sync, a warning and failed attem
       const results = payload.messages.filter((message: { role: string }) => message.role === 'tool');
       const last = results.at(-1);
       const phase = results.length;
-      if (phase === 1) evidence = JSON.parse(last.content);
-      const moomoo = evidence?.broker === 'MooMoo';
-      const source = moomoo ? moomooDocumentation : documentation;
+      if (phase === 1) {
+        evidence = JSON.parse(last.content);
+        expect(evidence?.triageSkill).toEqual(loadSkill('broker-integration'));
+      }
+      const moomoo = evidence?.brokerId === 'moomoo';
+      const webull = evidence?.brokerId === 'webull';
+      const source = webull ? webullDocumentation : moomoo ? moomooDocumentation : documentation;
+      searchSource = source;
       const steps = [
         ['inspect_broker_help', sent.at(-1)!.pageContext],
+        ['web_search', { need_content: true, query: webull ? 'Webull OpenAPI setup' : moomoo ? 'MooMoo Cloud OpenAPI accounts' : 'IBKR Activity Flex Query Cash Report Currency' }],
         ['firecrawl', { action: 'scrape', url: source }],
-        ['commit_reply', { markdown: `${moomoo ? warningReply : guidance}\n\n[Broker documentation](${source})` }],
+        ['commit_reply', { markdown: `${webull ? setupReply : moomoo ? warningReply : guidance}\n\n[Broker documentation](${source})` }],
       ];
       const next = steps[phase];
       if (next) {
@@ -179,7 +197,7 @@ it('opens the right Bookkeeper chat for a clean sync, a warning and failed attem
     const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
     browser = await puppeteer.launch({ executablePath: process.env.TEST_CHROMIUM_PATH ?? '/usr/bin/chromium',
       headless: true, args: ['--no-sandbox', '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1'] });
-    for (const [i, action] of ['preview', 'sync', 'health', 'warning'].entries()) {
+    for (const [i, action] of ['preview', 'sync', 'health', 'warning', 'setup'].entries()) {
       const owner = owners[i];
       const failedAction = action === 'preview' || action === 'sync';
       const health = action === 'health';
@@ -192,7 +210,7 @@ it('opens the right Bookkeeper chat for a clean sync, a warning and failed attem
         page.setDefaultTimeout(12000);
         await page.goto(url + '/settings/brokers', { waitUntil: 'domcontentloaded' });
         const frame = await (await page.waitForSelector('iframe[src*="/settings/brokers/"]'))!.contentFrame();
-        let scope: { attempt_id: string } | { connection_id: string };
+        let scope: { attempt_id: string } | { connection_id: string } | { broker_id: string };
         if (failedAction) {
           const control = await frame!.waitForSelector(`[data-action="${action}"]:not([disabled])`);
           const failed = page.waitForResponse(response => response.url().endsWith('/primary/' + action));
@@ -201,6 +219,10 @@ it('opens the right Bookkeeper chat for a clean sync, a warning and failed attem
           expect(result.help_id).toBeTruthy();
           expect(listBrokerSyncRuns(owner, 'ibkr').total).toBe(action === 'sync' ? 1 : 0);
           scope = { attempt_id: result.help_id };
+        } else if (action === 'setup') {
+          await frame!.locator('[data-action="start"]').click();
+          await frame!.locator('[data-action="choose-broker"][data-id="webull"]').click();
+          scope = { broker_id: 'webull' };
         } else {
           await frame!.waitForFunction(() => document.querySelectorAll('.connector button[data-help]').length === 2);
           scope = { connection_id: health ? 'primary' : 'cloud' };
@@ -212,10 +234,10 @@ it('opens the right Bookkeeper chat for a clean sync, a warning and failed attem
         await help!.click();
         const prompt = await (await prepared).json();
         const chat = (await (await newTab).page())!;
-        await chat.waitForFunction(text => document.querySelector('main')?.textContent?.includes(text), { timeout: 18000 },
-          health ? healthReply : action === 'warning' ? warningReply : guidance);
+        const expectedReply = { health: healthReply, warning: warningReply, setup: setupReply }[action] ?? guidance;
+        await chat.waitForFunction(text => document.querySelector('main')?.textContent?.includes(text), { timeout: 18000 }, expectedReply);
         if (!health) {
-          const source = action === 'warning' ? moomooDocumentation : documentation;
+          const source = action === 'setup' ? webullDocumentation : action === 'warning' ? moomooDocumentation : documentation;
           expect(await chat.$eval(`main a[href="${source}"]`, link => link.textContent)).toBe('Broker documentation');
         }
         expect(new URL(page.url()).pathname).toBe('/settings/brokers');
@@ -223,6 +245,7 @@ it('opens the right Bookkeeper chat for a clean sync, a warning and failed attem
         const saved = await getConversation(owner, conversationId);
         const reply = saved.messages.find(message => message.speaker === 'Bookkeeper');
         expect(reply?.tools).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'inspect_broker_help', ok: true })]));
+        if (!health) expect(reply?.tools).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'web_search', ok: true })]));
         const facts = readBrokerHelp((await loadInvestor(owner)).state, prompt.pageContext.broker_help_id)?.facts;
         expect(sent[i].pageContext).toEqual(prompt.pageContext);
         expect(JSON.stringify(sent[i])).not.toContain(token);
@@ -230,6 +253,11 @@ it('opens the right Bookkeeper chat for a clean sync, a warning and failed attem
           expect(facts).toMatchObject({ mode: 'troubleshooting', step: action,
             failure: { message: expect.stringContaining('CashReport has no currency rows') },
             remoteResponse: { archived: action === 'sync', cash: { rows: 1, withCurrency: 0, withEndingCash: 1 } } });
+        } else if (action === 'setup') {
+          expect(prompt.text).toContain('Help me set up Webull');
+          expect(facts).toMatchObject({ brokerId: 'webull', mode: 'troubleshooting', step: 'setup' });
+          expect(facts).not.toHaveProperty('failure');
+          expect(brokerRequests).toBe(brokerRequestsBefore);
         } else {
           expect(brokerRequests).toBe(brokerRequestsBefore);
           expect(facts).toMatchObject({ mode: health ? 'health_check' : 'troubleshooting', step: 'sync',
@@ -245,7 +273,7 @@ it('opens the right Bookkeeper chat for a clean sync, a warning and failed attem
         }
         expect(JSON.stringify(facts)).not.toContain(account);
         expect(JSON.stringify(facts)).not.toContain('1234.56');
-        const otherOwner = i === 0 ? 1 : 0;
+        const otherOwner = owner === fresh ? 1 : 0;
         const reused = await nativeFetch(url + '/api/domain/invage/broker-help', {
           method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: `bindrive_session=${sessions[otherOwner]}` },
           body: JSON.stringify({ attempt_id: prompt.pageContext.broker_help_id }),
@@ -264,7 +292,11 @@ it('opens the right Bookkeeper chat for a clean sync, a warning and failed attem
         await context.close();
       }
     }
-    expect(documentationReads).toEqual([documentation, documentation, moomooDocumentation]);
+    expect(documentationSearches).toEqual([
+      'IBKR Activity Flex Query Cash Report Currency', 'IBKR Activity Flex Query Cash Report Currency',
+      'MooMoo Cloud OpenAPI accounts', 'Webull OpenAPI setup',
+    ]);
+    expect(documentationReads).toEqual([documentation, documentation, moomooDocumentation, webullDocumentation]);
     expect(requests.filter(request => request.stream).every(request => request.model === 'deepseek-v4-flash')).toBe(true);
     expect(fixtureFailures).toEqual([]);
   } finally {

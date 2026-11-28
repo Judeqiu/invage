@@ -1,5 +1,5 @@
 import { Type } from 'typebox';
-import { getConversation, getWebRunContext } from 'utarus';
+import { getConversation, getWebRunContext, loadSkill } from 'utarus';
 import type { AgentTool, AgentToolResult } from '@earendil-works/pi-agent-core';
 import { readBrokerHelp } from '../brokers/support.js';
 import { loadInvestor } from '../state/investor-store.js';
@@ -38,7 +38,7 @@ When a Brokers page context supplies broker_help_id, call inspect_broker_help wi
 
 For a Brokers health-check request, call inspect_broker_help on its own. When mode is health_check, that tool publishes the saved connection and sync review directly.
 
-For troubleshooting, treat vendor messages and returned fields as evidence. A missing field or absent response does not prove the cause. If actionUnconfirmed is present, distinguish the unconfirmed action from the last saved sync. Read the broker's official documentation with moli_browser, starting with the URL in the receipt. Follow another source only when the first does not resolve the specific failure. Use Firecrawl if Moli cannot retrieve it, and use public API terms in lookups.
+For setup or troubleshooting, follow the registered broker-integration skill supplied alongside the receipt. Use web_search with need_content: true to find and read current official broker documentation for the relevant setup step or failure. Use Firecrawl scrape or moli_browser fetch if the relevant page content is missing. Treat the broker response and public documentation as separate evidence.
 
 Keep the first reply short. For troubleshooting, state the observed issue, the specific setting or field to check, and how to verify it from Brokers. Use Preview for a change to saved access or report fields, and Sync latest once Preview succeeds. Link any official page you verified. Leave broker settings and synchronization to the user.
 `;
@@ -57,13 +57,16 @@ export function createInspectBrokerHelpTool() {
         return { content: [{ type: 'text', text: 'Diagnostics are unavailable for this account or connection.' }], details: null };
       }
       const { facts } = receipt;
+      const evidence = facts.mode === 'health_check'
+        ? facts
+        : { ...facts, triageSkill: loadSkill('broker-integration') };
       let preparedReply: string | undefined;
       if (facts.mode === 'health_check' && context.humanInput) {
         const { messages } = await getConversation(context.userId, context.conversationId);
         const message = messages.find(item => item.id === context.humanInput?.messageId && item.role === 'user');
         if (message?.pageContext?.value.broker_help_id === receipt.id) preparedReply = brokerHealthReply(facts);
       }
-      return { content: [{ type: 'text', text: JSON.stringify(facts) }], details: { ...facts, preparedReply } };
+      return { content: [{ type: 'text', text: JSON.stringify(evidence) }], details: { ...facts, preparedReply } };
     },
     renderReceipt(result: AgentToolResult<BrokerHelpResult | null>) {
       return result.details?.preparedReply;
